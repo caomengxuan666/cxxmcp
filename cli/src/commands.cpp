@@ -1072,7 +1072,7 @@ void write_service_error(std::ostream& err, const core::Error& error) {
 }
 
 std::string service_error_suggestion(const core::Error& error) {
-    if (error.message == "mcp server is untrusted") {
+    if (error.message == "cxxmcp server is untrusted") {
         return "trust the server with: cxxmcp servers trust " + error.detail;
     }
     if (error.message == "mcp server is disabled") {
@@ -2128,19 +2128,19 @@ int doctor(app::McpServerStore& servers,
     if (server_items.empty()) {
         issues.push_back(app::GatewayReadinessIssue{
             .code = "no_servers",
-            .message = "no MCP servers configured",
+            .message = "No MCP servers configured",
         });
     }
     if (!server_items.empty() && capability_items.empty()) {
         issues.push_back(app::GatewayReadinessIssue{
             .code = "no_capabilities",
-            .message = "no capabilities discovered",
+            .message = "No capabilities discovered",
         });
     }
     if (profile_items.empty()) {
         issues.push_back(app::GatewayReadinessIssue{
             .code = "no_exposure_profiles",
-            .message = "no exposure profiles configured",
+            .message = "No exposure profiles configured",
         });
     }
 

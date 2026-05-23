@@ -727,7 +727,7 @@ void test_doctor_reports_empty_runtime() {
             "doctor empty runtime server issue mismatch");
     require(harness.out.str().find("hint: add one with: cxxmcp servers import <path>") != std::string::npos,
             "doctor empty runtime server hint mismatch");
-    require(harness.out.str().find("- no exposure profiles configured\n") != std::string::npos,
+    require(harness.out.str().find("- No exposure profiles configured\n") != std::string::npos,
             "doctor empty runtime exposure issue mismatch");
 }
 
@@ -829,7 +829,7 @@ void test_doctor_reports_unready_upstream_health_as_json() {
     require(json["upstreams"]["servers"][1]["serverId"] == "remote",
             "json doctor upstream second server mismatch");
     require(!json["upstreams"]["servers"][1]["ready"], "json doctor upstream second readiness mismatch");
-    require(json["upstreams"]["servers"][1]["error"] == "mcp server is untrusted",
+    require(json["upstreams"]["servers"][1]["error"] == "cxxmcp server is untrusted",
             "json doctor upstream error mismatch");
     require(json["profiles"][0]["httpReady"], "json doctor gateway profile should remain ready");
 }
@@ -1465,7 +1465,7 @@ void test_discover_mcp_server_reports_trust_hint() {
     const auto exit_code = harness.run({"servers", "discover", "filesystem"});
 
     require(exit_code == 1, "servers discover untrusted exit code mismatch");
-    require(harness.err.str().find("mcp server is untrusted: filesystem") != std::string::npos,
+    require(harness.err.str().find("cxxmcp server is untrusted: filesystem") != std::string::npos,
             "servers discover untrusted error mismatch");
     require(harness.err.str().find("hint: trust the server with: cxxmcp servers trust filesystem") !=
                 std::string::npos,
@@ -1484,7 +1484,7 @@ void test_discovers_all_mcp_servers_with_skips() {
 
     require(exit_code == 0, "servers discover-all exit code mismatch");
     require(harness.out.str() == "filesystem\tdiscovered\t3 capability(s)\n"
-                                 "remote\tskipped\tmcp server is untrusted: remote\n",
+                                 "remote\tskipped\tcxxmcp server is untrusted: remote\n",
             "servers discover-all output mismatch");
     require(harness.capabilities_.list_capabilities().size() == 3,
             "servers discover-all should save trusted capabilities only");
@@ -1509,7 +1509,7 @@ void test_discovers_all_mcp_servers_as_json() {
     require(json[0]["capabilityCount"] == 3, "json servers discover-all capability count mismatch");
     require(json[1]["serverId"] == "remote", "json servers discover-all second id mismatch");
     require(!json[1]["discovered"], "json servers discover-all skipped status mismatch");
-    require(json[1]["error"] == "mcp server is untrusted", "json servers discover-all error mismatch");
+    require(json[1]["error"] == "cxxmcp server is untrusted", "json servers discover-all error mismatch");
 }
 
 void test_checks_mcp_server_health() {
@@ -1552,7 +1552,7 @@ void test_checks_all_mcp_servers_health() {
     require(harness.out.str() == "filesystem\tready\t3 capability(s)\n"
                                  "remote\tnot-ready\t0 capability(s)\n",
             "servers check-all output mismatch");
-    require(harness.err.str().find("mcp server is untrusted: remote") != std::string::npos,
+    require(harness.err.str().find("cxxmcp server is untrusted: remote") != std::string::npos,
             "servers check-all untrusted error mismatch");
     require(harness.err.str().find("hint: trust the server with: cxxmcp servers trust remote") != std::string::npos,
             "servers check-all untrusted hint mismatch");
@@ -1577,7 +1577,7 @@ void test_checks_all_mcp_servers_health_as_json() {
     require(json[0]["capabilityCount"] == 3, "json servers check-all first count mismatch");
     require(json[1]["serverId"] == "remote", "json servers check-all second id mismatch");
     require(!json[1]["ready"], "json servers check-all second readiness mismatch");
-    require(json[1]["error"] == "mcp server is untrusted", "json servers check-all error mismatch");
+    require(json[1]["error"] == "cxxmcp server is untrusted", "json servers check-all error mismatch");
 }
 
 void test_lists_discovered_capabilities() {
@@ -2810,7 +2810,7 @@ void test_gateway_init_discover_reports_trust_hint() {
         harness.run({"gateway", "init", "--discover", "profile.dev", "filesystem", "127.0.0.1", "39919", "mcp/dev"});
 
     require(exit_code == 1, "gateway init discover untrusted exit code mismatch");
-    require(harness.err.str().find("mcp server is untrusted: filesystem") != std::string::npos,
+    require(harness.err.str().find("cxxmcp server is untrusted: filesystem") != std::string::npos,
             "gateway init discover untrusted error mismatch");
     require(harness.err.str().find("hint: trust the server with: cxxmcp servers trust filesystem") !=
                 std::string::npos,
@@ -2969,7 +2969,7 @@ void test_gateway_init_all_initializes_discovered_servers_as_json() {
             "json gateway init-all skipped reason mismatch");
     require(json["profiles"][2]["serverId"] == "untrusted",
             "json gateway init-all untrusted server mismatch");
-    require(json["profiles"][2]["skippedReason"] == "mcp server is untrusted",
+    require(json["profiles"][2]["skippedReason"] == "cxxmcp server is untrusted",
             "json gateway init-all untrusted reason mismatch");
 
     const auto profile = harness.exposure_management_.get_profile("profile.filesystem");
@@ -3523,7 +3523,7 @@ void test_gateway_serve_stdio_rejects_unready_profile_bindings() {
     require(harness.out.str().empty(), "gateway serve-stdio unready profile should not write stdout");
     require(harness.err.str().find("gateway profile is not ready: profile.dev") != std::string::npos,
             "gateway serve-stdio readiness header mismatch");
-    require(harness.err.str().find("mcp server is untrusted: filesystem") != std::string::npos,
+    require(harness.err.str().find("cxxmcp server is untrusted: filesystem") != std::string::npos,
             "gateway serve-stdio readiness issue mismatch");
     require(harness.err.str().find("hint: trust the server with: cxxmcp servers trust filesystem") !=
                 std::string::npos,
@@ -4547,10 +4547,10 @@ void test_cli_binary_servers_import_and_list() {
     }));
     require(discover_all_result.has_value(), "servers discover-all process should succeed");
     require(discover_all_result->first == 0, "servers discover-all exit code mismatch");
-    require(discover_all_result->second.find("filesystem\tskipped\tmcp server is untrusted: filesystem\n") !=
+    require(discover_all_result->second.find("filesystem\tskipped\tcxxmcp server is untrusted: filesystem\n") !=
                 std::string::npos,
             "servers discover-all filesystem skip output mismatch");
-    require(discover_all_result->second.find("remote\tskipped\tmcp server is untrusted: remote\n") !=
+    require(discover_all_result->second.find("remote\tskipped\tcxxmcp server is untrusted: remote\n") !=
                 std::string::npos,
             "servers discover-all remote skip output mismatch");
 
