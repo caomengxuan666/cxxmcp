@@ -278,6 +278,21 @@ void test_ping_raw_request() {
     require(response->empty(), "ping response should be empty");
 }
 
+void test_server_info_accessors_and_ping() {
+    auto server = make_server();
+
+    const auto info = server.get_info();
+    require(info.name == "TestServer", "server info name mismatch");
+    require(info.version == "1.0.0", "server info version mismatch");
+    require(info.instructions.empty(), "server info instructions mismatch");
+    require(server.capabilities().tools.list_changed, "server capabilities mismatch");
+
+    const auto ping = server.ping();
+    require(ping.has_value(), "server ping helper failed");
+    require(ping->is_object(), "server ping helper result must be an object");
+    require(ping->empty(), "server ping helper result should be empty");
+}
+
 void test_initialize_handshake_shape() {
     auto server = make_server();
 
@@ -365,6 +380,11 @@ void test_server_app_builder_registers_parity_surface() {
         .build();
     require(built.has_value(), "facade builder should build");
     auto& server = **built;
+    const auto info = server.get_info();
+    require(info.name == "FacadeServer", "facade server info name mismatch");
+    require(info.version == "2.1.0", "facade server info version mismatch");
+    require(info.instructions == "test instructions", "facade server info instructions mismatch");
+    require(server.capabilities().logging.enabled, "facade server capabilities mismatch");
     const auto context = mcp::server::SessionContext{.session_id = "facade", .remote_address = "127.0.0.1"};
 
     const auto initialized = server.handle_request(mcp::protocol::JsonRpcRequest{
@@ -375,7 +395,9 @@ void test_server_app_builder_registers_parity_surface() {
     require(initialized.has_value(), "facade initialize failed");
     require(initialized->result->at("serverInfo").at("name") == "FacadeServer", "facade name mismatch");
     require(initialized->result->at("instructions") == "test instructions", "facade instructions mismatch");
-    require(initialized->result->at("capabilities").contains("completion"), "completion capability missing");
+    require(initialized->result->at("capabilities").contains("completions"), "completions capability missing");
+    require(initialized->result->at("capabilities").at("completions").at("enabled"),
+            "completions capability should be enabled");
     require(initialized->result->at("capabilities").at("logging").at("enabled"), "logging capability missing");
 
     const auto tools = server.handle_request(mcp::protocol::JsonRpcRequest{
@@ -672,6 +694,7 @@ int main() {
         {"list tools round trip", test_list_tools_round_trip},
         {"call tool round trip", test_call_tool_round_trip},
         {"ping raw request", test_ping_raw_request},
+        {"server info accessors and ping", test_server_info_accessors_and_ping},
         {"initialize handshake shape", test_initialize_handshake_shape},
         {"server app builder registers parity surface", test_server_app_builder_registers_parity_surface},
         {"client session initialize and mark initialized", test_client_session_initialize_and_mark_initialized},
