@@ -1,12 +1,15 @@
-# MCPServer.cpp v2 Plan
+# cxxmcp v2 Plan
 
 ## Goal
-Build a small, spec-first MCP runtime for local tools and internal services.
+Build a small, spec-first MCP runtime / gateway for local tools, internal services, and upstream MCP servers.
 
 ## Product Positioning
 This project should be a lightweight MCP Runtime / Gateway.
 
-It should help users expose local or internal capabilities to MCP clients through standard transports and a stable SDK surface.
+It should help users add, run, supervise, and expose MCP servers through standard transports and a stable SDK surface.
+
+The central product object is an MCP server registry plus exposure profiles. Tools, prompts, and resources are discovered
+capabilities of registered MCP servers, not the root product model.
 
 ## Primary Scenarios
 1. Local dev tool bridge
@@ -28,12 +31,59 @@ It should help users expose local or internal capabilities to MCP clients throug
    - Existing services are wrapped as MCP tools or resources.
    - The project should provide adapters, not a new ecosystem.
 
+5. MCP server hosting and gateway
+   - A user adds existing MCP servers from Trae, VS Code, Claude Desktop, Cursor, or manual JSON config.
+   - The runtime starts stdio servers, connects to HTTP servers, performs MCP initialize, and discovers tools/prompts/resources.
+   - The user creates profiles that expose selected capabilities on different local ports, paths, and instructions.
+   - Downstream MCP clients connect to this runtime instead of connecting to every upstream server directly.
+
 ## Non-Goals
 - No plugin marketplace
 - No all-in-one platform
 - No custom protocol fork
 - No complex hot reload as a core feature
 - No feature-heavy sample tool bundle in the runtime
+- No GUI-only business logic
+- No MCP config format fork unless required for import/export compatibility
+
+## Capability Matrix
+The public surface should cover the feature set used by current official MCP SDKs, not just the
+old tool-only path.
+
+### Must-have
+- tools
+- prompts
+- resources
+- roots
+- logging
+- completions
+- sampling
+- elicitation
+- subscriptions / change notifications
+- raw JSON-RPC escape hatches
+
+### Transport and compatibility
+- stdio
+- streamable HTTP
+- legacy SSE compatibility behind the same facade
+- JSON-only request/response mode for constrained hosts
+
+### Runtime and gateway
+- discovery from upstream MCP servers
+- profile binding
+- policy checks
+- auth hooks
+- request routing
+- hosted downstream endpoints
+- tasks / long-running job tracking
+
+### App-only workflows
+- import / export
+- server catalog
+- exposure catalog
+- approval / trust workflows
+- one-click add / enable / disable / remove
+- CLI and GUI reuse the same app services
 
 ## Package Layout
 ```text
@@ -126,36 +176,54 @@ Desktop management application.
 
 ### app
 Shared application services.
-- profile storage
-- tool catalog aggregation
+- MCP server registry
+- exposure profile storage
+- discovered capability catalog
+- tool/prompt/resource aggregation
 - user-facing policy model
 - import / export
 - commands shared by CLI and GUI
 
-## Library Stack
+## Dependency Inventory
+
+We should keep the dependency set explicit and boring. If a library already solves the problem
+cleanly, use it instead of hand-rolling another subsystem.
 
 ### Core libraries
-- `nlohmann/json` for JSON
-- `cpp-httplib` for HTTP/HTTPS server and client
+- `nlohmann/json` for JSON value handling
+- `jsonrpcpp` for JSON-RPC 2.0 parsing and serialization
+- `cpp-httplib` for HTTP/HTTPS server, client, and SSE/streaming transport
 - `OpenSSL` for TLS
-- `spdlog` for logging
+- `spdlog` for logging and diagnostics
+- `tl::expected` or an equivalent C++17-compatible expected implementation for the facade layer
 
 ### CLI libraries
 - `CLI11` for command line parsing
 
 ### GUI libraries
-- `wxWidgets` for the main desktop UI
+GUI work is paused and has no active CMake target in the current rewrite.
+When it returns, choose the desktop shell separately and keep all product logic in `app`.
+
+### Test libraries
+- `GoogleTest` for unit and integration tests
 
 ### Optional libraries
 - `miniz` only if archive packaging or compressed exports become necessary
 - `pybind11` only if we keep a Python plugin bridge
-- `GoogleTest` for unit and integration tests
+- `fmt` only as a transitive dependency of the logging layer if needed
 
 ## C++ Standard Usage
 
 Baseline: C++23 for public API drafts.
 
 C++20-compatible fallbacks may be added later only if packaging or compiler support requires them.
+
+The planned high-level facade should remain C++17-friendly in syntax and ownership style.
+That means:
+- no required use of concepts in the public surface
+- no required use of coroutines in the public surface
+- no required use of `std::expected` in the facade headers
+- fluent builders and callback-based handlers are preferred over heavy template metaprogramming
 
 ### C++20 features
 - `std::jthread` and `std::stop_token` for cooperative shutdown
@@ -184,6 +252,7 @@ C++20-compatible fallbacks may be added later only if packaging or compiler supp
 
 ### protocol
 - `nlohmann/json`
+- `jsonrpcpp`
 - standard library only
 
 ### client
@@ -209,14 +278,10 @@ C++20-compatible fallbacks may be added later only if packaging or compiler supp
 ### app
 - `nlohmann/json`
 - `spdlog`
-- `CLI11`
 - standard library only
 
 ### gui
-- `wxWidgets`
-- `nlohmann/json`
-- `spdlog`
-- `app`
+Deferred. There is no active GUI layer in the current CMake graph.
 
 ### cli
 - `CLI11`
@@ -224,6 +289,7 @@ C++20-compatible fallbacks may be added later only if packaging or compiler supp
 - `client`
 - `server`
 - `plugin-sdk`
+- `spdlog`
 
 ## Dependency Management
 - use a CMake manifest-based workflow
@@ -234,6 +300,7 @@ C++20-compatible fallbacks may be added later only if packaging or compiler supp
 - vendor only when a dependency is unavailable or packaging needs it
 - keep the dependency list in one place
 - Boost is not an allowed dependency
+- do not reimplement protocol, HTTP, CLI, or logging stacks unless a concrete gap exists
 
 ## HTTP Stack Rule
 - use `cpp-httplib` as the only HTTP server/client stack
@@ -243,36 +310,89 @@ C++20-compatible fallbacks may be added later only if packaging or compiler supp
 - support stdio transport without HTTP dependencies
 - do not add standalone Asio unless a non-HTTP async transport proves it is necessary
 
-## Why wxWidgets
-- cross-platform
-- native look and feel
-- no Qt
-- suitable for forms, trees, lists, dialogs, and admin-style tooling
-- better fit for a management console than an immediate-mode debug UI
+## Deferred GUI Notes
+GUI is intentionally out of the active build for now. The next GUI decision should be made after the CLI and gateway runtime are stable.
 
 ## GUI Shape
 
 The GUI should be an operational console, not a marketing shell.
 
 Main views:
-- server profiles
-- tool registry
-- resource registry
-- prompt registry
-- plugin sources
+- MCP servers
+- exposure profiles
+- discovered tools
+- discovered resources
+- discovered prompts
+- gateway endpoints
 - permissions and policy
 - logs and diagnostics
 
 Main actions:
-- add tools from local files
-- add tools from a MCP server endpoint
-- enable / disable tools
-- group tools by profile
-- start / stop server instances
+- add MCP servers from command/args/env
+- add MCP servers from HTTP URL/headers
+- import Trae / VS Code / Claude / Cursor config
+- start / stop / restart upstream server instances
+- discover tools, prompts, and resources
+- bind capabilities into exposure profiles
+- run different profiles on different ports and prompts
 - import / export configuration
 - inspect request and response payloads
 
+## Gateway Core Model
+
+### McpServerDefinition
+The configured upstream MCP server.
+- stable id
+- name and display name
+- transport: `stdio`, `streamable_http`, or `legacy_sse`
+- stdio command, args, cwd, env
+- HTTP URL and headers
+- enabled / auto-start flags
+- trust state: untrusted, trusted, blocked
+- tags
+
+### McpServerRuntime
+The live state of a configured MCP server.
+- server id
+- state: stopped, starting, initializing, running, degraded, failed
+- process id for stdio servers
+- session id for HTTP transports
+- negotiated protocol version
+- negotiated capabilities
+- last error and log tail
+
+### DiscoveredCapability
+The normalized result of `tools/list`, `prompts/list`, and `resources/list`.
+- kind: tool, prompt, resource
+- upstream server id
+- upstream name
+- exposed name
+- title and description
+- input/output schema where available
+- URI or prompt template where applicable
+- capability hash for change detection
+
+### ExposureProfile
+The downstream surface exposed by this runtime.
+- profile id and name
+- instructions / system prompt fragment
+- hosted endpoint: host, port, path, transport
+- capability bindings
+- environment overrides
+
+### CapabilityBinding
+The explicit connection between an upstream capability and a downstream profile.
+- upstream server id
+- capability kind
+- upstream name
+- exposed name
+- namespace strategy: none, server prefix, custom
+- enabled state
+- policy
+
 ## Tool Data Model
+
+Legacy note: tool catalog remains as a normalized capability view, but server registry is the primary model.
 
 ### ToolSource
 Where a tool comes from.
@@ -328,6 +448,16 @@ User control over what is allowed.
 - `stream`
 - `call_tool`
 - `list_tools`
+- `roots`
+- `list_prompts`
+- `list_resources`
+- `get_prompt`
+- `read_resource`
+- `complete`
+- `on_sample`
+- `on_elicit`
+- `on_log`
+- `notify`
 
 ### server
 - `ServerBuilder`
@@ -336,6 +466,10 @@ User control over what is allowed.
 - `ToolRegistry`
 - `ResourceRegistry`
 - `PromptRegistry`
+- `RootsProvider`
+- `LoggingSink`
+- `SamplingHandler`
+- `ElicitationHandler`
 
 ### plugin-sdk
 - `Tool`
@@ -345,13 +479,23 @@ User control over what is allowed.
 
 ### app
 - `ProfileStore`
+- `McpServerStore`
+- `CapabilityCatalog`
+- `ExposureProfileStore`
 - `ToolCatalog`
 - `PolicyManager`
 - `ImportExportService`
+- `McpServerDefinition`
+- `DiscoveredCapability`
+- `ExposureProfile`
+- `CapabilityBinding`
 - `ToolSource`
 - `ToolDescriptor`
 - `Profile`
 - `Policy`
+- `GatewayRuntime`
+- `GatewayRoutingService`
+- `GatewayStatusService`
 
 ### gui
 - `MainFrame`
@@ -409,16 +553,25 @@ User control over what is allowed.
 
 ### Phase 5: app layer
 - define profile and policy storage
+- define MCP server registry
+- define discovered capability catalog
+- define exposure profile store
 - define shared tool catalog services
 - define import / export
 - define one-click tool management workflows
 
-### Phase 6: GUI and CLI
-- add CLI commands
-- add wxWidgets GUI
-- wire both to the shared app layer
+### Phase 6: gateway runtime
+- implement stdio upstream client session
+- implement Streamable HTTP upstream client session
+- implement MCP discovery from upstream servers
+- implement gateway routing from downstream requests to upstream servers
+- implement hosted endpoints per exposure profile
 
-### Phase 7: packaging and tests
+### Phase 7: CLI
+- add CLI commands
+- wire CLI to the shared app layer
+
+### Phase 8: packaging and tests
 - add CLI binary
 - add unit tests
 - add integration tests
@@ -444,8 +597,8 @@ This is not strict TDD for every UI detail. It is strict where correctness matte
 
 ### App layer
 - test profile, policy, catalog, and import/export logic
-- keep GUI and CLI thin
-- no duplicated business logic in GUI or CLI
+- keep CLI thin
+- no duplicated business logic in CLI
 
 ### CLI
 - test command parsing
@@ -453,9 +606,7 @@ This is not strict TDD for every UI detail. It is strict where correctness matte
 - test non-zero exits
 
 ### GUI
-- do not TDD pixel layout
-- test view-model or app-service behavior
-- keep wxWidgets code as thin as possible
+Deferred until the gateway runtime and CLI are stable.
 
 ### Adapter and plugin SDK
 - contract tests first

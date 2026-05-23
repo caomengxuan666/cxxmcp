@@ -50,4 +50,25 @@ core::Result<protocol::JsonRpcResponse> StdioTransport::send(const protocol::Jso
     return protocol::parse_response(line);
 }
 
+core::Result<core::Unit> StdioTransport::send_notification(const protocol::JsonRpcNotification& notification) {
+    if (!output_) {
+        return std::unexpected(make_transport_error(static_cast<int>(protocol::ErrorCode::InternalError),
+                                                    "stdio transport output stream is not configured"));
+    }
+
+    const auto serialized = protocol::serialize_notification(notification);
+    if (!serialized) {
+        return std::unexpected(serialized.error());
+    }
+
+    *output_ << *serialized << '\n';
+    output_->flush();
+    if (!output_->good()) {
+        return std::unexpected(make_transport_error(static_cast<int>(protocol::ErrorCode::InternalError),
+                                                    "failed to write stdio notification"));
+    }
+
+    return core::Unit{};
+}
+
 } // namespace mcp::client

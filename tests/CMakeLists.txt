@@ -1,59 +1,126 @@
-add_executable(mcp_protocol_tests
-    protocol/test_protocol.cpp
-)
+if(TARGET mcp_protocol)
+    add_executable(mcp_protocol_tests
+        protocol/test_protocol.cpp
+    )
 
-target_link_libraries(mcp_protocol_tests PRIVATE mcp_protocol)
+    target_link_libraries(mcp_protocol_tests PRIVATE mcp_protocol)
 
-target_compile_definitions(mcp_protocol_tests PRIVATE
-    MCP_TEST_SOURCE_DIR="${PROJECT_SOURCE_DIR}"
-)
+    target_compile_definitions(mcp_protocol_tests PRIVATE
+        MCP_TEST_SOURCE_DIR="${PROJECT_SOURCE_DIR}"
+    )
 
-add_test(NAME protocol COMMAND mcp_protocol_tests)
+    add_test(NAME protocol COMMAND mcp_protocol_tests)
+endif()
 
-add_executable(mcp_client_server_tests
-    client_server/test_client_server.cpp
-)
+if(TARGET mcp_client AND TARGET mcp_server)
+    add_executable(mcp_client_server_tests
+        client_server/test_client_server.cpp
+    )
 
-target_link_libraries(mcp_client_server_tests PRIVATE mcp_client mcp_server)
+    target_link_libraries(mcp_client_server_tests PRIVATE mcp_client mcp_server)
 
-add_test(NAME client_server COMMAND mcp_client_server_tests)
+    add_test(NAME client_server COMMAND mcp_client_server_tests)
 
-add_executable(mcp_stdio_transport_tests
-    transport/test_stdio_transport.cpp
-)
+    add_executable(mcp_stdio_transport_tests
+        transport/test_stdio_transport.cpp
+    )
 
-target_link_libraries(mcp_stdio_transport_tests PRIVATE mcp_client mcp_server)
+    target_link_libraries(mcp_stdio_transport_tests PRIVATE mcp_client mcp_server)
 
-add_test(NAME stdio_transport COMMAND mcp_stdio_transport_tests)
+    add_test(NAME stdio_transport COMMAND mcp_stdio_transport_tests)
+endif()
 
-add_executable(mcp_app_tests
-    app/test_app.cpp
-)
+if(TARGET mcp_protocol AND (TARGET mcp_client OR TARGET mcp_app OR TARGET mcp_gateway OR TARGET mcp_cli))
+    add_executable(mcp_test_stdio_child
+        fixtures/process_stdio_child.cpp
+    )
 
-target_link_libraries(mcp_app_tests PRIVATE mcp_app)
+    target_link_libraries(mcp_test_stdio_child PRIVATE mcp_protocol)
+endif()
 
-add_test(NAME app COMMAND mcp_app_tests)
+if(TARGET mcp_client AND TARGET mcp_test_stdio_child)
+    add_executable(mcp_process_stdio_transport_tests
+        transport/test_process_stdio_transport.cpp
+    )
 
-add_executable(mcp_cli_tests
-    cli/test_cli.cpp
-)
+    target_link_libraries(mcp_process_stdio_transport_tests PRIVATE mcp_client)
+    target_compile_definitions(mcp_process_stdio_transport_tests PRIVATE
+        MCP_TEST_SOURCE_DIR="${PROJECT_SOURCE_DIR}"
+        MCP_TEST_CHILD_EXE="$<TARGET_FILE:mcp_test_stdio_child>"
+    )
 
-target_link_libraries(mcp_cli_tests PRIVATE mcp_cli)
+    add_dependencies(mcp_process_stdio_transport_tests mcp_test_stdio_child)
 
-add_test(NAME cli COMMAND mcp_cli_tests)
+    add_test(NAME process_stdio_transport COMMAND mcp_process_stdio_transport_tests)
+endif()
 
-add_executable(mcp_gui_tests
-    gui/test_gui_controller.cpp
-)
+if(TARGET mcp_app AND TARGET mcp_gateway)
+    add_executable(mcp_app_tests
+        app/test_app.cpp
+    )
 
-target_link_libraries(mcp_gui_tests PRIVATE mcp_gui)
+    target_link_libraries(mcp_app_tests PRIVATE mcp_app mcp_gateway)
 
-add_test(NAME gui COMMAND mcp_gui_tests)
+    add_test(NAME app COMMAND mcp_app_tests)
+endif()
 
-add_executable(mcp_tool_management_tests
-    app/test_tool_management.cpp
-)
+if(TARGET mcp_app)
+    add_executable(mcp_server_management_tests
+        app/test_server_management.cpp
+    )
 
-target_link_libraries(mcp_tool_management_tests PRIVATE mcp_app)
+    target_link_libraries(mcp_server_management_tests PRIVATE mcp_app)
 
-add_test(NAME tool_management COMMAND mcp_tool_management_tests)
+    add_test(NAME server_management COMMAND mcp_server_management_tests)
+
+    add_executable(mcp_client_discovery_tests
+        app/test_client_discovery.cpp
+    )
+
+    target_link_libraries(mcp_client_discovery_tests PRIVATE mcp_app)
+    if(TARGET mcp_test_stdio_child)
+        target_compile_definitions(mcp_client_discovery_tests PRIVATE
+            MCP_TEST_CHILD_EXE="$<TARGET_FILE:mcp_test_stdio_child>"
+        )
+        add_dependencies(mcp_client_discovery_tests mcp_test_stdio_child)
+    endif()
+
+    add_test(NAME client_discovery COMMAND mcp_client_discovery_tests)
+
+    add_executable(mcp_tool_management_tests
+        app/test_tool_management.cpp
+    )
+
+    target_link_libraries(mcp_tool_management_tests PRIVATE mcp_app)
+
+    add_test(NAME tool_management COMMAND mcp_tool_management_tests)
+endif()
+
+if(TARGET mcp_gateway AND TARGET mcp_test_stdio_child)
+    add_executable(mcp_gateway_tests
+        app/test_gateway.cpp
+    )
+
+    target_link_libraries(mcp_gateway_tests PRIVATE mcp_gateway)
+    target_compile_definitions(mcp_gateway_tests PRIVATE
+        MCP_TEST_CHILD_EXE="$<TARGET_FILE:mcp_test_stdio_child>"
+    )
+    add_dependencies(mcp_gateway_tests mcp_test_stdio_child)
+
+    add_test(NAME gateway COMMAND mcp_gateway_tests)
+endif()
+
+if(TARGET mcp_cli AND TARGET mcp_cli_app AND TARGET mcp_test_stdio_child)
+    add_executable(mcp_cli_tests
+        cli/test_cli.cpp
+    )
+
+    target_link_libraries(mcp_cli_tests PRIVATE mcp_cli)
+    target_compile_definitions(mcp_cli_tests PRIVATE
+        MCP_TEST_CLI_EXE="$<TARGET_FILE:mcp_cli_app>"
+        MCP_TEST_CHILD_EXE="$<TARGET_FILE:mcp_test_stdio_child>"
+    )
+    add_dependencies(mcp_cli_tests mcp_cli_app mcp_test_stdio_child)
+
+    add_test(NAME cli COMMAND mcp_cli_tests)
+endif()

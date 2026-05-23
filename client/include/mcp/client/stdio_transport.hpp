@@ -12,6 +12,7 @@ public:
     StdioTransport(std::istream& input, std::ostream& output);
 
     core::Result<protocol::JsonRpcResponse> send(const protocol::JsonRpcRequest& request) override;
+    core::Result<core::Unit> send_notification(const protocol::JsonRpcNotification& notification) override;
 
 private:
     std::istream* input_;

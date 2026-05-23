@@ -1,6 +1,7 @@
 #pragma once
 
 #include "mcp/app/import_export.hpp"
+#include "mcp/app/mcp_server.hpp"
 #include "mcp/app/prompt_catalog.hpp"
 #include "mcp/app/profile.hpp"
 #include "mcp/app/resource_catalog.hpp"
@@ -20,6 +21,45 @@ public:
 
 private:
     std::vector<Profile> profiles_;
+};
+
+class MemoryMcpServerStore final : public McpServerStore {
+public:
+    MemoryMcpServerStore() = default;
+    explicit MemoryMcpServerStore(std::vector<McpServerDefinition> servers);
+
+    std::vector<McpServerDefinition> list_servers() const override;
+    core::Result<core::Unit> save(McpServerDefinition server) override;
+    core::Result<core::Unit> remove(std::string_view server_id) override;
+
+private:
+    std::vector<McpServerDefinition> servers_;
+};
+
+class MemoryCapabilityCatalog final : public CapabilityCatalog {
+public:
+    MemoryCapabilityCatalog() = default;
+    explicit MemoryCapabilityCatalog(std::vector<DiscoveredCapability> capabilities);
+
+    std::vector<DiscoveredCapability> list_capabilities() const override;
+    core::Result<core::Unit> replace_for_server(std::string server_id,
+                                                std::vector<DiscoveredCapability> capabilities) override;
+
+private:
+    std::vector<DiscoveredCapability> capabilities_;
+};
+
+class MemoryExposureProfileStore final : public ExposureProfileStore {
+public:
+    MemoryExposureProfileStore() = default;
+    explicit MemoryExposureProfileStore(std::vector<ExposureProfile> profiles);
+
+    std::vector<ExposureProfile> list_exposure_profiles() const override;
+    core::Result<core::Unit> save(ExposureProfile profile) override;
+    core::Result<core::Unit> remove(std::string_view profile_id) override;
+
+private:
+    std::vector<ExposureProfile> profiles_;
 };
 
 class MemoryToolCatalog final : public ToolCatalog {

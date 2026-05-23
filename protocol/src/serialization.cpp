@@ -131,27 +131,31 @@ JsonRpcResponse make_error_response(std::optional<RequestId> id, ErrorObject err
     return response;
 }
 
-JsonRpcRequest make_initialize_request(RequestId id, Json params) {
+JsonRpcRequest make_request(std::string method, RequestId id, Json params) {
     JsonRpcRequest request;
-    request.method = std::string(InitializeMethod);
+    request.method = std::move(method);
     request.params = std::move(params);
     request.id = std::move(id);
     return request;
 }
 
-JsonRpcNotification make_initialized_notification(Json params) {
+JsonRpcNotification make_notification(std::string method, Json params) {
     JsonRpcNotification notification;
-    notification.method = std::string(InitializedMethod);
+    notification.method = std::move(method);
     notification.params = std::move(params);
     return notification;
 }
 
+JsonRpcRequest make_initialize_request(RequestId id, Json params) {
+    return make_request(std::string(InitializeMethod), std::move(id), std::move(params));
+}
+
+JsonRpcNotification make_initialized_notification(Json params) {
+    return make_notification(std::string(InitializedMethod), std::move(params));
+}
+
 JsonRpcRequest make_ping_request(RequestId id, Json params) {
-    JsonRpcRequest request;
-    request.method = std::string(PingMethod);
-    request.params = std::move(params);
-    request.id = std::move(id);
-    return request;
+    return make_request(std::string(PingMethod), std::move(id), std::move(params));
 }
 
 core::Result<JsonRpcMessage> parse_message(std::string_view text) {

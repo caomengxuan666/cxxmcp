@@ -42,6 +42,129 @@ core::Result<core::Unit> MemoryProfileStore::save(Profile profile) {
     return core::Unit{};
 }
 
+MemoryMcpServerStore::MemoryMcpServerStore(std::vector<McpServerDefinition> servers)
+    : servers_(std::move(servers)) {}
+
+std::vector<McpServerDefinition> MemoryMcpServerStore::list_servers() const {
+    return servers_;
+}
+
+core::Result<core::Unit> MemoryMcpServerStore::save(McpServerDefinition server) {
+    if (server.id.empty()) {
+        return std::unexpected(make_app_error("mcp server id must not be empty"));
+    }
+    if (server.name.empty()) {
+        return std::unexpected(make_app_error("mcp server name must not be empty"));
+    }
+    if (server.transport == McpServerTransportKind::stdio && server.stdio.command.empty()) {
+        return std::unexpected(make_app_error("stdio mcp server command must not be empty"));
+    }
+    if ((server.transport == McpServerTransportKind::streamable_http ||
+         server.transport == McpServerTransportKind::legacy_sse) &&
+        server.http.url.empty()) {
+        return std::unexpected(make_app_error("http mcp server url must not be empty"));
+    }
+
+    const auto it = std::find_if(servers_.begin(), servers_.end(), [&](const auto& existing) {
+        return existing.id == server.id;
+    });
+    if (it == servers_.end()) {
+        servers_.push_back(std::move(server));
+    } else {
+        *it = std::move(server);
+    }
+
+    return core::Unit{};
+}
+
+core::Result<core::Unit> MemoryMcpServerStore::remove(std::string_view server_id) {
+    const auto original_size = servers_.size();
+    servers_.erase(std::remove_if(servers_.begin(),
+                                  servers_.end(),
+                                  [&](const auto& existing) {
+                                      return existing.id == server_id;
+                                  }),
+                   servers_.end());
+    if (servers_.size() == original_size) {
+        return std::unexpected(make_app_error("mcp server not found", std::string(server_id)));
+    }
+    return core::Unit{};
+}
+
+MemoryCapabilityCatalog::MemoryCapabilityCatalog(std::vector<DiscoveredCapability> capabilities)
+    : capabilities_(std::move(capabilities)) {}
+
+std::vector<DiscoveredCapability> MemoryCapabilityCatalog::list_capabilities() const {
+    return capabilities_;
+}
+
+core::Result<core::Unit> MemoryCapabilityCatalog::replace_for_server(
+        std::string server_id,
+        std::vector<DiscoveredCapability> capabilities) {
+    if (server_id.empty()) {
+        return std::unexpected(make_app_error("capability server id must not be empty"));
+    }
+
+    capabilities_.erase(std::remove_if(capabilities_.begin(),
+                                       capabilities_.end(),
+                                       [&](const auto& existing) {
+                                           return existing.server_id == server_id;
+                                       }),
+                        capabilities_.end());
+
+    for (auto& capability : capabilities) {
+        if (capability.id.empty()) {
+            return std::unexpected(make_app_error("capability id must not be empty"));
+        }
+        capability.server_id = server_id;
+        capabilities_.push_back(std::move(capability));
+    }
+
+    return core::Unit{};
+}
+
+MemoryExposureProfileStore::MemoryExposureProfileStore(std::vector<ExposureProfile> profiles)
+    : profiles_(std::move(profiles)) {}
+
+std::vector<ExposureProfile> MemoryExposureProfileStore::list_exposure_profiles() const {
+    return profiles_;
+}
+
+core::Result<core::Unit> MemoryExposureProfileStore::save(ExposureProfile profile) {
+    if (profile.id.empty()) {
+        return std::unexpected(make_app_error("exposure profile id must not be empty"));
+    }
+    if (profile.name.empty()) {
+        return std::unexpected(make_app_error("exposure profile name must not be empty"));
+    }
+
+    const auto it = std::find_if(profiles_.begin(), profiles_.end(), [&](const auto& existing) {
+        return existing.id == profile.id;
+    });
+    if (it == profiles_.end()) {
+        profiles_.push_back(std::move(profile));
+    } else {
+        *it = std::move(profile);
+    }
+
+    return core::Unit{};
+}
+
+core::Result<core::Unit> MemoryExposureProfileStore::remove(std::string_view profile_id) {
+    const auto original_size = profiles_.size();
+    profiles_.erase(std::remove_if(profiles_.begin(),
+                                   profiles_.end(),
+                                   [&](const auto& profile) {
+                                       return profile.id == profile_id;
+                                   }),
+                    profiles_.end());
+    if (profiles_.size() == original_size) {
+        return std::unexpected(make_app_error("exposure profile not found", std::string(profile_id)));
+    }
+
+    return core::Unit{};
+}
+
 MemoryToolCatalog::MemoryToolCatalog(std::vector<ToolDescriptor> tools)
     : tools_(std::move(tools)) {}
 

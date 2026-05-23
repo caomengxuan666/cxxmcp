@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.23)
 
-project(MCPServerCpp
+project(cxxmcp
     VERSION 2.0.0
     LANGUAGES CXX
 )
@@ -10,10 +10,46 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 set(BUILD_SHARED_LIBS OFF CACHE BOOL "Build static libraries by default" FORCE)
 
+include(CTest)
+
+option(MCP_BUILD_PROTOCOL "Build the MCP protocol library" ON)
+option(MCP_BUILD_CLIENT "Build the MCP client library" OFF)
+option(MCP_BUILD_SERVER "Build the MCP server library" OFF)
+option(MCP_BUILD_APP "Build the application service library" OFF)
+option(MCP_BUILD_GATEWAY "Build the gateway service library" OFF)
+option(MCP_BUILD_CLI "Build the command-line application" OFF)
+option(MCP_BUILD_EXAMPLES "Build example executables" OFF)
+option(MCP_BUILD_TESTS "Build tests for enabled layers" ${BUILD_TESTING})
+
+unset(MCP_BUILD_GUI CACHE)
+
+set(MCP_ENABLE_PROTOCOL ${MCP_BUILD_PROTOCOL})
+set(MCP_ENABLE_CLIENT ${MCP_BUILD_CLIENT})
+set(MCP_ENABLE_SERVER ${MCP_BUILD_SERVER})
+set(MCP_ENABLE_APP ${MCP_BUILD_APP})
+set(MCP_ENABLE_GATEWAY ${MCP_BUILD_GATEWAY})
+set(MCP_ENABLE_CLI ${MCP_BUILD_CLI})
+
+if(MCP_BUILD_CLI)
+    set(MCP_ENABLE_GATEWAY ON)
+endif()
+
+if(MCP_ENABLE_GATEWAY)
+    set(MCP_ENABLE_APP ON)
+    set(MCP_ENABLE_SERVER ON)
+endif()
+
+if(MCP_ENABLE_APP)
+    set(MCP_ENABLE_CLIENT ON)
+endif()
+
+if(MCP_ENABLE_CLIENT OR MCP_ENABLE_SERVER OR MCP_ENABLE_APP OR MCP_ENABLE_GATEWAY OR MCP_ENABLE_CLI)
+    set(MCP_ENABLE_PROTOCOL ON)
+endif()
+
 if(MSVC)
     set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>" CACHE STRING
         "Use the static MSVC runtime" FORCE)
-    set(wxBUILD_USE_STATIC_RUNTIME ON CACHE BOOL "Link using the static runtime library" FORCE)
 endif()
 
 add_library(mcp_core INTERFACE)
@@ -25,103 +61,104 @@ target_include_directories(jsonrpcpp INTERFACE
     third_party
 )
 
-add_library(mcp_protocol STATIC)
-target_sources(mcp_protocol PRIVATE protocol/src/serialization.cpp)
-target_include_directories(mcp_protocol PUBLIC
-    protocol/include
-    ${CMAKE_CURRENT_SOURCE_DIR}/third_party
+add_library(cpp_httplib INTERFACE)
+target_include_directories(cpp_httplib INTERFACE
+    third_party/httplib
 )
-target_link_libraries(mcp_protocol PUBLIC mcp_core jsonrpcpp)
 
-add_library(mcp_client STATIC
-    client/src/client.cpp
-    client/src/stdio_transport.cpp
-)
-target_include_directories(mcp_client PUBLIC client/include)
-target_link_libraries(mcp_client PUBLIC mcp_core mcp_protocol)
+if(MCP_ENABLE_PROTOCOL)
+    add_library(mcp_protocol STATIC)
+    target_sources(mcp_protocol PRIVATE protocol/src/serialization.cpp)
+    target_include_directories(mcp_protocol PUBLIC
+        protocol/include
+        ${CMAKE_CURRENT_SOURCE_DIR}/third_party
+    )
+    target_link_libraries(mcp_protocol PUBLIC mcp_core jsonrpcpp)
+endif()
 
-add_library(mcp_server STATIC
-    server/src/registry.cpp
-    server/src/server.cpp
-    server/src/stdio_transport.cpp
-)
-target_include_directories(mcp_server PUBLIC server/include)
-target_link_libraries(mcp_server PUBLIC mcp_core mcp_protocol)
+if(MCP_ENABLE_CLIENT)
+    add_library(mcp_client STATIC
+        client/src/client.cpp
+        client/src/http_transport.cpp
+        client/src/process_stdio_transport.cpp
+        client/src/stdio_transport.cpp
+    )
+    target_include_directories(mcp_client PUBLIC client/include)
+    target_link_libraries(mcp_client PUBLIC mcp_core mcp_protocol cpp_httplib)
+endif()
 
-add_library(mcp_plugin_sdk INTERFACE)
-target_include_directories(mcp_plugin_sdk INTERFACE plugin-sdk/include)
-target_link_libraries(mcp_plugin_sdk INTERFACE mcp_core mcp_protocol)
+if(MCP_ENABLE_SERVER)
+    add_library(mcp_server STATIC
+        server/src/http_transport.cpp
+        server/src/registry.cpp
+        server/src/server.cpp
+        server/src/stdio_transport.cpp
+    )
+    target_include_directories(mcp_server PUBLIC server/include)
+    target_link_libraries(mcp_server PUBLIC mcp_core mcp_protocol cpp_httplib)
+endif()
 
-add_library(mcp_adapters INTERFACE)
-target_include_directories(mcp_adapters INTERFACE adapters/include)
-target_link_libraries(mcp_adapters INTERFACE mcp_core mcp_protocol mcp_server mcp_plugin_sdk)
+if(TARGET mcp_protocol)
+    add_library(mcp_plugin_sdk INTERFACE)
+    target_include_directories(mcp_plugin_sdk INTERFACE plugin-sdk/include)
+    target_link_libraries(mcp_plugin_sdk INTERFACE mcp_core mcp_protocol)
+endif()
+
+if(TARGET mcp_server AND TARGET mcp_plugin_sdk)
+    add_library(mcp_adapters INTERFACE)
+    target_include_directories(mcp_adapters INTERFACE adapters/include)
+    target_link_libraries(mcp_adapters INTERFACE mcp_core mcp_protocol mcp_server mcp_plugin_sdk)
+endif()
 
 add_library(mcp_observability INTERFACE)
 target_include_directories(mcp_observability INTERFACE observability/include)
 
-set(wxBUILD_SHARED OFF CACHE BOOL "Build wx libraries as shared libs" FORCE)
-set(wxBUILD_MONOLITHIC OFF CACHE BOOL "Build wxWidgets as separate static libraries" FORCE)
-set(wxBUILD_SAMPLES OFF CACHE STRING "Disable wxWidgets samples" FORCE)
-set(wxBUILD_TESTS OFF CACHE STRING "Disable wxWidgets tests" FORCE)
-set(wxBUILD_DEMOS OFF CACHE BOOL "Disable wxWidgets demos" FORCE)
-set(wxBUILD_BENCHMARKS OFF CACHE BOOL "Disable wxWidgets benchmarks" FORCE)
-set(wxBUILD_INSTALL OFF CACHE BOOL "Disable wxWidgets install targets" FORCE)
-set(wxBUILD_LOCALES OFF CACHE STRING "Disable wxWidgets locales" FORCE)
-set(wxUSE_HTML OFF CACHE BOOL "Disable wxHTML" FORCE)
-set(wxUSE_AUI OFF CACHE BOOL "Disable wxAUI" FORCE)
-set(wxUSE_RIBBON OFF CACHE BOOL "Disable wxRibbon" FORCE)
-set(wxUSE_STC OFF CACHE BOOL "Disable wxStyledTextCtrl" FORCE)
-set(wxUSE_MEDIACTRL OFF CACHE BOOL "Disable wxMediaCtrl" FORCE)
-set(wxUSE_WEBVIEW ON CACHE BOOL "Enable wxWebView" FORCE)
-set(wxUSE_WEBVIEW_EDGE ON CACHE BOOL "Enable wxWebView Edge backend" FORCE)
-set(wxUSE_OPENGL OFF CACHE BOOL "Disable wxOpenGL" FORCE)
-set(wxUSE_HELP OFF CACHE BOOL "Disable wxHelp" FORCE)
-set(wxUSE_WXHTML_HELP OFF CACHE BOOL "Disable wxHTML help" FORCE)
-set(wxUSE_MS_HTML_HELP OFF CACHE BOOL "Disable MS HTML help" FORCE)
-set(wxUSE_ARTPROVIDER_TANGO OFF CACHE BOOL "Disable Tango art provider" FORCE)
-set(wxUSE_RICHTEXT OFF CACHE BOOL "Disable wxRichTextCtrl" FORCE)
-set(wxUSE_SVG OFF CACHE BOOL "Disable wxSVG" FORCE)
-set(wxUSE_REGEX OFF CACHE STRING "Disable wxRegEx" FORCE)
-set(wxUSE_ZLIB OFF CACHE STRING "Disable wxZlib" FORCE)
-set(wxUSE_EXPAT OFF CACHE STRING "Disable wxExpat" FORCE)
-set(wxUSE_LIBJPEG OFF CACHE STRING "Disable wxJPEG" FORCE)
-set(wxUSE_LIBPNG OFF CACHE STRING "Disable wxPNG" FORCE)
-set(wxUSE_LIBTIFF OFF CACHE STRING "Disable wxTIFF" FORCE)
-set(wxUSE_LIBWEBP OFF CACHE STRING "Disable wxWebP" FORCE)
-set(wxUSE_NANOSVG OFF CACHE STRING "Disable wxNanoSVG" FORCE)
-set(wxUSE_LUNASVG OFF CACHE STRING "Disable wxLunaSVG" FORCE)
+if(MCP_ENABLE_APP)
+    add_library(mcp_app STATIC
+        app/src/client_discovery.cpp
+        app/src/exposure_management.cpp
+        app/src/file_stores.cpp
+        app/src/serialization.cpp
+        app/src/upstream_client.cpp
+        app/src/server_management.cpp
+        app/src/services.cpp
+        app/src/tool_management.cpp
+    )
+    target_include_directories(mcp_app PUBLIC app/include)
+    target_link_libraries(mcp_app PUBLIC mcp_core mcp_protocol mcp_client)
+endif()
 
-add_subdirectory(third_party/wxWidgets EXCLUDE_FROM_ALL)
+if(MCP_ENABLE_GATEWAY)
+    add_library(mcp_gateway STATIC
+        app/src/client_config.cpp
+        app/src/gateway.cpp
+        app/src/gateway_public.cpp
+        app/src/gateway_onboarding.cpp
+        app/src/gateway_runtime.cpp
+    )
+    target_include_directories(mcp_gateway PUBLIC app/include)
+    target_link_libraries(mcp_gateway PUBLIC mcp_core mcp_app mcp_client mcp_server)
+endif()
 
-add_library(mcp_app STATIC
-    app/src/serialization.cpp
-    app/src/services.cpp
-    app/src/tool_management.cpp
-)
-target_include_directories(mcp_app PUBLIC app/include)
-target_link_libraries(mcp_app PUBLIC mcp_core mcp_protocol)
+if(MCP_ENABLE_CLI)
+    add_library(mcp_cli STATIC
+        cli/src/commands.cpp
+    )
+    target_include_directories(mcp_cli PUBLIC cli/include)
+    target_link_libraries(mcp_cli PUBLIC mcp_core mcp_app mcp_gateway mcp_client mcp_server mcp_plugin_sdk)
 
-add_library(mcp_cli STATIC
-    cli/src/commands.cpp
-)
-target_include_directories(mcp_cli PUBLIC cli/include)
-target_link_libraries(mcp_cli PUBLIC mcp_core mcp_app mcp_client mcp_server mcp_plugin_sdk)
+    add_executable(mcp_cli_app
+        cli/src/main.cpp
+    )
+    target_link_libraries(mcp_cli_app PRIVATE mcp_cli)
+    target_compile_definitions(mcp_cli_app PRIVATE MCP_PROJECT_VERSION="${PROJECT_VERSION}")
+    set_target_properties(mcp_cli_app PROPERTIES OUTPUT_NAME cxxmcp)
+endif()
 
-add_library(mcp_gui STATIC
-    gui/src/app.cpp
-    gui/src/controller.cpp
-    gui/src/dashboard.cpp
-)
-target_include_directories(mcp_gui PUBLIC gui/include)
-target_link_libraries(mcp_gui PUBLIC mcp_core mcp_app mcp_client wx::core wxwebview)
-
-add_executable(mcp_gui_app
-    gui/src/main.cpp
-)
-target_link_libraries(mcp_gui_app PRIVATE mcp_gui)
-
-include(CTest)
-
-if(BUILD_TESTING)
+if(MCP_BUILD_TESTS)
     add_subdirectory(tests)
+endif()
+
+if(MCP_BUILD_EXAMPLES)
+    add_subdirectory(examples)
 endif()

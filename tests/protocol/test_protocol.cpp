@@ -1,4 +1,10 @@
 #include "mcp/protocol/serialization.hpp"
+#include "mcp/protocol/completion.hpp"
+#include "mcp/protocol/logging.hpp"
+#include "mcp/protocol/prompt.hpp"
+#include "mcp/protocol/resource.hpp"
+#include "mcp/protocol/roots.hpp"
+#include "mcp/protocol/sampling.hpp"
 
 #include <filesystem>
 #include <fstream>
@@ -81,11 +87,16 @@ void test_initialized_notification_round_trip() {
     const auto* notification = std::get_if<JsonRpcNotification>(&*parsed);
     require(notification != nullptr, "initialized message should be a notification");
     require(notification->method == mcp::protocol::InitializedMethod, "initialized method mismatch");
+    require(notification->method == "notifications/initialized", "initialized notification must use MCP method name");
+    require(notification->method != "initialized", "initialized notification must not use legacy method name");
 
     const auto serialized = mcp::protocol::serialize_message(*parsed);
     require(serialized.has_value(), "initialized notification should serialize");
     expect_serialized_json_eq(*serialized, load_fixture_json("initialized.notification.json"),
                               "initialized notification round-trip mismatch");
+
+    const auto constructed = mcp::protocol::make_initialized_notification();
+    require(constructed.method == "notifications/initialized", "constructed initialized method mismatch");
 }
 
 void test_ping_request_round_trip() {
@@ -125,6 +136,309 @@ void test_response_round_trips() {
     require(response->error->message == "boom", "error message mismatch");
 }
 
+void test_tool_protocol_round_trips() {
+    require(mcp::protocol::ToolsListMethod == "tools/list", "tools/list method mismatch");
+    require(mcp::protocol::ToolsCallMethod == "tools/call", "tools/call method mismatch");
+
+    const mcp::protocol::ToolsListResult list{
+        .tools = {
+            mcp::protocol::ToolDefinition{
+                .name = "echo",
+                .description = "Echo text",
+                .input_schema = Json{{"type", "object"}},
+                .streaming = true,
+            },
+        },
+        .next_cursor = std::string("cursor-tools"),
+    };
+    const auto list_json = mcp::protocol::tools_list_result_to_json(list);
+    const auto parsed_list = mcp::protocol::tools_list_result_from_json(list_json);
+    require(parsed_list.has_value(), "tools/list result should parse");
+    require(parsed_list->tools.front().name == "echo", "tool name mismatch");
+    require(parsed_list->tools.front().streaming, "tool streaming mismatch");
+
+    const mcp::protocol::ToolCall call{
+        .name = "echo",
+        .arguments = Json{{"value", "hello"}},
+    };
+    const auto call_json = mcp::protocol::tool_call_to_json(call);
+    const auto parsed_call = mcp::protocol::tool_call_from_json(call_json);
+    require(parsed_call.has_value(), "tools/call params should parse");
+    require(parsed_call->arguments.at("value") == "hello", "tool call argument mismatch");
+
+    const mcp::protocol::ToolResult result{
+        .content = {mcp::protocol::ContentBlock{.type = "text", .text = "hello"}},
+        .structured_content = Json{{"value", "hello"}},
+    };
+    const auto result_json = mcp::protocol::tool_result_to_json(result);
+    const auto parsed_result = mcp::protocol::tool_result_from_json(result_json);
+    require(parsed_result.has_value(), "tools/call result should parse");
+    require(parsed_result->content.front().text == "hello", "tool result content mismatch");
+    require(parsed_result->structured_content->at("value") == "hello", "tool structured content mismatch");
+}
+
+void test_prompt_protocol_round_trips() {
+    require(mcp::protocol::PromptsListMethod == "prompts/list", "prompts/list method mismatch");
+    require(mcp::protocol::PromptsGetMethod == "prompts/get", "prompts/get method mismatch");
+
+    const mcp::protocol::PromptsListResult list{
+        .prompts = {
+            mcp::protocol::Prompt{
+                .name = "summarize",
+                .description = "Summarize input",
+                .arguments = {
+                    mcp::protocol::PromptArgument{
+                        .name = "text",
+                        .description = "Input text",
+                        .required = true,
+                    },
+                },
+            },
+        },
+        .next_cursor = std::string("cursor-1"),
+    };
+    const auto list_json = mcp::protocol::prompts_list_result_to_json(list);
+    const auto parsed_list = mcp::protocol::prompts_list_result_from_json(list_json);
+    require(parsed_list.has_value(), "prompts/list result should parse");
+    require(parsed_list->prompts.size() == 1, "prompts/list size mismatch");
+    require(parsed_list->prompts.front().name == "summarize", "prompt name mismatch");
+    require(parsed_list->prompts.front().arguments.front().required, "prompt argument required mismatch");
+    require(parsed_list->next_cursor == "cursor-1", "prompts/list cursor mismatch");
+    require(mcp::protocol::prompts_list_result_to_json(*parsed_list) == list_json, "prompts/list round-trip mismatch");
+
+    const mcp::protocol::PromptsGetParams params{
+        .name = "summarize",
+        .arguments = Json{{"text", "hello"}},
+    };
+    const auto params_json = mcp::protocol::prompts_get_params_to_json(params);
+    const auto parsed_params = mcp::protocol::prompts_get_params_from_json(params_json);
+    require(parsed_params.has_value(), "prompts/get params should parse");
+    require(parsed_params->name == "summarize", "prompts/get params name mismatch");
+    require(parsed_params->arguments.at("text") == "hello", "prompts/get params argument mismatch");
+
+    const mcp::protocol::PromptsGetResult get{
+        .description = "Summarize input",
+        .messages = {
+            mcp::protocol::PromptMessage{
+                .role = "user",
+                .content = mcp::protocol::ContentBlock{.type = "text", .text = "Summarize {{text}}"},
+            },
+        },
+    };
+    const auto get_json = mcp::protocol::prompts_get_result_to_json(get);
+    const auto parsed_get = mcp::protocol::prompts_get_result_from_json(get_json);
+    require(parsed_get.has_value(), "prompts/get result should parse");
+    require(parsed_get->messages.size() == 1, "prompts/get message size mismatch");
+    require(parsed_get->messages.front().role == "user", "prompts/get role mismatch");
+    require(parsed_get->messages.front().content.text == "Summarize {{text}}", "prompts/get content mismatch");
+    require(mcp::protocol::prompts_get_result_to_json(*parsed_get) == get_json, "prompts/get result round-trip mismatch");
+}
+
+void test_resource_protocol_round_trips() {
+    require(mcp::protocol::ResourcesListMethod == "resources/list", "resources/list method mismatch");
+    require(mcp::protocol::ResourcesReadMethod == "resources/read", "resources/read method mismatch");
+    require(mcp::protocol::ResourcesTemplatesListMethod == "resources/templates/list",
+            "resources/templates/list method mismatch");
+    require(mcp::protocol::ResourcesSubscribeMethod == "resources/subscribe", "resources/subscribe method mismatch");
+    require(mcp::protocol::ResourcesUnsubscribeMethod == "resources/unsubscribe",
+            "resources/unsubscribe method mismatch");
+
+    const mcp::protocol::ResourcesListResult list{
+        .resources = {
+            mcp::protocol::Resource{
+                .uri = "file:///tmp/readme.txt",
+                .name = "readme",
+                .description = "Readme",
+                .mime_type = "text/plain",
+            },
+        },
+        .next_cursor = std::string("cursor-2"),
+    };
+    const auto list_json = mcp::protocol::resources_list_result_to_json(list);
+    const auto parsed_list = mcp::protocol::resources_list_result_from_json(list_json);
+    require(parsed_list.has_value(), "resources/list result should parse");
+    require(parsed_list->resources.size() == 1, "resources/list size mismatch");
+    require(parsed_list->resources.front().uri == "file:///tmp/readme.txt", "resource uri mismatch");
+    require(parsed_list->resources.front().mime_type == "text/plain", "resource mime type mismatch");
+    require(parsed_list->next_cursor == "cursor-2", "resources/list cursor mismatch");
+    require(mcp::protocol::resources_list_result_to_json(*parsed_list) == list_json, "resources/list round-trip mismatch");
+
+    const mcp::protocol::ResourcesReadParams params{.uri = "file:///tmp/readme.txt"};
+    const auto params_json = mcp::protocol::resources_read_params_to_json(params);
+    const auto parsed_params = mcp::protocol::resources_read_params_from_json(params_json);
+    require(parsed_params.has_value(), "resources/read params should parse");
+    require(parsed_params->uri == "file:///tmp/readme.txt", "resources/read params uri mismatch");
+
+    const mcp::protocol::ResourcesReadResult read{
+        .contents = {
+            mcp::protocol::ResourceContents{
+                .uri = "file:///tmp/readme.txt",
+                .mime_type = "text/plain",
+                .text = std::string("hello"),
+            },
+        },
+    };
+    const auto read_json = mcp::protocol::resources_read_result_to_json(read);
+    const auto parsed_read = mcp::protocol::resources_read_result_from_json(read_json);
+    require(parsed_read.has_value(), "resources/read result should parse");
+    require(parsed_read->contents.size() == 1, "resources/read contents size mismatch");
+    require(parsed_read->contents.front().text == "hello", "resources/read text mismatch");
+    require(mcp::protocol::resources_read_result_to_json(*parsed_read) == read_json, "resources/read round-trip mismatch");
+
+    const mcp::protocol::ResourceTemplatesListResult templates{
+        .resource_templates = {
+            mcp::protocol::ResourceTemplate{
+                .uri_template = "file:///tmp/{name}.txt",
+                .name = "tmp file",
+                .description = "Templated tmp file",
+                .mime_type = "text/plain",
+            },
+        },
+        .next_cursor = std::string("cursor-3"),
+    };
+    const auto templates_json = mcp::protocol::resource_templates_list_result_to_json(templates);
+    const auto parsed_templates = mcp::protocol::resource_templates_list_result_from_json(templates_json);
+    require(parsed_templates.has_value(), "resources/templates/list result should parse");
+    require(parsed_templates->resource_templates.size() == 1, "resource template size mismatch");
+    require(parsed_templates->resource_templates.front().uri_template == "file:///tmp/{name}.txt",
+            "resource template uriTemplate mismatch");
+    require(mcp::protocol::resource_templates_list_result_to_json(*parsed_templates) == templates_json,
+            "resources/templates/list round-trip mismatch");
+
+    const mcp::protocol::ResourcesSubscribeParams subscribe{.uri = "file:///tmp/readme.txt"};
+    const auto subscribe_json = mcp::protocol::resources_subscribe_params_to_json(subscribe);
+    const auto parsed_subscribe = mcp::protocol::resources_subscribe_params_from_json(subscribe_json);
+    require(parsed_subscribe.has_value(), "resources/subscribe params should parse");
+    require(parsed_subscribe->uri == "file:///tmp/readme.txt", "resources/subscribe uri mismatch");
+}
+
+void test_roots_completion_logging_sampling_round_trips() {
+    require(mcp::protocol::RootsListMethod == "roots/list", "roots/list method mismatch");
+    require(mcp::protocol::CompletionCompleteMethod == "completion/complete", "completion/complete method mismatch");
+    require(mcp::protocol::LoggingSetLevelMethod == "logging/setLevel", "logging/setLevel method mismatch");
+    require(mcp::protocol::SamplingCreateMessageMethod == "sampling/createMessage",
+            "sampling/createMessage method mismatch");
+
+    const mcp::protocol::RootsListResult roots{
+        .roots = {mcp::protocol::Root{.uri = "file:///workspace", .name = "workspace"}},
+    };
+    const auto roots_json = mcp::protocol::roots_list_result_to_json(roots);
+    const auto parsed_roots = mcp::protocol::roots_list_result_from_json(roots_json);
+    require(parsed_roots.has_value(), "roots/list result should parse");
+    require(parsed_roots->roots.front().name == "workspace", "root name mismatch");
+
+    const mcp::protocol::CompleteParams complete{
+        .ref = mcp::protocol::CompletionReference{.type = "ref/prompt", .name = "summarize"},
+        .argument = mcp::protocol::CompletionArgument{.name = "text", .value = "he"},
+        .context = Json{{"arguments", Json{{"other", "value"}}}},
+    };
+    const auto complete_json = mcp::protocol::complete_params_to_json(complete);
+    const auto parsed_complete = mcp::protocol::complete_params_from_json(complete_json);
+    require(parsed_complete.has_value(), "completion params should parse");
+    require(parsed_complete->argument.value == "he", "completion argument mismatch");
+
+    const mcp::protocol::CompleteResult complete_result{
+        .completion = mcp::protocol::CompletionResult{
+            .values = {"hello", "help"},
+            .total = 2,
+            .has_more = false,
+        },
+    };
+    const auto complete_result_json = mcp::protocol::complete_result_to_json(complete_result);
+    const auto parsed_complete_result = mcp::protocol::complete_result_from_json(complete_result_json);
+    require(parsed_complete_result.has_value(), "completion result should parse");
+    require(parsed_complete_result->completion.values.size() == 2, "completion values mismatch");
+
+    const mcp::protocol::LoggingSetLevelParams log_level{.level = mcp::protocol::LoggingLevel::Warning};
+    const auto log_level_json = mcp::protocol::logging_set_level_params_to_json(log_level);
+    const auto parsed_log_level = mcp::protocol::logging_set_level_params_from_json(log_level_json);
+    require(parsed_log_level.has_value(), "logging/setLevel params should parse");
+    require(parsed_log_level->level == mcp::protocol::LoggingLevel::Warning, "logging level mismatch");
+
+    const mcp::protocol::CreateMessageParams sample{
+        .messages = {
+            mcp::protocol::SamplingMessage{
+                .role = "user",
+                .content = mcp::protocol::ContentBlock{.type = "text", .text = "hello"},
+            },
+        },
+        .model_preferences = mcp::protocol::ModelPreferences{
+            .hints = {mcp::protocol::ModelHint{.name = "fast-model"}},
+            .speed_priority = 0.8,
+        },
+        .system_prompt = std::string("be concise"),
+        .include_context = std::string("thisServer"),
+        .temperature = 0.2,
+        .max_tokens = 128,
+        .stop_sequences = {"stop"},
+        .metadata = Json{{"trace", "abc"}},
+    };
+    const auto sample_json = mcp::protocol::create_message_params_to_json(sample);
+    const auto parsed_sample = mcp::protocol::create_message_params_from_json(sample_json);
+    require(parsed_sample.has_value(), "sampling/createMessage params should parse");
+    require(parsed_sample->messages.front().content.text == "hello", "sampling message mismatch");
+    require(parsed_sample->model_preferences->hints.front().name == "fast-model", "sampling model hint mismatch");
+
+    const mcp::protocol::CreateMessageResult sample_result{
+        .role = "assistant",
+        .content = mcp::protocol::ContentBlock{.type = "text", .text = "hi"},
+        .model = "fast-model",
+        .stop_reason = "endTurn",
+    };
+    const auto sample_result_json = mcp::protocol::create_message_result_to_json(sample_result);
+    const auto parsed_sample_result = mcp::protocol::create_message_result_from_json(sample_result_json);
+    require(parsed_sample_result.has_value(), "sampling/createMessage result should parse");
+    require(parsed_sample_result->model == "fast-model", "sampling result model mismatch");
+}
+
+void test_notification_helpers_round_trip() {
+    require(mcp::protocol::CancelledNotificationMethod == "notifications/cancelled",
+            "cancelled notification method mismatch");
+    require(mcp::protocol::ProgressNotificationMethod == "notifications/progress",
+            "progress notification method mismatch");
+    require(mcp::protocol::RootsListChangedNotificationMethod == "notifications/roots/list_changed",
+            "roots list changed notification method mismatch");
+    require(mcp::protocol::ResourcesUpdatedNotificationMethod == "notifications/resources/updated",
+            "resources updated notification method mismatch");
+    require(mcp::protocol::LoggingMessageNotificationMethod == "notifications/message",
+            "logging message notification method mismatch");
+
+    const mcp::protocol::CancelledNotificationParams cancelled{
+        .request_id = RequestId{std::string("request-1")},
+        .reason = "no longer needed",
+    };
+    const auto cancelled_json = mcp::protocol::cancelled_notification_params_to_json(cancelled);
+    const auto parsed_cancelled = mcp::protocol::cancelled_notification_params_from_json(cancelled_json);
+    require(parsed_cancelled.has_value(), "cancelled notification params should parse");
+    require(std::get<std::string>(parsed_cancelled->request_id) == "request-1", "cancelled request id mismatch");
+
+    const mcp::protocol::ProgressNotificationParams progress{
+        .progress_token = mcp::protocol::ProgressToken{std::string("token-1")},
+        .progress = 2.0,
+        .total = 4.0,
+        .message = "halfway",
+    };
+    const auto progress_json = mcp::protocol::progress_notification_params_to_json(progress);
+    const auto parsed_progress = mcp::protocol::progress_notification_params_from_json(progress_json);
+    require(parsed_progress.has_value(), "progress notification params should parse");
+    require(std::get<std::string>(parsed_progress->progress_token) == "token-1", "progress token mismatch");
+    require(parsed_progress->total == 4.0, "progress total mismatch");
+
+    const mcp::protocol::LoggingMessageNotificationParams log_message{
+        .level = mcp::protocol::LoggingLevel::Info,
+        .logger = "test",
+        .data = Json{{"message", "hello"}},
+    };
+    const auto log_message_json = mcp::protocol::logging_message_notification_params_to_json(log_message);
+    const auto parsed_log_message = mcp::protocol::logging_message_notification_params_from_json(log_message_json);
+    require(parsed_log_message.has_value(), "logging message notification params should parse");
+    require(parsed_log_message->logger == "test", "logging message logger mismatch");
+
+    const auto notification = mcp::protocol::make_notification(
+        std::string(mcp::protocol::ProgressNotificationMethod), progress_json);
+    require(notification.method == "notifications/progress", "constructed progress notification method mismatch");
+}
+
 void test_invalid_json_is_rejected() {
     const auto parsed = mcp::protocol::parse_message("{not json");
     require_error_code(parsed, ErrorCode::ParseError, "invalid JSON should be rejected");
@@ -155,6 +469,11 @@ int main() {
         {"initialized notification round trip", test_initialized_notification_round_trip},
         {"ping request round trip", test_ping_request_round_trip},
         {"response round trips", test_response_round_trips},
+        {"tool protocol round trips", test_tool_protocol_round_trips},
+        {"prompt protocol round trips", test_prompt_protocol_round_trips},
+        {"resource protocol round trips", test_resource_protocol_round_trips},
+        {"roots completion logging sampling round trips", test_roots_completion_logging_sampling_round_trips},
+        {"notification helpers round trip", test_notification_helpers_round_trip},
         {"invalid json is rejected", test_invalid_json_is_rejected},
         {"invalid messages are rejected", test_invalid_messages_are_rejected},
     };

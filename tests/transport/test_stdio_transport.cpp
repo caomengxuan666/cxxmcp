@@ -1,6 +1,6 @@
-#include "mcp/client/stdio_transport.hpp"
+#include "mcp/client.hpp"
 #include "mcp/protocol/serialization.hpp"
-#include "mcp/server/stdio_transport.hpp"
+#include "mcp/server.hpp"
 
 #include <cstdint>
 #include <iostream>
