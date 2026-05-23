@@ -1,7 +1,0 @@
-This is a sample text resource file for the MCP Server.
-It demonstrates how text-based resources can be exposed through the Resources primitive.
-
-Features:
-- UTF-8 encoded text content
-- Accessible via resource URI
-- Can be read by MCP clients

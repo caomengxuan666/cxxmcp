@@ -1,243 +1,127 @@
-cmake_minimum_required(VERSION 3.22)
-project(MCPServer.cpp LANGUAGES CXX C VERSION 1.0.7.0)
+cmake_minimum_required(VERSION 3.23)
 
-# Add option for Python support
-option(ENABLE_PYTHON_PLUGINS "Enable Python plugin support" ON)
+project(MCPServerCpp
+    VERSION 2.0.0
+    LANGUAGES CXX
+)
 
-if(UNIX AND NOT APPLE)
-    set(CMAKE_CXX_VISIBILITY_PRESET default)
-    set(CMAKE_POSITION_INDEPENDENT_CODE ON)
-endif()
-
-set(CMAKE_CXX_STANDARD 20)
+set(CMAKE_CXX_STANDARD 23)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
-set(CMAKE_INCLUDE_CURRENT_DIR ON)
-set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
+set(BUILD_SHARED_LIBS OFF CACHE BOOL "Build static libraries by default" FORCE)
 
-include(cmake/PluginCommon.cmake)
-include(cmake/CopyConfig.cmake)
-include(cmake/FindMCPOpenSSL.cmake)
-copy_ini_config()
-copy_certs()
-
-set(PROJECT_VERSION_MAJOR ${${PROJECT_NAME}_VERSION_MAJOR} CACHE STRING "Major version number")
-set(PROJECT_VERSION_MINOR ${${PROJECT_NAME}_VERSION_MINOR} CACHE STRING "Minor version number")
-set(PROJECT_VERSION_PATCH ${${PROJECT_NAME}_VERSION_PATCH} CACHE STRING "Patch version number")
-set(PROJECT_VERSION_TWEAK ${${PROJECT_NAME}_VERSION_TWEAK} CACHE STRING "Tweak version number")
-set(PROJECT_VERSION_SUFFIX "" CACHE STRING "Version suffix (e.g., -beta, -rc1)")
-
-set(PROJECT_FULL_VERSION
-    "${PROJECT_VERSION_MAJOR}.${PROJECT_VERSION_MINOR}.${PROJECT_VERSION_PATCH}"
-)
-
-if(PROJECT_VERSION_TWEAK GREATER 0)
-    set(PROJECT_FULL_VERSION "${PROJECT_FULL_VERSION}.${PROJECT_VERSION_TWEAK}")
-endif()
-
-if(PROJECT_VERSION_SUFFIX)
-    set(PROJECT_FULL_VERSION "${PROJECT_FULL_VERSION}${PROJECT_VERSION_SUFFIX}")
-endif()
-
-string(TIMESTAMP CMAKE_BUILD_TIMESTAMP "%Y-%m-%d %H:%M:%S" UTC)
-
-message(STATUS "Building ${PROJECT_NAME} version: ${PROJECT_FULL_VERSION}")
-
-include_directories(${CMAKE_BINARY_DIR}/version)
-
-add_subdirectory(version)
-
-# main file
-add_executable(mcp-server++ src/main.cpp)
-
-add_compile_definitions(NOMINMAX)
-add_compile_definitions(WIN32_LEAN_AND_MEAN)
-
-include_directories(include)
-
-# header directories
-target_include_directories(mcp-server++ PRIVATE
-    ${CMAKE_CURRENT_SOURCE_DIR}/src
-    ${CMAKE_CURRENT_SOURCE_DIR}/third_party
-    ${CMAKE_CURRENT_SOURCE_DIR}/third_party/spdlog/include
-    ${CMAKE_CURRENT_SOURCE_DIR}/plugins
-)
-
-include_directories(${CMAKE_CURRENT_SOURCE_DIR}/third_party/asio/asio/include)
-include_directories(${CMAKE_CURRENT_SOURCE_DIR}/src/metrics/include)
-
-if(WIN32)
-    add_compile_definitions(_WIN32_WINDOWS)
-endif()
-
-add_compile_definitions(OPENSSL_API_COMPAT=30000)
-
-# link mimalloc
-# target_link_libraries(mcp-server++ PRIVATE ${LINKED_LIBRARIES})
 if(MSVC)
-    target_compile_options(mcp-server++ PRIVATE /W4 /permissive-)
-    add_compile_options(/wd4100)
-else()
-    target_compile_options(mcp-server++ PRIVATE -Wall -Wextra -O3)
+    set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>" CACHE STRING
+        "Use the static MSVC runtime" FORCE)
+    set(wxBUILD_USE_STATIC_RUNTIME ON CACHE BOOL "Link using the static runtime library" FORCE)
 endif()
 
-list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake")
+add_library(mcp_core INTERFACE)
+target_include_directories(mcp_core INTERFACE core/include)
 
-# Add subdirectories
-add_subdirectory(src/core)
-add_subdirectory(src/protocol)
-add_subdirectory(src/transport)
-add_subdirectory(src/business)
-add_subdirectory(src/metrics)
-add_subdirectory(plugins)
-add_subdirectory(tools)
-add_subdirectory(third_party/miniz)
-add_subdirectory(third_party/pybind11)
-add_subdirectory(utils)
-add_subdirectory(src/Resources)
-add_subdirectory(src/routers)
-add_subdirectory(src/Prompts)
-
-include(cmake/EnablePython.cmake)
-enable_python()
-# turn off mimalloc tests and examples
-set(MI_BUILD_TESTS OFF CACHE BOOL "Build mimalloc tests" FORCE)
-set(MI_BUILD_EXAMPLES OFF CACHE BOOL "Build mimalloc examples" FORCE)
-
-set(DISABLE_SYSTEM_MIMALLOC ON CACHE BOOL "Disable system mimalloc")
-
-# Link all required libraries to the main executable
-if(UNIX)
-    target_link_libraries(mcp-server++ PRIVATE
-        -Wl,--start-group
-        mcp_business
-        mcp_core
-        mcp_transport
-        mcp_protocol
-        -Wl,--end-group
-        mcp_plugin_sdk
-        mcp_plugin_hub
-        mcp_utils
-        mcp_metrics
-    )
-else()
-    target_link_libraries(mcp-server++ PRIVATE
-        mcp_metrics
-        mcp_business
-        mcp_core
-        mcp_transport
-        mcp_protocol
-        mcp_plugin_sdk
-        mcp_plugin_hub
-        mcp_utils
-    )
-endif()
-
-# Install the main executable
-install(TARGETS mcp-server++
-    RUNTIME DESTINATION bin
+add_library(jsonrpcpp INTERFACE)
+target_include_directories(jsonrpcpp INTERFACE
+    third_party/jsonrpcpp
+    third_party
 )
 
-# Install config file
-install(FILES config.ini.example
-    DESTINATION bin
-    RENAME config.ini
+add_library(mcp_protocol STATIC)
+target_sources(mcp_protocol PRIVATE protocol/src/serialization.cpp)
+target_include_directories(mcp_protocol PUBLIC
+    protocol/include
+    ${CMAKE_CURRENT_SOURCE_DIR}/third_party
 )
+target_link_libraries(mcp_protocol PUBLIC mcp_core jsonrpcpp)
 
-# Install documentation
-install(FILES
-    README.md
-    README_zh.md
-    LICENSE
-    DESTINATION share/doc/mcp-server++
+add_library(mcp_client STATIC
+    client/src/client.cpp
+    client/src/stdio_transport.cpp
 )
+target_include_directories(mcp_client PUBLIC client/include)
+target_link_libraries(mcp_client PUBLIC mcp_core mcp_protocol)
 
-# Install docs directory
-install(DIRECTORY docs/
-    DESTINATION share/doc/mcp-server++
-    FILES_MATCHING
-    PATTERN "*.md"
-    PATTERN "*.png"
+add_library(mcp_server STATIC
+    server/src/registry.cpp
+    server/src/server.cpp
+    server/src/stdio_transport.cpp
 )
+target_include_directories(mcp_server PUBLIC server/include)
+target_link_libraries(mcp_server PUBLIC mcp_core mcp_protocol)
 
-# Conditionally install headers for development (only when including libs)
-if(CPACK_INCLUDE_LIBS)
-    # Install headers for development
-    install(DIRECTORY src/
-        DESTINATION include/mcp
-        FILES_MATCHING PATTERN "*.h"
-    )
+add_library(mcp_plugin_sdk INTERFACE)
+target_include_directories(mcp_plugin_sdk INTERFACE plugin-sdk/include)
+target_link_libraries(mcp_plugin_sdk INTERFACE mcp_core mcp_protocol)
 
-    # Install router headers
-    install(DIRECTORY src/routers/
-        DESTINATION include/mcp/routers
-        FILES_MATCHING PATTERN "*.hpp"
-    )
+add_library(mcp_adapters INTERFACE)
+target_include_directories(mcp_adapters INTERFACE adapters/include)
+target_link_libraries(mcp_adapters INTERFACE mcp_core mcp_protocol mcp_server mcp_plugin_sdk)
 
-    # Create and install CMake config files
-    include(CMakePackageConfigHelpers)
+add_library(mcp_observability INTERFACE)
+target_include_directories(mcp_observability INTERFACE observability/include)
 
-    # Generate the config file
-    configure_package_config_file(
-        ${CMAKE_CURRENT_SOURCE_DIR}/cmake/MCPConfig.cmake.in
-        ${CMAKE_CURRENT_BINARY_DIR}/MCPServer++Config.cmake
-        INSTALL_DESTINATION lib/cmake/MCPServer++
-    )
+set(wxBUILD_SHARED OFF CACHE BOOL "Build wx libraries as shared libs" FORCE)
+set(wxBUILD_MONOLITHIC OFF CACHE BOOL "Build wxWidgets as separate static libraries" FORCE)
+set(wxBUILD_SAMPLES OFF CACHE STRING "Disable wxWidgets samples" FORCE)
+set(wxBUILD_TESTS OFF CACHE STRING "Disable wxWidgets tests" FORCE)
+set(wxBUILD_DEMOS OFF CACHE BOOL "Disable wxWidgets demos" FORCE)
+set(wxBUILD_BENCHMARKS OFF CACHE BOOL "Disable wxWidgets benchmarks" FORCE)
+set(wxBUILD_INSTALL OFF CACHE BOOL "Disable wxWidgets install targets" FORCE)
+set(wxBUILD_LOCALES OFF CACHE STRING "Disable wxWidgets locales" FORCE)
+set(wxUSE_HTML OFF CACHE BOOL "Disable wxHTML" FORCE)
+set(wxUSE_AUI OFF CACHE BOOL "Disable wxAUI" FORCE)
+set(wxUSE_RIBBON OFF CACHE BOOL "Disable wxRibbon" FORCE)
+set(wxUSE_STC OFF CACHE BOOL "Disable wxStyledTextCtrl" FORCE)
+set(wxUSE_MEDIACTRL OFF CACHE BOOL "Disable wxMediaCtrl" FORCE)
+set(wxUSE_WEBVIEW ON CACHE BOOL "Enable wxWebView" FORCE)
+set(wxUSE_WEBVIEW_EDGE ON CACHE BOOL "Enable wxWebView Edge backend" FORCE)
+set(wxUSE_OPENGL OFF CACHE BOOL "Disable wxOpenGL" FORCE)
+set(wxUSE_HELP OFF CACHE BOOL "Disable wxHelp" FORCE)
+set(wxUSE_WXHTML_HELP OFF CACHE BOOL "Disable wxHTML help" FORCE)
+set(wxUSE_MS_HTML_HELP OFF CACHE BOOL "Disable MS HTML help" FORCE)
+set(wxUSE_ARTPROVIDER_TANGO OFF CACHE BOOL "Disable Tango art provider" FORCE)
+set(wxUSE_RICHTEXT OFF CACHE BOOL "Disable wxRichTextCtrl" FORCE)
+set(wxUSE_SVG OFF CACHE BOOL "Disable wxSVG" FORCE)
+set(wxUSE_REGEX OFF CACHE STRING "Disable wxRegEx" FORCE)
+set(wxUSE_ZLIB OFF CACHE STRING "Disable wxZlib" FORCE)
+set(wxUSE_EXPAT OFF CACHE STRING "Disable wxExpat" FORCE)
+set(wxUSE_LIBJPEG OFF CACHE STRING "Disable wxJPEG" FORCE)
+set(wxUSE_LIBPNG OFF CACHE STRING "Disable wxPNG" FORCE)
+set(wxUSE_LIBTIFF OFF CACHE STRING "Disable wxTIFF" FORCE)
+set(wxUSE_LIBWEBP OFF CACHE STRING "Disable wxWebP" FORCE)
+set(wxUSE_NANOSVG OFF CACHE STRING "Disable wxNanoSVG" FORCE)
+set(wxUSE_LUNASVG OFF CACHE STRING "Disable wxLunaSVG" FORCE)
 
-    # Generate the version file
-    write_basic_package_version_file(
-        ${CMAKE_CURRENT_BINARY_DIR}/MCPServer++ConfigVersion.cmake
-        VERSION ${PROJECT_VERSION}
-        COMPATIBILITY SameMajorVersion
-    )
+add_subdirectory(third_party/wxWidgets EXCLUDE_FROM_ALL)
 
-    # Install the config files
-    install(FILES
-        ${CMAKE_CURRENT_BINARY_DIR}/MCPServer++Config.cmake
-        ${CMAKE_CURRENT_BINARY_DIR}/MCPServer++ConfigVersion.cmake
-        DESTINATION lib/cmake/MCPServer++
-    )
+add_library(mcp_app STATIC
+    app/src/serialization.cpp
+    app/src/services.cpp
+    app/src/tool_management.cpp
+)
+target_include_directories(mcp_app PUBLIC app/include)
+target_link_libraries(mcp_app PUBLIC mcp_core mcp_protocol)
 
-    # Export the targets
-    install(EXPORT MCPServer++Targets
-        FILE MCPServer++Targets.cmake
-        NAMESPACE MCPServer++::
-        DESTINATION lib/cmake/MCPServer++
-    )
-endif()
+add_library(mcp_cli STATIC
+    cli/src/commands.cpp
+)
+target_include_directories(mcp_cli PUBLIC cli/include)
+target_link_libraries(mcp_cli PUBLIC mcp_core mcp_app mcp_client mcp_server mcp_plugin_sdk)
 
-# CPack support for packaging
-include(cmake/CPackConfig.cmake)
+add_library(mcp_gui STATIC
+    gui/src/app.cpp
+    gui/src/controller.cpp
+    gui/src/dashboard.cpp
+)
+target_include_directories(mcp_gui PUBLIC gui/include)
+target_link_libraries(mcp_gui PUBLIC mcp_core mcp_app mcp_client wx::core wxwebview)
 
-# CPack RPM spec file
-set(CPACK_RESOURCE_FILE_LICENSE ${CMAKE_CURRENT_SOURCE_DIR}/LICENSE)
+add_executable(mcp_gui_app
+    gui/src/main.cpp
+)
+target_link_libraries(mcp_gui_app PRIVATE mcp_gui)
 
-# testing
-# Only build tests when including libs
-if(CPACK_INCLUDE_LIBS)
-    option(BUILD_TESTS "Build tests" ON)
-else()
-    option(BUILD_TESTS "Build tests" OFF)
-endif()
+include(CTest)
 
-if(BUILD_TESTS)
-    enable_testing()
-    add_subdirectory(third_party/googletest)
+if(BUILD_TESTING)
     add_subdirectory(tests)
 endif()
-
-# example
-# Only build examples when including libs
-if(CPACK_INCLUDE_LIBS)
-    option(BUILD_EXAMPLES "Build examples" ON)
-else()
-    option(BUILD_EXAMPLES "Build examples" OFF)
-endif()
-
-if(BUILD_EXAMPLES)
-    add_subdirectory(examples)
-endif()
-
-set_target_properties(generate_cert PROPERTIES
-    COMPILE_DEFINITIONS "OPENSSL_SUPPRESS_DEPRECATED"
-)

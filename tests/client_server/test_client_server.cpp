@@ -1,0 +1,706 @@
+#include "mcp/client.hpp"
+#include "mcp/protocol/serialization.hpp"
+#include "mcp/server.hpp"
+
+#include <iostream>
+#include <cstdint>
+#include <memory>
+#include <optional>
+#include <stdexcept>
+#include <string>
+#include <string_view>
+#include <utility>
+#include <vector>
+
+namespace {
+
+using mcp::protocol::Json;
+
+void require(bool condition, std::string_view message) {
+    if (!condition) {
+        throw std::runtime_error(std::string(message));
+    }
+}
+
+class LoopbackTransport final : public mcp::client::Transport {
+public:
+    explicit LoopbackTransport(mcp::server::Server& server)
+        : server_(server) {}
+
+    mcp::core::Result<mcp::protocol::JsonRpcResponse> send(const mcp::protocol::JsonRpcRequest& request) override {
+        return server_.handle_request(request, context_);
+    }
+
+private:
+    mcp::server::Server& server_;
+    mcp::server::SessionContext context_{
+        .session_id = "test-session",
+        .remote_address = "127.0.0.1",
+    };
+};
+
+class RecordingTransport final : public mcp::client::Transport {
+public:
+    mcp::core::Result<mcp::protocol::JsonRpcResponse> send(const mcp::protocol::JsonRpcRequest& request) override {
+        requests.push_back(request);
+        if (request.method == "initialize") {
+            return mcp::protocol::JsonRpcResponse{
+                .id = request.id,
+                .result = Json{
+                    {"protocolVersion", std::string(mcp::protocol::McpProtocolVersion)},
+                    {"capabilities", Json::object()},
+                    {"serverInfo", Json{{"name", "FakeServer"}, {"version", "1"}}},
+                },
+            };
+        }
+        if (request.method == "tools/list") {
+            if (request.params.contains("cursor")) {
+                return mcp::protocol::JsonRpcResponse{
+                    .id = request.id,
+                    .result = Json{
+                        {"tools", Json::array({
+                                      Json{
+                                          {"name", "paged-tool-2"},
+                                          {"description", "Second page tool"},
+                                          {"inputSchema", Json{{"type", "object"}}},
+                                          {"streaming", false},
+                                      },
+                                  })},
+                    },
+                };
+            }
+            return mcp::protocol::JsonRpcResponse{
+                .id = request.id,
+                .result = Json{
+                    {"tools", Json::array({
+                                  Json{
+                                      {"name", "fake-tool"},
+                                      {"description", "A fake tool"},
+                                      {"inputSchema", Json{{"type", "object"}}},
+                                      {"streaming", false},
+                                  },
+                              })},
+                    {"nextCursor", "page-2"},
+                },
+            };
+        }
+        if (request.method == "resources/templates/list") {
+            return mcp::protocol::JsonRpcResponse{
+                .id = request.id,
+                .result = Json{
+                    {"resourceTemplates", Json::array({
+                                              Json{
+                                                  {"uriTemplate", "file:///tmp/{name}.txt"},
+                                                  {"name", "Temporary file"},
+                                                  {"description", "A temporary text file"},
+                                                  {"mimeType", "text/plain"},
+                                              },
+                                          })},
+                },
+            };
+        }
+        if (request.method == "completion/complete") {
+            return mcp::protocol::JsonRpcResponse{
+                .id = request.id,
+                .result = Json{{"completion", Json{{"values", Json::array({"hello"})}}}},
+            };
+        }
+        if (request.method == "sampling/createMessage") {
+            return mcp::protocol::JsonRpcResponse{
+                .id = request.id,
+                .result = Json{{"role", "assistant"}, {"content", Json{{"type", "text"}, {"text", "sample"}}}},
+            };
+        }
+        if (request.method == "elicitation/create") {
+            return mcp::protocol::JsonRpcResponse{
+                .id = request.id,
+                .result = Json{{"action", "accept"}, {"content", Json{{"value", 1}}}},
+            };
+        }
+        if (request.method == "logging/setLevel" || request.method == "resources/subscribe" ||
+            request.method == "resources/unsubscribe") {
+            return mcp::protocol::JsonRpcResponse{
+                .id = request.id,
+                .result = Json::object(),
+            };
+        }
+        if (request.method == "prompts/list") {
+            return mcp::protocol::JsonRpcResponse{
+                .id = request.id,
+                .result = Json{
+                    {"prompts", Json::array({
+                                   Json{
+                                       {"name", "summarize"},
+                                       {"description", "Summarize text"},
+                                       {"arguments", Json::array({
+                                                          Json{{"name", "text"}, {"description", "Source text"}, {"required", true}},
+                                                      })},
+                                   },
+                               })},
+                },
+            };
+        }
+        if (request.method == "prompts/get") {
+            return mcp::protocol::JsonRpcResponse{
+                .id = request.id,
+                .result = mcp::protocol::prompts_get_result_to_json(mcp::protocol::PromptsGetResult{
+                    .description = "Summarize text",
+                    .messages = {mcp::protocol::PromptMessage{
+                        .role = "user",
+                        .content = mcp::protocol::ContentBlock{
+                            .type = "text",
+                            .text = "Summarize " + request.params.at("arguments").at("text").get<std::string>(),
+                            .data = Json::object(),
+                        },
+                    }},
+                }),
+            };
+        }
+        if (request.method == "resources/list") {
+            return mcp::protocol::JsonRpcResponse{
+                .id = request.id,
+                .result = Json{
+                    {"resources", Json::array({
+                                      Json{
+                                          {"uri", "file:///tmp/readme.txt"},
+                                          {"name", "Readme"},
+                                          {"description", "Project readme"},
+                                          {"mimeType", "text/plain"},
+                                      },
+                                  })},
+                },
+            };
+        }
+        if (request.method == "resources/read") {
+            return mcp::protocol::JsonRpcResponse{
+                .id = request.id,
+                .result = mcp::protocol::resources_read_result_to_json(mcp::protocol::ResourcesReadResult{
+                    .contents = {mcp::protocol::ResourceContents{
+                        .uri = request.params.at("uri").get<std::string>(),
+                        .mime_type = "text/plain",
+                        .text = "hello",
+                        .blob = std::nullopt,
+                    }},
+                }),
+            };
+        }
+        return mcp::protocol::JsonRpcResponse{
+            .id = request.id,
+            .error = mcp::protocol::ErrorObject{
+                .code = static_cast<int>(mcp::protocol::ErrorCode::MethodNotFound),
+                .message = "unexpected method",
+            },
+        };
+    }
+
+    mcp::core::Result<mcp::core::Unit> send_notification(
+        const mcp::protocol::JsonRpcNotification& notification) override {
+        notifications.push_back(notification);
+        return mcp::core::Unit{};
+    }
+
+    std::vector<mcp::protocol::JsonRpcRequest> requests;
+    std::vector<mcp::protocol::JsonRpcNotification> notifications;
+};
+
+mcp::server::Server make_server() {
+    mcp::server::ServerOptions options;
+    options.capabilities.tools.list_changed = true;
+    options.server_name = "TestServer";
+    options.server_version = "1.0.0";
+
+    mcp::server::Server server(options);
+
+    const auto added = server.tools().add(
+        mcp::protocol::ToolDefinition{
+            .name = "echo",
+            .description = "Echo the incoming payload",
+            .input_schema = Json::object(),
+            .streaming = false,
+        },
+        [](const mcp::server::ToolContext& context) -> mcp::core::Result<mcp::protocol::ToolResult> {
+            mcp::protocol::ToolResult result;
+            result.content.push_back(mcp::protocol::ContentBlock{
+                .type = "text",
+                .text = context.arguments.dump(),
+                .data = Json::object(),
+            });
+            return result;
+        });
+    require(added.has_value(), "failed to register echo tool");
+
+    return server;
+}
+
+void test_list_tools_round_trip() {
+    auto server = make_server();
+    mcp::client::Client client(std::make_unique<LoopbackTransport>(server));
+
+    const auto tools = client.list_tools();
+    require(tools.has_value(), "list_tools failed");
+    require(tools->size() == 1, "unexpected tool count");
+    require(tools->front().name == "echo", "tool name mismatch");
+    require(tools->front().description == "Echo the incoming payload", "tool description mismatch");
+}
+
+void test_call_tool_round_trip() {
+    auto server = make_server();
+    mcp::client::Client client(std::make_unique<LoopbackTransport>(server));
+
+    const auto result = client.call_tool(mcp::protocol::ToolCall{
+        .name = "echo",
+        .arguments = Json{{"value", 42}},
+    });
+    if (!result) {
+        throw std::runtime_error("call_tool failed: " + result.error().message + " (" +
+                                 std::to_string(result.error().code) + ")");
+    }
+    require(!result->is_error, "tool result should not be an error");
+    require(result->content.size() == 1, "tool result content size mismatch");
+    require(result->content.front().type == "text", "tool result content type mismatch");
+    require(result->content.front().text == "{\"value\":42}", "tool result text mismatch");
+}
+
+void test_ping_raw_request() {
+    auto server = make_server();
+    mcp::client::Client client(std::make_unique<LoopbackTransport>(server));
+
+    const auto ping = client.ping();
+    require(ping.has_value(), "client ping failed");
+
+    const auto response = client.raw_request(mcp::protocol::JsonRpcRequest{
+        .method = std::string(mcp::protocol::PingMethod),
+        .params = Json::object(),
+        .id = std::int64_t{99},
+    });
+    require(response.has_value(), "ping request failed");
+    require(response->is_object(), "ping response must be an object");
+    require(response->empty(), "ping response should be empty");
+}
+
+void test_initialize_handshake_shape() {
+    auto server = make_server();
+
+    const auto response = server.handle_request(mcp::protocol::JsonRpcRequest{
+        .method = std::string(mcp::protocol::InitializeMethod),
+        .params = Json{
+            {"protocolVersion", std::string(mcp::protocol::McpProtocolVersion)},
+            {"capabilities", Json::object()},
+            {"clientInfo", Json{{"name", "tester"}, {"version", "1"}}},
+        },
+        .id = std::string("init-1"),
+    }, mcp::server::SessionContext{.session_id = "test-session", .remote_address = "127.0.0.1"});
+
+    require(response.has_value(), "initialize request failed");
+    require(response->result.has_value(), "initialize result missing");
+    require(response->result->is_object(), "initialize result must be an object");
+    require(response->result->at("protocolVersion") == std::string(mcp::protocol::McpProtocolVersion),
+            "protocol version mismatch");
+    require(response->result->at("serverInfo").at("name") == "TestServer", "server name mismatch");
+}
+
+void test_server_app_builder_registers_parity_surface() {
+    int logging_calls = 0;
+    auto built = mcp::server::App::builder()
+        .name("FacadeServer")
+        .version("2.1.0")
+        .instructions("test instructions")
+        .tool<Json, Json>("echo-json", [](const Json& input) {
+            return Json{{"echo", input}};
+        })
+        .prompt(mcp::protocol::Prompt{
+                    .name = "summarize",
+                    .description = "Summarize text",
+                },
+                [](const mcp::server::PromptContext& context) -> mcp::core::Result<mcp::protocol::PromptsGetResult> {
+                    mcp::protocol::PromptsGetResult result;
+                    result.description = "Summarize text";
+                    result.messages.push_back(mcp::protocol::PromptMessage{
+                        .role = "user",
+                        .content = mcp::protocol::ContentBlock{
+                            .type = "text",
+                            .text = context.arguments.at("text").get<std::string>(),
+                        },
+                    });
+                    return result;
+                })
+        .resource(mcp::protocol::Resource{
+                      .uri = "file:///tmp/readme.txt",
+                      .name = "Readme",
+                      .description = "Project readme",
+                      .mime_type = "text/plain",
+                  },
+                  [](const mcp::server::ResourceContext& context) -> mcp::core::Result<mcp::protocol::ResourcesReadResult> {
+                      mcp::protocol::ResourcesReadResult result;
+                      result.contents.push_back(mcp::protocol::ResourceContents{
+                          .uri = context.uri,
+                          .mime_type = "text/plain",
+                          .text = "hello",
+                      });
+                      return result;
+                  })
+        .resource_template(mcp::protocol::ResourceTemplate{
+            .uri_template = "file:///tmp/{name}.txt",
+            .name = "Tmp file",
+            .description = "A tmp file",
+            .mime_type = "text/plain",
+        })
+        .completion([](const Json& request) {
+            return Json{{"completion", request.at("prefix").get<std::string>() + "llo"}};
+        })
+        .sampling([](const Json& request) {
+            return Json{{"sample", request.at("prompt").get<std::string>()}};
+        })
+        .logging([&](std::string_view level, std::string_view message) {
+            require(level == "debug", "logging level mismatch");
+            require(message == "logging level changed", "logging message mismatch");
+            ++logging_calls;
+        })
+        .raw_request([](const mcp::protocol::JsonRpcRequest& request) -> std::optional<mcp::protocol::JsonRpcResponse> {
+            if (request.method == "custom/echo") {
+                return mcp::protocol::make_response(request.id, Json{{"ok", true}});
+            }
+            return std::nullopt;
+        })
+        .build();
+    require(built.has_value(), "facade builder should build");
+    auto& server = **built;
+    const auto context = mcp::server::SessionContext{.session_id = "facade", .remote_address = "127.0.0.1"};
+
+    const auto initialized = server.handle_request(mcp::protocol::JsonRpcRequest{
+        .method = "initialize",
+        .params = Json::object(),
+        .id = std::int64_t{1},
+    }, context);
+    require(initialized.has_value(), "facade initialize failed");
+    require(initialized->result->at("serverInfo").at("name") == "FacadeServer", "facade name mismatch");
+    require(initialized->result->at("instructions") == "test instructions", "facade instructions mismatch");
+    require(initialized->result->at("capabilities").contains("completion"), "completion capability missing");
+    require(initialized->result->at("capabilities").at("logging").at("enabled"), "logging capability missing");
+
+    const auto tools = server.handle_request(mcp::protocol::JsonRpcRequest{
+        .method = "tools/call",
+        .params = Json{{"name", "echo-json"}, {"arguments", Json{{"value", 7}}}},
+        .id = std::int64_t{2},
+    }, context);
+    require(tools.has_value(), "facade tool call failed");
+    require(tools->result->at("structuredContent").at("echo").at("value") == 7, "facade tool result mismatch");
+
+    const auto prompts = server.handle_request(mcp::protocol::JsonRpcRequest{
+        .method = "prompts/get",
+        .params = Json{{"name", "summarize"}, {"arguments", Json{{"text", "hello"}}}},
+        .id = std::int64_t{3},
+    }, context);
+    require(prompts.has_value(), "facade prompt get failed");
+    require(prompts->result->at("messages").at(0).at("content").at("text") == "hello", "facade prompt mismatch");
+
+    const auto resources = server.handle_request(mcp::protocol::JsonRpcRequest{
+        .method = "resources/read",
+        .params = Json{{"uri", "file:///tmp/readme.txt"}},
+        .id = std::int64_t{4},
+    }, context);
+    require(resources.has_value(), "facade resource read failed");
+    require(resources->result->at("contents").at(0).at("text") == "hello", "facade resource mismatch");
+
+    const auto templates = server.handle_request(mcp::protocol::JsonRpcRequest{
+        .method = "resources/templates/list",
+        .params = Json::object(),
+        .id = std::int64_t{5},
+    }, context);
+    require(templates.has_value(), "facade resource templates list failed");
+    require(templates->result->at("resourceTemplates").at(0).at("uriTemplate") == "file:///tmp/{name}.txt",
+            "facade template mismatch");
+
+    const auto completion = server.handle_request(mcp::protocol::JsonRpcRequest{
+        .method = "completion/complete",
+        .params = Json{{"prefix", "he"}},
+        .id = std::int64_t{6},
+    }, context);
+    require(completion.has_value(), "facade completion failed");
+    require(completion->result->at("completion") == "hello", "facade completion mismatch");
+
+    const auto sampling = server.handle_request(mcp::protocol::JsonRpcRequest{
+        .method = "sampling/createMessage",
+        .params = Json{{"prompt", "write"}},
+        .id = std::int64_t{7},
+    }, context);
+    require(sampling.has_value(), "facade sampling failed");
+    require(sampling->result->at("sample") == "write", "facade sampling mismatch");
+
+    const auto logging = server.handle_request(mcp::protocol::JsonRpcRequest{
+        .method = "logging/setLevel",
+        .params = Json{{"level", "debug"}},
+        .id = std::int64_t{8},
+    }, context);
+    require(logging.has_value(), "facade logging failed");
+    require(logging_calls == 1, "facade logging callback mismatch");
+
+    const auto raw = server.handle_request(mcp::protocol::JsonRpcRequest{
+        .method = "custom/echo",
+        .params = Json::object(),
+        .id = std::int64_t{9},
+    }, context);
+    require(raw.has_value(), "facade raw request failed");
+    require(raw->result->at("ok"), "facade raw request mismatch");
+}
+
+void test_client_session_initialize_and_mark_initialized() {
+    auto transport = std::make_unique<RecordingTransport>();
+    auto* recording = transport.get();
+    mcp::client::McpClientSession session(std::move(transport));
+
+    const auto initialized = session.initialize();
+    require(initialized.has_value(), "session initialize failed");
+    require(recording->requests.size() == 1, "initialize should send one request");
+    require(recording->requests.front().method == "initialize", "initialize request method mismatch");
+    require(recording->requests.front().params.at("protocolVersion") == std::string(mcp::protocol::McpProtocolVersion),
+            "initialize protocol version mismatch");
+    require(recording->requests.front().params.at("clientInfo").at("name") == "cxxmcp",
+            "initialize client name mismatch");
+
+    const auto marked = session.mark_initialized();
+    require(marked.has_value(), "mark_initialized failed");
+    require(recording->notifications.size() == 1, "mark_initialized should send one notification");
+    // Depends on protocol::InitializedMethod matching the MCP notifications/initialized method name.
+    require(recording->notifications.front().method == "notifications/initialized",
+            "initialized notification method mismatch");
+}
+
+void test_client_session_discover_tools_uses_client_list_tools() {
+    auto transport = std::make_unique<RecordingTransport>();
+    auto* recording = transport.get();
+    mcp::client::McpClientSession session(std::move(transport));
+
+    const auto tools = session.discover_tools();
+    require(tools.has_value(), "session discover_tools failed");
+    require(recording->requests.size() == 1, "discover_tools should send one request");
+    require(recording->requests.front().method == "tools/list", "discover_tools should call tools/list");
+    require(tools->size() == 1, "unexpected session tool count");
+    require(tools->front().name == "fake-tool", "session tool name mismatch");
+    require(tools->front().description == "A fake tool", "session tool description mismatch");
+}
+
+void test_client_list_all_tools_follows_cursors() {
+    auto transport = std::make_unique<RecordingTransport>();
+    auto* recording = transport.get();
+    mcp::client::Client client(std::move(transport));
+
+    const auto tools = client.list_all_tools();
+    require(tools.has_value(), "list_all_tools failed");
+    require(tools->size() == 2, "list_all_tools should collect both pages");
+    require(tools->at(0).name == "fake-tool", "first paged tool mismatch");
+    require(tools->at(1).name == "paged-tool-2", "second paged tool mismatch");
+    require(recording->requests.size() == 2, "list_all_tools should request two pages");
+    require(recording->requests.at(1).params.at("cursor") == "page-2", "list_all_tools cursor mismatch");
+}
+
+void test_client_resource_templates_and_json_helpers() {
+    auto transport = std::make_unique<RecordingTransport>();
+    auto* recording = transport.get();
+    mcp::client::Client client(std::move(transport));
+
+    const auto templates = client.list_all_resource_templates();
+    require(templates.has_value(), "list_all_resource_templates failed");
+    require(templates->size() == 1, "resource template count mismatch");
+    require(templates->front().uri_template == "file:///tmp/{name}.txt", "resource template uri mismatch");
+
+    const auto completion = client.complete(Json{{"ref", Json{{"type", "prompt"}, {"name", "summarize"}}}});
+    require(completion.has_value(), "completion helper failed");
+    require(completion->at("completion").at("values").at(0) == "hello", "completion payload mismatch");
+
+    const auto sample = client.create_message(Json{{"messages", Json::array()}});
+    require(sample.has_value(), "create_message helper failed");
+    require(sample->at("content").at("text") == "sample", "sample payload mismatch");
+
+    const auto elicitation = client.create_elicitation(Json{{"message", "choose"}});
+    require(elicitation.has_value(), "create_elicitation helper failed");
+    require(elicitation->at("action") == "accept", "elicitation payload mismatch");
+
+    const auto set_level = client.set_level("debug");
+    require(set_level.has_value(), "set_level failed");
+    const auto subscribed = client.subscribe("file:///tmp/readme.txt");
+    require(subscribed.has_value(), "subscribe failed");
+    const auto unsubscribed = client.unsubscribe("file:///tmp/readme.txt");
+    require(unsubscribed.has_value(), "unsubscribe failed");
+
+    require(recording->requests.at(1).method == "completion/complete", "completion method mismatch");
+    require(recording->requests.at(4).method == "logging/setLevel", "logging method mismatch");
+    require(recording->requests.at(5).method == "resources/subscribe", "subscribe method mismatch");
+    require(recording->requests.at(6).method == "resources/unsubscribe", "unsubscribe method mismatch");
+}
+
+void test_client_roots_and_notification_callbacks() {
+    auto transport = std::make_unique<RecordingTransport>();
+    mcp::client::Client client(std::move(transport));
+
+    int roots_changed = 0;
+    int tools_changed = 0;
+    int prompts_changed = 0;
+    int resources_changed = 0;
+    int raw_notifications = 0;
+    int initialized_notifications = 0;
+    int cancelled_notifications = 0;
+    std::string logged_level;
+    std::string logged_message;
+    std::string updated_uri;
+    std::string cancelled_reason;
+
+    client.on_initialized([&] { ++initialized_notifications; })
+        .on_cancelled([&](const mcp::protocol::RequestId&, std::string_view reason) {
+            ++cancelled_notifications;
+            cancelled_reason = std::string(reason);
+        })
+        .on_roots_list_changed([&] { ++roots_changed; })
+        .on_tool_list_changed([&] { ++tools_changed; })
+        .on_prompt_list_changed([&] { ++prompts_changed; })
+        .on_resource_list_changed([&] { ++resources_changed; })
+        .on_resource_updated([&](const std::string& uri) { updated_uri = uri; })
+        .on_logging_message([&](std::string_view level, std::string_view message) {
+            logged_level = std::string(level);
+            logged_message = std::string(message);
+        })
+        .on_raw_notification([&](const mcp::protocol::JsonRpcNotification&) { ++raw_notifications; });
+
+    client.set_roots({mcp::client::Client::Root{.uri = "file:///workspace", .name = "workspace"}});
+    const auto roots = client.list_roots();
+    require(roots.size() == 1, "root count mismatch");
+    require(roots.front().uri == "file:///workspace", "root uri mismatch");
+    require(roots_changed == 1, "set_roots should invoke roots changed callback");
+
+    require(client.handle_notification({.method = "notifications/tools/list_changed"}).has_value(),
+            "tool notification failed");
+    require(client.handle_notification({.method = "notifications/initialized"}).has_value(),
+            "initialized notification failed");
+    require(client.handle_notification({.method = "notifications/cancelled",
+                                        .params = Json{{"requestId", 1}, {"reason", "done"}}})
+                .has_value(),
+            "cancelled notification failed");
+    require(client.handle_notification({.method = "notifications/prompts/list_changed"}).has_value(),
+            "prompt notification failed");
+    require(client.handle_notification({.method = "notifications/resources/list_changed"}).has_value(),
+            "resource list notification failed");
+    require(client.handle_notification({.method = "notifications/resources/updated",
+                                        .params = Json{{"uri", "file:///workspace/README.md"}}})
+                .has_value(),
+            "resource updated notification failed");
+    require(client.handle_notification({.method = "notifications/message",
+                                        .params = Json{{"level", "info"}, {"data", "ready"}}})
+                .has_value(),
+            "logging notification failed");
+
+    require(tools_changed == 1, "tool list callback count mismatch");
+    require(prompts_changed == 1, "prompt list callback count mismatch");
+    require(resources_changed == 1, "resource list callback count mismatch");
+    require(updated_uri == "file:///workspace/README.md", "resource updated uri mismatch");
+    require(logged_level == "info", "logged level mismatch");
+    require(logged_message == "ready", "logged message mismatch");
+    require(initialized_notifications == 1, "initialized notification count mismatch");
+    require(cancelled_notifications == 1, "cancelled notification count mismatch");
+    require(cancelled_reason == "done", "cancelled reason mismatch");
+    require(raw_notifications == 7, "raw notification callback count mismatch");
+}
+
+void test_client_session_discover_prompts_uses_client_list_prompts() {
+    auto transport = std::make_unique<RecordingTransport>();
+    auto* recording = transport.get();
+    mcp::client::McpClientSession session(std::move(transport));
+
+    const auto prompts = session.discover_prompts();
+    require(prompts.has_value(), "session discover_prompts failed");
+    require(recording->requests.size() == 1, "discover_prompts should send one request");
+    require(recording->requests.front().method == "prompts/list", "discover_prompts should call prompts/list");
+    require(prompts->size() == 1, "unexpected session prompt count");
+    require(prompts->front().name == "summarize", "session prompt name mismatch");
+    require(prompts->front().description == "Summarize text", "session prompt description mismatch");
+    require(prompts->front().arguments.size() == 1, "session prompt arguments mismatch");
+    require(prompts->front().arguments.front().required, "session prompt argument required mismatch");
+}
+
+void test_client_session_discover_resources_uses_client_list_resources() {
+    auto transport = std::make_unique<RecordingTransport>();
+    auto* recording = transport.get();
+    mcp::client::McpClientSession session(std::move(transport));
+
+    const auto resources = session.discover_resources();
+    require(resources.has_value(), "session discover_resources failed");
+    require(recording->requests.size() == 1, "discover_resources should send one request");
+    require(recording->requests.front().method == "resources/list", "discover_resources should call resources/list");
+    require(resources->size() == 1, "unexpected session resource count");
+    require(resources->front().uri == "file:///tmp/readme.txt", "session resource uri mismatch");
+    require(resources->front().name == "Readme", "session resource name mismatch");
+    require(resources->front().mime_type == "text/plain", "session resource mime type mismatch");
+}
+
+void test_client_session_get_prompt_uses_client_prompts_get() {
+    auto transport = std::make_unique<RecordingTransport>();
+    auto* recording = transport.get();
+    mcp::client::McpClientSession session(std::move(transport));
+
+    const auto prompt = session.get_prompt(mcp::protocol::PromptsGetParams{
+        .name = "summarize",
+        .arguments = Json{{"text", "hello"}},
+    });
+    require(prompt.has_value(), "session get_prompt failed");
+    require(recording->requests.size() == 1, "get_prompt should send one request");
+    require(recording->requests.front().method == "prompts/get", "get_prompt should call prompts/get");
+    require(recording->requests.front().params.at("name") == "summarize", "get_prompt name param mismatch");
+    require(prompt->messages.size() == 1, "get_prompt message count mismatch");
+    require(prompt->messages.front().content.text == "Summarize hello", "get_prompt text mismatch");
+}
+
+void test_client_session_read_resource_uses_client_resources_read() {
+    auto transport = std::make_unique<RecordingTransport>();
+    auto* recording = transport.get();
+    mcp::client::McpClientSession session(std::move(transport));
+
+    const auto resource = session.read_resource(mcp::protocol::ResourcesReadParams{
+        .uri = "file:///tmp/readme.txt",
+    });
+    require(resource.has_value(), "session read_resource failed");
+    require(recording->requests.size() == 1, "read_resource should send one request");
+    require(recording->requests.front().method == "resources/read", "read_resource should call resources/read");
+    require(recording->requests.front().params.at("uri") == "file:///tmp/readme.txt",
+            "read_resource uri param mismatch");
+    require(resource->contents.size() == 1, "read_resource content count mismatch");
+    require(resource->contents.front().text == "hello", "read_resource text mismatch");
+}
+
+} // namespace
+
+int main() {
+    const std::vector<std::pair<std::string_view, void (*)()>> tests = {
+        {"list tools round trip", test_list_tools_round_trip},
+        {"call tool round trip", test_call_tool_round_trip},
+        {"ping raw request", test_ping_raw_request},
+        {"initialize handshake shape", test_initialize_handshake_shape},
+        {"server app builder registers parity surface", test_server_app_builder_registers_parity_surface},
+        {"client session initialize and mark initialized", test_client_session_initialize_and_mark_initialized},
+        {"client session discover prompts", test_client_session_discover_prompts_uses_client_list_prompts},
+        {"client session discover resources", test_client_session_discover_resources_uses_client_list_resources},
+        {"client session get prompt", test_client_session_get_prompt_uses_client_prompts_get},
+        {"client session read resource", test_client_session_read_resource_uses_client_resources_read},
+        {"client session discover tools", test_client_session_discover_tools_uses_client_list_tools},
+        {"client list all tools follows cursors", test_client_list_all_tools_follows_cursors},
+        {"client resource templates and json helpers", test_client_resource_templates_and_json_helpers},
+        {"client roots and notification callbacks", test_client_roots_and_notification_callbacks},
+    };
+
+    std::size_t failures = 0;
+    for (const auto& [name, test] : tests) {
+        try {
+            test();
+            std::cout << "[PASS] " << name << '\n';
+        } catch (const std::exception& ex) {
+            ++failures;
+            std::cerr << "[FAIL] " << name << ": " << ex.what() << '\n';
+        }
+    }
+
+    if (failures != 0) {
+        std::cerr << failures << " test(s) failed\n";
+        return 1;
+    }
+
+    std::cout << tests.size() << " test(s) passed\n";
+    return 0;
+}

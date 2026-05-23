@@ -1,1 +1,0 @@
-configure_plugin(example_stream_plugin example_stream_plugin.cpp)
