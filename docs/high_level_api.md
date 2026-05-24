@@ -7,7 +7,7 @@ public surface should match the official Rust SDK parity set from
 `docs/rmcp_api_inventory.md`, with `elicitation` treated as an optional
 feature-gated extension.
 
-## Canonical examples
+## Canonical SDK examples
 
 ### Server Peer
 
@@ -103,36 +103,6 @@ int main() {
         .params = {},
         .id = 1,
     });
-}
-```
-
-### Gateway
-
-```cpp
-#include <cxxmcp/gateway.hpp>
-
-int main() {
-    auto gateway = mcp::gateway::Runtime::builder()
-        .profile("profile.dev")
-        .host("127.0.0.1")
-        .port(39931)
-        .path("/cxxmcp/dev")
-        .trust(true)
-        .discover(true)
-        .bind_server("filesystem")
-        .instruction("Use reviewed workspace tools only.")
-        .add_stdio_server("filesystem", "npx", {
-            "-y",
-            "@modelcontextprotocol/server-filesystem",
-            "C:/workspace",
-        })
-        .build();
-
-    if (!gateway) {
-        return 1;
-    }
-
-    return gateway->run();
 }
 ```
 
@@ -301,46 +271,14 @@ public:
 } // namespace mcp::server
 ```
 
-### Gateway
-
-```cpp
-namespace mcp::gateway {
-
-class Runtime {
-public:
-    class Builder {
-    public:
-        Builder& profile(std::string id);
-        Builder& host(std::string host);
-        Builder& port(std::uint16_t port);
-        Builder& path(std::string path);
-        Builder& trust(bool enabled);
-        Builder& discover(bool enabled);
-        Builder& bind_server(std::string server_id);
-        Builder& instruction(std::string value);
-        Builder& add_header(std::string name, std::string value);
-        Builder& add_env(std::string name, std::string value);
-        Builder& add_stdio_server(std::string id, std::string command, std::vector<std::string> args);
-        Builder& add_http_server(std::string id, std::string url);
-        Builder& add_capability_filter(std::string capability_id);
-        Builder& export_client_config(std::string path);
-        Runtime build();
-    };
-
-    static Builder builder();
-    int run();
-};
-
-} // namespace mcp::gateway
-```
-
 ## Rules
 
-- The fluent builder is the default entry point.
+- `Peer` / `Service` is the default SDK entry point.
 - Typed handlers are the default registration path.
 - Raw JSON-RPC stays as an escape hatch.
 - Streamable HTTP is the default HTTP transport.
 - Legacy SSE remains for compatibility only.
 - The facade must stay C++17-friendly in examples and ownership style.
 - The public surface must not drop any capability family exposed by the official Rust SDK.
+- Gateway and runtime builders are optional tool-layer APIs, not canonical SDK APIs.
 
