@@ -22,6 +22,7 @@ struct HttpTransportOptions {
     std::string listen_host = "127.0.0.1";
     int listen_port = 0;
     std::string path = "/mcp";
+    std::vector<std::string> allowed_origins;
 };
 
 class HttpTransport final : public Transport {

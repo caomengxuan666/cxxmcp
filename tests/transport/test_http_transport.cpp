@@ -579,6 +579,51 @@ void test_server_http_transport_accepts_client_notification_with_202() {
     server_transport.transport().stop();
 }
 
+void test_server_http_transport_rejects_mismatched_origin_when_allowlisted() {
+    constexpr int kPort = 40177;
+    const std::string kPath = "/mcp";
+
+    RunningServerTransportFixture server_transport(
+        std::make_unique<mcp::server::HttpTransport>(mcp::server::HttpTransportOptions{
+            .listen_host = "127.0.0.1",
+            .listen_port = kPort,
+            .path = kPath,
+            .allowed_origins = {"https://trusted.example"},
+        }),
+        [](const mcp::protocol::JsonRpcRequest& request, const mcp::server::SessionContext&) {
+            if (request.method == mcp::protocol::InitializeMethod) {
+                return mcp::protocol::JsonRpcResponse{
+                    .id = request.id,
+                    .result = Json{
+                        {"protocolVersion", std::string(mcp::protocol::McpProtocolVersion)},
+                        {"capabilities", Json::object()},
+                        {"serverInfo", Json{{"name", "server-http-test"}, {"version", "1"}}},
+                    },
+                };
+            }
+            return mcp::protocol::make_error_response(
+                std::optional<mcp::protocol::RequestId>{request.id},
+                mcp::protocol::make_error(mcp::protocol::ErrorCode::MethodNotFound, "unexpected request"));
+        });
+
+    require(!server_transport.start_error().has_value(), "server transport should start");
+    require(wait_for_http_initialize(kPort, kPath), "server transport should become reachable");
+
+    httplib::Client http_client("127.0.0.1", kPort);
+    const auto rejected = http_client.Delete(
+        kPath,
+        httplib::Headers{
+            {"Accept", "application/json"},
+            {"Origin", "https://evil.example"},
+            {"MCP-Protocol-Version", std::string(mcp::protocol::McpProtocolVersion)},
+            {"Mcp-Session-Id", "http-session"},
+        });
+    require(rejected != nullptr, "delete with mismatched origin should return a response");
+    require(rejected->status == 400, "delete with mismatched origin should be rejected");
+
+    server_transport.transport().stop();
+}
+
 void test_server_http_transport_can_request_client() {
     std::atomic<int> roots_seen{0};
     std::atomic<int> sampling_seen{0};
@@ -800,6 +845,8 @@ int main() {
          test_server_http_transport_delivers_outbound_notification},
         {"server http transport accepts client notification with 202",
          test_server_http_transport_accepts_client_notification_with_202},
+        {"server http transport rejects mismatched origin when allowlisted",
+         test_server_http_transport_rejects_mismatched_origin_when_allowlisted},
         {"server http transport can request client",
          test_server_http_transport_can_request_client},
     };

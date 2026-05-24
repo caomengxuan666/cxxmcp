@@ -5,6 +5,7 @@
 #include "httplib.h"
 
 #include <chrono>
+#include <algorithm>
 #include <cstdint>
 #include <optional>
 #include <string>
@@ -97,6 +98,22 @@ core::Result<core::Unit> validate_protocol_version_header(const httplib::Request
     return core::Unit{};
 }
 
+core::Result<core::Unit> validate_origin_header(const httplib::Request& request,
+                                                const std::vector<std::string>& allowed_origins) {
+    if (allowed_origins.empty() || !request.has_header("Origin")) {
+        return core::Unit{};
+    }
+
+    const auto origin = request.get_header_value("Origin");
+    if (std::find(allowed_origins.begin(), allowed_origins.end(), origin) == allowed_origins.end()) {
+        return std::unexpected(make_transport_error(HeaderMismatchCode,
+                                                    "http transport request Origin header is not allowed",
+                                                    origin));
+    }
+
+    return core::Unit{};
+}
+
 core::Result<core::Unit> validate_post_headers(const httplib::Request& request,
                                                const protocol::JsonRpcRequest& rpc_request) {
     if (!request.has_header(std::string(MethodHeader))) {
@@ -186,6 +203,12 @@ core::Result<core::Unit> HttpTransport::start(RequestHandler handler, Notificati
         if (!protocol_version) {
             response.status = 400;
             write_error(response, protocol_version.error().code, protocol_version.error().message, std::nullopt);
+            return;
+        }
+        const auto origin = validate_origin_header(request, options_.allowed_origins);
+        if (!origin) {
+            response.status = 400;
+            write_error(response, origin.error().code, origin.error().message, std::nullopt);
             return;
         }
 
@@ -326,6 +349,12 @@ core::Result<core::Unit> HttpTransport::start(RequestHandler handler, Notificati
             write_error(response, protocol_version.error().code, protocol_version.error().message, std::nullopt);
             return;
         }
+        const auto origin = validate_origin_header(request, options_.allowed_origins);
+        if (!origin) {
+            response.status = 400;
+            write_error(response, origin.error().code, origin.error().message, std::nullopt);
+            return;
+        }
 
         const auto stream_session_id = request.get_header_value("Mcp-Session-Id");
         {
@@ -378,6 +407,12 @@ core::Result<core::Unit> HttpTransport::start(RequestHandler handler, Notificati
         if (!protocol_version) {
             response.status = 400;
             write_error(response, protocol_version.error().code, protocol_version.error().message, std::nullopt);
+            return;
+        }
+        const auto origin = validate_origin_header(request, options_.allowed_origins);
+        if (!origin) {
+            response.status = 400;
+            write_error(response, origin.error().code, origin.error().message, std::nullopt);
             return;
         }
 
