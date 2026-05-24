@@ -82,6 +82,7 @@ MCPServer.cpp/
         transport/
         peer/
         handler/
+        service/
         client/
         server/
         protocol.hpp
@@ -91,6 +92,7 @@ MCPServer.cpp/
         server.hpp
         transport.hpp
         peer.hpp
+        service.hpp
     core/
       include/
         cxxmcp/
@@ -197,6 +199,7 @@ The public include surface should be stable:
 #include <cxxmcp/server.hpp>
 #include <cxxmcp/transport.hpp>
 #include <cxxmcp/peer.hpp>
+#include <cxxmcp/service.hpp>
 ```
 
 Third-party users should not need to know the repository's internal source layout.
