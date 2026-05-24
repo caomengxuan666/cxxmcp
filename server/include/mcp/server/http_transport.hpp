@@ -63,6 +63,7 @@ private:
     std::deque<QueuedEvent> pending_notifications_;
     std::unordered_map<std::string, std::shared_ptr<PendingRequest>> pending_requests_;
     std::uint64_t next_notification_event_id_ = 1;
+    std::uint64_t next_session_id_ = 1;
     bool stopped_ = false;
     std::string session_id_;
     std::optional<protocol::ClientCapabilities> client_capabilities_;

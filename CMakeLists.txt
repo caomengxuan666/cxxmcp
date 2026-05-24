@@ -12,6 +12,7 @@ set(BUILD_SHARED_LIBS OFF CACHE BOOL "Build static libraries by default" FORCE)
 
 include(CTest)
 
+option(MCP_BUILD_SDK "Build the public SDK layer" ON)
 option(MCP_BUILD_PROTOCOL "Build the MCP protocol library" ON)
 option(MCP_BUILD_CLIENT "Build the MCP client library" OFF)
 option(MCP_BUILD_SERVER "Build the MCP server library" OFF)
@@ -29,6 +30,13 @@ set(MCP_ENABLE_SERVER ${MCP_BUILD_SERVER})
 set(MCP_ENABLE_APP ${MCP_BUILD_APP})
 set(MCP_ENABLE_GATEWAY ${MCP_BUILD_GATEWAY})
 set(MCP_ENABLE_CLI ${MCP_BUILD_CLI})
+set(MCP_ENABLE_SDK ${MCP_BUILD_SDK})
+
+if(MCP_ENABLE_SDK)
+    set(MCP_ENABLE_PROTOCOL ON)
+    set(MCP_ENABLE_CLIENT ON)
+    set(MCP_ENABLE_SERVER ON)
+endif()
 
 if(MCP_BUILD_CLI)
     set(MCP_ENABLE_GATEWAY ON)
@@ -72,6 +80,7 @@ if(MCP_ENABLE_PROTOCOL)
     add_library(mcp_protocol STATIC)
     target_sources(mcp_protocol PRIVATE protocol/src/serialization.cpp)
     target_include_directories(mcp_protocol PUBLIC
+        sdk/include
         protocol/include
         ${CMAKE_CURRENT_SOURCE_DIR}/third_party
     )
@@ -85,7 +94,10 @@ if(MCP_ENABLE_CLIENT)
         client/src/process_stdio_transport.cpp
         client/src/stdio_transport.cpp
     )
-    target_include_directories(mcp_client PUBLIC client/include)
+    target_include_directories(mcp_client PUBLIC
+        sdk/include
+        client/include
+    )
     target_link_libraries(mcp_client PUBLIC mcp_core mcp_protocol cpp_httplib)
 endif()
 
@@ -96,8 +108,42 @@ if(MCP_ENABLE_SERVER)
         server/src/server.cpp
         server/src/stdio_transport.cpp
     )
-    target_include_directories(mcp_server PUBLIC server/include)
+    target_include_directories(mcp_server PUBLIC
+        sdk/include
+        server/include
+    )
     target_link_libraries(mcp_server PUBLIC mcp_core mcp_protocol cpp_httplib)
+endif()
+
+if(TARGET mcp_protocol OR TARGET mcp_client OR TARGET mcp_server)
+    add_library(mcp_sdk INTERFACE)
+    target_include_directories(mcp_sdk INTERFACE sdk/include)
+
+    if(TARGET mcp_protocol)
+        target_link_libraries(mcp_sdk INTERFACE mcp_protocol)
+    endif()
+    if(TARGET mcp_client)
+        target_link_libraries(mcp_sdk INTERFACE mcp_client)
+    endif()
+    if(TARGET mcp_server)
+        target_link_libraries(mcp_sdk INTERFACE mcp_server)
+    endif()
+endif()
+
+if(TARGET mcp_sdk)
+    add_library(cxxmcp::sdk ALIAS mcp_sdk)
+endif()
+
+if(TARGET mcp_protocol)
+    add_library(cxxmcp::protocol ALIAS mcp_protocol)
+endif()
+
+if(TARGET mcp_client)
+    add_library(cxxmcp::client ALIAS mcp_client)
+endif()
+
+if(TARGET mcp_server)
+    add_library(cxxmcp::server ALIAS mcp_server)
 endif()
 
 if(TARGET mcp_protocol)

@@ -19,6 +19,8 @@
 namespace mcp::server {
 namespace {
 
+constexpr std::string_view SessionHeader = "Mcp-Session-Id";
+constexpr std::string_view ProtocolVersionHeader = "MCP-Protocol-Version";
 constexpr std::string_view MethodHeader = "Mcp-Method";
 constexpr std::string_view NameHeader = "Mcp-Name";
 constexpr int HeaderMismatchCode = -32001;
@@ -144,6 +146,51 @@ core::Result<core::Unit> validate_post_headers(const httplib::Request& request,
     return core::Unit{};
 }
 
+core::Result<core::Unit> validate_initialize_protocol_header(const httplib::Request& request,
+                                                             const protocol::JsonRpcRequest& rpc_request) {
+    if (!request.has_header(std::string(ProtocolVersionHeader))) {
+        return core::Unit{};
+    }
+
+    if (!rpc_request.params.is_object() || !rpc_request.params.contains("protocolVersion") ||
+        !rpc_request.params.at("protocolVersion").is_string()) {
+        return std::unexpected(make_transport_error(HeaderMismatchCode,
+                                                    "http transport initialize request missing protocolVersion"));
+    }
+
+    const auto header_value = request.get_header_value(std::string(ProtocolVersionHeader));
+    const auto body_value = rpc_request.params.at("protocolVersion").get<std::string>();
+    if (header_value != body_value) {
+        return std::unexpected(make_transport_error(HeaderMismatchCode,
+                                                    "http transport request MCP-Protocol-Version header mismatch",
+                                                    header_value));
+    }
+
+    return core::Unit{};
+}
+
+core::Result<core::Unit> validate_session_header(const httplib::Request& request,
+                                                 const std::string& expected_session_id) {
+    if (expected_session_id.empty()) {
+        return std::unexpected(make_transport_error(HeaderMismatchCode,
+                                                    "http transport has no active session"));
+    }
+
+    if (!request.has_header(std::string(SessionHeader))) {
+        return std::unexpected(make_transport_error(HeaderMismatchCode,
+                                                    "http transport request missing Mcp-Session-Id header"));
+    }
+
+    const auto session_header = request.get_header_value(std::string(SessionHeader));
+    if (session_header != expected_session_id) {
+        return std::unexpected(make_transport_error(HeaderMismatchCode,
+                                                    "http transport request Mcp-Session-Id header mismatch",
+                                                    session_header));
+    }
+
+    return core::Unit{};
+}
+
 void write_response(httplib::Response& http_response, const protocol::JsonRpcResponse& response) {
     const auto serialized = protocol::serialize_response(response);
     if (!serialized) {
@@ -199,12 +246,6 @@ core::Result<core::Unit> HttpTransport::start(RequestHandler handler, Notificati
                   [this, handler = std::move(handler), notification_handler = std::move(notification_handler)](
                       const httplib::Request& request,
                       httplib::Response& response) mutable {
-        const auto protocol_version = validate_protocol_version_header(request);
-        if (!protocol_version) {
-            response.status = 400;
-            write_error(response, protocol_version.error().code, protocol_version.error().message, std::nullopt);
-            return;
-        }
         const auto origin = validate_origin_header(request, options_.allowed_origins);
         if (!origin) {
             response.status = 400;
@@ -212,16 +253,34 @@ core::Result<core::Unit> HttpTransport::start(RequestHandler handler, Notificati
             return;
         }
 
-        std::string session_context_id;
-        {
-            std::lock_guard lock(mutex_);
-            session_context_id = session_id_.empty() ? "http-session" : session_id_;
-        }
-
         const auto message = protocol::parse_message(request.body);
         if (!message) {
             write_error(response, message.error().code, message.error().message);
             return;
+        }
+
+        const auto* rpc_request = std::get_if<protocol::JsonRpcRequest>(&*message);
+        const bool initialize_request = rpc_request != nullptr && rpc_request->method == protocol::InitializeMethod;
+        if (!initialize_request) {
+            std::string active_session_id;
+            {
+                std::lock_guard lock(mutex_);
+                active_session_id = session_id_;
+            }
+
+            const auto session_header = validate_session_header(request, active_session_id);
+            if (!session_header) {
+                response.status = 404;
+                write_error(response, session_header.error().code, session_header.error().message, std::nullopt);
+                return;
+            }
+
+            const auto protocol_version = validate_protocol_version_header(request);
+            if (!protocol_version) {
+                response.status = 400;
+                write_error(response, protocol_version.error().code, protocol_version.error().message, std::nullopt);
+                return;
+            }
         }
 
         if (const auto* notification = std::get_if<protocol::JsonRpcNotification>(&*message)) {
@@ -239,8 +298,13 @@ core::Result<core::Unit> HttpTransport::start(RequestHandler handler, Notificati
                 return;
             }
             if (notification_handler) {
+                std::string active_session_id;
+                {
+                    std::lock_guard lock(mutex_);
+                    active_session_id = session_id_;
+                }
                 const auto handled = notification_handler(*notification, SessionContext{
-                                                                       .session_id = session_context_id,
+                                                                       .session_id = active_session_id,
                                                                        .remote_address = request.remote_addr,
                                                                        .transport = this,
                                                                    });
@@ -289,7 +353,6 @@ core::Result<core::Unit> HttpTransport::start(RequestHandler handler, Notificati
             return;
         }
 
-        const auto* rpc_request = std::get_if<protocol::JsonRpcRequest>(&*message);
         if (rpc_request == nullptr) {
             write_error(response,
                         static_cast<int>(protocol::ErrorCode::InvalidRequest),
@@ -303,6 +366,30 @@ core::Result<core::Unit> HttpTransport::start(RequestHandler handler, Notificati
             response.status = 400;
             write_error(response, header_check.error().code, header_check.error().message, rpc_request->id);
             return;
+        }
+
+        if (initialize_request) {
+            const auto init_version_check = validate_initialize_protocol_header(request, *rpc_request);
+            if (!init_version_check) {
+                response.status = 400;
+                write_error(response,
+                            init_version_check.error().code,
+                            init_version_check.error().message,
+                            rpc_request->id);
+                return;
+            }
+        }
+
+        std::string session_context_id;
+        bool initialize_session = false;
+        {
+            std::lock_guard lock(mutex_);
+            if (initialize_request && session_id_.empty()) {
+                session_context_id = "mcp-session-" + std::to_string(next_session_id_++);
+                initialize_session = true;
+            } else {
+                session_context_id = session_id_;
+            }
         }
 
         auto rpc_response = handler(*rpc_request, SessionContext{
@@ -321,20 +408,22 @@ core::Result<core::Unit> HttpTransport::start(RequestHandler handler, Notificati
         }
 
         if (rpc_request->method == protocol::InitializeMethod) {
-            std::lock_guard guard(mutex_);
-            if (rpc_request->params.is_object() && rpc_request->params.contains("capabilities")) {
-                client_capabilities_ = protocol::client_capabilities_from_json(rpc_request->params.at("capabilities"));
-            } else {
-                client_capabilities_.reset();
+            if (!rpc_response->error.has_value()) {
+                std::lock_guard guard(mutex_);
+                if (rpc_request->params.is_object() && rpc_request->params.contains("capabilities")) {
+                    client_capabilities_ = protocol::client_capabilities_from_json(rpc_request->params.at("capabilities"));
+                } else {
+                    client_capabilities_.reset();
+                }
+                if (initialize_session || session_id_.empty()) {
+                    session_id_ = session_context_id;
+                }
+                response.set_header(std::string(SessionHeader), session_id_);
             }
-            if (session_id_.empty()) {
-                session_id_ = session_context_id;
-            }
-            response.set_header("Mcp-Session-Id", session_id_);
         } else {
             std::lock_guard guard(mutex_);
             if (!session_id_.empty()) {
-                response.set_header("Mcp-Session-Id", session_id_);
+                response.set_header(std::string(SessionHeader), session_id_);
             }
         }
 
@@ -343,12 +432,6 @@ core::Result<core::Unit> HttpTransport::start(RequestHandler handler, Notificati
 
     server_->Get(options_.path,
                  [this](const httplib::Request& request, httplib::Response& response) {
-        const auto protocol_version = validate_protocol_version_header(request);
-        if (!protocol_version) {
-            response.status = 400;
-            write_error(response, protocol_version.error().code, protocol_version.error().message, std::nullopt);
-            return;
-        }
         const auto origin = validate_origin_header(request, options_.allowed_origins);
         if (!origin) {
             response.status = 400;
@@ -356,13 +439,31 @@ core::Result<core::Unit> HttpTransport::start(RequestHandler handler, Notificati
             return;
         }
 
-        const auto stream_session_id = request.get_header_value("Mcp-Session-Id");
+        if (!request.has_header(std::string(SessionHeader))) {
+            response.status = 400;
+            write_error(response,
+                        HeaderMismatchCode,
+                        "http transport request missing Mcp-Session-Id header",
+                        std::nullopt);
+            return;
+        }
+
+        const auto stream_session_id = request.get_header_value(std::string(SessionHeader));
+        std::string active_session_id;
         {
             std::lock_guard lock(mutex_);
-            if (session_id_.empty() || stream_session_id != session_id_) {
-                response.status = 404;
-                return;
-            }
+            active_session_id = session_id_;
+        }
+        if (active_session_id.empty() || stream_session_id != active_session_id) {
+            response.status = 404;
+            return;
+        }
+
+        const auto protocol_version = validate_protocol_version_header(request);
+        if (!protocol_version) {
+            response.status = 400;
+            write_error(response, protocol_version.error().code, protocol_version.error().message, std::nullopt);
+            return;
         }
 
         response.set_chunked_content_provider("text/event-stream",
@@ -403,12 +504,6 @@ core::Result<core::Unit> HttpTransport::start(RequestHandler handler, Notificati
 
     server_->Delete(options_.path,
                     [this](const httplib::Request& request, httplib::Response& response) {
-        const auto protocol_version = validate_protocol_version_header(request);
-        if (!protocol_version) {
-            response.status = 400;
-            write_error(response, protocol_version.error().code, protocol_version.error().message, std::nullopt);
-            return;
-        }
         const auto origin = validate_origin_header(request, options_.allowed_origins);
         if (!origin) {
             response.status = 400;
@@ -416,18 +511,42 @@ core::Result<core::Unit> HttpTransport::start(RequestHandler handler, Notificati
             return;
         }
 
-        std::lock_guard lock(mutex_);
-        if (session_id_.empty() || request.get_header_value("Mcp-Session-Id") != session_id_) {
+        if (!request.has_header(std::string(SessionHeader))) {
+            response.status = 400;
+            write_error(response,
+                        HeaderMismatchCode,
+                        "http transport request missing Mcp-Session-Id header",
+                        std::nullopt);
+            return;
+        }
+
+        const auto stream_session_id = request.get_header_value(std::string(SessionHeader));
+        std::string active_session_id;
+        {
+            std::lock_guard lock(mutex_);
+            active_session_id = session_id_;
+        }
+        if (active_session_id.empty() || stream_session_id != active_session_id) {
             response.status = 404;
             return;
         }
 
-        abort_pending_requests("http session terminated");
-        pending_notifications_.clear();
-        next_notification_event_id_ = 1;
-        client_capabilities_.reset();
-        session_id_.clear();
-        notification_cv_.notify_all();
+        const auto protocol_version = validate_protocol_version_header(request);
+        if (!protocol_version) {
+            response.status = 400;
+            write_error(response, protocol_version.error().code, protocol_version.error().message, std::nullopt);
+            return;
+        }
+
+        {
+            std::lock_guard lock(mutex_);
+            abort_pending_requests("http session terminated");
+            pending_notifications_.clear();
+            next_notification_event_id_ = 1;
+            client_capabilities_.reset();
+            session_id_.clear();
+            notification_cv_.notify_all();
+        }
         response.status = 204;
     });
 

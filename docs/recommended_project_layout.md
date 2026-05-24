@@ -24,6 +24,21 @@ cli -> runtime/gateway -> sdk
 
 The SDK must not depend on the runtime, gateway, or CLI.
 
+## Practical Recommendation
+
+The current repository layout is usable, but it does not yet read as a clean SDK package from the outside.
+
+The best short-term approach is:
+
+1. Keep the physical tree mostly as-is.
+2. Treat `protocol`, `client`, and `server` as the SDK core.
+3. Treat `gateway` and `cli` as optional tools, not part of the core SDK story.
+4. Rename `app` to `runtime` when the next layout cleanup is convenient.
+5. Keep `plugin-sdk` as an optional extension layer until the plugin-loading story is complete.
+6. Keep `reference/` out of install and default build paths.
+
+In other words, do not do a large directory move first. Make the public package shape SDK-first first, then simplify the physical tree only if it still helps.
+
 ## Target Layout
 
 ```text

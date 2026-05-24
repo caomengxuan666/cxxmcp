@@ -187,7 +187,12 @@ struct HttpTransport::Impl {
         bool retried_after_session_reset = false;
         while (true) {
             auto client = make_client();
-            auto headers = make_headers(request.method, header_name_from_request(request), /*json_body=*/true, /*event_stream=*/true);
+            const bool include_protocol_version = request.method != protocol::InitializeMethod;
+            auto headers = make_headers(request.method,
+                                        header_name_from_request(request),
+                                        /*json_body=*/true,
+                                        /*event_stream=*/true,
+                                        include_protocol_version);
             const auto response = client.Post(options.path, headers, *serialized, "application/json");
             if (!response) {
                 return std::unexpected(make_transport_error(static_cast<int>(protocol::ErrorCode::InternalError),
@@ -205,7 +210,10 @@ struct HttpTransport::Impl {
                                                             std::to_string(response->status)));
             }
 
-            remember_session(*response);
+            const auto remembered_session = remember_session(*response, request.method == protocol::InitializeMethod);
+            if (!remembered_session) {
+                return std::unexpected(remembered_session.error());
+            }
             const auto stream_started_result = ensure_stream_started();
             if (!stream_started_result) {
                 return std::unexpected(stream_started_result.error());
@@ -236,7 +244,10 @@ struct HttpTransport::Impl {
                                                         std::to_string(response->status)));
         }
 
-        remember_session(*response);
+        const auto remembered_session = remember_session(*response, /*require_session_id=*/false);
+        if (!remembered_session) {
+            return std::unexpected(remembered_session.error());
+        }
         const auto stream_started_result = ensure_stream_started();
         if (!stream_started_result) {
             return std::unexpected(stream_started_result.error());
@@ -288,13 +299,16 @@ struct HttpTransport::Impl {
     httplib::Headers make_headers(std::optional<std::string_view> method,
                                   std::optional<std::string> name,
                                   bool json_body,
-                                  bool event_stream) const {
+                                  bool event_stream,
+                                  bool include_protocol_version = true) const {
         auto headers = to_headers(options.headers);
         if (json_body) {
             headers.emplace("Content-Type", "application/json");
         }
         headers.emplace("Accept", event_stream ? "application/json, text/event-stream" : "application/json");
-        headers.emplace("MCP-Protocol-Version", std::string(protocol::McpProtocolVersion));
+        if (include_protocol_version) {
+            headers.emplace("MCP-Protocol-Version", std::string(protocol::McpProtocolVersion));
+        }
         if (method.has_value()) {
             headers.emplace(std::string(MethodHeader), std::string(*method));
         }
@@ -309,12 +323,22 @@ struct HttpTransport::Impl {
         return headers;
     }
 
-    void remember_session(const httplib::Response& response) {
+    core::Result<core::Unit> remember_session(const httplib::Response& response, bool require_session_id) {
         if (!response.has_header(std::string(SessionHeader))) {
-            return;
+            if (require_session_id) {
+                return std::unexpected(make_transport_error(static_cast<int>(protocol::ErrorCode::InvalidRequest),
+                                                            "http transport response missing Mcp-Session-Id header"));
+            }
+            return core::Unit{};
+        }
+        const auto response_session_id = response.get_header_value(std::string(SessionHeader));
+        if (response_session_id.empty()) {
+            return std::unexpected(make_transport_error(static_cast<int>(protocol::ErrorCode::InvalidRequest),
+                                                        "http transport response has an empty Mcp-Session-Id header"));
         }
         std::lock_guard lock(mutex);
-        session_id = response.get_header_value(std::string(SessionHeader));
+        session_id = response_session_id;
+        return core::Unit{};
     }
 
     core::Result<core::Unit> ensure_stream_started() {
@@ -485,7 +509,10 @@ struct HttpTransport::Impl {
                                                         std::to_string(result->status)));
         }
 
-        remember_session(*result);
+        const auto remembered_session = remember_session(*result, /*require_session_id=*/false);
+        if (!remembered_session) {
+            return std::unexpected(remembered_session.error());
+        }
         return core::Unit{};
     }
 

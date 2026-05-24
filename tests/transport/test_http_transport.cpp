@@ -135,7 +135,6 @@ bool wait_for_http_initialize(int port, const std::string& path) {
     const httplib::Headers initialize_headers{
         {"Accept", "application/json"},
         {"Content-Type", "application/json"},
-        {"MCP-Protocol-Version", std::string(mcp::protocol::McpProtocolVersion)},
         {"Mcp-Method", std::string(mcp::protocol::InitializeMethod)},
     };
 
@@ -242,6 +241,8 @@ void test_http_transport_opens_get_sse_after_session_and_dispatches_notification
         require(rpc_request != nullptr, "server should receive request");
         require(rpc_request->method == mcp::protocol::InitializeMethod,
                 "server should receive initialize");
+        require(!request.has_header("MCP-Protocol-Version"),
+                "initialize should not include MCP-Protocol-Version");
 
         response.set_header("Mcp-Session-Id", "test-session");
         response.set_content(serialize_test_response(mcp::protocol::JsonRpcResponse{
@@ -257,6 +258,9 @@ void test_http_transport_opens_get_sse_after_session_and_dispatches_notification
         require(request.has_header("Mcp-Session-Id"), "sse get should include session id");
         require(request.get_header_value("Mcp-Session-Id") == "test-session",
                 "sse get session id mismatch");
+        require(request.has_header("MCP-Protocol-Version"), "sse get should include protocol version");
+        require(request.get_header_value("MCP-Protocol-Version") == std::string(mcp::protocol::McpProtocolVersion),
+                "sse get protocol version mismatch");
         get_seen.store(true);
 
         const auto notification = serialize_test_notification(mcp::protocol::JsonRpcNotification{
@@ -332,6 +336,8 @@ void test_http_transport_sets_method_and_name_headers() {
 
         if (rpc_request->method == mcp::protocol::InitializeMethod) {
             require(!request.has_header("Mcp-Name"), "initialize should not include Mcp-Name");
+            require(!request.has_header("MCP-Protocol-Version"),
+                    "initialize should not include protocol version header");
             response.set_header("Mcp-Session-Id", "header-session");
             response.set_content(serialize_test_response(mcp::protocol::JsonRpcResponse{
                 .id = rpc_request->id,
@@ -454,7 +460,6 @@ void test_server_http_transport_delivers_outbound_notification() {
                                                       httplib::Headers{
                                                           {"Accept", "application/json"},
                                                           {"Content-Type", "application/json"},
-                                                          {"MCP-Protocol-Version", std::string(mcp::protocol::McpProtocolVersion)},
                                                           {"Mcp-Method", std::string(mcp::protocol::InitializeMethod)},
                                                       },
                                                       initialize_request,
@@ -531,11 +536,26 @@ void test_server_http_transport_accepts_client_notification_with_202() {
     require(wait_for_http_initialize(kPort, kPath), "server transport should become reachable");
 
     httplib::Client http_client("127.0.0.1", kPort);
+    const auto rejected_without_session = http_client.Post(
+        kPath,
+        httplib::Headers{
+            {"Accept", "application/json"},
+            {"Content-Type", "application/json"},
+            {"MCP-Protocol-Version", std::string(mcp::protocol::McpProtocolVersion)},
+            {"Mcp-Method", std::string(mcp::protocol::ToolsListChangedNotificationMethod)},
+        },
+        serialize_test_notification(mcp::protocol::JsonRpcNotification{
+            .method = std::string(mcp::protocol::ToolsListChangedNotificationMethod),
+            .params = Json::object(),
+        }),
+        "application/json");
+    require(rejected_without_session != nullptr, "notification without session should return a response");
+    require(rejected_without_session->status == 404, "notification without session should be rejected");
+
     const auto initialize_response = http_client.Post(kPath,
                                                       httplib::Headers{
                                                           {"Accept", "application/json"},
                                                           {"Content-Type", "application/json"},
-                                                          {"MCP-Protocol-Version", std::string(mcp::protocol::McpProtocolVersion)},
                                                           {"Mcp-Method", std::string(mcp::protocol::InitializeMethod)},
                                                       },
                                                       serialize_test_request(mcp::protocol::JsonRpcRequest{
@@ -804,7 +824,7 @@ void test_server_http_transport_can_request_client() {
             "client should observe one elicitation completion notification");
     require(elicitation_complete_id == "elicitation-1", "elicitation completion id mismatch");
 
-    const std::string session_id = "http-session";
+    const std::string session_id = "mcp-session-1";
     httplib::Client admin_client("127.0.0.1", kPort);
     httplib::Headers delete_headers{
         {"Accept", "application/json"},
