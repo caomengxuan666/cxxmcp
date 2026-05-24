@@ -152,7 +152,7 @@ int main() {
 
     auto transport = std::make_unique<LoopbackTransport>(**server);
     auto* transport_ptr = transport.get();
-    mcp::Peer<mcp::RoleClient> peer(mcp::client::Client(std::move(transport)));
+    mcp::ClientPeer peer(mcp::client::Client(std::move(transport)));
     auto& client = peer.client();
 
     std::size_t logging_messages = 0;
