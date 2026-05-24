@@ -28,7 +28,8 @@ target_link_libraries(my_server PRIVATE cxxmcp::server)
 
 公开头文件使用 `cxxmcp/` 前缀。常用公共头包括
 `cxxmcp/protocol.hpp`、`cxxmcp/request.hpp`、`cxxmcp/handler.hpp`、
-`cxxmcp/service.hpp` 和 `cxxmcp/sdk.hpp`。
+`cxxmcp/transport.hpp`、`cxxmcp/peer.hpp`、`cxxmcp/client.hpp`、
+`cxxmcp/server.hpp`、`cxxmcp/service.hpp` 和 `cxxmcp/sdk.hpp`。
 
 ## 构建
 
