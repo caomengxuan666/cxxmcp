@@ -201,13 +201,16 @@ Covered by current tree:
 
 This is the point that turns "good library" into "fact standard."
 
-Needed:
+Covered by current tree:
 
-- stable target names
-- stable include paths
-- documented compatibility rules
-- deprecation windows
-- release notes for every breaking change
+- stable `cxxmcp::protocol`, `cxxmcp::client`, `cxxmcp::server`,
+  `cxxmcp::peer`, `cxxmcp::service`, `cxxmcp::handler`,
+  `cxxmcp::transport`, and `cxxmcp::sdk` target names
+- stable public include paths under `cxxmcp/...`
+- documented compatibility rules and deprecation windows
+- changelog discipline for public releases
+- package-smoke coverage that installs the SDK and builds an external consumer
+  through the exported CMake targets
 
 ## 6. API Contract to Freeze
 
