@@ -13,6 +13,8 @@ Already covered in the current tree:
 - client-side completion helpers
 - client-side elicitation helpers
 - task-related client and server APIs
+- request handles for async peer calls
+- in-memory task management service in `runtime`
 
 The remaining gaps in this document are the ones that still need attention.
 
@@ -91,7 +93,7 @@ protocol
 | Request dispatch | typed request/response/notification enums | string method dispatch plus manual JSON conversion |
 | Bidirectional calls | `Peer` is first-class | partially supported, but not the core abstraction |
 | Timeout/cancellation | request handles and cancellation tokens | mostly ad hoc or transport-specific |
-| Task support | integrated task manager and handler methods | protocol/client pieces exist, server lifecycle is incomplete |
+| Task support | integrated task manager and handler methods | protocol/client pieces and runtime task management exist; the remaining gap is deeper RMCP operation processor parity |
 | Product runtime | outside SDK core | gateway/runtime concepts are prominent in the repository |
 
 This means the current C++ design is product-friendly, while RMCP is SDK-first.
@@ -267,6 +269,7 @@ Covered by current tree:
 - task-capable client methods
 - task result handlers on the server side
 - task status notifications
+- runtime task management service
 
 Still to close:
 

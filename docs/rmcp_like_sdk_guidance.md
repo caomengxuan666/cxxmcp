@@ -266,6 +266,7 @@ Recommendations:
 
 - keep elicitation feature-gated
 - keep task models in `protocol`
+- keep the runtime task management service separate from the SDK core
 - do not force task management into the base client/server if the runtime does not need it
 - expose task methods only when the transport and session model can support them cleanly
 
