@@ -76,7 +76,7 @@ void prepare_rust_stdio_child_build_env() {
 
 void build_rust_stdio_child() {
   prepare_rust_stdio_child_build_env();
-  const auto command = "cargo build --locked --manifest-path \"" +
+  const auto command = "cargo build --offline --manifest-path \"" +
                        rust_stdio_child_manifest().string() + "\"";
   require(std::system(command.c_str()) == 0,
           "rust process fixture build should succeed");

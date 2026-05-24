@@ -4,6 +4,18 @@ This document compares the current C++ MCP SDK/runtime code with the local RMCP 
 
 The purpose is not to copy RMCP line by line. The goal is to identify what makes RMCP feel like an SDK and what the C++ project should change to provide a similar developer-facing shape while preserving the existing gateway and CLI layers.
 
+## Status
+
+Already covered in the current tree:
+
+- `peer` and `service` public facades for role-aware client/server sessions
+- `handler` aggregates and interface-based callback installation
+- client-side completion helpers
+- client-side elicitation helpers
+- task-related client and server APIs
+
+The remaining gaps in this document are the ones that still need attention.
+
 ## RMCP Reference Shape
 
 The RMCP core crate is organized around these layers:
@@ -33,6 +45,9 @@ The current C++ code already has useful MCP pieces:
 - `protocol`: JSON-RPC and MCP model types
 - `client`: concrete client with stdio, process stdio, and HTTP transports
 - `server`: concrete server with registries, handlers, transports, auth, and rate limiting
+- `peer`: role-aware client/server facades
+- `service`: synchronous service lifecycle wrappers
+- `handler`: aggregate and interface-based callback contracts
 - `app`, `cli`, and gateway code: runtime orchestration and product behavior
 
 This shape is practical for the current product, but it is not yet RMCP-like as a pure SDK.
@@ -68,11 +83,11 @@ protocol
 
 | Area | RMCP | Current C++ Code |
 |---|---|---|
-| Top-level abstraction | `Peer<Role>` + `Service<Role>` | `Client` / `Server` |
-| Role model | `RoleClient` / `RoleServer` | separate client/server classes |
-| Application extension point | `ClientHandler` / `ServerHandler` | callbacks, setters, and registries |
+| Top-level abstraction | `Peer<Role>` + `Service<Role>` | `Peer` facades plus `Client` / `Server` compatibility wrappers |
+| Role model | `RoleClient` / `RoleServer` | role-aware peer facades over client/server implementations |
+| Application extension point | `ClientHandler` / `ServerHandler` | handler aggregates, interface contracts, and registries |
 | Transport | role-generic async send/receive | client/server-specific request/response transports |
-| Lifecycle | `serve(...)` returns `RunningService` | `start()` / `stop()` on concrete objects |
+| Lifecycle | `serve(...)` returns `RunningService` | `serve(...)` and `start()` / `stop()` wrappers are both present |
 | Request dispatch | typed request/response/notification enums | string method dispatch plus manual JSON conversion |
 | Bidirectional calls | `Peer` is first-class | partially supported, but not the core abstraction |
 | Timeout/cancellation | request handles and cancellation tokens | mostly ad hoc or transport-specific |
@@ -104,26 +119,23 @@ RMCP uses a role-based peer abstraction:
 - `Service<R>`
 - `RunningService<R, S>`
 
-The current C++ SDK exposes concrete classes:
+The C++ SDK now has matching public facades:
 
-- `mcp::client::Client`
-- `mcp::server::Server`
-- `mcp::client::Transport`
-- `mcp::server::Transport`
+- `mcp::RoleClient`
+- `mcp::RoleServer`
+- `mcp::Peer<RoleClient>`
+- `mcp::Peer<RoleServer>`
+- `mcp::Service<RoleClient>`
+- `mcp::Service<RoleServer>`
+- `mcp::RunningService<RoleClient>`
+- `mcp::RunningService<RoleServer>`
 
-Gap:
+Covered by current tree:
 
-- no shared `Peer` abstraction
-- no role abstraction
-- no unified service lifecycle
-- client/server transports are different interfaces
-
-Action:
-
-- introduce `RoleClient` and `RoleServer` marker types
-- introduce `Peer<Role>` as the main SDK facade
-- introduce a shared transport abstraction that can support both roles
-- keep existing `Client` and `Server` as compatibility wrappers
+- shared role-aware peer abstraction
+- role markers
+- unified service lifecycle layer
+- compatibility wrappers that still expose the older concrete client/server entry points
 
 ### 2. Handler Model
 
@@ -134,25 +146,18 @@ RMCP application code implements handler traits:
 
 Those handlers are converted into `Service<RoleClient>` or `Service<RoleServer>`.
 
-The current C++ code uses:
+The C++ SDK now also has:
 
-- callback setters
-- builder callbacks
-- registries for tools, prompts, and resources
-- raw/custom request handlers
+- `ClientHandlerInterface`
+- `ServerHandlerInterface`
+- aggregate `ClientHandler` / `ServerHandler` structs
+- `set_handler(...)` adapters on the public client and server APIs
 
-Gap:
+Covered by current tree:
 
-- callbacks are spread across the concrete client/server objects
-- there is no single handler contract that describes the application behavior
-- handler composition and testing are harder than RMCP's trait-based model
-
-Action:
-
-- add `ClientHandler` and `ServerHandler` interfaces or concepts
-- route protocol requests through handlers
-- keep registries as helper implementations of `ServerHandler`
-- reduce public mutable callback setters over time
+- explicit handler contracts
+- handler aggregates for ergonomic setup
+- adapter helpers that install all non-empty callbacks
 
 ### 3. Transport Model
 
@@ -254,30 +259,20 @@ RMCP has first-class task support:
 - task timeout handling
 - task result transport
 
-The current C++ code has task protocol types and client methods, but server support is incomplete.
+The C++ SDK now exposes task-related client and server APIs, plus task protocol types.
 
-Current C++ server side has:
+Covered by current tree:
 
-- task capability fields
-- `notify_task_status`
-- task request parameters on some protocol models
+- task request and result models
+- task-capable client methods
+- task result handlers on the server side
+- task status notifications
 
-Missing pieces:
+Still to close:
 
-- task manager / operation processor
-- tool-level task support negotiation
-- task-based invocation validation
-- `enqueue_task`
-- server-side `list_tasks`, `get_task`, `task_result`, `cancel_task`
-- result retention and timeout policy
-
-Action:
-
-- implement a C++ task manager in the runtime or server layer
-- add tool execution metadata with task support mode
-- validate task invocation rules before calling tools
-- expose task methods through the RMCP-like server handler
-- keep task support optional if the first SDK milestone does not need it
+- richer task lifecycle orchestration
+- retention and timeout policy
+- deeper parity with RMCP's operation processor model
 
 ### 7. Elicitation
 
@@ -293,22 +288,19 @@ RMCP includes:
 - capability checks
 - schema-driven typed elicitation helpers
 
-The current C++ code has elicitation models and handlers, but the surface is flatter.
+The C++ SDK now has elicitation models and helper methods on both the client and peer facades.
 
-Gap:
+Covered by current tree:
 
-- no typed `elicit<T>()` style helper
-- no strong form-vs-url request variants
-- limited capability checking
-- limited schema integration
+- elicitation request and result types
+- typed and raw helper APIs
+- client and peer entry points
 
-Action:
+Still to close:
 
-- keep elicitation feature-gated or optional
-- split form and URL elicitation models
-- add client capability checks
-- add typed helper APIs over the raw protocol methods
-- integrate JSON schema validation for form elicitation
+- deeper form-vs-URL structure if required
+- stronger schema integration
+- broader capability gating
 
 ### 8. Completion Convenience
 
@@ -319,12 +311,13 @@ RMCP exposes completion helpers:
 - `complete_resource_argument`
 - `complete_resource_simple`
 
-The current C++ client has lower-level `complete(...)` overloads but not these convenience helpers.
+The C++ SDK now has these helpers on the client and peer facades.
 
-Action:
+Covered by current tree:
 
-- add prompt/resource completion helper methods to the peer facade
-- keep raw `complete(...)` for advanced callers
+- prompt completion helpers
+- resource completion helpers
+- raw `complete(...)` overloads for advanced callers
 
 ### 9. Request Lifecycle, Timeout, and Cancellation
 

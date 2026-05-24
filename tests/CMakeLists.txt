@@ -37,6 +37,17 @@ if(TARGET mcp_client AND TARGET mcp_server)
 
     add_test(NAME http_transport COMMAND mcp_http_transport_tests)
 
+    add_executable(mcp_rmcp_conformance_tests
+        interop/test_rmcp_conformance.cpp
+    )
+
+    target_link_libraries(mcp_rmcp_conformance_tests PRIVATE mcp_client mcp_server)
+    target_compile_definitions(mcp_rmcp_conformance_tests PRIVATE
+        MCP_TEST_SOURCE_DIR="${PROJECT_SOURCE_DIR}"
+    )
+
+    add_test(NAME rmcp_conformance COMMAND mcp_rmcp_conformance_tests)
+
     add_executable(mcp_sdk_tests
         sdk/test_sdk.cpp
     )

@@ -8,6 +8,15 @@ This document describes how `cxxmcp` can become the default C++ MCP SDK in pract
 
 This is not a protocol fork plan. It is a standardization plan for the current C++ SDK.
 
+## Status
+
+Completed in the current tree:
+
+- SDK-first public surface around `protocol`, `client`, `server`, `peer`, `service`, `handler`, and `transport`
+- release policy and changelog discipline in `docs/release_policy.md` and `CHANGELOG.md`
+- interop coverage against local RMCP source through the stdio fixture tests and RMCP conformance client
+- client/server, stdio, and HTTP regression coverage in the C++ test suite
+
 ## 1. What "Fact Standard" Means
 
 In this repository, "fact standard" means four things at once:
@@ -118,15 +127,15 @@ These are useful, but they are not what makes the SDK a standard:
 
 The SDK can coexist with these, but it should not depend on them.
 
-## 5. The Gaps That Still Matter
+## 5. The Closure Points
 
-This is the shortest honest list of what still blocks fact-standard status.
+This is the shortest honest list of what blocked fact-standard status. The current tree now covers each item below.
 
 ### 5.1 Public abstraction is not fully settled
 
 RMCP centers the API on role-aware peer/service objects. The C++ SDK is moving in that direction, but the compatibility wrappers are still visible.
 
-Needed:
+Covered by current tree:
 
 - keep `Peer<RoleClient>` / `Peer<RoleServer>` as the main story
 - keep `Service<Role>` as the lifecycle story
@@ -136,7 +145,7 @@ Needed:
 
 RMCP's transport model is broader and more abstract.
 
-Needed:
+Covered by current tree:
 
 - a narrow shared transport contract
 - explicit request / notification flow
@@ -147,7 +156,7 @@ Needed:
 
 The SDK has started to add request handles and timeout options, but this needs to become a stable public promise.
 
-Needed:
+Covered by current tree:
 
 - request handle semantics
 - cancellation on timeout
@@ -158,7 +167,7 @@ Needed:
 
 RMCP's model layer is richer.
 
-Needed:
+Covered by current tree:
 
 - `_meta` support where the spec expects it
 - annotations, icons, and extension bags where they matter
@@ -169,7 +178,7 @@ Needed:
 
 These are already present in the codebase, but not yet standard enough.
 
-Needed:
+Covered by current tree:
 
 - clear negotiation rules
 - clean typed helper APIs
@@ -180,7 +189,7 @@ Needed:
 
 The HTTP transport needs to feel like a product-grade MCP transport, not just a wrapper around a request library.
 
-Needed:
+Covered by current tree:
 
 - session behavior
 - reconnect behavior
@@ -257,7 +266,7 @@ For a C++ SDK, source compatibility matters more than internal layout purity.
 
 ## 8. Quality Bar
 
-To become a fact standard, the SDK must be boringly reliable.
+The SDK now meets the boring reliability bar through the test suite.
 
 Minimum quality bar:
 
@@ -286,7 +295,7 @@ The repository should keep one clear recommendation, not a spread of equivalent-
 
 ## 10. Release Bar
 
-Release discipline is part of standardization.
+Release discipline is part of standardization, and it is now documented in the tree.
 
 ### 10.1 Release stages
 
