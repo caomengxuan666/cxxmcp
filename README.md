@@ -174,6 +174,8 @@ int main() {
 ## Documentation
 
 - [High-level API](docs/high_level_api.md)
+- [Release policy](docs/release_policy.md)
+- [Changelog](CHANGELOG.md)
 - [SDK guidance](docs/rmcp_like_sdk_guidance.md)
 - [De facto standard roadmap](docs/de_facto_standard_roadmap.md)
 - [Capability matrix](docs/capability_matrix.md)

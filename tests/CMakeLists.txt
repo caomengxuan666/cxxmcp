@@ -36,6 +36,14 @@ if(TARGET mcp_client AND TARGET mcp_server)
     target_link_libraries(mcp_http_transport_tests PRIVATE mcp_client mcp_server)
 
     add_test(NAME http_transport COMMAND mcp_http_transport_tests)
+
+    add_executable(mcp_sdk_tests
+        sdk/test_sdk.cpp
+    )
+
+    target_link_libraries(mcp_sdk_tests PRIVATE mcp_client mcp_server)
+
+    add_test(NAME sdk COMMAND mcp_sdk_tests)
 endif()
 
 if(TARGET mcp_protocol AND (TARGET mcp_client OR TARGET mcp_app OR TARGET mcp_gateway OR TARGET mcp_cli))

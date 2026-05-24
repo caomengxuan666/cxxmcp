@@ -167,6 +167,8 @@ int main() {
 ## 架构文档
 
 - [SDK 设计指导](docs/rmcp_like_sdk_guidance.md)
+- [发布策略](docs/release_policy.md)
+- [更新日志](CHANGELOG.md)
 - [高层 API 草案](docs/high_level_api.md)
 - [事实标准路线](docs/de_facto_standard_roadmap.md)
 - [传输策略](docs/httplib_async_transport_strategy.md)
