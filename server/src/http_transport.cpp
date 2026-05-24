@@ -82,6 +82,21 @@ std::optional<std::string> header_name_from_request(const protocol::JsonRpcReque
     return std::nullopt;
 }
 
+core::Result<core::Unit> validate_protocol_version_header(const httplib::Request& request) {
+    constexpr std::string_view VersionHeader = "MCP-Protocol-Version";
+    if (!request.has_header(std::string(VersionHeader))) {
+        return std::unexpected(make_transport_error(HeaderMismatchCode,
+                                                    "http transport request missing MCP-Protocol-Version header"));
+    }
+    const auto version_header = request.get_header_value(std::string(VersionHeader));
+    if (version_header != protocol::McpProtocolVersion) {
+        return std::unexpected(make_transport_error(HeaderMismatchCode,
+                                                    "http transport request MCP-Protocol-Version header mismatch",
+                                                    version_header));
+    }
+    return core::Unit{};
+}
+
 core::Result<core::Unit> validate_post_headers(const httplib::Request& request,
                                                const protocol::JsonRpcRequest& rpc_request) {
     if (!request.has_header(std::string(MethodHeader))) {
@@ -167,6 +182,13 @@ core::Result<core::Unit> HttpTransport::start(RequestHandler handler, Notificati
                   [this, handler = std::move(handler), notification_handler = std::move(notification_handler)](
                       const httplib::Request& request,
                       httplib::Response& response) mutable {
+        const auto protocol_version = validate_protocol_version_header(request);
+        if (!protocol_version) {
+            response.status = 400;
+            write_error(response, protocol_version.error().code, protocol_version.error().message, std::nullopt);
+            return;
+        }
+
         std::string session_context_id;
         {
             std::lock_guard lock(mutex_);
@@ -298,6 +320,13 @@ core::Result<core::Unit> HttpTransport::start(RequestHandler handler, Notificati
 
     server_->Get(options_.path,
                  [this](const httplib::Request& request, httplib::Response& response) {
+        const auto protocol_version = validate_protocol_version_header(request);
+        if (!protocol_version) {
+            response.status = 400;
+            write_error(response, protocol_version.error().code, protocol_version.error().message, std::nullopt);
+            return;
+        }
+
         const auto stream_session_id = request.get_header_value("Mcp-Session-Id");
         {
             std::lock_guard lock(mutex_);
@@ -345,6 +374,13 @@ core::Result<core::Unit> HttpTransport::start(RequestHandler handler, Notificati
 
     server_->Delete(options_.path,
                     [this](const httplib::Request& request, httplib::Response& response) {
+        const auto protocol_version = validate_protocol_version_header(request);
+        if (!protocol_version) {
+            response.status = 400;
+            write_error(response, protocol_version.error().code, protocol_version.error().message, std::nullopt);
+            return;
+        }
+
         std::lock_guard lock(mutex_);
         if (session_id_.empty() || request.get_header_value("Mcp-Session-Id") != session_id_) {
             response.status = 404;

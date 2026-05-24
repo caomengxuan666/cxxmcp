@@ -566,6 +566,16 @@ void test_server_http_transport_accepts_client_notification_with_202() {
     require(notification_response->status == 202, "notification status should be 202 Accepted");
     require(observed_session_id == session_id, "notification session id should match negotiated session");
 
+    const auto rejected = http_client.Delete(
+        kPath,
+        httplib::Headers{
+            {"Accept", "application/json"},
+            {"MCP-Protocol-Version", "0.0.0"},
+            {"Mcp-Session-Id", session_id},
+        });
+    require(rejected != nullptr, "delete with wrong protocol version should return a response");
+    require(rejected->status == 400, "delete with wrong protocol version should be rejected");
+
     server_transport.transport().stop();
 }
 

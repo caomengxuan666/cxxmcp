@@ -37,6 +37,61 @@ The current C++ code already has useful MCP pieces:
 
 This shape is practical for the current product, but it is not yet RMCP-like as a pure SDK.
 
+## Abstraction Difference Summary
+
+The most important conceptual difference is this:
+
+RMCP abstracts a bidirectional MCP service session.
+
+The current C++ code abstracts concrete callable client/server objects plus runtime and gateway helpers.
+
+In RMCP, the center is the peer session:
+
+```text
+model
+  -> Transport<R>
+  -> Service<R>
+  -> Peer<R>
+  -> RunningService<R, S>
+```
+
+In the current C++ code, the center is the concrete client/server runtime:
+
+```text
+protocol
+  -> Client
+  -> Server
+  -> Transport
+  -> Registry / Callback
+  -> Gateway / CLI
+```
+
+| Area | RMCP | Current C++ Code |
+|---|---|---|
+| Top-level abstraction | `Peer<Role>` + `Service<Role>` | `Client` / `Server` |
+| Role model | `RoleClient` / `RoleServer` | separate client/server classes |
+| Application extension point | `ClientHandler` / `ServerHandler` | callbacks, setters, and registries |
+| Transport | role-generic async send/receive | client/server-specific request/response transports |
+| Lifecycle | `serve(...)` returns `RunningService` | `start()` / `stop()` on concrete objects |
+| Request dispatch | typed request/response/notification enums | string method dispatch plus manual JSON conversion |
+| Bidirectional calls | `Peer` is first-class | partially supported, but not the core abstraction |
+| Timeout/cancellation | request handles and cancellation tokens | mostly ad hoc or transport-specific |
+| Task support | integrated task manager and handler methods | protocol/client pieces exist, server lifecycle is incomplete |
+| Product runtime | outside SDK core | gateway/runtime concepts are prominent in the repository |
+
+This means the current C++ design is product-friendly, while RMCP is SDK-first.
+
+The recommended direction is not to remove the current design. Instead, add an RMCP-like SDK facade below the gateway and CLI:
+
+```text
+protocol
+  -> transport
+  -> peer
+  -> handler
+  -> compatibility Client / Server wrappers
+  -> gateway / CLI
+```
+
 ## Major Differences
 
 ### 1. SDK Abstraction
