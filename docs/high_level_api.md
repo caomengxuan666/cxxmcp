@@ -1,145 +1,71 @@
 # High Level API Draft
 
 This is the target C++17-friendly facade on top of the current core.
-The public surface should match the official Rust SDK parity set from `docs/rmcp_api_inventory.md`, with `elicitation` treated as an optional feature-gated extension.
+The canonical public surface is `Peer` / `Service` plus the protocol layer.
+`client` and `server` remain compatibility and convenience wrappers. The
+public surface should match the official Rust SDK parity set from
+`docs/rmcp_api_inventory.md`, with `elicitation` treated as an optional
+feature-gated extension.
 
 ## Canonical examples
 
-### Server
+### Server Peer
 
 ```cpp
+#include <cxxmcp/peer.hpp>
 #include <cxxmcp/server.hpp>
-
-struct EchoArgs {
-    std::string value;
-};
-
-struct EchoResult {
-    std::string value;
-};
+#include <cxxmcp/service.hpp>
 
 int main() {
-    return mcp::server::App::builder()
-        .name("demo-server")
+    mcp::server::ServerBuilder builder;
+    builder.name("demo-server")
         .version("1.0.0")
         .instructions("Expose local tools over MCP.")
-        .stdio()
-        .tool<EchoArgs, EchoResult>("echo", [](const EchoArgs& input) {
-            return EchoResult{input.value};
-        })
-        .tool<std::string, std::string>("shout", [](std::string text) {
-            return text + "!";
-        })
-        .prompt(mcp::protocol::Prompt{
-                    .name = "summarize",
-                    .description = "Summarize text",
-                    .arguments = {mcp::protocol::PromptArgument{
-                        .name = "text",
-                        .description = "Text to summarize",
-                        .required = true,
-                    }},
-                },
-                [](const mcp::server::PromptContext& context) {
-            const auto text = context.arguments.at("text").get<std::string>();
-            mcp::protocol::PromptsGetResult result;
-            result.description = "Summarize text";
-            result.messages.push_back(mcp::protocol::PromptMessage{
-                .role = "user",
-                .content = mcp::protocol::ContentBlock{.type = "text", .text = text},
+        .add_tool(
+            mcp::protocol::ToolDefinition{
+                .name = "echo",
+                .description = "Echo the incoming payload",
+                .input_schema = mcp::protocol::Json{{"type", "object"}},
+            },
+            [](const mcp::server::ToolContext& context) {
+                mcp::protocol::ToolResult result;
+                result.structured_content = context.arguments;
+                return result;
             });
-            return result;
-        })
-        .resource("readme", [] {
-            return mcp::protocol::Resource{
-                .uri = "file:///workspace/README.md",
-                .name = "Readme",
-                .description = "Workspace readme",
-                .mime_type = "text/plain",
-            };
-        })
-        .resource_template("file", [](std::string path) {
-            return mcp::protocol::ResourceTemplate{
-                .uri_template = "file:///workspace/{path}",
-                .name = "Workspace file",
-                .description = "Address a file in the workspace",
-            };
-        })
-        .completion([](const mcp::protocol::Json& request) {
-            return mcp::protocol::Json{
-                {"completion", mcp::protocol::Json{
-                                   {"values", mcp::protocol::Json::array({
-                                       request.value("prefix", std::string{}) + "alpha",
-                                       request.value("prefix", std::string{}) + "beta",
-                                   })},
-                               }},
-            };
-        })
-        .sampling([](const mcp::protocol::Json& request) {
-            return mcp::protocol::Json{
-                {"role", "assistant"},
-                {"content", mcp::protocol::Json{{"type", "text"},
-                                                {"text", "Sampled: " + request.value("prompt", std::string{})}}},
-                {"model", "demo-model"},
-            };
-        })
-        .logging([](std::string_view level, std::string_view message) {
-            (void)level;
-            (void)message;
-        })
-        .raw_request([](const mcp::protocol::JsonRpcRequest& request) {
-            if (request.method == "example/health") {
-                return mcp::protocol::Json{{"ok", true}};
-            }
-            return mcp::protocol::Json{};
-        })
-        .run();
+
+    auto server = builder.build();
+    if (!server) {
+        return 1;
+    }
+
+    auto running = mcp::serve(mcp::ServerPeer(std::move(*server)));
+    if (!running) {
+        return 1;
+    }
+
+    return running->peer().list_tools().has_value() ? 0 : 1;
 }
 ```
 
-### Client
+### Client Peer
 
 ```cpp
-#include <cxxmcp/client.hpp>
+#include <cxxmcp/peer.hpp>
+#include <cxxmcp/service.hpp>
 
 int main() {
-    auto client = mcp::client::Client::connect_streamable_http({
+    auto peer = mcp::ClientPeer::connect_streamable_http({
         .host = "127.0.0.1",
         .port = 3000,
         .path = "/mcp",
     });
 
-    client.initialize();
+    auto running = mcp::serve(std::move(peer));
+    if (!running) {
+        return 1;
+    }
 
-    const auto tools = client.list_all_tools();
-    const auto prompts = client.list_all_prompts();
-    const auto resources = client.list_all_resources();
-    const auto templates = client.list_all_resource_templates();
-    const auto roots = client.list_roots();
-
-    client.set_roots({
-        {.uri = "file:///workspace", .name = "workspace"},
-    });
-
-    const auto prompt = client.get_prompt("summarize", {{"text", "hello"}});
-    const auto resource = client.read_resource("file:///workspace/README.md");
-    const auto tool = client.call_raw("echo", {{"value", "hello"}});
-    const auto completion = client.complete({{"prefix", "he"}});
-    const auto sample = client.create_message({{"prompt", "write a summary"}});
-
-    client.on_logging_message([](std::string_view level, std::string_view message) {
-        (void)level;
-        (void)message;
-    });
-    client.on_tool_list_changed([] {});
-    client.on_prompt_list_changed([] {});
-    client.on_resource_list_changed([] {});
-    client.on_resource_updated([](const std::string& uri) {
-        (void)uri;
-    });
-    client.on_roots_list_changed([] {});
-    client.notify_initialized();
-    client.notify_progress(std::int64_t{1}, 0.5, 1.0);
-    client.notify_roots_list_changed();
+    return running->peer().initialize().has_value() ? 0 : 1;
 }
 ```
 
@@ -147,32 +73,32 @@ int main() {
 
 ```cpp
 #include <cxxmcp/client.hpp>
+#include <cxxmcp/peer.hpp>
+#include <cxxmcp/service.hpp>
 
 int main() {
-    mcp::client::McpClientSession session(std::make_unique<mcp::client::ProcessStdioTransport>(
+    auto peer = mcp::ClientPeer(std::make_unique<mcp::client::ProcessStdioTransport>(
         mcp::client::ProcessStdioTransportOptions{
             .command = "/path/to/cxxmcp-example-stdio-server",
         }));
 
-    session.initialize();
-    session.mark_initialized();
+    auto running = mcp::serve(std::move(peer));
+    if (!running) {
+        return 1;
+    }
 
-    const auto tools = session.discover_tools();
-    const auto prompts = session.discover_prompts();
-    const auto resources = session.discover_resources();
-    const auto templates = session.discover_resource_templates();
+    running->peer().initialize();
+    running->peer().notify_initialized();
+    const auto tools = running->peer().list_tools();
+    const auto prompts = running->peer().list_prompts();
+    const auto resources = running->peer().list_resources();
+    const auto templates = running->peer().list_resource_templates();
 
-    session.get_prompt(mcp::protocol::PromptsGetParams{
-        .name = prompts->front().name,
-        .arguments = {{"text", "hello"}},
-    });
-    session.read_resource(mcp::protocol::ResourcesReadParams{
-        .uri = resources->front().uri,
-    });
-
-    session.client().complete({{"prefix", "pr"}});
-    session.client().create_message({{"prompt", "write a summary"}});
-    session.client().raw_request({
+    running->peer().get_prompt(prompts->front().name, {{"text", "hello"}});
+    running->peer().read_resource(resources->front().uri);
+    running->peer().complete({{"prefix", "pr"}});
+    running->peer().create_message({{"prompt", "write a summary"}});
+    running->peer().raw_request({
         .method = "example/health",
         .params = {},
         .id = 1,
@@ -211,6 +137,29 @@ int main() {
 ```
 
 ## Derived interface surface
+
+### Peer / Service
+
+```cpp
+namespace mcp {
+
+struct RoleClient {};
+struct RoleServer {};
+
+template <class Role>
+class Peer;
+
+template <class Role>
+class Service;
+
+template <class Role>
+class RunningService;
+
+using ClientPeer = Peer<RoleClient>;
+using ServerPeer = Peer<RoleServer>;
+
+} // namespace mcp
+```
 
 ### Protocol
 
