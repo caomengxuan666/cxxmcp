@@ -80,13 +80,30 @@ class LoopbackTransport final : public mcp::server::Transport {
 
 int main() {
   try {
-    auto server =
-        mcp::server::App::builder()
-            .name("cxxmcp-example-server-peer")
-            .version("1.0.0")
-            .instructions("Example server peer for the SDK facade.")
-            .tool<Json, Json>("echo", [](const Json& input) { return input; })
-            .build();
+    mcp::server::ServerBuilder builder;
+    builder.name("cxxmcp-example-server-peer")
+        .version("1.0.0")
+        .instructions("Example server peer for the SDK facade.")
+        .add_tool(
+            mcp::protocol::ToolDefinition{
+                .name = "echo",
+                .description = "Echo the incoming payload",
+                .input_schema = Json{{"type", "object"}},
+                .output_schema = Json{{"type", "object"}},
+            },
+            [](const mcp::server::ToolContext& context)
+                -> mcp::core::Result<mcp::protocol::ToolResult> {
+              mcp::protocol::ToolResult result;
+              result.structured_content = context.arguments;
+              result.content.push_back(mcp::protocol::ContentBlock{
+                  .type = "text",
+                  .text = context.arguments.dump(),
+                  .data = Json::object(),
+              });
+              return result;
+            });
+
+    auto server = builder.build();
     require(server.has_value(), "failed to build example server");
 
     mcp::ServerPeer peer(std::move(*server));

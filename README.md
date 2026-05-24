@@ -75,6 +75,42 @@ ctest --test-dir build-tests --output-on-failure
 
 ## Quick Start
 
+### Server Peer
+
+```cpp
+#include <cxxmcp/peer.hpp>
+#include <cxxmcp/server.hpp>
+
+int main() {
+    mcp::server::ServerBuilder builder;
+    builder.name("demo-server")
+        .version("1.0.0")
+        .instructions("Expose local tools over MCP.")
+        .add_tool(
+            mcp::protocol::ToolDefinition{
+                .name = "echo",
+                .description = "Echo the incoming payload",
+                .input_schema = mcp::protocol::Json{{"type", "object"}},
+            },
+            [](const mcp::server::ToolContext& context) {
+                mcp::protocol::ToolResult result;
+                result.structured_content = context.arguments;
+                return result;
+            });
+
+    auto server = builder.build();
+    if (!server) {
+        return 1;
+    }
+
+    auto running = mcp::serve(mcp::ServerPeer(std::move(*server)));
+    if (!running) {
+        return 1;
+    }
+    return 0;
+}
+```
+
 ### Runtime Server
 
 This is the higher-level runtime builder example. It stays useful for product-style servers, but it is not the core peer/handler surface.
