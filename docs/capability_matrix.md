@@ -103,5 +103,5 @@ These are implementation adapters, not the product identity.
 - `CLI11` is the right fit for a dense command surface with composable subcommands.
 - `spdlog` keeps logging consistent across CLI and runtime code.
 - GUI work is paused. When it returns, it should stay a thin shell over `runtime`.
-- The facade should be written in a C++17 style even if the internal build uses C++23.
+- The facade should stay modern and readable even if the internal build uses C++20 or newer.
 - The public SDK should still expose raw protocol and transport escape hatches, while `Peer` / `Service` remains the primary entry point.

@@ -5,7 +5,7 @@ project(cxxmcp
     LANGUAGES CXX
 )
 
-set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 set(BUILD_SHARED_LIBS OFF CACHE BOOL "Build static libraries by default" FORCE)
@@ -22,6 +22,15 @@ function(cxxmcp_build_option canonical legacy description default_value)
     set(${legacy} "${${canonical}}" CACHE BOOL
         "Deprecated alias for ${canonical}" FORCE)
     mark_as_advanced(${legacy})
+endfunction()
+
+function(cxxmcp_require_cxx20 target_name)
+    get_target_property(target_type "${target_name}" TYPE)
+    if(target_type STREQUAL "INTERFACE_LIBRARY")
+        target_compile_features("${target_name}" INTERFACE cxx_std_20)
+    else()
+        target_compile_features("${target_name}" PUBLIC cxx_std_20)
+    endif()
 endfunction()
 
 cxxmcp_build_option(CXXMCP_BUILD_SDK MCP_BUILD_SDK
@@ -100,6 +109,8 @@ target_include_directories(mcp_core INTERFACE
     $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>
 )
 
+cxxmcp_require_cxx20(mcp_core)
+
 add_library(jsonrpcpp INTERFACE)
 target_include_directories(jsonrpcpp INTERFACE
     $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/third_party/jsonrpcpp>
@@ -108,12 +119,16 @@ target_include_directories(jsonrpcpp INTERFACE
     $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}/cxxmcp/third_party/jsonrpcpp>
 )
 
+cxxmcp_require_cxx20(jsonrpcpp)
+
 add_library(cpp_httplib INTERFACE)
 target_include_directories(cpp_httplib INTERFACE
     $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/third_party/httplib>
     $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>
     $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}/cxxmcp/third_party/httplib>
 )
+
+cxxmcp_require_cxx20(cpp_httplib)
 
 add_subdirectory(third_party/spdlog EXCLUDE_FROM_ALL)
 
@@ -128,6 +143,7 @@ if(MCP_ENABLE_PROTOCOL)
         $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>
     )
     target_link_libraries(mcp_protocol PUBLIC mcp_core jsonrpcpp)
+    cxxmcp_require_cxx20(mcp_protocol)
 endif()
 
 if(MCP_ENABLE_CLIENT)
@@ -144,6 +160,7 @@ if(MCP_ENABLE_CLIENT)
         $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>
     )
     target_link_libraries(mcp_client PUBLIC mcp_core mcp_protocol cpp_httplib)
+    cxxmcp_require_cxx20(mcp_client)
 endif()
 
 if(MCP_ENABLE_SERVER)
@@ -160,6 +177,7 @@ if(MCP_ENABLE_SERVER)
         $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>
     )
     target_link_libraries(mcp_server PUBLIC mcp_core mcp_protocol cpp_httplib)
+    cxxmcp_require_cxx20(mcp_server)
 endif()
 
 if(TARGET mcp_protocol OR TARGET mcp_client OR TARGET mcp_server)
@@ -179,6 +197,7 @@ if(TARGET mcp_protocol OR TARGET mcp_client OR TARGET mcp_server)
     if(TARGET mcp_server)
         target_link_libraries(mcp_sdk INTERFACE mcp_server)
     endif()
+    cxxmcp_require_cxx20(mcp_sdk)
 endif()
 
 if(TARGET mcp_client AND TARGET mcp_server)
@@ -189,6 +208,7 @@ if(TARGET mcp_client AND TARGET mcp_server)
         $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>
     )
     target_link_libraries(mcp_transport INTERFACE mcp_client mcp_server)
+    cxxmcp_require_cxx20(mcp_transport)
 
     add_library(mcp_peer INTERFACE)
     set_target_properties(mcp_peer PROPERTIES EXPORT_NAME peer)
@@ -197,6 +217,7 @@ if(TARGET mcp_client AND TARGET mcp_server)
         $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>
     )
     target_link_libraries(mcp_peer INTERFACE mcp_client mcp_server)
+    cxxmcp_require_cxx20(mcp_peer)
 
     add_library(mcp_handler INTERFACE)
     set_target_properties(mcp_handler PROPERTIES EXPORT_NAME handler)
@@ -205,6 +226,7 @@ if(TARGET mcp_client AND TARGET mcp_server)
         $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>
     )
     target_link_libraries(mcp_handler INTERFACE mcp_client mcp_server)
+    cxxmcp_require_cxx20(mcp_handler)
 
     add_library(mcp_service INTERFACE)
     set_target_properties(mcp_service PROPERTIES EXPORT_NAME service)
@@ -213,6 +235,7 @@ if(TARGET mcp_client AND TARGET mcp_server)
         $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>
     )
     target_link_libraries(mcp_service INTERFACE mcp_peer)
+    cxxmcp_require_cxx20(mcp_service)
 endif()
 
 if(TARGET mcp_sdk)
@@ -267,6 +290,7 @@ if(TARGET mcp_protocol)
     )
     target_link_libraries(mcp_plugin_sdk INTERFACE mcp_core mcp_protocol)
     set_target_properties(mcp_plugin_sdk PROPERTIES EXPORT_NAME plugin_sdk)
+    cxxmcp_require_cxx20(mcp_plugin_sdk)
     add_library(cxxmcp::plugin_sdk ALIAS mcp_plugin_sdk)
 endif()
 
@@ -278,6 +302,7 @@ if(TARGET mcp_server AND TARGET mcp_plugin_sdk)
     )
     target_link_libraries(mcp_adapters INTERFACE mcp_core mcp_protocol mcp_server mcp_plugin_sdk)
     set_target_properties(mcp_adapters PROPERTIES EXPORT_NAME adapters)
+    cxxmcp_require_cxx20(mcp_adapters)
     add_library(cxxmcp::adapters ALIAS mcp_adapters)
 endif()
 
@@ -303,6 +328,7 @@ if(MCP_ENABLE_APP)
         $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>
     )
     target_link_libraries(mcp_app PUBLIC mcp_core mcp_protocol mcp_client)
+    cxxmcp_require_cxx20(mcp_app)
 endif()
 
 if(MCP_ENABLE_GATEWAY)
@@ -319,6 +345,7 @@ if(MCP_ENABLE_GATEWAY)
         $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>
     )
     target_link_libraries(mcp_gateway PUBLIC mcp_core mcp_app mcp_client mcp_server)
+    cxxmcp_require_cxx20(mcp_gateway)
 endif()
 
 if(MCP_ENABLE_CLI)
@@ -343,6 +370,7 @@ if(MCP_ENABLE_CLI)
         ${CMAKE_CURRENT_SOURCE_DIR}/third_party/CLI11/include
     )
     target_link_libraries(mcp_cli PUBLIC mcp_core mcp_app mcp_gateway mcp_client mcp_server)
+    cxxmcp_require_cxx20(mcp_cli)
 
     add_executable(mcp_cli_app
         tools/cli/src/main.cpp

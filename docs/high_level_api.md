@@ -1,6 +1,6 @@
 # High Level API Draft
 
-This is the target C++17-friendly facade on top of the current core.
+This is the target C++20-friendly facade on top of the current core.
 The canonical public surface is `Peer` / `Service` plus the protocol layer.
 `client` and `server` remain compatibility and convenience wrappers. The
 public surface should match the official Rust SDK parity set from
@@ -278,7 +278,7 @@ public:
 - Raw JSON-RPC stays as an escape hatch.
 - Streamable HTTP is the default HTTP transport.
 - Legacy SSE remains for compatibility only.
-- The facade must stay C++17-friendly in examples and ownership style.
+- The facade must stay modern and straightforward in examples and ownership style.
 - The public surface must not drop any capability family exposed by the official Rust SDK.
 - Gateway and runtime builders are optional tool-layer APIs, not canonical SDK APIs.
 

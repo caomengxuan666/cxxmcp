@@ -68,6 +68,16 @@ if(TARGET mcp_client AND TARGET mcp_server)
     add_test(NAME public_targets COMMAND mcp_public_target_tests)
 endif()
 
+if(CXXMCP_BUILD_TESTS AND CXXMCP_BUILD_SDK AND CXXMCP_BUILD_PROTOCOL AND CXXMCP_BUILD_SERVER)
+    add_test(NAME package_smoke COMMAND
+        "${CMAKE_COMMAND}"
+        -DREPO_SOURCE_DIR=${PROJECT_SOURCE_DIR}
+        -DBUILD_DIR=${PROJECT_BINARY_DIR}
+        -DBUILD_CONFIG=$<CONFIG>
+        -P "${PROJECT_SOURCE_DIR}/tests/package_smoke.cmake"
+    )
+endif()
+
 if(TARGET mcp_protocol AND (TARGET mcp_client OR TARGET mcp_app OR TARGET mcp_gateway OR TARGET mcp_cli))
     add_executable(mcp_test_stdio_child
         fixtures/process_stdio_child.cpp
