@@ -30,6 +30,8 @@ struct ClientOptions {
     std::chrono::milliseconds timeout{30000};
 };
 
+struct ClientHandler;
+
 using TransportRequestHandler = std::function<core::Result<protocol::JsonRpcResponse>(
     const protocol::JsonRpcRequest&)>;
 using TransportNotificationHandler = std::function<core::Result<core::Unit>(
@@ -165,6 +167,7 @@ public:
     Client& on_elicitation_request(ElicitationRequestHandler handler);
     Client& on_raw_notification(RawNotificationHandler handler);
     Client& on_custom_notification(RawNotificationHandler handler);
+    Client& set_handler(const ClientHandler& handler);
     core::Result<core::Unit> handle_notification(const protocol::JsonRpcNotification& notification);
     core::Result<protocol::JsonRpcResponse> handle_request(const protocol::JsonRpcRequest& request);
 
@@ -200,3 +203,5 @@ private:
 };
 
 } // namespace mcp::client
+
+#include "mcp/client/handler.hpp"

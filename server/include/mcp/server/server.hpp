@@ -135,6 +135,8 @@ struct ServerInfo {
     std::string instructions;
 };
 
+struct ServerHandler;
+
 class Server {
 public:
     explicit Server(ServerOptions options);
@@ -212,6 +214,7 @@ public:
     void set_prompt_list_changed_handler(ListChangedHandler handler);
     void set_resource_list_changed_handler(ListChangedHandler handler);
     void set_resource_updated_handler(ResourceUpdatedHandler handler);
+    Server& set_handler(const ServerHandler& handler);
 
 private:
     ServerOptions options_;
@@ -547,3 +550,5 @@ App::Builder& App::Builder::raw_request(Handler handler) {
 }
 
 } // namespace mcp::server
+
+#include "mcp/server/handler.hpp"
