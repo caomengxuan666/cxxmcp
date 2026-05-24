@@ -57,7 +57,7 @@ cmake --preset examples
 cmake --build --preset examples
 ```
 
-这个预设会在依赖满足时构建 stdio server、server peer、client loopback、process stdio client 和 gateway runtime 示例。
+这个预设会在依赖满足时构建 stdio server、server peer、client peer、client loopback、process stdio client 和 gateway runtime 示例。
 
 运行测试：
 
@@ -102,6 +102,28 @@ int main() {
         return 1;
     }
     return 0;
+}
+```
+
+### Client Peer
+
+```cpp
+#include <cxxmcp/peer.hpp>
+#include <cxxmcp/service.hpp>
+
+int main() {
+    auto peer = mcp::ClientPeer::connect_streamable_http({
+        .host = "127.0.0.1",
+        .port = 3000,
+        .path = "/mcp",
+    });
+
+    auto running = mcp::serve(std::move(peer));
+    if (!running) {
+        return 1;
+    }
+
+    return running->peer().initialize().has_value() ? 0 : 1;
 }
 ```
 

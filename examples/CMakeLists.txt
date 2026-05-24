@@ -14,6 +14,12 @@ if(TARGET mcp_client AND TARGET mcp_server)
 endif()
 
 if(TARGET mcp_client AND TARGET mcp_server)
+    add_executable(mcp_example_client_peer client_peer.cpp)
+    target_link_libraries(mcp_example_client_peer PRIVATE mcp_client
+                                                          mcp_server)
+endif()
+
+if(TARGET mcp_client AND TARGET mcp_server)
     add_executable(mcp_example_client_loopback client_loopback.cpp)
     target_link_libraries(mcp_example_client_loopback PRIVATE mcp_client
                                                           mcp_server)

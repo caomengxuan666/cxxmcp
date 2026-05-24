@@ -63,7 +63,7 @@ cmake --preset examples
 cmake --build --preset examples
 ```
 
-That preset builds the stdio server, server peer, client loopback, process stdio client, and gateway runtime examples when their dependencies are enabled.
+That preset builds the stdio server, server peer, client peer, client loopback, process stdio client, and gateway runtime examples when their dependencies are enabled.
 
 Run tests:
 
@@ -108,6 +108,28 @@ int main() {
         return 1;
     }
     return 0;
+}
+```
+
+### Client Peer
+
+```cpp
+#include <cxxmcp/peer.hpp>
+#include <cxxmcp/service.hpp>
+
+int main() {
+    auto peer = mcp::ClientPeer::connect_streamable_http({
+        .host = "127.0.0.1",
+        .port = 3000,
+        .path = "/mcp",
+    });
+
+    auto running = mcp::serve(std::move(peer));
+    if (!running) {
+        return 1;
+    }
+
+    return running->peer().initialize().has_value() ? 0 : 1;
 }
 ```
 
