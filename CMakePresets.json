@@ -1,0 +1,176 @@
+{
+  "version": 5,
+  "cmakeMinimumRequired": {
+    "major": 3,
+    "minor": 23,
+    "patch": 0
+  },
+  "configurePresets": [
+    {
+      "name": "base-ninja",
+      "hidden": true,
+      "generator": "Ninja",
+      "binaryDir": "${sourceDir}/out/build/${presetName}",
+      "cacheVariables": {
+        "CMAKE_EXPORT_COMPILE_COMMANDS": "ON",
+        "BUILD_SHARED_LIBS": "OFF"
+      }
+    },
+    {
+      "name": "base-ninja-debug",
+      "hidden": true,
+      "inherits": "base-ninja",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug",
+        "BUILD_TESTING": "OFF"
+      }
+    },
+    {
+      "name": "base-ninja-release",
+      "hidden": true,
+      "inherits": "base-ninja",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release",
+        "BUILD_TESTING": "OFF"
+      }
+    },
+    {
+      "name": "sdk",
+      "displayName": "SDK (Debug)",
+      "description": "Build the public SDK libraries and their direct dependencies.",
+      "inherits": "base-ninja-debug",
+      "cacheVariables": {
+        "MCP_BUILD_SDK": "ON",
+        "MCP_BUILD_CLIENT": "OFF",
+        "MCP_BUILD_SERVER": "OFF",
+        "MCP_BUILD_APP": "OFF",
+        "MCP_BUILD_GATEWAY": "OFF",
+        "MCP_BUILD_CLI": "OFF",
+        "MCP_BUILD_EXAMPLES": "OFF",
+        "MCP_BUILD_TESTS": "OFF"
+      }
+    },
+    {
+      "name": "sdk-release",
+      "displayName": "SDK (Release)",
+      "description": "Build the public SDK libraries and their direct dependencies in Release mode.",
+      "inherits": "base-ninja-release",
+      "cacheVariables": {
+        "MCP_BUILD_SDK": "ON",
+        "MCP_BUILD_CLIENT": "OFF",
+        "MCP_BUILD_SERVER": "OFF",
+        "MCP_BUILD_APP": "OFF",
+        "MCP_BUILD_GATEWAY": "OFF",
+        "MCP_BUILD_CLI": "OFF",
+        "MCP_BUILD_EXAMPLES": "OFF",
+        "MCP_BUILD_TESTS": "OFF"
+      }
+    },
+    {
+      "name": "cli",
+      "displayName": "CLI (Debug)",
+      "description": "Build the command-line application and the layers it pulls in.",
+      "inherits": "base-ninja-debug",
+      "cacheVariables": {
+        "MCP_BUILD_SDK": "OFF",
+        "MCP_BUILD_CLIENT": "OFF",
+        "MCP_BUILD_SERVER": "OFF",
+        "MCP_BUILD_APP": "OFF",
+        "MCP_BUILD_GATEWAY": "OFF",
+        "MCP_BUILD_CLI": "ON",
+        "MCP_BUILD_EXAMPLES": "OFF",
+        "MCP_BUILD_TESTS": "OFF"
+      }
+    },
+    {
+      "name": "cli-release",
+      "displayName": "CLI (Release)",
+      "description": "Build the command-line application in Release mode.",
+      "inherits": "base-ninja-release",
+      "cacheVariables": {
+        "MCP_BUILD_SDK": "OFF",
+        "MCP_BUILD_CLIENT": "OFF",
+        "MCP_BUILD_SERVER": "OFF",
+        "MCP_BUILD_APP": "OFF",
+        "MCP_BUILD_GATEWAY": "OFF",
+        "MCP_BUILD_CLI": "ON",
+        "MCP_BUILD_EXAMPLES": "OFF",
+        "MCP_BUILD_TESTS": "OFF"
+      }
+    },
+    {
+      "name": "tests",
+      "displayName": "Tests (Debug)",
+      "description": "Build the full runtime stack with tests enabled.",
+      "inherits": "base-ninja-debug",
+      "cacheVariables": {
+        "MCP_BUILD_SDK": "OFF",
+        "MCP_BUILD_CLIENT": "ON",
+        "MCP_BUILD_SERVER": "ON",
+        "MCP_BUILD_APP": "ON",
+        "MCP_BUILD_GATEWAY": "ON",
+        "MCP_BUILD_CLI": "OFF",
+        "MCP_BUILD_EXAMPLES": "OFF",
+        "MCP_BUILD_TESTS": "ON"
+      }
+    },
+    {
+      "name": "tests-release",
+      "displayName": "Tests (Release)",
+      "description": "Build the full runtime stack with tests enabled in Release mode.",
+      "inherits": "base-ninja-release",
+      "cacheVariables": {
+        "MCP_BUILD_SDK": "OFF",
+        "MCP_BUILD_CLIENT": "ON",
+        "MCP_BUILD_SERVER": "ON",
+        "MCP_BUILD_APP": "ON",
+        "MCP_BUILD_GATEWAY": "ON",
+        "MCP_BUILD_CLI": "OFF",
+        "MCP_BUILD_EXAMPLES": "OFF",
+        "MCP_BUILD_TESTS": "ON"
+      }
+    }
+  ],
+  "buildPresets": [
+    {
+      "name": "sdk",
+      "configurePreset": "sdk"
+    },
+    {
+      "name": "sdk-release",
+      "configurePreset": "sdk-release"
+    },
+    {
+      "name": "cli",
+      "configurePreset": "cli"
+    },
+    {
+      "name": "cli-release",
+      "configurePreset": "cli-release"
+    },
+    {
+      "name": "tests",
+      "configurePreset": "tests"
+    },
+    {
+      "name": "tests-release",
+      "configurePreset": "tests-release"
+    }
+  ],
+  "testPresets": [
+    {
+      "name": "tests",
+      "configurePreset": "tests",
+      "output": {
+        "outputOnFailure": true
+      }
+    },
+    {
+      "name": "tests-release",
+      "configurePreset": "tests-release",
+      "output": {
+        "outputOnFailure": true
+      }
+    }
+  ]
+}
