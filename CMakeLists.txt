@@ -247,6 +247,18 @@ if(TARGET mcp_service)
     add_library(cxxmcp::service ALIAS mcp_service)
 endif()
 
+if(TARGET mcp_app)
+    add_library(cxxmcp::runtime ALIAS mcp_app)
+endif()
+
+if(TARGET mcp_gateway)
+    add_library(cxxmcp::gateway ALIAS mcp_gateway)
+endif()
+
+if(TARGET mcp_cli)
+    add_library(cxxmcp::cli ALIAS mcp_cli)
+endif()
+
 if(TARGET mcp_protocol)
     add_library(mcp_plugin_sdk INTERFACE)
     target_include_directories(mcp_plugin_sdk INTERFACE extensions/plugin-sdk/include)
@@ -275,7 +287,10 @@ if(MCP_ENABLE_APP)
         runtime/src/services.cpp
         runtime/src/tool_management.cpp
     )
-    target_include_directories(mcp_app PUBLIC runtime/include)
+    target_include_directories(mcp_app PUBLIC
+        $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/runtime/include>
+        $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>
+    )
     target_link_libraries(mcp_app PUBLIC mcp_core mcp_protocol mcp_client)
 endif()
 
@@ -287,7 +302,10 @@ if(MCP_ENABLE_GATEWAY)
         runtime/src/gateway_onboarding.cpp
         runtime/src/gateway_runtime.cpp
     )
-    target_include_directories(mcp_gateway PUBLIC runtime/include)
+    target_include_directories(mcp_gateway PUBLIC
+        $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/runtime/include>
+        $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>
+    )
     target_link_libraries(mcp_gateway PUBLIC mcp_core mcp_app mcp_client mcp_server)
 endif()
 
@@ -303,7 +321,10 @@ if(MCP_ENABLE_CLI)
     add_library(mcp_cli STATIC
         tools/cli/src/commands.cpp
     )
-    target_include_directories(mcp_cli PUBLIC tools/cli/include)
+    target_include_directories(mcp_cli PUBLIC
+        $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/tools/cli/include>
+        $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>
+    )
     target_link_libraries(mcp_cli PUBLIC mcp_core mcp_app mcp_gateway mcp_client mcp_server mcp_plugin_sdk CLI11::CLI11)
 
     add_executable(mcp_cli_app
@@ -357,6 +378,15 @@ if(TARGET mcp_handler)
 endif()
 if(TARGET mcp_service)
     list(APPEND CXXMCP_INSTALL_TARGETS mcp_service)
+endif()
+if(TARGET mcp_app)
+    list(APPEND CXXMCP_INSTALL_TARGETS mcp_app)
+endif()
+if(TARGET mcp_gateway)
+    list(APPEND CXXMCP_INSTALL_TARGETS mcp_gateway)
+endif()
+if(TARGET mcp_cli)
+    list(APPEND CXXMCP_INSTALL_TARGETS mcp_cli)
 endif()
 
 install(TARGETS ${CXXMCP_INSTALL_TARGETS}
