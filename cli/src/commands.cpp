@@ -8,6 +8,8 @@
 #include "mcp/protocol/resource.hpp"
 #include "mcp/protocol/tool.hpp"
 
+#include <CLI/CLI.hpp>
+
 #include <algorithm>
 #include <charconv>
 #include <chrono>
@@ -15,6 +17,7 @@
 #include <filesystem>
 #include <fstream>
 #include <iostream>
+#include <memory>
 #include <string>
 #include <thread>
 #include <unordered_set>
@@ -93,6 +96,7 @@ enum class CommandKind {
 
 struct ParsedCommand {
     CommandKind kind = CommandKind::help;
+    std::vector<std::unique_ptr<std::string>> storage;
     std::vector<std::string_view> values;
     std::vector<std::string_view> options;
 };
@@ -100,6 +104,8 @@ struct ParsedCommand {
 core::Error make_cli_error(std::string message, std::string detail = {}) {
     return core::Error{2, std::move(message), std::move(detail)};
 }
+
+core::Result<ParsedCommand> parse_cli11_command(std::span<const std::string_view> args);
 
 app::GatewayServerHealthProvider gateway_health_provider(app::ServerManagementService& management);
 
@@ -314,39 +320,7 @@ bool is_help(std::string_view value) {
 class CommandParser {
 public:
     core::Result<ParsedCommand> parse(std::span<const std::string_view> args) const {
-        if (args.empty() || args[0] == "help" || args[0] == "--help" || args[0] == "-h") {
-            return ParsedCommand{.kind = CommandKind::help};
-        }
-
-        if (args[0] == "doctor") {
-            if (args.size() == 1) {
-                return ParsedCommand{.kind = CommandKind::doctor};
-            }
-            return std::unexpected(make_cli_error("invalid doctor command"));
-        }
-        if (args[0] == "tools") {
-            return parse_tools(args.subspan(1));
-        }
-        if (args[0] == "profiles") {
-            return parse_profiles(args.subspan(1));
-        }
-        if (args[0] == "bundle") {
-            return parse_bundle(args.subspan(1));
-        }
-        if (args[0] == "servers" || args[0] == "server") {
-            return parse_servers(args.subspan(1));
-        }
-        if (args[0] == "capabilities" || args[0] == "capability") {
-            return parse_capabilities(args.subspan(1));
-        }
-        if (args[0] == "exposures" || args[0] == "exposure") {
-            return parse_exposures(args.subspan(1));
-        }
-        if (args[0] == "gateway") {
-            return parse_gateway(args.subspan(1));
-        }
-
-        return std::unexpected(make_cli_error("unknown command", std::string(args[0])));
+        return parse_cli11_command(args);
     }
 
 private:
