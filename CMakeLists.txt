@@ -287,6 +287,7 @@ if(MCP_ENABLE_APP)
         runtime/src/services.cpp
         runtime/src/tool_management.cpp
     )
+    set_target_properties(mcp_app PROPERTIES EXPORT_NAME runtime)
     target_include_directories(mcp_app PUBLIC
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/runtime/include>
         $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>
@@ -302,6 +303,7 @@ if(MCP_ENABLE_GATEWAY)
         runtime/src/gateway_onboarding.cpp
         runtime/src/gateway_runtime.cpp
     )
+    set_target_properties(mcp_gateway PROPERTIES EXPORT_NAME gateway)
     target_include_directories(mcp_gateway PUBLIC
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/runtime/include>
         $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>
@@ -321,11 +323,14 @@ if(MCP_ENABLE_CLI)
     add_library(mcp_cli STATIC
         tools/cli/src/commands.cpp
     )
+    set_target_properties(mcp_cli PROPERTIES EXPORT_NAME cli)
     target_include_directories(mcp_cli PUBLIC
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/tools/cli/include>
         $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>
     )
-    target_link_libraries(mcp_cli PUBLIC mcp_core mcp_app mcp_gateway mcp_client mcp_server mcp_plugin_sdk CLI11::CLI11)
+    target_link_libraries(mcp_cli PUBLIC mcp_core mcp_app mcp_gateway mcp_client mcp_server
+                             PRIVATE $<BUILD_INTERFACE:mcp_plugin_sdk>
+                                     $<BUILD_INTERFACE:CLI11::CLI11>)
 
     add_executable(mcp_cli_app
         tools/cli/src/main.cpp
