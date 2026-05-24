@@ -328,9 +328,11 @@ if(MCP_ENABLE_CLI)
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/tools/cli/include>
         $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>
     )
-    target_link_libraries(mcp_cli PUBLIC mcp_core mcp_app mcp_gateway mcp_client mcp_server
-                             PRIVATE $<BUILD_INTERFACE:mcp_plugin_sdk>
-                                     $<BUILD_INTERFACE:CLI11::CLI11>)
+    target_include_directories(mcp_cli PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/extensions/plugin-sdk/include
+        ${CMAKE_CURRENT_SOURCE_DIR}/third_party/CLI11/include
+    )
+    target_link_libraries(mcp_cli PUBLIC mcp_core mcp_app mcp_gateway mcp_client mcp_server)
 
     add_executable(mcp_cli_app
         tools/cli/src/main.cpp
