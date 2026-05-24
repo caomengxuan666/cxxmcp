@@ -62,7 +62,7 @@ cmake --build --preset examples
 运行测试：
 
 ```powershell
-cmake -S . -B build-tests -DCXXMCP_BUILD_CLIENT=ON -DCXXMCP_BUILD_SERVER=ON -DCXXMCP_BUILD_APP=ON -DCXXMCP_BUILD_GATEWAY=ON -DCXXMCP_BUILD_TESTS=ON
+cmake -S . -B build-tests -DCXXMCP_BUILD_CLIENT=ON -DCXXMCP_BUILD_SERVER=ON -DCXXMCP_BUILD_RUNTIME=ON -DCXXMCP_BUILD_TESTS=ON
 cmake --build build-tests
 ctest --test-dir build-tests --output-on-failure
 ```

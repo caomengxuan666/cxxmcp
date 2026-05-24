@@ -68,7 +68,7 @@ That preset builds the stdio server, server peer, client peer, client loopback, 
 Run tests:
 
 ```powershell
-cmake -S . -B build-tests -DCXXMCP_BUILD_CLIENT=ON -DCXXMCP_BUILD_SERVER=ON -DCXXMCP_BUILD_APP=ON -DCXXMCP_BUILD_GATEWAY=ON -DCXXMCP_BUILD_TESTS=ON
+cmake -S . -B build-tests -DCXXMCP_BUILD_CLIENT=ON -DCXXMCP_BUILD_SERVER=ON -DCXXMCP_BUILD_RUNTIME=ON -DCXXMCP_BUILD_TESTS=ON
 cmake --build build-tests
 ctest --test-dir build-tests --output-on-failure
 ```
@@ -199,6 +199,7 @@ Public SDK headers are under `cxxmcp/`. Runtime state, gateway profiles, policy,
 | `CXXMCP_BUILD_PROTOCOL` | `ON` | Build the MCP protocol library |
 | `CXXMCP_BUILD_CLIENT` | `OFF` | Build the MCP client library |
 | `CXXMCP_BUILD_SERVER` | `OFF` | Build the MCP server library |
+| `CXXMCP_BUILD_RUNTIME` | `OFF` | Build the runtime application layer |
 | `CXXMCP_BUILD_APP` | `OFF` | Build the application service library |
 | `CXXMCP_BUILD_GATEWAY` | `OFF` | Build the gateway service library |
 | `CXXMCP_BUILD_CLI` | `OFF` | Build the command-line application |

@@ -32,6 +32,8 @@ cxxmcp_build_option(CXXMCP_BUILD_CLIENT MCP_BUILD_CLIENT
     "Build the MCP client library" OFF)
 cxxmcp_build_option(CXXMCP_BUILD_SERVER MCP_BUILD_SERVER
     "Build the MCP server library" OFF)
+cxxmcp_build_option(CXXMCP_BUILD_RUNTIME MCP_BUILD_RUNTIME
+    "Build the runtime application layer" OFF)
 cxxmcp_build_option(CXXMCP_BUILD_APP MCP_BUILD_APP
     "Build the runtime application service library" OFF)
 cxxmcp_build_option(CXXMCP_BUILD_GATEWAY MCP_BUILD_GATEWAY
@@ -51,6 +53,7 @@ unset(MCP_BUILD_GUI CACHE)
 set(MCP_ENABLE_PROTOCOL ${CXXMCP_BUILD_PROTOCOL})
 set(MCP_ENABLE_CLIENT ${CXXMCP_BUILD_CLIENT})
 set(MCP_ENABLE_SERVER ${CXXMCP_BUILD_SERVER})
+set(MCP_ENABLE_RUNTIME ${CXXMCP_BUILD_RUNTIME})
 set(MCP_ENABLE_APP ${CXXMCP_BUILD_APP})
 set(MCP_ENABLE_GATEWAY ${CXXMCP_BUILD_GATEWAY})
 set(MCP_ENABLE_CLI ${CXXMCP_BUILD_CLI})
@@ -69,6 +72,11 @@ endif()
 if(MCP_ENABLE_GATEWAY)
     set(MCP_ENABLE_APP ON)
     set(MCP_ENABLE_SERVER ON)
+endif()
+
+if(MCP_ENABLE_RUNTIME)
+    set(MCP_ENABLE_APP ON)
+    set(MCP_ENABLE_GATEWAY ON)
 endif()
 
 if(MCP_ENABLE_APP)

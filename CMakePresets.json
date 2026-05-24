@@ -139,8 +139,7 @@
         "CXXMCP_BUILD_SDK": "OFF",
         "CXXMCP_BUILD_CLIENT": "ON",
         "CXXMCP_BUILD_SERVER": "ON",
-        "CXXMCP_BUILD_APP": "ON",
-        "CXXMCP_BUILD_GATEWAY": "ON",
+        "CXXMCP_BUILD_RUNTIME": "ON",
         "CXXMCP_BUILD_CLI": "OFF",
         "CXXMCP_BUILD_EXAMPLES": "OFF",
         "CXXMCP_BUILD_TESTS": "ON"
@@ -155,8 +154,7 @@
         "CXXMCP_BUILD_SDK": "OFF",
         "CXXMCP_BUILD_CLIENT": "ON",
         "CXXMCP_BUILD_SERVER": "ON",
-        "CXXMCP_BUILD_APP": "ON",
-        "CXXMCP_BUILD_GATEWAY": "ON",
+        "CXXMCP_BUILD_RUNTIME": "ON",
         "CXXMCP_BUILD_CLI": "OFF",
         "CXXMCP_BUILD_EXAMPLES": "OFF",
         "CXXMCP_BUILD_TESTS": "ON"
