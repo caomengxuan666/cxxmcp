@@ -2,6 +2,7 @@
 
 #include "mcp/core/result.hpp"
 #include "mcp/protocol/capabilities.hpp"
+#include "mcp/protocol/logging.hpp"
 #include "mcp/server/auth.hpp"
 #include "mcp/server/rate_limit.hpp"
 #include "mcp/server/registry.hpp"
@@ -142,16 +143,41 @@ public:
     const protocol::ServerCapabilities& capabilities() const noexcept;
     ToolRegistry& tools() noexcept;
     const ToolRegistry& tools() const noexcept;
+    std::vector<protocol::ToolDefinition> list_tools() const;
+    core::Result<protocol::ToolDefinition> get_tool(std::string_view name) const;
+    core::Result<protocol::ToolResult> call_tool(std::string_view name,
+                                                 protocol::Json arguments = protocol::Json::object(),
+                                                 const std::string& session_id = {}) const;
     PromptRegistry& prompts() noexcept;
     const PromptRegistry& prompts() const noexcept;
+    std::vector<protocol::Prompt> list_prompts() const;
+    core::Result<protocol::PromptsGetResult> get_prompt(std::string_view name,
+                                                        protocol::Json arguments = protocol::Json::object(),
+                                                        const std::string& session_id = {}) const;
     ResourceRegistry& resources() noexcept;
     const ResourceRegistry& resources() const noexcept;
+    std::vector<protocol::Resource> list_resources() const;
+    core::Result<protocol::ResourcesReadResult> read_resource(std::string_view uri,
+                                                              protocol::Json params = protocol::Json::object(),
+                                                              const std::string& session_id = {}) const;
     ResourceTemplateRegistry& resource_templates() noexcept;
     const ResourceTemplateRegistry& resource_templates() const noexcept;
+    std::vector<protocol::ResourceTemplate> list_resource_templates() const;
     core::Result<protocol::Json> ping(const SessionContext& context = {});
 
     core::Result<protocol::JsonRpcResponse> handle_request(const protocol::JsonRpcRequest& request,
                                                            const SessionContext& context);
+    core::Result<core::Unit> handle_notification(const protocol::JsonRpcNotification& notification,
+                                                 const SessionContext& context);
+    core::Result<core::Unit> notify_roots_list_changed();
+    core::Result<core::Unit> notify_tool_list_changed();
+    core::Result<core::Unit> notify_prompt_list_changed();
+    core::Result<core::Unit> notify_resource_list_changed();
+    core::Result<core::Unit> notify_resource_updated(std::string_view uri);
+    core::Result<core::Unit> notify_progress(const protocol::ProgressNotificationParams& params);
+    core::Result<core::Unit> notify_logging_message(const protocol::LoggingMessageNotificationParams& params);
+    core::Result<core::Unit> notify_elicitation_complete(std::string elicitation_id);
+    core::Result<core::Unit> notify_task_status(const protocol::Task& task);
 
     core::Result<core::Unit> add_transport(std::unique_ptr<Transport> transport);
     void set_auth_provider(std::unique_ptr<AuthProvider> auth_provider);
@@ -164,11 +190,28 @@ public:
     using RawRequestHandler = std::function<std::optional<protocol::JsonRpcResponse>(
         const protocol::JsonRpcRequest&,
         const SessionContext&)>;
+    using RawNotificationHandler = std::function<core::Result<core::Unit>(const protocol::JsonRpcNotification&,
+                                                                          const SessionContext&)>;
+    using RootsListChangedHandler = std::function<core::Result<core::Unit>(const SessionContext&)>;
+    using ProgressHandler = std::function<core::Result<core::Unit>(const protocol::ProgressNotificationParams&,
+                                                                    const SessionContext&)>;
+    using ListChangedHandler = std::function<core::Result<core::Unit>(const SessionContext&)>;
+    using ResourceUpdatedHandler = std::function<core::Result<core::Unit>(const std::string& uri,
+                                                                          const SessionContext&)>;
 
     void set_completion_handler(JsonHandler handler);
     void set_sampling_handler(JsonHandler handler);
     void set_logging_handler(LoggingHandler handler);
     void set_raw_request_handler(RawRequestHandler handler);
+    void set_raw_notification_handler(RawNotificationHandler handler);
+    void set_custom_request_handler(RawRequestHandler handler);
+    void set_custom_notification_handler(RawNotificationHandler handler);
+    void set_progress_handler(ProgressHandler handler);
+    void set_roots_list_changed_handler(RootsListChangedHandler handler);
+    void set_tool_list_changed_handler(ListChangedHandler handler);
+    void set_prompt_list_changed_handler(ListChangedHandler handler);
+    void set_resource_list_changed_handler(ListChangedHandler handler);
+    void set_resource_updated_handler(ResourceUpdatedHandler handler);
 
 private:
     ServerOptions options_;
@@ -183,6 +226,15 @@ private:
     JsonHandler sampling_handler_;
     LoggingHandler logging_handler_;
     RawRequestHandler raw_request_handler_;
+    RawNotificationHandler raw_notification_handler_;
+    ProgressHandler progress_handler_;
+    RootsListChangedHandler roots_list_changed_handler_;
+    ListChangedHandler tool_list_changed_handler_;
+    ListChangedHandler prompt_list_changed_handler_;
+    ListChangedHandler resource_list_changed_handler_;
+    ResourceUpdatedHandler resource_updated_handler_;
+
+    core::Result<core::Unit> broadcast_notification(const protocol::JsonRpcNotification& notification);
 };
 
 class ServerBuilder {
@@ -202,6 +254,15 @@ public:
     ServerBuilder& on_sampling(Server::JsonHandler handler);
     ServerBuilder& on_logging(Server::LoggingHandler handler);
     ServerBuilder& on_raw_request(Server::RawRequestHandler handler);
+    ServerBuilder& on_raw_notification(Server::RawNotificationHandler handler);
+    ServerBuilder& on_custom_request(Server::RawRequestHandler handler);
+    ServerBuilder& on_custom_notification(Server::RawNotificationHandler handler);
+    ServerBuilder& on_progress(Server::ProgressHandler handler);
+    ServerBuilder& on_roots_list_changed(Server::RootsListChangedHandler handler);
+    ServerBuilder& on_tool_list_changed(Server::ListChangedHandler handler);
+    ServerBuilder& on_prompt_list_changed(Server::ListChangedHandler handler);
+    ServerBuilder& on_resource_list_changed(Server::ListChangedHandler handler);
+    ServerBuilder& on_resource_updated(Server::ResourceUpdatedHandler handler);
     core::Result<std::unique_ptr<Server>> build();
 
 private:
@@ -216,6 +277,13 @@ private:
     Server::JsonHandler sampling_handler_;
     Server::LoggingHandler logging_handler_;
     Server::RawRequestHandler raw_request_handler_;
+    Server::RawNotificationHandler raw_notification_handler_;
+    Server::ProgressHandler progress_handler_;
+    Server::RootsListChangedHandler roots_list_changed_handler_;
+    Server::ListChangedHandler tool_list_changed_handler_;
+    Server::ListChangedHandler prompt_list_changed_handler_;
+    Server::ListChangedHandler resource_list_changed_handler_;
+    Server::ResourceUpdatedHandler resource_updated_handler_;
 };
 
 class App {

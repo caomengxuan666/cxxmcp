@@ -22,6 +22,7 @@ enum class ErrorCode : int {
     ResourceNotFound = -32001,
     PermissionDenied = -32002,
     RateLimited = -32003,
+    UrlElicitationRequired = -32042,
 };
 
 struct ErrorObject {
@@ -34,12 +35,14 @@ struct JsonRpcRequest {
     std::string method;
     Json params = Json::object();
     RequestId id;
+    std::optional<Json> meta;
 };
 
 struct JsonRpcResponse {
     std::optional<RequestId> id;
     std::optional<Json> result;
     std::optional<ErrorObject> error;
+    std::optional<Json> meta;
 
     bool has_result() const noexcept {
         return result.has_value() && !error.has_value();
@@ -53,6 +56,7 @@ struct JsonRpcResponse {
 struct JsonRpcNotification {
     std::string method;
     Json params = Json::object();
+    std::optional<Json> meta;
 };
 
 using JsonRpcMessage = std::variant<JsonRpcRequest, JsonRpcResponse, JsonRpcNotification>;

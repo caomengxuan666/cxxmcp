@@ -1,6 +1,7 @@
 #pragma once
 
 #include "mcp/core/result.hpp"
+#include "mcp/protocol/task.hpp"
 #include "mcp/protocol/tool.hpp"
 #include "mcp/protocol/types.hpp"
 
@@ -36,6 +37,7 @@ struct CreateMessageParams {
     int max_tokens = 0;
     std::vector<std::string> stop_sequences;
     Json metadata = Json::object();
+    std::optional<TaskRequestParameters> task;
 };
 
 struct CreateMessageResult {
@@ -176,6 +178,9 @@ inline Json create_message_params_to_json(const CreateMessageParams& params) {
     if (!params.metadata.empty()) {
         json["metadata"] = params.metadata;
     }
+    if (params.task.has_value()) {
+        json["task"] = task_request_parameters_to_json(*params.task);
+    }
     return json;
 }
 
@@ -240,6 +245,13 @@ inline core::Result<CreateMessageParams> create_message_params_from_json(const J
             return std::unexpected(sampling_json_error("sampling metadata must be an object"));
         }
         params.metadata = json.at("metadata");
+    }
+    if (json.contains("task")) {
+        const auto task = task_request_parameters_from_json(json.at("task"));
+        if (!task) {
+            return std::unexpected(task.error());
+        }
+        params.task = *task;
     }
     return params;
 }

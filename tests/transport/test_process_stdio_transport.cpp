@@ -85,6 +85,41 @@ void test_process_stdio_transport_calls_child_tool() {
     require(result->structured_content->at("value") == 42, "process structured content mismatch");
 }
 
+void test_process_stdio_transport_handles_interleaved_child_request() {
+    auto transport = std::make_unique<mcp::client::ProcessStdioTransport>(
+        mcp::client::ProcessStdioTransportOptions{
+            .command = MCP_TEST_CHILD_EXE,
+            .args = {},
+            .cwd = {},
+            .env = {},
+        });
+    mcp::client::Client client(std::move(transport));
+
+    std::string sampled_text;
+    client.on_create_message_request([&](const mcp::protocol::CreateMessageParams& params)
+                                         -> mcp::core::Result<mcp::protocol::CreateMessageResult> {
+        sampled_text = params.messages.front().content.text;
+        return mcp::protocol::CreateMessageResult{
+            .role = "assistant",
+            .content = mcp::protocol::ContentBlock{
+                .type = "text",
+                .text = "sampled",
+            },
+            .model = "test-model",
+            .stop_reason = "endTurn",
+        };
+    });
+
+    const auto result = client.raw_request(mcp::protocol::JsonRpcRequest{
+        .method = "custom/interleave",
+        .params = mcp::protocol::Json::object(),
+        .id = std::int64_t{77},
+    });
+    require(result.has_value(), "interleaved process request should succeed");
+    require(result->at("ok") == true, "interleaved process request result mismatch");
+    require(sampled_text == "hello from child", "interleaved child request payload mismatch");
+}
+
 void test_process_stdio_transport_runs_python_mcp_server() {
     auto transport = std::make_unique<mcp::client::ProcessStdioTransport>(
         mcp::client::ProcessStdioTransportOptions{
@@ -215,6 +250,8 @@ int main() {
     const std::vector<std::pair<std::string_view, void (*)()>> tests = {
         {"process stdio transport runs child MCP server", test_process_stdio_transport_runs_child_mcp_server},
         {"process stdio transport calls child tool", test_process_stdio_transport_calls_child_tool},
+        {"process stdio transport handles interleaved child request",
+         test_process_stdio_transport_handles_interleaved_child_request},
         {"process stdio transport runs python MCP server", test_process_stdio_transport_runs_python_mcp_server},
         {"process stdio transport runs typescript MCP server", test_process_stdio_transport_runs_typescript_mcp_server},
         {"process stdio transport calls typescript tool", test_process_stdio_transport_calls_typescript_tool},

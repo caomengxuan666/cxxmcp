@@ -2,6 +2,7 @@
 
 #include "mcp/server/auth.hpp"
 #include "mcp/server/http_transport.hpp"
+#include "mcp/server/peer.hpp"
 #include "mcp/server/rate_limit.hpp"
 #include "mcp/server/registry.hpp"
 #include "mcp/server/server.hpp"

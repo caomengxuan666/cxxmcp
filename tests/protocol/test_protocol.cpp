@@ -1,9 +1,12 @@
 #include "mcp/protocol/serialization.hpp"
 #include "mcp/protocol/completion.hpp"
+#include "mcp/protocol/capabilities.hpp"
+#include "mcp/protocol/elicitation.hpp"
 #include "mcp/protocol/logging.hpp"
 #include "mcp/protocol/prompt.hpp"
 #include "mcp/protocol/resource.hpp"
 #include "mcp/protocol/roots.hpp"
+#include "mcp/protocol/task.hpp"
 #include "mcp/protocol/sampling.hpp"
 
 #include <filesystem>
@@ -175,6 +178,91 @@ void test_tool_protocol_round_trips() {
     require(parsed_result.has_value(), "tools/call result should parse");
     require(parsed_result->content.front().text == "hello", "tool result content mismatch");
     require(parsed_result->structured_content->at("value") == "hello", "tool structured content mismatch");
+}
+
+void test_task_protocol_round_trips() {
+    const mcp::protocol::Task task{
+        .task_id = "task-1",
+        .status = mcp::protocol::TaskStatus::Working,
+        .status_message = std::string("working"),
+        .created_at = "2026-05-24T00:00:00Z",
+        .ttl = std::int64_t{600},
+        .poll_interval = std::int64_t{5},
+        .last_updated_at = "2026-05-24T00:00:05Z",
+    };
+    const auto task_json = mcp::protocol::task_to_json(task);
+    const auto parsed_task = mcp::protocol::task_from_json(task_json);
+    require(parsed_task.has_value(), "task should parse");
+    require(parsed_task->task_id == "task-1", "task id mismatch");
+    require(parsed_task->status == mcp::protocol::TaskStatus::Working, "task status mismatch");
+    require(parsed_task->ttl.index() == 1, "task ttl mismatch");
+    require(std::get<std::int64_t>(parsed_task->ttl) == 600, "task ttl value mismatch");
+
+    const mcp::protocol::TaskRequestParameters request_parameters{
+        .ttl = std::int64_t{300},
+    };
+    const auto request_json = mcp::protocol::task_request_parameters_to_json(request_parameters);
+    const auto parsed_request = mcp::protocol::task_request_parameters_from_json(request_json);
+    require(parsed_request.has_value(), "task request parameters should parse");
+    require(parsed_request->ttl.has_value(), "task request ttl missing");
+    require(parsed_request->ttl.value() == 300, "task request ttl mismatch");
+
+    const mcp::protocol::TaskListResult list_result{
+        .tasks = {task},
+        .next_cursor = std::string("cursor-task"),
+    };
+    const auto list_json = mcp::protocol::task_list_result_to_json(list_result);
+    const auto parsed_list = mcp::protocol::task_list_result_from_json(list_json);
+    require(parsed_list.has_value(), "tasks/list result should parse");
+    require(parsed_list->tasks.size() == 1, "tasks/list task count mismatch");
+    require(parsed_list->tasks.front().task_id == "task-1", "tasks/list task id mismatch");
+
+    const mcp::protocol::CreateTaskResult create_result{
+        .task = task,
+        .meta = Json{{"source", "unit-test"}},
+    };
+    const auto create_json = mcp::protocol::create_task_result_to_json(create_result);
+    const auto parsed_create = mcp::protocol::create_task_result_from_json(create_json);
+    require(parsed_create.has_value(), "createTask result should parse");
+    require(parsed_create->task.task_id == "task-1", "createTask task id mismatch");
+    require(parsed_create->meta.has_value(), "createTask meta missing");
+    require(parsed_create->meta->at("source") == "unit-test", "createTask meta mismatch");
+
+    const mcp::protocol::JsonRpcNotification task_notification{
+        .method = std::string(mcp::protocol::TasksStatusNotificationMethod),
+        .params = task_json,
+        .meta = Json{{"relatedTaskId", "task-1"}},
+    };
+    const auto serialized_notification = mcp::protocol::serialize_message(task_notification);
+    require(serialized_notification.has_value(), "task notification should serialize");
+    const auto parsed_notification = mcp::protocol::parse_message(*serialized_notification);
+    require(parsed_notification.has_value(), "task notification should parse");
+    const auto* parsed_task_notification = std::get_if<mcp::protocol::JsonRpcNotification>(&*parsed_notification);
+    require(parsed_task_notification != nullptr, "task notification should remain a notification");
+    require(parsed_task_notification->meta.has_value(), "task notification meta missing");
+    require(parsed_task_notification->meta->at("relatedTaskId") == "task-1",
+            "task notification meta mismatch");
+
+    const mcp::protocol::ClientCapabilities client_capabilities{
+        .roots = {.list_changed = true},
+        .sampling = {.enabled = true},
+        .elicitation = {.form = true, .url = true},
+        .tasks = mcp::protocol::TaskCapabilities{
+            .list = true,
+            .cancel = true,
+            .tools_call = false,
+            .sampling_create_message = true,
+            .elicitation_create = true,
+        },
+    };
+    const auto capabilities_json = mcp::protocol::client_capabilities_to_json(client_capabilities);
+    require(capabilities_json.contains("tasks"), "client capabilities should include tasks");
+    const auto parsed_capabilities = mcp::protocol::client_capabilities_from_json(capabilities_json);
+    require(parsed_capabilities.has_value(), "client capabilities should parse");
+    require(parsed_capabilities->tasks.has_value(), "parsed client capabilities tasks missing");
+    require(parsed_capabilities->tasks->list, "parsed client capabilities list mismatch");
+    require(parsed_capabilities->tasks->sampling_create_message,
+            "parsed client capabilities sampling task mismatch");
 }
 
 void test_prompt_protocol_round_trips() {
@@ -391,6 +479,74 @@ void test_roots_completion_logging_sampling_round_trips() {
     require(parsed_sample_result->model == "fast-model", "sampling result model mismatch");
 }
 
+void test_elicitation_protocol_round_trips() {
+    require(mcp::protocol::ElicitationCreateMethod == "elicitation/create",
+            "elicitation/create method mismatch");
+    require(mcp::protocol::ElicitationCompleteNotificationMethod == "notifications/elicitation/complete",
+            "elicitation completion notification method mismatch");
+
+    const auto schema = mcp::protocol::ElicitationSchema::Builder()
+                            .title("Choose response")
+                            .description("Pick one value")
+                            .required_email("email")
+                            .optional_bool("remember", true)
+                            .build();
+    require(schema.has_value(), "elicitation schema build failed");
+    require(schema->properties.size() == 2, "elicitation schema property count mismatch");
+    require(schema->required.size() == 1, "elicitation required count mismatch");
+    require(schema->required.front() == "email", "elicitation required field mismatch");
+
+    const mcp::protocol::CreateElicitationRequestParam request{
+        .message = "Choose a response",
+        .requested_schema = *schema,
+    };
+    const auto request_json = mcp::protocol::create_elicitation_request_param_to_json(request);
+    const auto parsed_request = mcp::protocol::create_elicitation_request_param_from_json(request_json);
+    require(parsed_request.has_value(), "elicitation request should parse");
+    require(parsed_request->message == "Choose a response", "elicitation request message mismatch");
+    require(parsed_request->requested_schema.properties.count("email") == 1,
+            "elicitation request schema property mismatch");
+
+    const mcp::protocol::CreateElicitationResult result{
+        .action = mcp::protocol::ElicitationAction::Accept,
+        .content = Json{{"value", "accepted"}},
+    };
+    const auto result_json = mcp::protocol::create_elicitation_result_to_json(result);
+    const auto parsed_result = mcp::protocol::create_elicitation_result_from_json(result_json);
+    require(parsed_result.has_value(), "elicitation result should parse");
+    require(parsed_result->action == mcp::protocol::ElicitationAction::Accept,
+            "elicitation result action mismatch");
+    require(parsed_result->content.has_value(), "elicitation result content missing");
+    require(parsed_result->content->at("value") == "accepted", "elicitation result content mismatch");
+
+    mcp::protocol::CreateElicitationRequestParam url_request;
+    url_request.message = "Open the verification link";
+    url_request.mode = mcp::protocol::ElicitationMode::Url;
+    url_request.elicitation_id = "elicitation-1";
+    url_request.url = "https://example.test/elicitation/1";
+    url_request.request_state = Json{{"stage", 2}};
+    const auto url_request_json = mcp::protocol::create_elicitation_request_param_to_json(url_request);
+    const auto parsed_url_request = mcp::protocol::create_elicitation_request_param_from_json(url_request_json);
+    require(parsed_url_request.has_value(), "url elicitation request should parse");
+    require(parsed_url_request->mode == mcp::protocol::ElicitationMode::Url,
+            "url elicitation request mode mismatch");
+    require(parsed_url_request->elicitation_id.has_value(), "url elicitation id missing");
+    require(parsed_url_request->elicitation_id.value() == "elicitation-1", "url elicitation id mismatch");
+    require(parsed_url_request->url.has_value(), "url elicitation url missing");
+    require(parsed_url_request->url.value() == "https://example.test/elicitation/1",
+            "url elicitation url mismatch");
+    require(parsed_url_request->request_state.has_value(), "url elicitation request state missing");
+    require(parsed_url_request->request_state->at("stage") == 2, "url elicitation request state mismatch");
+
+    const mcp::protocol::ElicitationCompleteNotificationParams completion_params{
+        .elicitation_id = "elicitation-1",
+    };
+    const auto completion_json = mcp::protocol::elicitation_complete_notification_params_to_json(completion_params);
+    const auto parsed_completion = mcp::protocol::elicitation_complete_notification_params_from_json(completion_json);
+    require(parsed_completion.has_value(), "elicitation completion notification should parse");
+    require(parsed_completion->elicitation_id == "elicitation-1", "elicitation completion id mismatch");
+}
+
 void test_notification_helpers_round_trip() {
     require(mcp::protocol::CancelledNotificationMethod == "notifications/cancelled",
             "cancelled notification method mismatch");
@@ -398,6 +554,8 @@ void test_notification_helpers_round_trip() {
             "progress notification method mismatch");
     require(mcp::protocol::RootsListChangedNotificationMethod == "notifications/roots/list_changed",
             "roots list changed notification method mismatch");
+    require(mcp::protocol::ElicitationCompleteNotificationMethod == "notifications/elicitation/complete",
+            "elicitation completion notification method mismatch");
     require(mcp::protocol::ResourcesUpdatedNotificationMethod == "notifications/resources/updated",
             "resources updated notification method mismatch");
     require(mcp::protocol::LoggingMessageNotificationMethod == "notifications/message",
@@ -423,6 +581,14 @@ void test_notification_helpers_round_trip() {
     require(parsed_progress.has_value(), "progress notification params should parse");
     require(std::get<std::string>(parsed_progress->progress_token) == "token-1", "progress token mismatch");
     require(parsed_progress->total == 4.0, "progress total mismatch");
+
+    const mcp::protocol::ElicitationCompleteNotificationParams completion{
+        .elicitation_id = "elicitation-1",
+    };
+    const auto completion_json = mcp::protocol::elicitation_complete_notification_params_to_json(completion);
+    const auto parsed_completion = mcp::protocol::elicitation_complete_notification_params_from_json(completion_json);
+    require(parsed_completion.has_value(), "elicitation completion params should parse");
+    require(parsed_completion->elicitation_id == "elicitation-1", "elicitation completion id mismatch");
 
     const mcp::protocol::LoggingMessageNotificationParams log_message{
         .level = mcp::protocol::LoggingLevel::Info,
@@ -470,9 +636,11 @@ int main() {
         {"ping request round trip", test_ping_request_round_trip},
         {"response round trips", test_response_round_trips},
         {"tool protocol round trips", test_tool_protocol_round_trips},
+        {"task protocol round trips", test_task_protocol_round_trips},
         {"prompt protocol round trips", test_prompt_protocol_round_trips},
         {"resource protocol round trips", test_resource_protocol_round_trips},
         {"roots completion logging sampling round trips", test_roots_completion_logging_sampling_round_trips},
+        {"elicitation protocol round trips", test_elicitation_protocol_round_trips},
         {"notification helpers round trip", test_notification_helpers_round_trip},
         {"invalid json is rejected", test_invalid_json_is_rejected},
         {"invalid messages are rejected", test_invalid_messages_are_rejected},

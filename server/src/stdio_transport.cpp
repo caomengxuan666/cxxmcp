@@ -32,6 +32,22 @@ core::Result<core::Unit> write_response(std::ostream& output, const protocol::Js
     return core::Unit{};
 }
 
+core::Result<core::Unit> write_notification(std::ostream& output, const protocol::JsonRpcNotification& notification) {
+    const auto serialized = protocol::serialize_notification(notification);
+    if (!serialized) {
+        return std::unexpected(serialized.error());
+    }
+
+    output << *serialized << '\n';
+    output.flush();
+    if (!output.good()) {
+        return std::unexpected(make_transport_error(static_cast<int>(protocol::ErrorCode::InternalError),
+                                                    "failed to write stdio notification"));
+    }
+
+    return core::Unit{};
+}
+
 core::Result<core::Unit> write_error(std::ostream& output,
                                      int code,
                                      std::string message,
@@ -62,7 +78,7 @@ StdioTransport::StdioTransport(std::istream& input, std::ostream& output)
     : input_(&input),
       output_(&output) {}
 
-core::Result<core::Unit> StdioTransport::start(RequestHandler handler) {
+core::Result<core::Unit> StdioTransport::start(RequestHandler handler, NotificationHandler notification_handler) {
     if (!input_ || !output_) {
         return std::unexpected(make_transport_error(static_cast<int>(protocol::ErrorCode::InternalError),
                                                     "stdio transport streams are not configured"));
@@ -91,7 +107,18 @@ core::Result<core::Unit> StdioTransport::start(RequestHandler handler) {
             continue;
         }
 
-        if (std::holds_alternative<protocol::JsonRpcNotification>(*message)) {
+        if (const auto* notification = std::get_if<protocol::JsonRpcNotification>(&*message)) {
+            if (notification_handler) {
+                const auto handled = notification_handler(*notification, SessionContext{
+                                                                      .session_id = "stdio",
+                                                                      .remote_address = "stdio",
+                                                                      .transport = this,
+                                                                  });
+                if (!handled) {
+                    running_ = false;
+                    return std::unexpected(handled.error());
+                }
+            }
             continue;
         }
 
@@ -111,6 +138,7 @@ core::Result<core::Unit> StdioTransport::start(RequestHandler handler) {
         auto response = handler(*request, SessionContext{
                                               .session_id = "stdio",
                                               .remote_address = "stdio",
+                                              .transport = this,
                                           });
         if (!response) {
             response = protocol::make_error_response(std::optional<protocol::RequestId>{request->id},
@@ -119,6 +147,14 @@ core::Result<core::Unit> StdioTransport::start(RequestHandler handler) {
                                                                           response.error().detail.empty()
                                                                               ? std::nullopt
                                                                               : std::optional<protocol::Json>{response.error().detail}));
+        }
+
+        if (request->method == protocol::InitializeMethod) {
+            if (request->params.is_object() && request->params.contains("capabilities")) {
+                client_capabilities_ = protocol::client_capabilities_from_json(request->params.at("capabilities"));
+            } else {
+                client_capabilities_.reset();
+            }
         }
 
         const auto written = write_response(*output_, *response);
@@ -135,6 +171,20 @@ core::Result<core::Unit> StdioTransport::start(RequestHandler handler) {
     }
 
     return core::Unit{};
+}
+
+core::Result<core::Unit> StdioTransport::send_notification(const protocol::JsonRpcNotification& notification) {
+    if (!output_) {
+        return std::unexpected(make_transport_error(static_cast<int>(protocol::ErrorCode::InternalError),
+                                                    "stdio transport output stream is not configured"));
+    }
+
+    std::lock_guard lock(output_mutex_);
+    return write_notification(*output_, notification);
+}
+
+std::optional<protocol::ClientCapabilities> StdioTransport::client_capabilities() const {
+    return client_capabilities_;
 }
 
 void StdioTransport::stop() noexcept {

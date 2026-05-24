@@ -21,6 +21,27 @@ void write_response(const mcp::protocol::JsonRpcResponse& response) {
     std::cout.flush();
 }
 
+void write_request(const mcp::protocol::JsonRpcRequest& request) {
+    const auto serialized = mcp::protocol::serialize_request(request);
+    if (!serialized) {
+        return;
+    }
+    std::cout << *serialized << '\n';
+    std::cout.flush();
+}
+
+std::optional<mcp::protocol::JsonRpcResponse> read_response() {
+    std::string line;
+    if (!std::getline(std::cin, line)) {
+        return std::nullopt;
+    }
+    const auto parsed = mcp::protocol::parse_response(line);
+    if (!parsed) {
+        return std::nullopt;
+    }
+    return *parsed;
+}
+
 void write_error(const mcp::protocol::JsonRpcRequest& request, mcp::protocol::ErrorCode code, std::string message) {
     write_response(mcp::protocol::make_error_response(
         std::optional<mcp::protocol::RequestId>{request.id},
@@ -130,6 +151,34 @@ void handle_request(const mcp::protocol::JsonRpcRequest& request) {
                 .structured_content = request.params.value("arguments", Json::object()),
                 .is_error = false,
             })));
+        return;
+    }
+
+    if (request.method == "custom/interleave") {
+        write_request(mcp::protocol::JsonRpcRequest{
+            .method = "sampling/createMessage",
+            .params = Json{
+                {"messages", Json::array({
+                    Json{{"role", "user"}, {"content", Json{{"type", "text"}, {"text", "hello from child"}}}},
+                })},
+                {"maxTokens", 16},
+            },
+            .id = std::string("server-1"),
+        });
+
+        const auto response = read_response();
+        if (!response || !response->result.has_value()) {
+            return;
+        }
+        if (!response->id.has_value() ||
+            !std::holds_alternative<std::string>(*response->id) ||
+            std::get<std::string>(*response->id) != "server-1") {
+            return;
+        }
+
+        write_response(mcp::protocol::make_response(
+            request.id,
+            Json{{"ok", true}}));
         return;
     }
 

@@ -3,10 +3,16 @@
 #include "mcp/protocol/serialization.hpp"
 
 #include <algorithm>
+#include <condition_variable>
 #include <cwchar>
+#include <future>
+#include <map>
+#include <mutex>
 #include <optional>
 #include <string>
 #include <utility>
+#include <type_traits>
+#include <thread>
 #include <vector>
 
 #ifdef _WIN32
@@ -25,6 +31,17 @@ core::Error make_process_error(std::string message, std::string detail = {}) {
     return make_process_error(static_cast<int>(protocol::ErrorCode::InternalError),
                               std::move(message),
                               std::move(detail));
+}
+
+std::string request_id_to_string(const protocol::RequestId& request_id) {
+    return std::visit([](const auto& value) -> std::string {
+        using Value = std::decay_t<decltype(value)>;
+        if constexpr (std::is_same_v<Value, std::string>) {
+            return value;
+        } else {
+            return std::to_string(value);
+        }
+    }, request_id);
 }
 
 #ifdef _WIN32
@@ -211,6 +228,7 @@ public:
         }
 
 #ifdef _WIN32
+        std::lock_guard<std::mutex> lock(write_mutex_);
         const std::string payload = line + "\n";
         DWORD written = 0;
         if (!WriteFile(stdin_write_.get(), payload.data(), static_cast<DWORD>(payload.size()), &written, nullptr) ||
@@ -222,6 +240,146 @@ public:
 #else
         return std::unexpected(make_process_error("process stdio transport is not implemented on this platform"));
 #endif
+    }
+
+    core::Result<core::Unit> start(TransportRequestHandler request_handler,
+                                   TransportNotificationHandler notification_handler) {
+        request_handler_ = std::move(request_handler);
+        notification_handler_ = std::move(notification_handler);
+        started_ = true;
+        if (!reader_thread_.joinable()) {
+            reader_thread_ = std::thread([this] { this->reader_loop(); });
+        }
+        return core::Unit{};
+    }
+
+    bool started() const noexcept {
+        return started_;
+    }
+
+    const TransportRequestHandler& request_handler() const noexcept {
+        return request_handler_;
+    }
+
+    const TransportNotificationHandler& notification_handler() const noexcept {
+        return notification_handler_;
+    }
+
+    core::Result<protocol::JsonRpcResponse> send_request(const protocol::JsonRpcRequest& request) {
+        const auto serialized = protocol::serialize_request(request);
+        if (!serialized) {
+            return std::unexpected(serialized.error());
+        }
+
+        std::promise<protocol::JsonRpcResponse> promise;
+        auto future = promise.get_future();
+        {
+            std::lock_guard<std::mutex> lock(pending_mutex_);
+            const auto [_, inserted] = pending_responses_.emplace(request.id, std::move(promise));
+            if (!inserted) {
+                return std::unexpected(make_process_error(static_cast<int>(protocol::ErrorCode::InvalidRequest),
+                                                          "duplicate process stdio request id",
+                                                          request_id_to_string(request.id)));
+            }
+        }
+
+        const auto written = write_line(*serialized);
+        if (!written) {
+            std::lock_guard<std::mutex> lock(pending_mutex_);
+            pending_responses_.erase(request.id);
+            return std::unexpected(written.error());
+        }
+
+        return future.get();
+    }
+
+    void reader_loop() {
+        while (running_) {
+            const auto line = read_line();
+            if (!line) {
+                break;
+            }
+            if (!running_) {
+                break;
+            }
+
+            const auto message = protocol::parse_message(*line);
+            if (!message) {
+                continue;
+            }
+
+            if (const auto* notification = std::get_if<protocol::JsonRpcNotification>(&*message)) {
+                if (notification_handler_) {
+                    const auto handled = notification_handler_(*notification);
+                    if (!handled) {
+                        continue;
+                    }
+                }
+                continue;
+            }
+
+            if (const auto* incoming_request = std::get_if<protocol::JsonRpcRequest>(&*message)) {
+                if (!request_handler_) {
+                    continue;
+                }
+
+                auto handled = request_handler_(*incoming_request);
+                if (!handled) {
+                    handled = protocol::make_error_response(std::optional<protocol::RequestId>{incoming_request->id},
+                                                            protocol::make_error(handled.error().code,
+                                                                                 handled.error().message,
+                                                                                 handled.error().detail.empty()
+                                                                                     ? std::nullopt
+                                                                                     : std::optional<protocol::Json>{
+                                                                                           handled.error().detail}));
+                }
+                const auto serialized_response = protocol::serialize_response(*handled);
+                if (!serialized_response) {
+                    continue;
+                }
+                const auto written = write_line(*serialized_response);
+                if (!written) {
+                    continue;
+                }
+                continue;
+            }
+
+            const auto* response = std::get_if<protocol::JsonRpcResponse>(&*message);
+            if (!response || !response->id.has_value()) {
+                continue;
+            }
+
+            std::promise<protocol::JsonRpcResponse> promise;
+            {
+                std::lock_guard<std::mutex> lock(pending_mutex_);
+                auto it = pending_responses_.find(*response->id);
+                if (it == pending_responses_.end()) {
+                    continue;
+                }
+                promise = std::move(it->second);
+                pending_responses_.erase(it);
+            }
+
+            promise.set_value(*response);
+        }
+
+        fail_pending(make_process_error("process stdio transport reader stopped"));
+    }
+
+    void fail_pending(const core::Error& error) {
+        std::map<protocol::RequestId, std::promise<protocol::JsonRpcResponse>> pending;
+        {
+            std::lock_guard<std::mutex> lock(pending_mutex_);
+            pending.swap(pending_responses_);
+        }
+
+        for (auto& [id, promise] : pending) {
+            promise.set_value(protocol::make_error_response(
+                std::optional<protocol::RequestId>{id},
+                protocol::make_error(error.code,
+                                     error.message,
+                                     error.detail.empty() ? std::nullopt : std::optional<protocol::Json>{error.detail})));
+        }
     }
 
     core::Result<std::string> read_line() {
@@ -325,6 +483,7 @@ private:
 
     void stop() noexcept {
 #ifdef _WIN32
+        running_ = false;
         stdin_write_.reset();
         if (process_) {
             const DWORD wait_result = WaitForSingleObject(process_.get(), 1000);
@@ -334,12 +493,23 @@ private:
             }
         }
         stdout_read_.reset();
+        if (reader_thread_.joinable()) {
+            reader_thread_.join();
+        }
         thread_.reset();
         process_.reset();
 #endif
     }
 
     ProcessStdioTransportOptions options_;
+    bool started_ = false;
+    bool running_ = true;
+    TransportRequestHandler request_handler_;
+    TransportNotificationHandler notification_handler_;
+    std::thread reader_thread_;
+    std::mutex write_mutex_;
+    std::mutex pending_mutex_;
+    std::map<protocol::RequestId, std::promise<protocol::JsonRpcResponse>> pending_responses_;
 
 #ifdef _WIN32
     Handle stdin_write_;
@@ -355,23 +525,32 @@ ProcessStdioTransport::ProcessStdioTransport(ProcessStdioTransportOptions option
 
 ProcessStdioTransport::~ProcessStdioTransport() = default;
 
+core::Result<core::Unit> ProcessStdioTransport::start(TransportRequestHandler request_handler,
+                                                      TransportNotificationHandler notification_handler) {
+    return impl_->start(std::move(request_handler), std::move(notification_handler));
+}
+
 core::Result<protocol::JsonRpcResponse> ProcessStdioTransport::send(const protocol::JsonRpcRequest& request) {
-    const auto serialized = protocol::serialize_request(request);
-    if (!serialized) {
-        return std::unexpected(serialized.error());
+    if (!impl_->started()) {
+        const auto serialized = protocol::serialize_request(request);
+        if (!serialized) {
+            return std::unexpected(serialized.error());
+        }
+
+        const auto written = impl_->write_line(*serialized);
+        if (!written) {
+            return std::unexpected(written.error());
+        }
+
+        const auto line = impl_->read_line();
+        if (!line) {
+            return std::unexpected(line.error());
+        }
+
+        return protocol::parse_response(*line);
     }
 
-    const auto written = impl_->write_line(*serialized);
-    if (!written) {
-        return std::unexpected(written.error());
-    }
-
-    const auto line = impl_->read_line();
-    if (!line) {
-        return std::unexpected(line.error());
-    }
-
-    return protocol::parse_response(*line);
+    return impl_->send_request(request);
 }
 
 core::Result<core::Unit> ProcessStdioTransport::send_notification(

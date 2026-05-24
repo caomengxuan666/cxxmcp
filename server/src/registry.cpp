@@ -35,13 +35,25 @@ core::Result<core::Unit> ToolRegistry::add(protocol::ToolDefinition definition, 
     return core::Unit{};
 }
 
+core::Result<protocol::ToolDefinition> ToolRegistry::get(std::string_view name) const {
+    const auto it = tools_.find(std::string(name));
+    if (it == tools_.end()) {
+        return std::unexpected(core::Error{
+            static_cast<int>(protocol::ErrorCode::ToolNotFound),
+            "tool not found",
+            std::string(name),
+        });
+    }
+    return it->second.definition;
+}
+
 core::Result<protocol::ToolResult> ToolRegistry::call(std::string_view name, protocol::Json arguments) const {
-    return call(name, std::move(arguments), {});
+    return call(name, std::move(arguments), SessionContext{});
 }
 
 core::Result<protocol::ToolResult> ToolRegistry::call(std::string_view name,
                                                       protocol::Json arguments,
-                                                      const std::string& session_id) const {
+                                                      const SessionContext& session_context) const {
     const auto it = tools_.find(std::string(name));
     if (it == tools_.end()) {
         return std::unexpected(core::Error{
@@ -52,7 +64,9 @@ core::Result<protocol::ToolResult> ToolRegistry::call(std::string_view name,
     }
 
     ToolContext context;
-    context.session_id = session_id;
+    context.session_id = session_context.session_id;
+    context.remote_address = session_context.remote_address;
+    context.transport = session_context.transport;
     context.arguments = std::move(arguments);
     const auto result = it->second.handler(context);
     if (!result) {
@@ -60,6 +74,12 @@ core::Result<protocol::ToolResult> ToolRegistry::call(std::string_view name,
     }
 
     return *result;
+}
+
+core::Result<protocol::ToolResult> ToolRegistry::call(std::string_view name,
+                                                      protocol::Json arguments,
+                                                      const std::string& session_id) const {
+    return call(name, std::move(arguments), SessionContext{.session_id = session_id});
 }
 
 std::vector<protocol::ToolDefinition> ToolRegistry::list() const {
@@ -109,6 +129,12 @@ core::Result<core::Unit> PromptRegistry::add(protocol::Prompt prompt, PromptHand
 core::Result<protocol::PromptsGetResult> PromptRegistry::get(std::string_view name,
                                                              protocol::Json arguments,
                                                              const std::string& session_id) const {
+    return get(name, std::move(arguments), SessionContext{.session_id = session_id});
+}
+
+core::Result<protocol::PromptsGetResult> PromptRegistry::get(std::string_view name,
+                                                             protocol::Json arguments,
+                                                             const SessionContext& session_context) const {
     const auto it = prompts_.find(std::string(name));
     if (it == prompts_.end()) {
         return std::unexpected(core::Error{
@@ -119,7 +145,9 @@ core::Result<protocol::PromptsGetResult> PromptRegistry::get(std::string_view na
     }
 
     PromptContext context;
-    context.session_id = session_id;
+    context.session_id = session_context.session_id;
+    context.remote_address = session_context.remote_address;
+    context.transport = session_context.transport;
     context.arguments = std::move(arguments);
     const auto result = it->second.handler(context);
     if (!result) {
@@ -176,6 +204,12 @@ core::Result<core::Unit> ResourceRegistry::add(protocol::Resource resource, Reso
 core::Result<protocol::ResourcesReadResult> ResourceRegistry::read(std::string_view uri,
                                                                    protocol::Json params,
                                                                    const std::string& session_id) const {
+    return read(uri, std::move(params), SessionContext{.session_id = session_id});
+}
+
+core::Result<protocol::ResourcesReadResult> ResourceRegistry::read(std::string_view uri,
+                                                                   protocol::Json params,
+                                                                   const SessionContext& session_context) const {
     const auto it = resources_.find(std::string(uri));
     if (it == resources_.end()) {
         return std::unexpected(core::Error{
@@ -186,7 +220,9 @@ core::Result<protocol::ResourcesReadResult> ResourceRegistry::read(std::string_v
     }
 
     ResourceContext context;
-    context.session_id = session_id;
+    context.session_id = session_context.session_id;
+    context.remote_address = session_context.remote_address;
+    context.transport = session_context.transport;
     context.uri = std::string(uri);
     context.params = std::move(params);
     const auto result = it->second.handler(context);

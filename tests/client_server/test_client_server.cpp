@@ -1,4 +1,6 @@
 #include "mcp/client.hpp"
+#include "mcp/protocol/elicitation.hpp"
+#include "mcp/protocol/task.hpp"
 #include "mcp/protocol/serialization.hpp"
 #include "mcp/server.hpp"
 
@@ -10,6 +12,7 @@
 #include <string>
 #include <string_view>
 #include <utility>
+#include <variant>
 #include <vector>
 
 namespace {
@@ -29,6 +32,11 @@ public:
 
     mcp::core::Result<mcp::protocol::JsonRpcResponse> send(const mcp::protocol::JsonRpcRequest& request) override {
         return server_.handle_request(request, context_);
+    }
+
+    mcp::core::Result<mcp::core::Unit> send_notification(
+            const mcp::protocol::JsonRpcNotification& notification) override {
+        return server_.handle_notification(notification, context_);
     }
 
 private:
@@ -117,6 +125,54 @@ public:
                 .result = Json{{"action", "accept"}, {"content", Json{{"value", 1}}}},
             };
         }
+        if (request.method == "tasks/list") {
+            if (request.params.contains("cursor")) {
+                return mcp::protocol::JsonRpcResponse{
+                    .id = request.id,
+                    .result = mcp::protocol::task_list_result_to_json(mcp::protocol::TaskListResult{
+                        .tasks = {mcp::protocol::Task{
+                            .task_id = "task-2",
+                            .status = mcp::protocol::TaskStatus::Completed,
+                            .created_at = "2026-05-24T00:00:10Z",
+                            .ttl = std::monostate{},
+                            .last_updated_at = "2026-05-24T00:00:20Z",
+                        }},
+                    }),
+                };
+            }
+            return mcp::protocol::JsonRpcResponse{
+                .id = request.id,
+                .result = mcp::protocol::task_list_result_to_json(mcp::protocol::TaskListResult{
+                    .tasks = {mcp::protocol::Task{
+                        .task_id = "task-1",
+                        .status = mcp::protocol::TaskStatus::Working,
+                        .created_at = "2026-05-24T00:00:00Z",
+                        .ttl = std::monostate{},
+                        .last_updated_at = "2026-05-24T00:00:05Z",
+                    }},
+                    .next_cursor = "page-2",
+                }),
+            };
+        }
+        if (request.method == "tasks/get" || request.method == "tasks/cancel") {
+            return mcp::protocol::JsonRpcResponse{
+                .id = request.id,
+                .result = mcp::protocol::task_to_json(mcp::protocol::Task{
+                    .task_id = request.params.at("taskId").get<std::string>(),
+                    .status = request.method == "tasks/cancel" ? mcp::protocol::TaskStatus::Cancelled
+                                                                  : mcp::protocol::TaskStatus::Working,
+                    .created_at = "2026-05-24T00:00:00Z",
+                    .ttl = std::monostate{},
+                    .last_updated_at = "2026-05-24T00:00:05Z",
+                }),
+            };
+        }
+        if (request.method == "tasks/result") {
+            return mcp::protocol::JsonRpcResponse{
+                .id = request.id,
+                .result = Json{{"value", "task-complete"}},
+            };
+        }
         if (request.method == "logging/setLevel" || request.method == "resources/subscribe" ||
             request.method == "resources/unsubscribe") {
             return mcp::protocol::JsonRpcResponse{
@@ -203,6 +259,28 @@ public:
     std::vector<mcp::protocol::JsonRpcNotification> notifications;
 };
 
+class RecordingServerTransport final : public mcp::server::Transport {
+public:
+    mcp::core::Result<mcp::core::Unit> start(mcp::server::RequestHandler,
+                                             mcp::server::NotificationHandler = {}) override {
+        return mcp::core::Unit{};
+    }
+
+    mcp::core::Result<mcp::core::Unit> send_notification(
+            const mcp::protocol::JsonRpcNotification& notification) override {
+        notifications.push_back(notification);
+        return mcp::core::Unit{};
+    }
+
+    void stop() noexcept override {}
+
+    std::string_view name() const noexcept override {
+        return "recording";
+    }
+
+    std::vector<mcp::protocol::JsonRpcNotification> notifications;
+};
+
 mcp::server::Server make_server() {
     mcp::server::ServerOptions options;
     options.capabilities.tools.list_changed = true;
@@ -229,6 +307,58 @@ mcp::server::Server make_server() {
         });
     require(added.has_value(), "failed to register echo tool");
 
+    const auto prompt_added = server.prompts().add(
+        mcp::protocol::Prompt{
+            .name = "summarize",
+            .description = "Summarize input",
+            .arguments = {
+                mcp::protocol::PromptArgument{
+                    .name = "text",
+                    .description = "Input text",
+                    .required = true,
+                },
+            },
+        },
+        [](const mcp::server::PromptContext& context) -> mcp::core::Result<mcp::protocol::PromptsGetResult> {
+            mcp::protocol::PromptsGetResult result;
+            result.description = "Summarize input";
+            result.messages.push_back(mcp::protocol::PromptMessage{
+                .role = "user",
+                .content = mcp::protocol::ContentBlock{
+                    .type = "text",
+                    .text = context.arguments.at("text").get<std::string>(),
+                },
+            });
+            return result;
+        });
+    require(prompt_added.has_value(), "failed to register summarize prompt");
+
+    const auto resource_added = server.resources().add(
+        mcp::protocol::Resource{
+            .uri = "file:///tmp/readme.txt",
+            .name = "Readme",
+            .description = "Project readme",
+            .mime_type = "text/plain",
+        },
+        [](const mcp::server::ResourceContext& context) -> mcp::core::Result<mcp::protocol::ResourcesReadResult> {
+            mcp::protocol::ResourcesReadResult result;
+            result.contents.push_back(mcp::protocol::ResourceContents{
+                .uri = context.uri,
+                .mime_type = "text/plain",
+                .text = "hello",
+            });
+            return result;
+        });
+    require(resource_added.has_value(), "failed to register readme resource");
+
+    const auto template_added = server.resource_templates().add(mcp::protocol::ResourceTemplate{
+        .uri_template = "file:///tmp/{name}.txt",
+        .name = "Temp file",
+        .description = "A temporary file",
+        .mime_type = "text/plain",
+    });
+    require(template_added.has_value(), "failed to register resource template");
+
     return server;
 }
 
@@ -241,6 +371,201 @@ void test_list_tools_round_trip() {
     require(tools->size() == 1, "unexpected tool count");
     require(tools->front().name == "echo", "tool name mismatch");
     require(tools->front().description == "Echo the incoming payload", "tool description mismatch");
+}
+
+void test_get_tool_round_trip() {
+    auto server = make_server();
+
+    const auto tool = server.get_tool("echo");
+    require(tool.has_value(), "get_tool failed");
+    require(tool->name == "echo", "get_tool name mismatch");
+    require(tool->description == "Echo the incoming payload", "get_tool description mismatch");
+
+    const auto response = server.handle_request(mcp::protocol::JsonRpcRequest{
+        .method = "tools/get",
+        .params = Json{{"name", "echo"}},
+        .id = std::int64_t{10},
+    }, mcp::server::SessionContext{.session_id = "test-session", .remote_address = "127.0.0.1"});
+    require(response.has_value(), "tools/get request failed");
+    require(response->result.has_value(), "tools/get result missing");
+    require(response->result->at("name") == "echo", "tools/get response name mismatch");
+}
+
+void test_server_direct_facade_round_trip() {
+    auto server = make_server();
+
+    const auto tools = server.list_tools();
+    require(tools.size() == 1, "direct list_tools size mismatch");
+    require(tools.front().name == "echo", "direct list_tools name mismatch");
+
+    const auto prompts = server.list_prompts();
+    require(prompts.size() == 1, "direct list_prompts size mismatch");
+    require(prompts.front().name == "summarize", "direct list_prompts name mismatch");
+
+    const auto resources = server.list_resources();
+    require(resources.size() == 1, "direct list_resources size mismatch");
+    require(resources.front().uri == "file:///tmp/readme.txt", "direct list_resources uri mismatch");
+
+    const auto templates = server.list_resource_templates();
+    require(templates.size() == 1, "direct list_resource_templates size mismatch");
+    require(templates.front().uri_template == "file:///tmp/{name}.txt",
+            "direct list_resource_templates uriTemplate mismatch");
+
+    const auto tool = server.get_tool("echo");
+    require(tool.has_value(), "direct get_tool failed");
+    const auto call = server.call_tool("echo", Json{{"value", 7}}, "session-1");
+    require(call.has_value(), "direct call_tool failed");
+    require(call->content.front().text == "{\"value\":7}", "direct call_tool text mismatch");
+
+    const auto prompt = server.get_prompt("summarize", Json{{"text", "hello"}}, "session-1");
+    require(prompt.has_value(), "direct get_prompt failed");
+    require(prompt->messages.front().content.text == "hello", "direct get_prompt text mismatch");
+
+    const auto resource = server.read_resource("file:///tmp/readme.txt", Json::object(), "session-1");
+    require(resource.has_value(), "direct read_resource failed");
+    require(resource->contents.front().text == "hello", "direct read_resource text mismatch");
+}
+
+void test_server_notification_facade_round_trip() {
+    auto server = make_server();
+
+    int raw_notifications = 0;
+    int roots_notifications = 0;
+    int tools_notifications = 0;
+    int prompts_notifications = 0;
+    int resources_notifications = 0;
+    int progress_notifications = 0;
+    std::string updated_uri;
+    double progress_value = 0.0;
+    server.set_raw_notification_handler([&](const mcp::protocol::JsonRpcNotification& notification,
+                                            const mcp::server::SessionContext& context) {
+        ++raw_notifications;
+        require(!notification.method.empty(), "raw notification method mismatch");
+        require(context.session_id == "session-1", "raw notification session mismatch");
+        return mcp::core::Unit{};
+    });
+    server.set_roots_list_changed_handler([&](const mcp::server::SessionContext& context) {
+        ++roots_notifications;
+        require(context.remote_address == "127.0.0.1", "roots notification remote mismatch");
+        return mcp::core::Unit{};
+    });
+    server.set_tool_list_changed_handler([&](const mcp::server::SessionContext& context) {
+        ++tools_notifications;
+        require(context.session_id == "session-1", "tool notification session mismatch");
+        return mcp::core::Unit{};
+    });
+    server.set_prompt_list_changed_handler([&](const mcp::server::SessionContext& context) {
+        ++prompts_notifications;
+        require(context.session_id == "session-1", "prompt notification session mismatch");
+        return mcp::core::Unit{};
+    });
+    server.set_resource_list_changed_handler([&](const mcp::server::SessionContext& context) {
+        ++resources_notifications;
+        require(context.session_id == "session-1", "resource notification session mismatch");
+        return mcp::core::Unit{};
+    });
+    server.set_progress_handler([&](const mcp::protocol::ProgressNotificationParams& params,
+                                    const mcp::server::SessionContext& context) {
+        ++progress_notifications;
+        progress_value = params.progress;
+        require(context.session_id == "session-1", "progress notification session mismatch");
+        return mcp::core::Unit{};
+    });
+    server.set_resource_updated_handler([&](const std::string& uri, const mcp::server::SessionContext& context) {
+        updated_uri = uri;
+        require(context.remote_address == "127.0.0.1", "resource updated remote mismatch");
+        return mcp::core::Unit{};
+    });
+
+    const auto handled = server.handle_notification(mcp::protocol::JsonRpcNotification{
+        .method = std::string(mcp::protocol::RootsListChangedNotificationMethod),
+        .params = Json::object(),
+    }, mcp::server::SessionContext{.session_id = "session-1", .remote_address = "127.0.0.1"});
+    require(handled.has_value(), "server handle_notification failed");
+    require(raw_notifications == 1, "raw notification count mismatch");
+    require(roots_notifications == 1, "roots notification count mismatch");
+
+    require(server.handle_notification(mcp::protocol::JsonRpcNotification{
+                .method = std::string(mcp::protocol::ToolsListChangedNotificationMethod),
+                .params = Json::object(),
+            }, mcp::server::SessionContext{.session_id = "session-1", .remote_address = "127.0.0.1"})
+                .has_value(),
+            "tool list notification failed");
+    require(server.handle_notification(mcp::protocol::JsonRpcNotification{
+                .method = std::string(mcp::protocol::PromptsListChangedNotificationMethod),
+                .params = Json::object(),
+            }, mcp::server::SessionContext{.session_id = "session-1", .remote_address = "127.0.0.1"})
+                .has_value(),
+            "prompt list notification failed");
+    require(server.handle_notification(mcp::protocol::JsonRpcNotification{
+                .method = std::string(mcp::protocol::ResourcesListChangedNotificationMethod),
+                .params = Json::object(),
+            }, mcp::server::SessionContext{.session_id = "session-1", .remote_address = "127.0.0.1"})
+                .has_value(),
+            "resource list notification failed");
+    require(server.handle_notification(mcp::protocol::JsonRpcNotification{
+                .method = std::string(mcp::protocol::ProgressNotificationMethod),
+                .params = mcp::protocol::progress_notification_params_to_json(
+                    mcp::protocol::ProgressNotificationParams{
+                        .progress_token = std::int64_t{1},
+                        .progress = 0.75,
+                        .total = 1.0,
+                        .message = "three quarters",
+                    }),
+            }, mcp::server::SessionContext{.session_id = "session-1", .remote_address = "127.0.0.1"})
+                .has_value(),
+            "progress notification failed");
+    require(server.handle_notification(mcp::protocol::JsonRpcNotification{
+                .method = std::string(mcp::protocol::ResourcesUpdatedNotificationMethod),
+                .params = Json{{"uri", "file:///tmp/data.txt"}},
+            }, mcp::server::SessionContext{.session_id = "session-1", .remote_address = "127.0.0.1"})
+                .has_value(),
+            "resource updated notification failed");
+    require(updated_uri == "file:///tmp/data.txt", "resource updated uri mismatch");
+    require(tools_notifications == 1, "tool notification count mismatch");
+    require(prompts_notifications == 1, "prompt notification count mismatch");
+    require(resources_notifications == 1, "resource notification count mismatch");
+    require(progress_notifications == 1, "progress notification count mismatch");
+    require(progress_value == 0.75, "progress notification value mismatch");
+
+    const auto invalid = server.handle_notification(mcp::protocol::JsonRpcNotification{
+        .method = std::string(mcp::protocol::ResourcesUpdatedNotificationMethod),
+        .params = Json::object(),
+    }, mcp::server::SessionContext{.session_id = "session-1", .remote_address = "127.0.0.1"});
+    require(!invalid.has_value(), "invalid resource updated notification should fail");
+}
+
+void test_server_notify_facade_broadcasts_notifications() {
+    auto server = make_server();
+    auto transport = std::make_unique<RecordingServerTransport>();
+    auto* transport_ptr = transport.get();
+    require(server.add_transport(std::move(transport)).has_value(), "server transport add failed");
+
+    require(server.notify_tool_list_changed().has_value(), "notify_tool_list_changed failed");
+    require(server.notify_prompt_list_changed().has_value(), "notify_prompt_list_changed failed");
+    require(server.notify_resource_list_changed().has_value(), "notify_resource_list_changed failed");
+    require(server.notify_roots_list_changed().has_value(), "notify_roots_list_changed failed");
+    require(server.notify_resource_updated("file:///tmp/data.txt").has_value(),
+            "notify_resource_updated failed");
+    require(server.notify_progress(mcp::protocol::ProgressNotificationParams{
+                .progress_token = std::int64_t{1},
+                .progress = 0.5,
+                .total = 1.0,
+                .message = "half",
+            }).has_value(),
+            "notify_progress failed");
+    require(server.notify_logging_message(mcp::protocol::LoggingMessageNotificationParams{
+                .level = mcp::protocol::LoggingLevel::Info,
+                .logger = "test",
+                .data = Json{{"message", "hello"}},
+            }).has_value(),
+            "notify_logging_message failed");
+
+    require(transport_ptr->notifications.size() == 7, "server notification broadcast count mismatch");
+    require(transport_ptr->notifications.front().method == mcp::protocol::ToolsListChangedNotificationMethod,
+            "tool notification method mismatch");
+    require(transport_ptr->notifications.back().method == mcp::protocol::LoggingMessageNotificationMethod,
+            "logging notification method mismatch");
 }
 
 void test_call_tool_round_trip() {
@@ -479,6 +804,16 @@ void test_client_session_initialize_and_mark_initialized() {
             "initialize protocol version mismatch");
     require(recording->requests.front().params.at("clientInfo").at("name") == "cxxmcp",
             "initialize client name mismatch");
+    require(recording->requests.front().params.at("capabilities").at("roots").at("listChanged") == true,
+            "initialize roots capability mismatch");
+    require(recording->requests.front().params.at("capabilities").at("sampling").is_object(),
+            "initialize sampling capability mismatch");
+    require(recording->requests.front().params.at("capabilities").at("elicitation").at("form").is_object(),
+            "initialize elicitation capability mismatch");
+    require(recording->requests.front().params.at("capabilities").at("elicitation").at("url").is_object(),
+            "initialize url elicitation capability mismatch");
+    require(!recording->requests.front().params.at("capabilities").contains("tasks"),
+            "initialize should not advertise tasks by default");
 
     const auto marked = session.mark_initialized();
     require(marked.has_value(), "mark_initialized failed");
@@ -486,6 +821,45 @@ void test_client_session_initialize_and_mark_initialized() {
     // Depends on protocol::InitializedMethod matching the MCP notifications/initialized method name.
     require(recording->notifications.front().method == "notifications/initialized",
             "initialized notification method mismatch");
+}
+
+void test_client_initialize_with_explicit_task_capabilities() {
+    auto transport = std::make_unique<RecordingTransport>();
+    auto* recording = transport.get();
+    mcp::client::Client client(std::move(transport));
+
+    mcp::protocol::ClientCapabilities capabilities;
+    capabilities.roots.list_changed = true;
+    capabilities.sampling.enabled = true;
+    capabilities.elicitation.form = true;
+    capabilities.elicitation.url = true;
+    capabilities.tasks = mcp::protocol::TaskCapabilities{
+        .list = true,
+        .cancel = true,
+        .tools_call = true,
+        .sampling_create_message = true,
+        .elicitation_create = true,
+    };
+    client.set_capabilities(capabilities);
+
+    const auto initialized = client.initialize("tester", "1");
+    require(initialized.has_value(), "client initialize with explicit tasks failed");
+    require(recording->requests.size() == 1, "initialize should send one request");
+    require(recording->requests.front().params.at("clientInfo").at("name") == "tester",
+            "explicit initialize client name mismatch");
+    require(recording->requests.front().params.at("capabilities").at("tasks").at("list") == true,
+            "tasks list capability mismatch");
+    require(recording->requests.front().params.at("capabilities").at("tasks").at("cancel") == true,
+            "tasks cancel capability mismatch");
+    require(recording->requests.front().params.at("capabilities").at("tasks").at("requests").at("tools").at("call") ==
+                true,
+            "tasks tools call capability mismatch");
+    require(recording->requests.front().params.at("capabilities").at("tasks").at("requests").at("sampling")
+                    .at("createMessage") == true,
+            "tasks sampling createMessage capability mismatch");
+    require(recording->requests.front().params.at("capabilities").at("tasks").at("requests").at("elicitation")
+                    .at("create") == true,
+            "tasks elicitation create capability mismatch");
 }
 
 void test_client_session_discover_tools_uses_client_list_tools() {
@@ -516,6 +890,83 @@ void test_client_list_all_tools_follows_cursors() {
     require(recording->requests.at(1).params.at("cursor") == "page-2", "list_all_tools cursor mismatch");
 }
 
+void test_client_task_helpers_round_trip() {
+    auto transport = std::make_unique<RecordingTransport>();
+    auto* recording = transport.get();
+    mcp::client::Client client(std::move(transport));
+
+    const auto tasks = client.list_all_tasks();
+    require(tasks.has_value(), "list_all_tasks failed");
+    require(tasks->size() == 2, "list_all_tasks should collect both pages");
+    require(tasks->at(0).task_id == "task-1", "first task id mismatch");
+    require(tasks->at(1).status == mcp::protocol::TaskStatus::Completed, "second task status mismatch");
+
+    const auto task = client.get_task("task-1");
+    require(task.has_value(), "get_task failed");
+    require(task->task_id == "task-1", "get_task task id mismatch");
+
+    const auto cancelled = client.cancel_task("task-1");
+    require(cancelled.has_value(), "cancel_task failed");
+    require(cancelled->status == mcp::protocol::TaskStatus::Cancelled, "cancel_task status mismatch");
+
+    const auto task_result = client.task_result("task-1");
+    require(task_result.has_value(), "task_result failed");
+    require(task_result->at("value") == "task-complete", "task_result payload mismatch");
+
+    require(recording->requests.size() == 5, "task helpers should send five requests");
+    require(recording->requests.at(0).method == "tasks/list", "task list method mismatch");
+    require(recording->requests.at(1).params.at("cursor") == "page-2", "task list cursor mismatch");
+    require(recording->requests.at(2).method == "tasks/get", "task get method mismatch");
+    require(recording->requests.at(2).params.at("taskId") == "task-1", "task get id mismatch");
+    require(recording->requests.at(3).method == "tasks/cancel", "task cancel method mismatch");
+    require(recording->requests.at(4).method == "tasks/result", "task result method mismatch");
+}
+
+void test_task_status_notification_round_trip() {
+    auto transport = std::make_unique<RecordingTransport>();
+    auto* recording = transport.get();
+    mcp::client::Client client(std::move(transport));
+
+    std::string observed_task_id;
+    client.on_task_status([&](const mcp::protocol::Task& task) {
+        observed_task_id = task.task_id;
+    });
+
+    const auto task = mcp::protocol::Task{
+        .task_id = "task-1",
+        .status = mcp::protocol::TaskStatus::Working,
+        .created_at = "2026-05-24T00:00:00Z",
+        .ttl = std::monostate{},
+        .last_updated_at = "2026-05-24T00:00:05Z",
+    };
+    const auto notification_result = client.handle_notification(mcp::protocol::JsonRpcNotification{
+        .method = std::string(mcp::protocol::TasksStatusNotificationMethod),
+        .params = mcp::protocol::task_to_json(task),
+    });
+    require(notification_result.has_value(), "task status notification should parse");
+    require(observed_task_id == "task-1", "task status callback mismatch");
+
+    mcp::server::ServerOptions options;
+    options.capabilities.tasks = mcp::protocol::TaskCapabilities{
+        .list = true,
+        .cancel = true,
+        .tools_call = true,
+    };
+    mcp::server::Server server(options);
+    auto server_transport = std::make_unique<RecordingServerTransport>();
+    auto* server_recording = server_transport.get();
+    require(server.add_transport(std::move(server_transport)).has_value(), "server transport add failed");
+
+    const auto notified = server.notify_task_status(task);
+    require(notified.has_value(), "server task status notification should succeed");
+    require(server_recording->notifications.size() == 1, "server task status notification count mismatch");
+    require(server_recording->notifications.front().method == mcp::protocol::TasksStatusNotificationMethod,
+            "server task status method mismatch");
+    require(server_recording->notifications.front().params.at("taskId") == "task-1",
+            "server task status payload mismatch");
+    require(recording->requests.empty(), "task status notification should not send requests");
+}
+
 void test_client_resource_templates_and_json_helpers() {
     auto transport = std::make_unique<RecordingTransport>();
     auto* recording = transport.get();
@@ -534,9 +985,24 @@ void test_client_resource_templates_and_json_helpers() {
     require(sample.has_value(), "create_message helper failed");
     require(sample->at("content").at("text") == "sample", "sample payload mismatch");
 
-    const auto elicitation = client.create_elicitation(Json{{"message", "choose"}});
-    require(elicitation.has_value(), "create_elicitation helper failed");
-    require(elicitation->at("action") == "accept", "elicitation payload mismatch");
+    const auto elicitation_schema = mcp::protocol::ElicitationSchema::Builder()
+                                         .required_email("email")
+                                         .optional_bool("remember", true)
+                                         .build();
+    require(elicitation_schema.has_value(), "elicitation schema builder failed");
+
+    const auto typed_elicitation = client.create_elicitation(mcp::protocol::CreateElicitationRequestParam{
+        .message = "choose",
+        .requested_schema = *elicitation_schema,
+    });
+    require(typed_elicitation.has_value(), "create_elicitation typed helper failed");
+    require(typed_elicitation->action == mcp::protocol::ElicitationAction::Accept, "elicitation action mismatch");
+    require(typed_elicitation->content.has_value(), "elicitation typed content missing");
+    require(typed_elicitation->content->at("value") == 1, "elicitation typed content mismatch");
+
+    const auto raw_elicitation = client.create_elicitation(Json{{"message", "choose"}});
+    require(raw_elicitation.has_value(), "create_elicitation raw helper failed");
+    require(raw_elicitation->at("action") == "accept", "elicitation raw payload mismatch");
 
     const auto set_level = client.set_level("debug");
     require(set_level.has_value(), "set_level failed");
@@ -546,9 +1012,12 @@ void test_client_resource_templates_and_json_helpers() {
     require(unsubscribed.has_value(), "unsubscribe failed");
 
     require(recording->requests.at(1).method == "completion/complete", "completion method mismatch");
-    require(recording->requests.at(4).method == "logging/setLevel", "logging method mismatch");
-    require(recording->requests.at(5).method == "resources/subscribe", "subscribe method mismatch");
-    require(recording->requests.at(6).method == "resources/unsubscribe", "unsubscribe method mismatch");
+    require(recording->requests.at(2).method == "sampling/createMessage", "sample method mismatch");
+    require(recording->requests.at(3).method == "elicitation/create", "elicitation typed method mismatch");
+    require(recording->requests.at(4).method == "elicitation/create", "elicitation raw method mismatch");
+    require(recording->requests.at(5).method == "logging/setLevel", "logging method mismatch");
+    require(recording->requests.at(6).method == "resources/subscribe", "subscribe method mismatch");
+    require(recording->requests.at(7).method == "resources/unsubscribe", "unsubscribe method mismatch");
 }
 
 void test_client_roots_and_notification_callbacks() {
@@ -559,6 +1028,8 @@ void test_client_roots_and_notification_callbacks() {
     int tools_changed = 0;
     int prompts_changed = 0;
     int resources_changed = 0;
+    int progress_notifications = 0;
+    int elicitation_completed = 0;
     int raw_notifications = 0;
     int initialized_notifications = 0;
     int cancelled_notifications = 0;
@@ -566,6 +1037,8 @@ void test_client_roots_and_notification_callbacks() {
     std::string logged_message;
     std::string updated_uri;
     std::string cancelled_reason;
+    std::string elicitation_completion_id;
+    double progress_value = 0.0;
 
     client.on_initialized([&] { ++initialized_notifications; })
         .on_cancelled([&](const mcp::protocol::RequestId&, std::string_view reason) {
@@ -577,6 +1050,14 @@ void test_client_roots_and_notification_callbacks() {
         .on_prompt_list_changed([&] { ++prompts_changed; })
         .on_resource_list_changed([&] { ++resources_changed; })
         .on_resource_updated([&](const std::string& uri) { updated_uri = uri; })
+        .on_progress([&](const mcp::protocol::ProgressNotificationParams& params) {
+            ++progress_notifications;
+            progress_value = params.progress;
+        })
+        .on_elicitation_complete([&](std::string_view elicitation_id) {
+            ++elicitation_completed;
+            elicitation_completion_id = std::string(elicitation_id);
+        })
         .on_logging_message([&](std::string_view level, std::string_view message) {
             logged_level = std::string(level);
             logged_message = std::string(message);
@@ -601,10 +1082,27 @@ void test_client_roots_and_notification_callbacks() {
             "prompt notification failed");
     require(client.handle_notification({.method = "notifications/resources/list_changed"}).has_value(),
             "resource list notification failed");
+    require(client.handle_notification({.method = std::string(mcp::protocol::ProgressNotificationMethod),
+                                        .params = mcp::protocol::progress_notification_params_to_json(
+                                            mcp::protocol::ProgressNotificationParams{
+                                                .progress_token = std::int64_t{1},
+                                                .progress = 0.5,
+                                                .total = 1.0,
+                                                .message = "halfway",
+                                            })})
+                .has_value(),
+            "progress notification failed");
     require(client.handle_notification({.method = "notifications/resources/updated",
                                         .params = Json{{"uri", "file:///workspace/README.md"}}})
                 .has_value(),
             "resource updated notification failed");
+    require(client.handle_notification({.method = std::string(mcp::protocol::ElicitationCompleteNotificationMethod),
+                                        .params = mcp::protocol::elicitation_complete_notification_params_to_json(
+                                            mcp::protocol::ElicitationCompleteNotificationParams{
+                                                .elicitation_id = "elicitation-1",
+                                            })})
+                .has_value(),
+            "elicitation completion notification failed");
     require(client.handle_notification({.method = "notifications/message",
                                         .params = Json{{"level", "info"}, {"data", "ready"}}})
                 .has_value(),
@@ -613,13 +1111,140 @@ void test_client_roots_and_notification_callbacks() {
     require(tools_changed == 1, "tool list callback count mismatch");
     require(prompts_changed == 1, "prompt list callback count mismatch");
     require(resources_changed == 1, "resource list callback count mismatch");
+    require(progress_notifications == 1, "progress notification count mismatch");
+    require(progress_value == 0.5, "progress value mismatch");
     require(updated_uri == "file:///workspace/README.md", "resource updated uri mismatch");
     require(logged_level == "info", "logged level mismatch");
     require(logged_message == "ready", "logged message mismatch");
     require(initialized_notifications == 1, "initialized notification count mismatch");
     require(cancelled_notifications == 1, "cancelled notification count mismatch");
+    require(elicitation_completed == 1, "elicitation completion count mismatch");
+    require(elicitation_completion_id == "elicitation-1", "elicitation completion id mismatch");
     require(cancelled_reason == "done", "cancelled reason mismatch");
-    require(raw_notifications == 7, "raw notification callback count mismatch");
+    require(raw_notifications == 9, "raw notification callback count mismatch");
+}
+
+void test_client_request_callbacks() {
+    auto transport = std::make_unique<RecordingTransport>();
+    mcp::client::Client client(std::move(transport));
+
+    client.set_roots({mcp::client::Client::Root{.uri = "file:///workspace", .name = "workspace"}});
+
+    std::string sampling_prompt;
+    std::string elicitation_message;
+    std::string elicitation_url;
+    client.on_list_roots_request([&]() -> mcp::core::Result<mcp::protocol::RootsListResult> {
+            return mcp::protocol::RootsListResult{
+                .roots = {mcp::protocol::Root{
+                    .uri = "file:///workspace",
+                    .name = "workspace",
+                }},
+            };
+        })
+        .on_create_message_request([&](const mcp::protocol::CreateMessageParams& params)
+                                       -> mcp::core::Result<mcp::protocol::CreateMessageResult> {
+            sampling_prompt = params.messages.front().content.text;
+            return mcp::protocol::CreateMessageResult{
+                .role = "assistant",
+                .content = mcp::protocol::ContentBlock{
+                    .type = "text",
+                    .text = "sampled",
+                },
+                .model = "test-model",
+                .stop_reason = "endTurn",
+            };
+        })
+        .on_create_elicitation_request([&](const mcp::protocol::CreateElicitationRequestParam& request)
+                                           -> mcp::core::Result<mcp::protocol::CreateElicitationResult> {
+            elicitation_message = request.message;
+            if (request.mode == mcp::protocol::ElicitationMode::Url) {
+                elicitation_url = request.url.value_or("");
+                return mcp::protocol::CreateElicitationResult{
+                    .action = mcp::protocol::ElicitationAction::Accept,
+                };
+            }
+            return mcp::protocol::CreateElicitationResult{
+                .action = mcp::protocol::ElicitationAction::Accept,
+                .content = Json{{"chosen", true}},
+            };
+        })
+        .on_custom_request([&](const mcp::protocol::JsonRpcRequest& request) -> mcp::core::Result<Json> {
+            if (request.method == "custom/echo") {
+                return Json{{"ok", true}};
+            }
+            return std::unexpected(mcp::core::Error{
+                static_cast<int>(mcp::protocol::ErrorCode::MethodNotFound),
+                "custom request not handled",
+                std::string(request.method),
+            });
+        });
+
+    const auto roots = client.handle_request(mcp::protocol::JsonRpcRequest{
+        .method = std::string(mcp::protocol::RootsListMethod),
+        .params = Json::object(),
+        .id = std::int64_t{1},
+    });
+    require(roots.has_value(), "roots/list request failed");
+    require(roots->result->at("roots").at(0).at("uri") == "file:///workspace", "roots/list response mismatch");
+
+    const auto ping = client.handle_request(mcp::protocol::JsonRpcRequest{
+        .method = std::string(mcp::protocol::PingMethod),
+        .params = Json::object(),
+        .id = std::int64_t{1},
+    });
+    require(ping.has_value(), "ping request failed");
+    require(ping->result->empty(), "ping response mismatch");
+
+    const auto sampled = client.handle_request(mcp::protocol::JsonRpcRequest{
+        .method = std::string(mcp::protocol::SamplingCreateMessageMethod),
+        .params = Json{
+            {"messages", Json::array({Json{{"role", "user"}, {"content", Json{{"type", "text"}, {"text", "hi"}}}}})},
+            {"maxTokens", 16},
+        },
+        .id = std::int64_t{2},
+    });
+    require(sampled.has_value(), "sampling/createMessage request failed");
+    require(sampled->result->at("role") == "assistant", "sampling response role mismatch");
+    require(sampled->result->at("content").at("text") == "sampled", "sampling response content mismatch");
+    require(sampling_prompt == "hi", "sampling request handler mismatch");
+
+    const auto elicited = client.handle_request(mcp::protocol::JsonRpcRequest{
+        .method = std::string(mcp::protocol::ElicitationCreateMethod),
+        .params = Json{
+            {"message", "choose"},
+            {"requestedSchema", Json{
+                 {"type", "object"},
+                 {"properties", Json{{"name", Json{{"type", "string"}}}}},
+             }},
+        },
+        .id = std::int64_t{3},
+    });
+    require(elicited.has_value(), "elicitation/create request failed");
+    require(elicited->result->at("action") == "accept", "elicitation response action mismatch");
+    require(elicitation_message == "choose", "elicitation request handler mismatch");
+
+    const auto url_elicited = client.handle_request(mcp::protocol::JsonRpcRequest{
+        .method = std::string(mcp::protocol::ElicitationCreateMethod),
+        .params = Json{
+            {"message", "open"},
+            {"mode", "url"},
+            {"elicitationId", "elicitation-1"},
+            {"url", "https://example.test/elicitation/1"},
+            {"requestState", Json{{"step", 1}}},
+        },
+        .id = std::int64_t{4},
+    });
+    require(url_elicited.has_value(), "url elicitation/create request failed");
+    require(url_elicited->result->at("action") == "accept", "url elicitation response action mismatch");
+    require(elicitation_url == "https://example.test/elicitation/1", "url elicitation request handler mismatch");
+
+    const auto custom = client.handle_request(mcp::protocol::JsonRpcRequest{
+        .method = "custom/echo",
+        .params = Json::object(),
+        .id = std::int64_t{5},
+    });
+    require(custom.has_value(), "custom request should return a response");
+    require(custom->result->at("ok") == true, "custom request result mismatch");
 }
 
 void test_client_session_discover_prompts_uses_client_list_prompts() {
@@ -692,20 +1317,28 @@ void test_client_session_read_resource_uses_client_resources_read() {
 int main() {
     const std::vector<std::pair<std::string_view, void (*)()>> tests = {
         {"list tools round trip", test_list_tools_round_trip},
+        {"get tool round trip", test_get_tool_round_trip},
+        {"server direct facade round trip", test_server_direct_facade_round_trip},
+        {"server notification facade round trip", test_server_notification_facade_round_trip},
+        {"server notify facade broadcasts notifications", test_server_notify_facade_broadcasts_notifications},
         {"call tool round trip", test_call_tool_round_trip},
         {"ping raw request", test_ping_raw_request},
         {"server info accessors and ping", test_server_info_accessors_and_ping},
         {"initialize handshake shape", test_initialize_handshake_shape},
         {"server app builder registers parity surface", test_server_app_builder_registers_parity_surface},
         {"client session initialize and mark initialized", test_client_session_initialize_and_mark_initialized},
+        {"client initialize with explicit task capabilities", test_client_initialize_with_explicit_task_capabilities},
         {"client session discover prompts", test_client_session_discover_prompts_uses_client_list_prompts},
         {"client session discover resources", test_client_session_discover_resources_uses_client_list_resources},
         {"client session get prompt", test_client_session_get_prompt_uses_client_prompts_get},
         {"client session read resource", test_client_session_read_resource_uses_client_resources_read},
         {"client session discover tools", test_client_session_discover_tools_uses_client_list_tools},
         {"client list all tools follows cursors", test_client_list_all_tools_follows_cursors},
+        {"client task helpers round trip", test_client_task_helpers_round_trip},
+        {"task status notification round trip", test_task_status_notification_round_trip},
         {"client resource templates and json helpers", test_client_resource_templates_and_json_helpers},
         {"client roots and notification callbacks", test_client_roots_and_notification_callbacks},
+        {"client request callbacks", test_client_request_callbacks},
     };
 
     std::size_t failures = 0;

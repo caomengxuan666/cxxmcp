@@ -66,6 +66,8 @@ target_include_directories(cpp_httplib INTERFACE
     third_party/httplib
 )
 
+add_subdirectory(third_party/spdlog EXCLUDE_FROM_ALL)
+
 if(MCP_ENABLE_PROTOCOL)
     add_library(mcp_protocol STATIC)
     target_sources(mcp_protocol PRIVATE protocol/src/serialization.cpp)
@@ -112,6 +114,7 @@ endif()
 
 add_library(mcp_observability INTERFACE)
 target_include_directories(mcp_observability INTERFACE observability/include)
+target_link_libraries(mcp_observability INTERFACE spdlog::spdlog_header_only)
 
 if(MCP_ENABLE_APP)
     add_library(mcp_app STATIC

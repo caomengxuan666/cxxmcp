@@ -3,6 +3,7 @@
 #include "mcp/client/client.hpp"
 
 #include <chrono>
+#include <memory>
 #include <string>
 #include <unordered_map>
 
@@ -19,12 +20,17 @@ struct HttpTransportOptions {
 class HttpTransport final : public Transport {
 public:
     explicit HttpTransport(HttpTransportOptions options);
+    ~HttpTransport() override;
 
     core::Result<protocol::JsonRpcResponse> send(const protocol::JsonRpcRequest& request) override;
     core::Result<core::Unit> send_notification(const protocol::JsonRpcNotification& notification) override;
+    core::Result<core::Unit> start(TransportRequestHandler request_handler,
+                                   TransportNotificationHandler notification_handler = {}) override;
+    void stop() noexcept;
 
 private:
-    HttpTransportOptions options_;
+    struct Impl;
+    std::unique_ptr<Impl> impl_;
 };
 
 } // namespace mcp::client

@@ -1,6 +1,7 @@
 #pragma once
 
 #include "mcp/core/result.hpp"
+#include "mcp/protocol/task.hpp"
 #include "mcp/protocol/types.hpp"
 
 #include <optional>
@@ -27,6 +28,7 @@ struct ToolDefinition {
 struct ToolCall {
     std::string name;
     Json arguments = Json::object();
+    std::optional<TaskRequestParameters> task;
 };
 
 struct ToolsListResult {
@@ -165,6 +167,9 @@ inline Json tool_call_to_json(const ToolCall& call) {
     if (!call.arguments.empty()) {
         json["arguments"] = call.arguments;
     }
+    if (call.task.has_value()) {
+        json["task"] = task_request_parameters_to_json(*call.task);
+    }
     return json;
 }
 
@@ -183,6 +188,13 @@ inline core::Result<ToolCall> tool_call_from_json(const Json& json) {
             return std::unexpected(tool_json_error("tools/call arguments must be an object"));
         }
         call.arguments = json.at("arguments");
+    }
+    if (json.contains("task")) {
+        const auto task = task_request_parameters_from_json(json.at("task"));
+        if (!task) {
+            return std::unexpected(task.error());
+        }
+        call.task = *task;
     }
     return call;
 }

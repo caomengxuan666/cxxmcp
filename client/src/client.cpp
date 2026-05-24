@@ -5,6 +5,7 @@
 #include "mcp/client/stdio_transport.hpp"
 
 #include "mcp/protocol/completion.hpp"
+#include "mcp/protocol/elicitation.hpp"
 #include "mcp/protocol/logging.hpp"
 #include "mcp/protocol/prompt.hpp"
 #include "mcp/protocol/resource.hpp"
@@ -42,12 +43,28 @@ core::Result<protocol::Json> require_result_payload(const protocol::JsonRpcRespo
     return *response.result;
 }
 
+core::Result<protocol::JsonRpcResponse> make_error_response(const protocol::JsonRpcRequest& request,
+                                                            int code,
+                                                            std::string message,
+                                                            std::string detail = {}) {
+    return protocol::make_error_response(
+        std::optional<protocol::RequestId>{request.id},
+        protocol::make_error(code,
+                             std::move(message),
+                             detail.empty() ? std::nullopt : std::optional<protocol::Json>{detail}));
+}
+
 protocol::Json cursor_params(const std::optional<std::string>& cursor) {
     protocol::Json params = protocol::Json::object();
     if (cursor.has_value()) {
         params["cursor"] = *cursor;
     }
     return params;
+}
+
+bool is_session_terminated_error(const core::Error& error) {
+    return error.code == static_cast<int>(protocol::ErrorCode::InvalidRequest) &&
+           error.message == "http transport session was terminated";
 }
 
 } // namespace
@@ -59,6 +76,26 @@ core::Result<core::Unit> Transport::send_notification(const protocol::JsonRpcNot
 
 Client::Client(std::unique_ptr<Transport> transport)
     : transport_(std::move(transport)) {}
+
+core::Result<core::Unit> Client::ensure_transport_started() {
+    if (transport_started_) {
+        return core::Unit{};
+    }
+    if (!transport_) {
+        return std::unexpected(make_client_error(static_cast<int>(protocol::ErrorCode::InternalError),
+                                                 "client transport is not configured"));
+    }
+
+    const auto started = transport_->start(
+        [this](const protocol::JsonRpcRequest& request) { return this->handle_request(request); },
+        [this](const protocol::JsonRpcNotification& notification) { return this->handle_notification(notification); });
+    if (!started) {
+        return std::unexpected(started.error());
+    }
+
+    transport_started_ = true;
+    return core::Unit{};
+}
 
 Client Client::connect_streamable_http(StreamableHttpEndpoint endpoint) {
     return Client(std::make_unique<HttpTransport>(HttpTransportOptions{
@@ -88,12 +125,7 @@ Client Client::connect_stdio(StdioEndpoint endpoint) {
 }
 
 core::Result<protocol::Json> Client::send_request(std::string method, protocol::Json params) {
-    if (!transport_) {
-        return std::unexpected(make_client_error(static_cast<int>(protocol::ErrorCode::InternalError),
-                                                 "client transport is not configured"));
-    }
-
-    auto response = transport_->send(protocol::JsonRpcRequest{
+    const auto response = send_rpc_request(protocol::JsonRpcRequest{
         .method = std::move(method),
         .params = std::move(params),
         .id = next_request_id_++,
@@ -105,18 +137,61 @@ core::Result<protocol::Json> Client::send_request(std::string method, protocol::
     return require_result_payload(*response);
 }
 
+core::Result<protocol::JsonRpcResponse> Client::send_rpc_request(protocol::JsonRpcRequest request) {
+    const auto started = ensure_transport_started();
+    if (!started) {
+        return std::unexpected(started.error());
+    }
+
+    bool retried_after_session_reset = false;
+    while (true) {
+        auto response = transport_->send(request);
+        if (!response) {
+            if (!retried_after_session_reset && is_session_terminated_error(response.error())) {
+                retried_after_session_reset = true;
+                if (request.method != std::string(protocol::InitializeMethod)) {
+                    if (!last_initialize_params_.has_value()) {
+                        return std::unexpected(response.error());
+                    }
+
+                    const auto initialize_response = transport_->send(protocol::JsonRpcRequest{
+                        .method = std::string(protocol::InitializeMethod),
+                        .params = *last_initialize_params_,
+                        .id = next_request_id_++,
+                    });
+                    if (!initialize_response) {
+                        return std::unexpected(initialize_response.error());
+                    }
+
+                    const auto initialized_payload = require_result_payload(*initialize_response);
+                    if (!initialized_payload) {
+                        return std::unexpected(initialized_payload.error());
+                    }
+                }
+                continue;
+            }
+
+            return std::unexpected(response.error());
+        }
+
+        return *response;
+    }
+}
+
 core::Result<protocol::Json> Client::initialize(std::string client_name, std::string client_version) {
     protocol::Json params = protocol::Json::object();
     params["protocolVersion"] = std::string(protocol::McpProtocolVersion);
-    params["capabilities"] = protocol::Json{
-        {"roots", protocol::Json{{"listChanged", true}}},
-        {"sampling", protocol::Json::object()},
-        {"elicitation", protocol::Json::object()},
+    const auto capabilities = capabilities_.has_value() ? *capabilities_ : protocol::ClientCapabilities{
+        .roots = {.list_changed = true},
+        .sampling = {.enabled = true},
+        .elicitation = {.form = true, .url = true},
     };
+    params["capabilities"] = protocol::client_capabilities_to_json(capabilities);
     params["clientInfo"] = protocol::Json{
         {"name", std::move(client_name)},
         {"version", std::move(client_version)},
     };
+    last_initialize_params_ = params;
     return send_request(std::string(protocol::InitializeMethod), std::move(params));
 }
 
@@ -125,6 +200,21 @@ core::Result<core::Unit> Client::notify_initialized() {
         .method = std::string(protocol::InitializedMethod),
         .params = protocol::Json::object(),
     });
+}
+
+Client& Client::on_progress(ProgressHandler handler) {
+    progress_handler_ = std::move(handler);
+    return *this;
+}
+
+Client& Client::on_elicitation_complete(ElicitationCompleteHandler handler) {
+    elicitation_complete_handler_ = std::move(handler);
+    return *this;
+}
+
+Client& Client::on_task_status(TaskStatusHandler handler) {
+    task_status_handler_ = std::move(handler);
+    return *this;
 }
 
 core::Result<core::Unit> Client::notify_cancelled(protocol::RequestId request_id, std::string reason) {
@@ -139,13 +229,15 @@ core::Result<core::Unit> Client::notify_cancelled(protocol::RequestId request_id
 
 core::Result<core::Unit> Client::notify_progress(protocol::ProgressToken progress_token,
                                                  double progress,
-                                                 std::optional<double> total) {
+                                                 std::optional<double> total,
+                                                 std::string message) {
     return raw_notification(protocol::JsonRpcNotification{
         .method = "notifications/progress",
         .params = protocol::progress_notification_params_to_json(protocol::ProgressNotificationParams{
             .progress_token = std::move(progress_token),
             .progress = progress,
             .total = total,
+            .message = std::move(message),
         }),
     });
 }
@@ -197,12 +289,7 @@ core::Result<std::vector<protocol::Prompt>> Client::list_all_prompts() {
 }
 
 core::Result<protocol::PromptsGetResult> Client::get_prompt(const protocol::PromptsGetParams& params) {
-    if (!transport_) {
-        return std::unexpected(make_client_error(static_cast<int>(protocol::ErrorCode::InternalError),
-                                                 "client transport is not configured"));
-    }
-
-    const auto response = transport_->send(protocol::JsonRpcRequest{
+    const auto response = send_rpc_request(protocol::JsonRpcRequest{
         .method = std::string(protocol::PromptsGetMethod),
         .params = protocol::prompts_get_params_to_json(params),
         .id = next_request_id_++,
@@ -233,12 +320,7 @@ core::Result<protocol::PromptsGetResult> Client::get_prompt(std::string_view nam
 }
 
 core::Result<std::vector<protocol::Resource>> Client::list_resources() {
-    if (!transport_) {
-        return std::unexpected(make_client_error(static_cast<int>(protocol::ErrorCode::InternalError),
-                                                 "client transport is not configured"));
-    }
-
-    const auto response = transport_->send(protocol::JsonRpcRequest{
+    const auto response = send_rpc_request(protocol::JsonRpcRequest{
         .method = std::string(protocol::ResourcesListMethod),
         .params = protocol::Json::object(),
         .id = next_request_id_++,
@@ -279,12 +361,7 @@ core::Result<std::vector<protocol::Resource>> Client::list_all_resources() {
 }
 
 core::Result<protocol::ResourcesReadResult> Client::read_resource(const protocol::ResourcesReadParams& params) {
-    if (!transport_) {
-        return std::unexpected(make_client_error(static_cast<int>(protocol::ErrorCode::InternalError),
-                                                 "client transport is not configured"));
-    }
-
-    const auto response = transport_->send(protocol::JsonRpcRequest{
+    const auto response = send_rpc_request(protocol::JsonRpcRequest{
         .method = std::string(protocol::ResourcesReadMethod),
         .params = protocol::resources_read_params_to_json(params),
         .id = next_request_id_++,
@@ -341,12 +418,7 @@ core::Result<std::vector<protocol::ResourceTemplate>> Client::list_all_resource_
 }
 
 core::Result<std::vector<protocol::ToolDefinition>> Client::list_tools() {
-    if (!transport_) {
-        return std::unexpected(make_client_error(static_cast<int>(protocol::ErrorCode::InternalError),
-                                                 "client transport is not configured"));
-    }
-
-    const auto response = transport_->send(protocol::JsonRpcRequest{
+    const auto response = send_rpc_request(protocol::JsonRpcRequest{
         .method = "tools/list",
         .params = protocol::Json::object(),
         .id = next_request_id_++,
@@ -410,16 +482,11 @@ core::Result<std::vector<protocol::ToolDefinition>> Client::list_all_tools() {
 }
 
 core::Result<protocol::ToolResult> Client::call_tool(const protocol::ToolCall& call) {
-    if (!transport_) {
-        return std::unexpected(make_client_error(static_cast<int>(protocol::ErrorCode::InternalError),
-                                                 "client transport is not configured"));
-    }
-
     protocol::Json params = protocol::Json::object();
     params["name"] = call.name;
     params["arguments"] = call.arguments;
 
-    const auto response = transport_->send(protocol::JsonRpcRequest{
+    const auto response = send_rpc_request(protocol::JsonRpcRequest{
         .method = "tools/call",
         .params = std::move(params),
         .id = next_request_id_++,
@@ -484,8 +551,100 @@ core::Result<protocol::Json> Client::create_message(const protocol::Json& reques
     return send_request("sampling/createMessage", request);
 }
 
+core::Result<protocol::CreateElicitationResult> Client::create_elicitation(
+    const protocol::CreateElicitationRequestParam& request) {
+    const auto payload = send_request(std::string(protocol::ElicitationCreateMethod),
+                                      protocol::create_elicitation_request_param_to_json(request));
+    if (!payload) {
+        return std::unexpected(payload.error());
+    }
+
+    const auto result = protocol::create_elicitation_result_from_json(*payload);
+    if (!result) {
+        return std::unexpected(result.error());
+    }
+    return *result;
+}
+
 core::Result<protocol::Json> Client::create_elicitation(const protocol::Json& request) {
-    return send_request("elicitation/create", request);
+    return send_request(std::string(protocol::ElicitationCreateMethod), request);
+}
+
+core::Result<std::vector<protocol::Task>> Client::list_tasks() {
+    const auto payload = send_request(std::string(protocol::TasksListMethod), protocol::Json::object());
+    if (!payload) {
+        return std::unexpected(payload.error());
+    }
+
+    const auto tasks = protocol::task_list_result_from_json(*payload);
+    if (!tasks) {
+        return std::unexpected(tasks.error());
+    }
+
+    return tasks->tasks;
+}
+
+core::Result<std::vector<protocol::Task>> Client::list_all_tasks() {
+    std::vector<protocol::Task> all;
+    std::optional<std::string> cursor;
+    do {
+        const auto payload = send_request(std::string(protocol::TasksListMethod), cursor_params(cursor));
+        if (!payload) {
+            return std::unexpected(payload.error());
+        }
+        const auto page = protocol::task_list_result_from_json(*payload);
+        if (!page) {
+            return std::unexpected(page.error());
+        }
+        all.insert(all.end(), page->tasks.begin(), page->tasks.end());
+        cursor = page->next_cursor;
+    } while (cursor.has_value() && !cursor->empty());
+    return all;
+}
+
+core::Result<protocol::Task> Client::get_task(const protocol::TaskGetParams& request) {
+    const auto payload = send_request(std::string(protocol::TasksGetMethod), protocol::task_get_params_to_json(request));
+    if (!payload) {
+        return std::unexpected(payload.error());
+    }
+
+    const auto task = protocol::task_from_json(*payload);
+    if (!task) {
+        return std::unexpected(task.error());
+    }
+
+    return *task;
+}
+
+core::Result<protocol::Task> Client::get_task(std::string_view task_id) {
+    return get_task(protocol::TaskGetParams{.task_id = std::string(task_id)});
+}
+
+core::Result<protocol::Task> Client::cancel_task(const protocol::TaskCancelParams& request) {
+    const auto payload = send_request(std::string(protocol::TasksCancelMethod),
+                                      protocol::task_cancel_params_to_json(request));
+    if (!payload) {
+        return std::unexpected(payload.error());
+    }
+
+    const auto task = protocol::task_from_json(*payload);
+    if (!task) {
+        return std::unexpected(task.error());
+    }
+
+    return *task;
+}
+
+core::Result<protocol::Task> Client::cancel_task(std::string_view task_id) {
+    return cancel_task(protocol::TaskCancelParams{.task_id = std::string(task_id)});
+}
+
+core::Result<protocol::Json> Client::task_result(const protocol::TaskResultParams& request) {
+    return send_request(std::string(protocol::TasksResultMethod), protocol::task_get_params_to_json(request));
+}
+
+core::Result<protocol::Json> Client::task_result(std::string_view task_id) {
+    return task_result(protocol::TaskResultParams{.task_id = std::string(task_id)});
 }
 
 core::Result<core::Unit> Client::set_level(const protocol::LoggingSetLevelParams& params) {
@@ -539,6 +698,11 @@ Client& Client::set_roots(std::vector<protocol::Root> roots) {
     return *this;
 }
 
+Client& Client::set_capabilities(protocol::ClientCapabilities capabilities) {
+    capabilities_ = std::move(capabilities);
+    return *this;
+}
+
 Client& Client::on_initialized(InitializedHandler handler) {
     initialized_handler_ = std::move(handler);
     return *this;
@@ -579,9 +743,45 @@ Client& Client::on_roots_list_changed(ListChangedHandler handler) {
     return *this;
 }
 
+Client& Client::on_list_roots_request(ListRootsRequestHandler handler) {
+    roots_list_request_handler_ = std::move(handler);
+    return *this;
+}
+
+Client& Client::on_create_message_request(CreateMessageRequestHandler handler) {
+    sampling_request_handler_ = std::move(handler);
+    return *this;
+}
+
+Client& Client::on_create_elicitation_request(CreateElicitationRequestHandler handler) {
+    elicitation_request_handler_ = std::move(handler);
+    return *this;
+}
+
+Client& Client::on_custom_request(CustomRequestHandler handler) {
+    custom_request_handler_ = std::move(handler);
+    return *this;
+}
+
+Client& Client::on_roots_list_request(RootsListRequestHandler handler) {
+    return on_list_roots_request(std::move(handler));
+}
+
+Client& Client::on_sampling_request(SamplingRequestHandler handler) {
+    return on_create_message_request(std::move(handler));
+}
+
+Client& Client::on_elicitation_request(ElicitationRequestHandler handler) {
+    return on_create_elicitation_request(std::move(handler));
+}
+
 Client& Client::on_raw_notification(RawNotificationHandler handler) {
     raw_notification_handler_ = std::move(handler);
     return *this;
+}
+
+Client& Client::on_custom_notification(RawNotificationHandler handler) {
+    return on_raw_notification(std::move(handler));
 }
 
 core::Result<core::Unit> Client::handle_notification(const protocol::JsonRpcNotification& notification) {
@@ -623,6 +823,29 @@ core::Result<core::Unit> Client::handle_notification(const protocol::JsonRpcNoti
                                                      "resource updated notification requires a string uri"));
         }
         resource_updated_handler_(notification.params.at("uri").get<std::string>());
+    } else if (notification.method == std::string(protocol::ProgressNotificationMethod) && progress_handler_) {
+        const auto params = protocol::progress_notification_params_from_json(notification.params);
+        if (!params) {
+            return std::unexpected(make_client_error(static_cast<int>(protocol::ErrorCode::InvalidParams),
+                                                     "progress notification requires valid params"));
+        }
+        progress_handler_(*params);
+    } else if (notification.method == std::string(protocol::ElicitationCompleteNotificationMethod) &&
+               elicitation_complete_handler_) {
+        const auto params = protocol::elicitation_complete_notification_params_from_json(notification.params);
+        if (!params) {
+            return std::unexpected(make_client_error(static_cast<int>(protocol::ErrorCode::InvalidParams),
+                                                     "elicitation completion notification requires valid params"));
+        }
+        elicitation_complete_handler_(params->elicitation_id);
+    } else if (notification.method == std::string(protocol::TasksStatusNotificationMethod) &&
+               task_status_handler_) {
+        const auto task = protocol::task_from_json(notification.params);
+        if (!task) {
+            return std::unexpected(make_client_error(static_cast<int>(protocol::ErrorCode::InvalidParams),
+                                                     "task status notification requires valid task data"));
+        }
+        task_status_handler_(*task);
     } else if (notification.method == "notifications/roots/list_changed" && roots_list_changed_handler_) {
         roots_list_changed_handler_();
     }
@@ -633,13 +856,82 @@ core::Result<core::Unit> Client::handle_notification(const protocol::JsonRpcNoti
     return core::Unit{};
 }
 
-core::Result<protocol::Json> Client::raw_request(const protocol::JsonRpcRequest& request) {
-    if (!transport_) {
-        return std::unexpected(make_client_error(static_cast<int>(protocol::ErrorCode::InternalError),
-                                                 "client transport is not configured"));
+core::Result<protocol::JsonRpcResponse> Client::handle_request(const protocol::JsonRpcRequest& request) {
+    if (request.method == std::string(protocol::PingMethod)) {
+        return protocol::make_response(request.id, protocol::Json::object());
     }
 
-    const auto response = transport_->send(request);
+    if (request.method == std::string(protocol::RootsListMethod)) {
+        if (roots_list_request_handler_) {
+            const auto roots = roots_list_request_handler_();
+            if (!roots) {
+                return make_error_response(request, roots.error().code, roots.error().message, roots.error().detail);
+            }
+            return protocol::make_response(request.id, protocol::roots_list_result_to_json(*roots));
+        }
+
+        return protocol::make_response(request.id,
+                                       protocol::roots_list_result_to_json(protocol::RootsListResult{
+                                           .roots = roots_,
+                                       }));
+    }
+
+    if (request.method == std::string(protocol::SamplingCreateMessageMethod)) {
+        if (!sampling_request_handler_) {
+            return make_error_response(request,
+                                       static_cast<int>(protocol::ErrorCode::MethodNotFound),
+                                       "sampling request handler is not configured");
+        }
+
+        const auto params = protocol::create_message_params_from_json(request.params);
+        if (!params) {
+            return make_error_response(request, params.error().code, params.error().message, params.error().detail);
+        }
+
+        const auto result = sampling_request_handler_(*params);
+        if (!result) {
+            return make_error_response(request, result.error().code, result.error().message, result.error().detail);
+        }
+
+        return protocol::make_response(request.id, protocol::create_message_result_to_json(*result));
+    }
+
+    if (request.method == std::string(protocol::ElicitationCreateMethod)) {
+        if (!elicitation_request_handler_) {
+            return make_error_response(request,
+                                       static_cast<int>(protocol::ErrorCode::MethodNotFound),
+                                       "elicitation request handler is not configured");
+        }
+
+        const auto params = protocol::create_elicitation_request_param_from_json(request.params);
+        if (!params) {
+            return make_error_response(request, params.error().code, params.error().message, params.error().detail);
+        }
+
+        const auto result = elicitation_request_handler_(*params);
+        if (!result) {
+            return make_error_response(request, result.error().code, result.error().message, result.error().detail);
+        }
+
+        return protocol::make_response(request.id, protocol::create_elicitation_result_to_json(*result));
+    }
+
+    if (custom_request_handler_) {
+        const auto result = custom_request_handler_(request);
+        if (!result) {
+            return make_error_response(request, result.error().code, result.error().message, result.error().detail);
+        }
+        return protocol::make_response(request.id, std::move(*result));
+    }
+
+    return make_error_response(request,
+                               static_cast<int>(protocol::ErrorCode::MethodNotFound),
+                               "method not found",
+                               request.method);
+}
+
+core::Result<protocol::Json> Client::raw_request(const protocol::JsonRpcRequest& request) {
+    const auto response = send_rpc_request(request);
     if (!response) {
         return std::unexpected(response.error());
     }
@@ -648,9 +940,9 @@ core::Result<protocol::Json> Client::raw_request(const protocol::JsonRpcRequest&
 }
 
 core::Result<core::Unit> Client::raw_notification(const protocol::JsonRpcNotification& notification) {
-    if (!transport_) {
-        return std::unexpected(make_client_error(static_cast<int>(protocol::ErrorCode::InternalError),
-                                                 "client transport is not configured"));
+    const auto started = ensure_transport_started();
+    if (!started) {
+        return std::unexpected(started.error());
     }
 
     return transport_->send_notification(notification);
@@ -662,19 +954,7 @@ McpClientSession::McpClientSession(std::unique_ptr<Transport> transport,
       options_(std::move(options)) {}
 
 core::Result<protocol::Json> McpClientSession::initialize() {
-    protocol::Json params = protocol::Json::object();
-    params["protocolVersion"] = std::string(protocol::McpProtocolVersion);
-    params["capabilities"] = protocol::Json::object();
-    params["clientInfo"] = protocol::Json{
-        {"name", options_.client_name},
-        {"version", options_.client_version},
-    };
-
-    return client_.raw_request(protocol::JsonRpcRequest{
-        .method = std::string(protocol::InitializeMethod),
-        .params = std::move(params),
-        .id = std::int64_t{0},
-    });
+    return client_.initialize(options_.client_name, options_.client_version);
 }
 
 core::Result<core::Unit> McpClientSession::mark_initialized() {
