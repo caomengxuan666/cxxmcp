@@ -71,6 +71,15 @@ std::string message_to_sse_event(const std::optional<std::uint64_t>& event_id,
   return event;
 }
 
+std::string sse_priming_event(std::chrono::milliseconds retry) {
+  std::string event;
+  event.append("id: 0\n");
+  event.append("retry: ");
+  event.append(std::to_string(retry.count()));
+  event.append("\n\n");
+  return event;
+}
+
 std::optional<std::string> header_name_from_request(
     const protocol::JsonRpcRequest& request) {
   if (!request.params.is_object()) {
@@ -520,6 +529,14 @@ core::Result<core::Unit> HttpTransport::start(
     response.set_chunked_content_provider(
         "text/event-stream", [this, &request, stream_session_id](
                                  std::size_t, httplib::DataSink& sink) {
+          if (options_.sse_retry.has_value()) {
+            const auto priming = sse_priming_event(*options_.sse_retry);
+            if (!sink.write(priming.data(), priming.size())) {
+              sink.done();
+              return false;
+            }
+          }
+
           while (true) {
             std::unique_lock lock(mutex_);
             if (stopped_ || request.is_connection_closed() ||

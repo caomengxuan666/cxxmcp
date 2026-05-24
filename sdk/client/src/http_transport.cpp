@@ -91,6 +91,65 @@ bool has_event_stream_content_type(const httplib::Response& response) {
          std::string::npos;
 }
 
+struct ResolvedEndpoint {
+  std::string origin;
+  std::string path;
+};
+
+core::Result<ResolvedEndpoint> resolve_endpoint(
+    const HttpTransportOptions& options) {
+  httplib::detail::UrlComponents components;
+  if (!options.uri.empty()) {
+    if (!httplib::detail::parse_url(options.uri, components) ||
+        components.host.empty()) {
+      return std::unexpected(make_transport_error(
+          static_cast<int>(protocol::ErrorCode::InvalidRequest),
+          "invalid http transport uri", options.uri));
+    }
+  } else {
+    components.host = options.host;
+    components.port = std::to_string(options.port);
+    components.path = options.path;
+  }
+
+  if (!components.scheme.empty() && components.scheme != "http" &&
+      components.scheme != "https") {
+    return std::unexpected(make_transport_error(
+        static_cast<int>(protocol::ErrorCode::InvalidRequest),
+        "unsupported http transport uri scheme", components.scheme));
+  }
+
+  if (components.host.empty()) {
+    return std::unexpected(make_transport_error(
+        static_cast<int>(protocol::ErrorCode::InvalidRequest),
+        "http transport endpoint is missing a host"));
+  }
+
+  const bool is_ssl = components.scheme == "https";
+  int port = is_ssl ? 443 : 80;
+  if (!components.port.empty() &&
+      !httplib::detail::parse_port(components.port, port)) {
+    return std::unexpected(make_transport_error(
+        static_cast<int>(protocol::ErrorCode::InvalidRequest),
+        "invalid http transport port", components.port));
+  }
+
+  std::string path = components.path.empty() ? "/" : components.path;
+  if (!path.empty() && path.front() != '/') {
+    path.insert(path.begin(), '/');
+  }
+  if (!components.query.empty()) {
+    path.push_back('?');
+    path += components.query;
+  }
+
+  std::string origin = is_ssl ? "https://" : "http://";
+  origin += httplib::detail::make_host_and_port_string(components.host, port,
+                                                       is_ssl);
+
+  return ResolvedEndpoint{std::move(origin), std::move(path)};
+}
+
 std::vector<std::string> parse_sse_data_events(std::string_view body) {
   std::vector<std::string> events;
   std::string data;
@@ -148,11 +207,12 @@ std::vector<std::string> parse_sse_data_events(std::string_view body) {
 
 struct HttpTransport::Impl {
   explicit Impl(HttpTransportOptions options) : options(std::move(options)) {
-    if (this->options.path.empty()) {
-      this->options.path = "/";
-    }
-    if (!core::starts_with(this->options.path, '/')) {
-      this->options.path.insert(this->options.path.begin(), '/');
+    const auto resolved = resolve_endpoint(this->options);
+    if (resolved) {
+      origin = std::move(resolved->origin);
+      path = std::move(resolved->path);
+    } else {
+      options_error = resolved.error();
     }
   }
 
@@ -175,14 +235,14 @@ struct HttpTransport::Impl {
       session_id_to_terminate = session_id;
     }
 
-    if (!session_id_to_terminate.empty()) {
+    if (!session_id_to_terminate.empty() && options_error == std::nullopt) {
       auto client = make_client();
       auto headers = to_headers(options.headers);
       headers.emplace("Accept", "application/json");
       headers.emplace("MCP-Protocol-Version",
                       std::string(protocol::McpProtocolVersion));
       headers.emplace(std::string(SessionHeader), session_id_to_terminate);
-      (void)client.Delete(options.path, headers);
+      (void)client.Delete(path, headers);
     }
 
     reset_session();
@@ -190,6 +250,10 @@ struct HttpTransport::Impl {
 
   core::Result<protocol::JsonRpcResponse> send(
       const protocol::JsonRpcRequest& request) {
+    if (options_error.has_value()) {
+      return std::unexpected(*options_error);
+    }
+
     const auto serialized = protocol::serialize_request(request);
     if (!serialized) {
       return std::unexpected(serialized.error());
@@ -205,7 +269,7 @@ struct HttpTransport::Impl {
                        /*json_body=*/true,
                        /*event_stream=*/true, include_protocol_version);
       const auto response =
-          client.Post(options.path, headers, *serialized, "application/json");
+          client.Post(path, headers, *serialized, "application/json");
       if (!response) {
         return std::unexpected(make_transport_error(
             static_cast<int>(protocol::ErrorCode::InternalError),
@@ -241,6 +305,10 @@ struct HttpTransport::Impl {
 
   core::Result<core::Unit> send_notification(
       const protocol::JsonRpcNotification& notification) {
+    if (options_error.has_value()) {
+      return std::unexpected(*options_error);
+    }
+
     const auto serialized = protocol::serialize_notification(notification);
     if (!serialized) {
       return std::unexpected(serialized.error());
@@ -250,7 +318,7 @@ struct HttpTransport::Impl {
     auto headers = make_headers(notification.method, std::nullopt,
                                 /*json_body=*/true, /*event_stream=*/true);
     const auto response =
-        client.Post(options.path, headers, *serialized, "application/json");
+        client.Post(path, headers, *serialized, "application/json");
     if (!response) {
       return std::unexpected(make_transport_error(
           static_cast<int>(protocol::ErrorCode::InternalError),
@@ -314,7 +382,7 @@ struct HttpTransport::Impl {
   }
 
   httplib::Client make_client() const {
-    httplib::Client client(options.host, options.port);
+    httplib::Client client(origin);
     apply_timeout(client, options.timeout);
     return client;
   }
@@ -324,6 +392,10 @@ struct HttpTransport::Impl {
                                 bool event_stream,
                                 bool include_protocol_version = true) const {
     auto headers = to_headers(options.headers);
+    if (options.auth_header.has_value()) {
+      headers.emplace("Authorization",
+                      "Bearer " + *options.auth_header);
+    }
     if (json_body) {
       headers.emplace("Content-Type", "application/json");
     }
@@ -372,7 +444,7 @@ struct HttpTransport::Impl {
         return core::Unit{};
       }
       stream_client =
-          std::make_unique<httplib::Client>(options.host, options.port);
+          std::make_unique<httplib::Client>(origin);
       apply_timeout(*stream_client, options.timeout);
       auto headers = to_headers(options.headers);
       headers.emplace("Accept", "text/event-stream");
@@ -380,7 +452,7 @@ struct HttpTransport::Impl {
                       std::string(protocol::McpProtocolVersion));
       headers.emplace(std::string(SessionHeader), session_id);
       sse_client = std::make_unique<httplib::sse::SSEClient>(
-          *stream_client, options.path, headers);
+          *stream_client, path, headers);
       sse_client->set_reconnect_interval(250);
       sse_client->on_message([this](const httplib::sse::SSEMessage& message) {
         const auto handled = dispatch_event_payload(message.data, std::nullopt);
@@ -535,7 +607,7 @@ struct HttpTransport::Impl {
     auto headers = make_headers(method, std::move(name), /*json_body=*/true,
                                 /*event_stream=*/false);
     const auto result =
-        client.Post(options.path, headers, *serialized, "application/json");
+        client.Post(path, headers, *serialized, "application/json");
     if (!result) {
       return std::unexpected(make_transport_error(
           static_cast<int>(protocol::ErrorCode::InternalError),
@@ -559,6 +631,9 @@ struct HttpTransport::Impl {
   }
 
   HttpTransportOptions options;
+  std::optional<core::Error> options_error;
+  std::string origin;
+  std::string path;
   mutable std::mutex mutex;
   TransportRequestHandler request_handler;
   TransportNotificationHandler notification_handler;

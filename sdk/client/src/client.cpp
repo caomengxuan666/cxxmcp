@@ -139,17 +139,31 @@ core::Result<core::Unit> Client::ensure_transport_started() {
 
 Client Client::connect_streamable_http(StreamableHttpEndpoint endpoint) {
   return Client(std::make_unique<HttpTransport>(HttpTransportOptions{
+      .uri = std::move(endpoint.uri),
       .host = std::move(endpoint.host),
       .port = endpoint.port,
       .path = std::move(endpoint.path),
       .headers = std::move(endpoint.headers),
+      .auth_header = std::move(endpoint.auth_header),
       .timeout = endpoint.timeout,
   }));
+}
+
+Client Client::connect_streamable_http(std::string uri) {
+  StreamableHttpEndpoint endpoint;
+  endpoint.uri = std::move(uri);
+  return connect_streamable_http(std::move(endpoint));
 }
 
 Client Client::connect_legacy_sse(StreamableHttpEndpoint endpoint) {
   endpoint.headers.emplace("Accept", "application/json, text/event-stream");
   return connect_streamable_http(std::move(endpoint));
+}
+
+Client Client::connect_legacy_sse(std::string uri) {
+  StreamableHttpEndpoint endpoint;
+  endpoint.uri = std::move(uri);
+  return connect_legacy_sse(std::move(endpoint));
 }
 
 Client Client::connect_stdio(StdioEndpoint endpoint) {

@@ -3,6 +3,7 @@
 #pragma once
 
 #include <condition_variable>
+#include <chrono>
 #include <cstdint>
 #include <deque>
 #include <memory>
@@ -31,6 +32,8 @@ struct HttpTransportOptions {
   int listen_port = 0;
   /// HTTP path for POST, GET/SSE, and DELETE session requests.
   std::string path = "/mcp";
+  /// Optional SSE retry interval hint for the priming event.
+  std::optional<std::chrono::milliseconds> sse_retry;
   /// Optional Origin allow-list. Empty means Origin is not restricted.
   std::vector<std::string> allowed_origins;
 };

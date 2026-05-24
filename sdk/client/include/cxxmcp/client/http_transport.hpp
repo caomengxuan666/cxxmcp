@@ -8,6 +8,7 @@
 
 #include <chrono>
 #include <memory>
+#include <optional>
 #include <string>
 #include <unordered_map>
 
@@ -17,6 +18,11 @@ namespace mcp::client {
 
 /// @brief Configuration for the client HTTP transport.
 struct HttpTransportOptions {
+  /// Full HTTP or HTTPS URI for the MCP endpoint.
+  ///
+  /// When set, this overrides host/port/path and may include a path segment.
+  std::string uri;
+
   /// Remote host name or IP address.
   std::string host;
 
@@ -28,6 +34,9 @@ struct HttpTransportOptions {
 
   /// Extra request headers sent on outbound HTTP requests.
   std::unordered_map<std::string, std::string> headers;
+
+  /// Optional bearer token inserted as an Authorization header.
+  std::optional<std::string> auth_header;
 
   /// Connect, read, and write timeout used by the transport.
   std::chrono::milliseconds timeout{30000};

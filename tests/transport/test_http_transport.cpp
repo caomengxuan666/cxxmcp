@@ -575,6 +575,84 @@ void test_server_http_transport_delivers_outbound_notification() {
   sse.stop();
 }
 
+void test_server_http_transport_emits_sse_retry_priming() {
+  constexpr int kPort = 40179;
+  const std::string kPath = "/mcp";
+
+  RunningServerTransportFixture server_transport(
+      std::make_unique<mcp::server::HttpTransport>(
+          mcp::server::HttpTransportOptions{
+              .listen_host = "127.0.0.1",
+              .listen_port = kPort,
+              .path = kPath,
+              .sse_retry = std::chrono::milliseconds(3000),
+          }),
+      [](const mcp::protocol::JsonRpcRequest& request,
+         const mcp::server::SessionContext&) {
+        if (request.method == mcp::protocol::InitializeMethod) {
+          return mcp::protocol::JsonRpcResponse{
+              .id = request.id,
+              .result =
+                  Json{
+                      {"protocolVersion",
+                       std::string(mcp::protocol::McpProtocolVersion)},
+                      {"capabilities", Json::object()},
+                      {"serverInfo",
+                       Json{{"name", "server-http-test"}, {"version", "1"}}},
+                  },
+          };
+        }
+        return mcp::protocol::make_error_response(
+            std::optional<mcp::protocol::RequestId>{request.id},
+            mcp::protocol::make_error(mcp::protocol::ErrorCode::MethodNotFound,
+                                      "unexpected request"));
+      });
+
+  require(!server_transport.start_error().has_value(),
+          "server transport should start");
+  require(wait_for_http_initialize(kPort, kPath),
+          "server transport should become reachable");
+
+  httplib::Client http_client("127.0.0.1", kPort);
+  const auto initialize_response = http_client.Post(
+      kPath,
+      httplib::Headers{
+          {"Accept", "application/json"},
+          {"Content-Type", "application/json"},
+          {"Mcp-Method", std::string(mcp::protocol::InitializeMethod)},
+      },
+      serialize_test_request(mcp::protocol::JsonRpcRequest{
+          .method = std::string(mcp::protocol::InitializeMethod),
+          .params = Json::object(),
+          .id = std::int64_t{1},
+      }),
+      "application/json");
+  require(static_cast<bool>(initialize_response), "initialize should succeed");
+  require(initialize_response->has_header("Mcp-Session-Id"),
+          "initialize should return a session id");
+  const auto session_id =
+      initialize_response->get_header_value("Mcp-Session-Id");
+
+  std::string body;
+  const auto stream = http_client.Get(
+      kPath,
+      httplib::Headers{
+          {"Mcp-Session-Id", session_id},
+          {"Accept", "text/event-stream"},
+          {"MCP-Protocol-Version",
+           std::string(mcp::protocol::McpProtocolVersion)},
+      },
+      [&](const char* data, size_t len) {
+        body.append(data, len);
+        return body.find("retry: 3000") == std::string::npos;
+      });
+  (void)stream;
+
+  require(body.find("retry: 3000") != std::string::npos,
+          "server should emit sse retry priming");
+  server_transport.transport().stop();
+}
+
 void test_server_http_transport_accepts_client_notification_with_202() {
   constexpr int kPort = 40176;
   const std::string kPath = "/mcp";
@@ -1002,6 +1080,104 @@ void test_server_http_transport_can_request_client() {
   client_transport.stop();
 }
 
+void test_client_http_transport_uses_uri_and_auth_header() {
+  HttpServerFixture fixture;
+  std::atomic<bool> request_seen{false};
+  std::string observed_path;
+  std::string observed_authorization;
+
+  fixture.server().Post("/api/mcp", [&](const httplib::Request& request,
+                                        httplib::Response& response) {
+    observed_path = request.path;
+    if (request.has_header("Authorization")) {
+      observed_authorization = request.get_header_value("Authorization");
+    }
+
+    const auto parsed = mcp::protocol::parse_message(request.body);
+    require(parsed.has_value(), "uri transport request should parse");
+    const auto* rpc_request = std::get_if<mcp::protocol::JsonRpcRequest>(&*parsed);
+    require(rpc_request != nullptr, "uri transport should send a request");
+    require(rpc_request->method == mcp::protocol::PingMethod,
+            "uri transport should send ping");
+
+    response.set_content(
+        serialize_test_response(mcp::protocol::JsonRpcResponse{
+            .id = rpc_request->id,
+            .result = Json::object(),
+        }),
+        "application/json");
+    request_seen.store(true);
+  });
+
+  mcp::client::HttpTransport transport(mcp::client::HttpTransportOptions{
+      .uri = "http://127.0.0.1:" + std::to_string(fixture.port()) + "/api/mcp",
+      .headers = {{"X-Test", "1"}},
+      .auth_header = "token-123",
+      .timeout = std::chrono::milliseconds(2000),
+  });
+
+  const auto response = transport.send(mcp::protocol::JsonRpcRequest{
+      .method = std::string(mcp::protocol::PingMethod),
+      .params = Json::object(),
+      .id = std::int64_t{9},
+  });
+
+  require(response.has_value(), "uri transport request should succeed");
+  require(request_seen.load(), "uri transport should reach server");
+  require(observed_path == "/api/mcp", "uri transport should use uri path");
+  require(observed_authorization == "Bearer token-123",
+          "uri transport should inject authorization header");
+}
+
+void test_client_connect_streamable_http_accepts_uri_string() {
+  HttpServerFixture fixture;
+  std::atomic<int> request_count{0};
+
+  fixture.server().Post("/uri-mcp", [&](const httplib::Request& request,
+                                        httplib::Response& response) {
+    const auto parsed = mcp::protocol::parse_message(request.body);
+    require(parsed.has_value(), "uri client request should parse");
+    const auto* rpc_request = std::get_if<mcp::protocol::JsonRpcRequest>(&*parsed);
+    require(rpc_request != nullptr, "uri client should send a request");
+    request_count.fetch_add(1);
+
+    if (rpc_request->method == mcp::protocol::InitializeMethod) {
+      response.set_content(
+          serialize_test_response(mcp::protocol::JsonRpcResponse{
+              .id = rpc_request->id,
+              .result =
+                  Json{
+                      {"protocolVersion",
+                       std::string(mcp::protocol::McpProtocolVersion)},
+                      {"capabilities", Json::object()},
+                      {"serverInfo", Json{{"name", "uri-test"},
+                                          {"version", "1"}}},
+                  },
+          }),
+          "application/json");
+      return;
+    }
+
+    require(rpc_request->method == mcp::protocol::PingMethod,
+            "uri client should send ping");
+    response.set_content(
+        serialize_test_response(mcp::protocol::JsonRpcResponse{
+            .id = rpc_request->id,
+            .result = Json::object(),
+        }),
+        "application/json");
+  });
+
+  const auto uri = "http://127.0.0.1:" + std::to_string(fixture.port()) +
+                   "/uri-mcp";
+  auto client = mcp::client::Client::connect_streamable_http(uri);
+  const auto pong = client.ping();
+
+  require(pong.has_value(), "uri string client should ping successfully");
+  require(request_count.load() == 2,
+          "uri string client should initialize before ping");
+}
+
 }  // namespace
 
 int main() {
@@ -1014,12 +1190,18 @@ int main() {
        test_http_transport_sets_method_and_name_headers},
       {"server http transport delivers outbound notification",
        test_server_http_transport_delivers_outbound_notification},
+      {"server http transport emits sse retry priming",
+       test_server_http_transport_emits_sse_retry_priming},
       {"server http transport accepts client notification with 202",
        test_server_http_transport_accepts_client_notification_with_202},
       {"server http transport rejects mismatched origin when allowlisted",
        test_server_http_transport_rejects_mismatched_origin_when_allowlisted},
       {"server http transport can request client",
        test_server_http_transport_can_request_client},
+      {"client http transport uses uri and auth header",
+       test_client_http_transport_uses_uri_and_auth_header},
+      {"client connect_streamable_http accepts uri string",
+       test_client_connect_streamable_http_accepts_uri_string},
   };
 
   std::size_t failures = 0;

@@ -123,6 +123,11 @@ class Client {
   /// @brief Endpoint options for streamable HTTP and legacy SSE client
   /// transports.
   struct StreamableHttpEndpoint {
+    /// Full HTTP or HTTPS URI for the MCP endpoint.
+    ///
+    /// When set, this overrides host/port/path and may include a path segment.
+    std::string uri;
+
     /// Remote host name or IP address.
     std::string host;
     /// Remote TCP port.
@@ -131,6 +136,10 @@ class Client {
     std::string path = "/mcp";
     /// Extra headers sent by the transport.
     std::unordered_map<std::string, std::string> headers;
+
+    /// Optional bearer token inserted as an Authorization header.
+    std::optional<std::string> auth_header;
+
     /// Per-request HTTP timeout.
     std::chrono::milliseconds timeout{30000};
   };
@@ -220,10 +229,20 @@ class Client {
   /// @return Client owning the configured HTTP transport.
   static Client connect_streamable_http(StreamableHttpEndpoint endpoint);
 
+  /// @brief Creates a client connected to a streamable HTTP MCP endpoint.
+  /// @param uri Remote HTTP or HTTPS endpoint URI.
+  /// @return Client owning the configured HTTP transport.
+  static Client connect_streamable_http(std::string uri);
+
   /// @brief Creates a client connected to a legacy SSE MCP endpoint.
   /// @param endpoint Remote HTTP/SSE endpoint options.
   /// @return Client owning the configured SSE-compatible transport.
   static Client connect_legacy_sse(StreamableHttpEndpoint endpoint);
+
+  /// @brief Creates a client connected to a legacy SSE MCP endpoint.
+  /// @param uri Remote HTTP or HTTPS endpoint URI.
+  /// @return Client owning the configured SSE-compatible transport.
+  static Client connect_legacy_sse(std::string uri);
 
   /// @brief Creates a client connected to a child process over stdio.
   /// @param endpoint Child process command, arguments, working directory, and
