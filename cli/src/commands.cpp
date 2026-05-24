@@ -985,6 +985,911 @@ private:
     }
 };
 
+core::Result<ParsedCommand> parse_cli11_command(std::span<const std::string_view> args) {
+    if (args.empty() || args[0] == "help" || args[0] == "--help" || args[0] == "-h") {
+        return ParsedCommand{.kind = CommandKind::help};
+    }
+
+    ParsedCommand parsed;
+    bool command_selected = false;
+    std::vector<std::unique_ptr<bool>> help_flags;
+
+    auto store = [&](std::string_view value) -> std::string_view {
+        parsed.storage.push_back(std::make_unique<std::string>(value));
+        return *parsed.storage.back();
+    };
+    auto append_value = [&](std::string_view value) {
+        parsed.values.push_back(store(value));
+    };
+    auto append_option = [&](std::string_view value) {
+        parsed.options.push_back(store(value));
+    };
+    auto disable_builtin_help = [](CLI::App* app) {
+        app->set_help_flag("");
+        app->set_help_all_flag("");
+        app->set_version_flag("");
+    };
+    auto add_subcommand = [&](CLI::App& parent, std::string name) -> CLI::App* {
+        auto* sub = parent.add_subcommand(std::move(name));
+        disable_builtin_help(sub);
+        return sub;
+    };
+    auto add_leaf = [&](CLI::App& parent, std::string name, CommandKind kind) -> CLI::App* {
+        auto* sub = add_subcommand(parent, std::move(name));
+        sub->callback([&, kind]() {
+            parsed.kind = kind;
+            command_selected = true;
+        });
+        return sub;
+    };
+    auto make_group = [&](CLI::App& parent, std::string name, CommandKind help_kind) -> CLI::App* {
+        auto* group = add_subcommand(parent, std::move(name));
+        help_flags.push_back(std::make_unique<bool>(false));
+        bool* help_requested = help_flags.back().get();
+        group->add_flag("--help,-h", *help_requested);
+        group->callback([&, help_kind, help_requested]() {
+            if (*help_requested) {
+                parsed.kind = help_kind;
+                command_selected = true;
+            }
+        });
+        auto* help = add_subcommand(*group, "help");
+        help->callback([&, help_kind]() {
+            parsed.kind = help_kind;
+            command_selected = true;
+        });
+        return group;
+    };
+    auto group_error = [](std::string_view group) -> core::Error {
+        if (group == "doctor") {
+            return make_cli_error("invalid doctor command");
+        }
+        if (group == "tools") {
+            return make_cli_error("invalid tools command");
+        }
+        if (group == "profiles") {
+            return make_cli_error("invalid profiles command");
+        }
+        if (group == "bundle") {
+            return make_cli_error("invalid bundle command");
+        }
+        if (group == "servers" || group == "server") {
+            return make_cli_error("invalid servers command");
+        }
+        if (group == "capabilities" || group == "capability") {
+            return make_cli_error("invalid capabilities command");
+        }
+        if (group == "exposures" || group == "exposure") {
+            return make_cli_error("invalid exposures command");
+        }
+        if (group == "gateway") {
+            return make_cli_error("invalid gateway command");
+        }
+        return make_cli_error("unknown command", std::string(group));
+    };
+
+    CLI::App app{"cxxmcp"};
+    disable_builtin_help(&app);
+
+    auto* doctor = add_leaf(app, "doctor", CommandKind::doctor);
+    (void)doctor;
+
+    auto* tools = make_group(app, "tools", CommandKind::tools_help);
+    auto* profiles = make_group(app, "profiles", CommandKind::profiles_help);
+    auto* bundle = make_group(app, "bundle", CommandKind::bundle_help);
+    auto* servers = make_group(app, "servers", CommandKind::servers_help);
+    servers->alias("server");
+    auto* capabilities = make_group(app, "capabilities", CommandKind::capabilities_help);
+    capabilities->alias("capability");
+    auto* exposures = make_group(app, "exposures", CommandKind::exposures_help);
+    exposures->alias("exposure");
+    auto* gateway = make_group(app, "gateway", CommandKind::gateway_help);
+
+    {
+        auto* list = add_leaf(*tools, "list", CommandKind::list_tools);
+        (void)list;
+
+        auto* enable = add_leaf(*tools, "enable", CommandKind::enable_tool);
+        std::string tool_id;
+        enable->add_option("tool-id", tool_id)->required();
+        enable->callback([&, enable]() {
+            parsed.kind = CommandKind::enable_tool;
+            command_selected = true;
+            append_value(tool_id);
+        });
+
+        auto* disable = add_leaf(*tools, "disable", CommandKind::disable_tool);
+        std::string disable_tool_id;
+        disable->add_option("tool-id", disable_tool_id)->required();
+        disable->callback([&, disable]() {
+            parsed.kind = CommandKind::disable_tool;
+            command_selected = true;
+            append_value(disable_tool_id);
+        });
+    }
+
+    {
+        auto* list = add_leaf(*profiles, "list", CommandKind::list_profiles);
+        (void)list;
+    }
+
+    {
+        auto* import = add_leaf(*bundle, "import", CommandKind::import_bundle);
+        std::string path;
+        import->add_option("path", path)->required();
+        import->callback([&]() {
+            parsed.kind = CommandKind::import_bundle;
+            command_selected = true;
+            append_value(path);
+        });
+
+        auto* export_bundle = add_leaf(*bundle, "export", CommandKind::export_bundle);
+        std::string export_path;
+        std::string profile_id;
+        auto* profile_option = export_bundle->add_option("profile-id", profile_id);
+        export_bundle->add_option("path", export_path)->required();
+        export_bundle->callback([&, profile_option]() {
+            parsed.kind = CommandKind::export_bundle;
+            command_selected = true;
+            append_value(export_path);
+            if (profile_option->count() > 0) {
+                append_value(profile_id);
+            }
+        });
+    }
+
+    {
+        auto* list = add_leaf(*servers, "list", CommandKind::list_servers);
+        (void)list;
+
+        auto* inspect = add_leaf(*servers, "inspect", CommandKind::inspect_server);
+        std::string inspect_id;
+        inspect->add_option("server-id", inspect_id)->required();
+        inspect->callback([&]() {
+            parsed.kind = CommandKind::inspect_server;
+            command_selected = true;
+            append_value(inspect_id);
+        });
+
+        auto* add_stdio = add_leaf(*servers, "add-stdio", CommandKind::add_stdio_server);
+        bool trust = false;
+        bool discover = false;
+        std::string cwd;
+        std::vector<std::string> env_values;
+        std::string server_id;
+        std::string command;
+        add_stdio->allow_extras();
+        add_stdio->add_flag("--trust", trust);
+        add_stdio->add_flag("--discover", discover);
+        auto* cwd_option = add_stdio->add_option("--cwd", cwd);
+        auto* env_option = add_stdio->add_option("--env", env_values);
+        env_option->expected(2);
+        env_option->multi_option_policy(CLI::MultiOptionPolicy::TakeAll);
+        add_stdio->add_option("server-id", server_id)->required();
+        add_stdio->add_option("command", command)->required();
+        add_stdio->callback([&, cwd_option, env_option, add_stdio]() {
+            parsed.kind = CommandKind::add_stdio_server;
+            command_selected = true;
+            if (trust) {
+                append_option("trust");
+            }
+            if (discover) {
+                append_option("discover");
+            }
+            if (cwd_option->count() > 0) {
+                append_option("cwd");
+                append_option(cwd);
+            }
+            if (env_option->count() > 0) {
+                for (const auto& value : env_values) {
+                    append_option(value);
+                }
+            }
+            append_value(server_id);
+            append_value(command);
+            for (const auto& extra : add_stdio->remaining_for_passthrough()) {
+                append_value(extra);
+            }
+        });
+
+        auto* add_http = add_leaf(*servers, "add-http", CommandKind::add_http_server);
+        bool http_trust = false;
+        bool http_discover = false;
+        std::vector<std::string> header_values;
+        std::string http_server_id;
+        std::string http_url;
+        add_http->add_flag("--trust", http_trust);
+        add_http->add_flag("--discover", http_discover);
+        auto* header_option = add_http->add_option("--header", header_values);
+        header_option->expected(2);
+        header_option->multi_option_policy(CLI::MultiOptionPolicy::TakeAll);
+        add_http->add_option("server-id", http_server_id)->required();
+        add_http->add_option("url", http_url)->required();
+        add_http->callback([&, header_option]() {
+            parsed.kind = CommandKind::add_http_server;
+            command_selected = true;
+            if (http_trust) {
+                append_option("trust");
+            }
+            if (http_discover) {
+                append_option("discover");
+            }
+            for (const auto& value : header_values) {
+                append_value(value);
+            }
+            append_value(http_server_id);
+            append_value(http_url);
+        });
+
+        auto* import = add_leaf(*servers, "import", CommandKind::import_servers);
+        bool import_trust = false;
+        bool import_discover = false;
+        std::string import_path;
+        import->add_flag("--trust", import_trust);
+        import->add_flag("--discover", import_discover);
+        import->add_option("path", import_path)->required();
+        import->callback([&]() {
+            parsed.kind = CommandKind::import_servers;
+            command_selected = true;
+            if (import_trust) {
+                append_option("trust");
+            }
+            if (import_discover) {
+                append_option("discover");
+            }
+            append_value(import_path);
+        });
+
+        auto* discover_command = add_leaf(*servers, "discover", CommandKind::discover_server);
+        std::string discover_id;
+        discover_command->add_option("server-id", discover_id)->required();
+        discover_command->callback([&]() {
+            parsed.kind = CommandKind::discover_server;
+            command_selected = true;
+            append_value(discover_id);
+        });
+
+        auto* discover_all = add_leaf(*servers, "discover-all", CommandKind::discover_all_servers);
+        (void)discover_all;
+
+        auto* check = add_leaf(*servers, "check", CommandKind::check_server);
+        std::string check_id;
+        check->add_option("server-id", check_id)->required();
+        check->callback([&]() {
+            parsed.kind = CommandKind::check_server;
+            command_selected = true;
+            append_value(check_id);
+        });
+
+        auto* check_all = add_leaf(*servers, "check-all", CommandKind::check_all_servers);
+        (void)check_all;
+
+        auto* remove = add_leaf(*servers, "remove", CommandKind::remove_server);
+        std::string remove_id;
+        remove->add_option("server-id", remove_id)->required();
+        remove->callback([&]() {
+            parsed.kind = CommandKind::remove_server;
+            command_selected = true;
+            append_value(remove_id);
+        });
+
+        auto* enable = add_leaf(*servers, "enable", CommandKind::set_server_enabled);
+        std::string enable_id;
+        enable->add_option("server-id", enable_id)->required();
+        enable->callback([&]() {
+            parsed.kind = CommandKind::set_server_enabled;
+            command_selected = true;
+            append_value(enable_id);
+            append_value("true");
+        });
+
+        auto* disable = add_leaf(*servers, "disable", CommandKind::set_server_enabled);
+        std::string disable_id;
+        disable->add_option("server-id", disable_id)->required();
+        disable->callback([&]() {
+            parsed.kind = CommandKind::set_server_enabled;
+            command_selected = true;
+            append_value(disable_id);
+            append_value("false");
+        });
+
+        auto* trust_cmd = add_leaf(*servers, "trust", CommandKind::set_server_trust);
+        std::string trust_id;
+        trust_cmd->add_option("server-id", trust_id)->required();
+        trust_cmd->callback([&]() {
+            parsed.kind = CommandKind::set_server_trust;
+            command_selected = true;
+            append_value(trust_id);
+            append_value("trusted");
+        });
+
+        auto* untrust_cmd = add_leaf(*servers, "untrust", CommandKind::set_server_trust);
+        std::string untrust_id;
+        untrust_cmd->add_option("server-id", untrust_id)->required();
+        untrust_cmd->callback([&]() {
+            parsed.kind = CommandKind::set_server_trust;
+            command_selected = true;
+            append_value(untrust_id);
+            append_value("untrusted");
+        });
+
+        auto* block_cmd = add_leaf(*servers, "block", CommandKind::set_server_trust);
+        std::string block_id;
+        block_cmd->add_option("server-id", block_id)->required();
+        block_cmd->callback([&]() {
+            parsed.kind = CommandKind::set_server_trust;
+            command_selected = true;
+            append_value(block_id);
+            append_value("blocked");
+        });
+
+        auto* set_cwd = add_leaf(*servers, "set-cwd", CommandKind::set_server_cwd);
+        std::string cwd_id;
+        std::string cwd_value;
+        set_cwd->add_option("server-id", cwd_id)->required();
+        set_cwd->add_option("cwd", cwd_value)->required();
+        set_cwd->callback([&]() {
+            parsed.kind = CommandKind::set_server_cwd;
+            command_selected = true;
+            append_value(cwd_id);
+            append_value(cwd_value);
+        });
+
+        auto* set_env = add_leaf(*servers, "set-env", CommandKind::set_server_env);
+        std::string env_id;
+        std::string env_name;
+        std::string env_value;
+        set_env->add_option("server-id", env_id)->required();
+        set_env->add_option("name", env_name)->required();
+        set_env->add_option("value", env_value)->required();
+        set_env->callback([&]() {
+            parsed.kind = CommandKind::set_server_env;
+            command_selected = true;
+            append_value(env_id);
+            append_value(env_name);
+            append_value(env_value);
+        });
+
+        auto* unset_env = add_leaf(*servers, "unset-env", CommandKind::unset_server_env);
+        std::string unset_env_id;
+        std::string unset_env_name;
+        unset_env->add_option("server-id", unset_env_id)->required();
+        unset_env->add_option("name", unset_env_name)->required();
+        unset_env->callback([&]() {
+            parsed.kind = CommandKind::unset_server_env;
+            command_selected = true;
+            append_value(unset_env_id);
+            append_value(unset_env_name);
+        });
+
+        auto* set_header = add_leaf(*servers, "set-header", CommandKind::set_server_header);
+        std::string header_id;
+        std::string header_name;
+        std::string header_value;
+        set_header->add_option("server-id", header_id)->required();
+        set_header->add_option("name", header_name)->required();
+        set_header->add_option("value", header_value)->required();
+        set_header->callback([&]() {
+            parsed.kind = CommandKind::set_server_header;
+            command_selected = true;
+            append_value(header_id);
+            append_value(header_name);
+            append_value(header_value);
+        });
+
+        auto* unset_header = add_leaf(*servers, "unset-header", CommandKind::unset_server_header);
+        std::string unset_header_id;
+        std::string unset_header_name;
+        unset_header->add_option("server-id", unset_header_id)->required();
+        unset_header->add_option("name", unset_header_name)->required();
+        unset_header->callback([&]() {
+            parsed.kind = CommandKind::unset_server_header;
+            command_selected = true;
+            append_value(unset_header_id);
+            append_value(unset_header_name);
+        });
+    }
+
+    {
+        auto* list = add_leaf(*capabilities, "list", CommandKind::list_capabilities);
+        (void)list;
+
+        auto* inspect = add_leaf(*capabilities, "inspect", CommandKind::inspect_capability);
+        std::string capability_id;
+        inspect->add_option("capability-id", capability_id)->required();
+        inspect->callback([&]() {
+            parsed.kind = CommandKind::inspect_capability;
+            command_selected = true;
+            append_value(capability_id);
+        });
+    }
+
+    {
+        auto* list = add_leaf(*exposures, "list", CommandKind::list_exposure_profiles);
+        (void)list;
+
+        auto* inspect = add_leaf(*exposures, "inspect", CommandKind::inspect_exposure_profile);
+        std::string profile_id;
+        inspect->add_option("profile-id", profile_id)->required();
+        inspect->callback([&]() {
+            parsed.kind = CommandKind::inspect_exposure_profile;
+            command_selected = true;
+            append_value(profile_id);
+        });
+
+        auto* create = add_leaf(*exposures, "create", CommandKind::create_exposure_profile);
+        std::string create_id;
+        std::string create_name;
+        create->add_option("profile-id", create_id)->required();
+        create->add_option("name", create_name)->required();
+        create->callback([&]() {
+            parsed.kind = CommandKind::create_exposure_profile;
+            command_selected = true;
+            append_value(create_id);
+            append_value(create_name);
+        });
+
+        auto* remove = add_leaf(*exposures, "remove", CommandKind::remove_exposure_profile);
+        std::string remove_profile_id;
+        remove->add_option("profile-id", remove_profile_id)->required();
+        remove->callback([&]() {
+            parsed.kind = CommandKind::remove_exposure_profile;
+            command_selected = true;
+            append_value(remove_profile_id);
+        });
+
+        auto* endpoint = add_leaf(*exposures, "endpoint", CommandKind::configure_exposure_endpoint);
+        std::string endpoint_id;
+        std::string endpoint_host;
+        std::string endpoint_port;
+        std::string endpoint_path;
+        auto* endpoint_path_option = endpoint->add_option("path", endpoint_path);
+        endpoint->add_option("profile-id", endpoint_id)->required();
+        endpoint->add_option("host", endpoint_host)->required();
+        endpoint->add_option("port", endpoint_port)->required();
+        endpoint->callback([&, endpoint_path_option]() {
+            parsed.kind = CommandKind::configure_exposure_endpoint;
+            command_selected = true;
+            append_value(endpoint_id);
+            append_value(endpoint_host);
+            append_value(endpoint_port);
+            if (endpoint_path_option->count() > 0) {
+                append_value(endpoint_path);
+            }
+        });
+
+        auto* set_instructions = add_leaf(*exposures, "set-instructions", CommandKind::set_exposure_instructions);
+        std::string instructions_profile_id;
+        std::string instructions_text;
+        set_instructions->add_option("profile-id", instructions_profile_id)->required();
+        set_instructions->add_option("text", instructions_text)->required();
+        set_instructions->callback([&]() {
+            parsed.kind = CommandKind::set_exposure_instructions;
+            command_selected = true;
+            append_value(instructions_profile_id);
+            append_value(instructions_text);
+        });
+
+        auto* clear_instructions = add_leaf(*exposures, "clear-instructions", CommandKind::clear_exposure_instructions);
+        std::string clear_instructions_id;
+        clear_instructions->add_option("profile-id", clear_instructions_id)->required();
+        clear_instructions->callback([&]() {
+            parsed.kind = CommandKind::clear_exposure_instructions;
+            command_selected = true;
+            append_value(clear_instructions_id);
+        });
+
+        auto* bind = add_leaf(*exposures, "bind", CommandKind::bind_exposure_capability);
+        std::string bind_profile_id;
+        std::string bind_capability_id;
+        std::string bind_exposed_name;
+        auto* bind_exposed_name_option = bind->add_option("exposed-name", bind_exposed_name);
+        bind->add_option("profile-id", bind_profile_id)->required();
+        bind->add_option("capability-id", bind_capability_id)->required();
+        bind->callback([&, bind_exposed_name_option]() {
+            parsed.kind = CommandKind::bind_exposure_capability;
+            command_selected = true;
+            append_value(bind_profile_id);
+            append_value(bind_capability_id);
+            if (bind_exposed_name_option->count() > 0) {
+                append_value(bind_exposed_name);
+            }
+        });
+
+        auto* bind_server = add_leaf(*exposures, "bind-server", CommandKind::bind_exposure_server);
+        std::string bind_server_profile_id;
+        std::string bind_server_id;
+        bind_server->add_option("profile-id", bind_server_profile_id)->required();
+        bind_server->add_option("server-id", bind_server_id)->required();
+        bind_server->callback([&]() {
+            parsed.kind = CommandKind::bind_exposure_server;
+            command_selected = true;
+            append_value(bind_server_profile_id);
+            append_value(bind_server_id);
+        });
+
+        auto* enable = add_leaf(*exposures, "enable", CommandKind::set_exposure_binding_enabled);
+        std::string enable_profile_id;
+        std::string enable_capability_id;
+        enable->add_option("profile-id", enable_profile_id)->required();
+        enable->add_option("capability-id", enable_capability_id)->required();
+        enable->callback([&]() {
+            parsed.kind = CommandKind::set_exposure_binding_enabled;
+            command_selected = true;
+            append_value(enable_profile_id);
+            append_value(enable_capability_id);
+            append_value("true");
+        });
+
+        auto* disable = add_leaf(*exposures, "disable", CommandKind::set_exposure_binding_enabled);
+        std::string disable_profile_id;
+        std::string disable_capability_id;
+        disable->add_option("profile-id", disable_profile_id)->required();
+        disable->add_option("capability-id", disable_capability_id)->required();
+        disable->callback([&]() {
+            parsed.kind = CommandKind::set_exposure_binding_enabled;
+            command_selected = true;
+            append_value(disable_profile_id);
+            append_value(disable_capability_id);
+            append_value("false");
+        });
+
+        auto* unbind = add_leaf(*exposures, "unbind", CommandKind::unbind_exposure_capability);
+        std::string unbind_profile_id;
+        std::string unbind_capability_id;
+        unbind->add_option("profile-id", unbind_profile_id)->required();
+        unbind->add_option("capability-id", unbind_capability_id)->required();
+        unbind->callback([&]() {
+            parsed.kind = CommandKind::unbind_exposure_capability;
+            command_selected = true;
+            append_value(unbind_profile_id);
+            append_value(unbind_capability_id);
+        });
+
+        auto* prune = add_leaf(*exposures, "prune", CommandKind::prune_exposure_bindings);
+        std::string prune_profile_id;
+        prune->add_option("profile-id", prune_profile_id)->required();
+        prune->callback([&]() {
+            parsed.kind = CommandKind::prune_exposure_bindings;
+            command_selected = true;
+            append_value(prune_profile_id);
+        });
+    }
+
+    {
+        auto* init = add_leaf(*gateway, "init", CommandKind::init_gateway);
+        bool trust = false;
+        bool discover = false;
+        std::string instructions;
+        std::string profile_id;
+        std::string server_id;
+        std::string host;
+        std::string port;
+        std::string path;
+        auto* instructions_option = init->add_option("--instructions", instructions);
+        auto* path_option = init->add_option("path", path);
+        init->add_flag("--trust", trust);
+        init->add_flag("--discover", discover);
+        init->add_option("profile-id", profile_id)->required();
+        init->add_option("server-id", server_id)->required();
+        init->add_option("host", host)->required();
+        init->add_option("port", port)->required();
+        init->callback([&, instructions_option, path_option]() {
+            parsed.kind = CommandKind::init_gateway;
+            command_selected = true;
+            append_value(trust ? "true" : "false");
+            append_value(discover ? "true" : "false");
+            append_value(profile_id);
+            append_value(server_id);
+            append_value(host);
+            append_value(port);
+            if (path_option->count() > 0) {
+                append_value(path);
+            }
+            if (instructions_option->count() > 0) {
+                append_option("instructions");
+                append_option(instructions);
+            }
+        });
+
+        auto* init_stdio = add_leaf(*gateway, "init-stdio", CommandKind::init_stdio_gateway);
+        init_stdio->allow_extras();
+        bool stdio_trust = false;
+        bool stdio_discover = false;
+        std::string stdio_instructions;
+        std::string stdio_path;
+        std::string stdio_profile_id;
+        std::string stdio_server_id;
+        std::string stdio_host;
+        std::string stdio_port;
+        std::string stdio_command;
+        auto* stdio_instructions_option = init_stdio->add_option("--instructions", stdio_instructions);
+        auto* stdio_path_option = init_stdio->add_option("--path", stdio_path);
+        init_stdio->add_flag("--trust", stdio_trust);
+        init_stdio->add_flag("--discover", stdio_discover);
+        init_stdio->add_option("profile-id", stdio_profile_id)->required();
+        init_stdio->add_option("server-id", stdio_server_id)->required();
+        init_stdio->add_option("host", stdio_host)->required();
+        init_stdio->add_option("port", stdio_port)->required();
+        init_stdio->add_option("command", stdio_command)->required();
+        init_stdio->callback([&, stdio_instructions_option, stdio_path_option, init_stdio]() {
+            parsed.kind = CommandKind::init_stdio_gateway;
+            command_selected = true;
+            append_value(stdio_discover ? "true" : "false");
+            append_value(stdio_trust ? "true" : "false");
+            if (stdio_path_option->count() > 0) {
+                append_value(stdio_path);
+            } else {
+                append_value(std::string_view{});
+            }
+            append_value(stdio_profile_id);
+            append_value(stdio_server_id);
+            append_value(stdio_host);
+            append_value(stdio_port);
+            append_value(stdio_command);
+            for (const auto& extra : init_stdio->remaining_for_passthrough()) {
+                append_value(extra);
+            }
+            if (stdio_instructions_option->count() > 0) {
+                append_option("instructions");
+                append_option(stdio_instructions);
+            }
+        });
+
+        auto* init_http = add_leaf(*gateway, "init-http", CommandKind::init_http_gateway);
+        bool http_trust = false;
+        bool http_discover = false;
+        std::string http_instructions;
+        std::string http_path;
+        std::vector<std::string> http_headers;
+        std::string http_profile_id;
+        std::string http_server_id;
+        std::string http_host;
+        std::string http_port;
+        std::string http_url;
+        auto* http_instructions_option = init_http->add_option("--instructions", http_instructions);
+        auto* http_path_option = init_http->add_option("--path", http_path);
+        auto* http_header_option = init_http->add_option("--header", http_headers);
+        http_header_option->expected(2);
+        http_header_option->multi_option_policy(CLI::MultiOptionPolicy::TakeAll);
+        init_http->add_flag("--trust", http_trust);
+        init_http->add_flag("--discover", http_discover);
+        init_http->add_option("profile-id", http_profile_id)->required();
+        init_http->add_option("server-id", http_server_id)->required();
+        init_http->add_option("host", http_host)->required();
+        init_http->add_option("port", http_port)->required();
+        init_http->add_option("url", http_url)->required();
+        init_http->callback([&, http_instructions_option, http_path_option, http_header_option]() {
+            parsed.kind = CommandKind::init_http_gateway;
+            command_selected = true;
+            append_value(http_discover ? "true" : "false");
+            append_value(http_trust ? "true" : "false");
+            if (http_path_option->count() > 0) {
+                append_value(http_path);
+            } else {
+                append_value(std::string_view{});
+            }
+            append_value(http_profile_id);
+            append_value(http_server_id);
+            append_value(http_host);
+            append_value(http_port);
+            append_value(http_url);
+            for (const auto& header : http_headers) {
+                append_value(header);
+            }
+            if (http_instructions_option->count() > 0) {
+                append_option("instructions");
+                append_option(http_instructions);
+            }
+        });
+
+        auto* init_all = add_leaf(*gateway, "init-all", CommandKind::init_all_gateways);
+        bool init_all_trust = false;
+        bool init_all_discover = false;
+        std::string init_all_instructions;
+        std::string init_all_prefix;
+        std::string init_all_host;
+        std::string init_all_port;
+        std::string init_all_path;
+        auto* init_all_instructions_option = init_all->add_option("--instructions", init_all_instructions);
+        auto* init_all_prefix_option = init_all->add_option("--profile-prefix", init_all_prefix);
+        auto* init_all_path_option = init_all->add_option("path-prefix", init_all_path);
+        init_all->add_flag("--trust", init_all_trust);
+        init_all->add_flag("--discover", init_all_discover);
+        init_all->add_option("host", init_all_host)->required();
+        init_all->add_option("base-port", init_all_port)->required();
+        init_all->callback([&, init_all_instructions_option, init_all_prefix_option, init_all_path_option]() {
+            parsed.kind = CommandKind::init_all_gateways;
+            command_selected = true;
+            append_value(init_all_discover ? "true" : "false");
+            append_value(init_all_trust ? "true" : "false");
+            append_value(init_all_host);
+            append_value(init_all_port);
+            if (init_all_path_option->count() > 0) {
+                append_value(init_all_path);
+            }
+            if (init_all_prefix_option->count() > 0) {
+                append_option("profile-prefix");
+                append_option(init_all_prefix);
+            }
+            if (init_all_instructions_option->count() > 0) {
+                append_option("instructions");
+                append_option(init_all_instructions);
+            }
+        });
+
+        auto* import_config = add_leaf(*gateway, "import-config", CommandKind::import_gateway_config);
+        bool import_trust = false;
+        bool import_discover = false;
+        std::string import_instructions;
+        std::string import_prefix;
+        std::string import_config_path;
+        std::string import_host;
+        std::string import_port;
+        std::string import_path;
+        auto* import_instructions_option = import_config->add_option("--instructions", import_instructions);
+        auto* import_prefix_option = import_config->add_option("--profile-prefix", import_prefix);
+        auto* import_path_option = import_config->add_option("path-prefix", import_path);
+        import_config->add_flag("--trust", import_trust);
+        import_config->add_flag("--discover", import_discover);
+        import_config->add_option("config-path", import_config_path)->required();
+        import_config->add_option("host", import_host)->required();
+        import_config->add_option("base-port", import_port)->required();
+        import_config->callback([&, import_instructions_option, import_prefix_option, import_path_option]() {
+            parsed.kind = CommandKind::import_gateway_config;
+            command_selected = true;
+            append_value(import_discover ? "true" : "false");
+            append_value(import_trust ? "true" : "false");
+            append_value(import_config_path);
+            append_value(import_host);
+            append_value(import_port);
+            if (import_path_option->count() > 0) {
+                append_value(import_path);
+            }
+            if (import_prefix_option->count() > 0) {
+                append_option("profile-prefix");
+                append_option(import_prefix);
+            }
+            if (import_instructions_option->count() > 0) {
+                append_option("instructions");
+                append_option(import_instructions);
+            }
+        });
+
+        auto* list = add_leaf(*gateway, "list", CommandKind::list_gateway_profiles);
+        (void)list;
+
+        auto* inspect = add_leaf(*gateway, "inspect", CommandKind::inspect_gateway_profile);
+        std::string gateway_profile_id;
+        inspect->add_option("profile-id", gateway_profile_id)->required();
+        inspect->callback([&]() {
+            parsed.kind = CommandKind::inspect_gateway_profile;
+            command_selected = true;
+            append_value(gateway_profile_id);
+        });
+
+        auto* status = add_leaf(*gateway, "status", CommandKind::gateway_status);
+        (void)status;
+
+        auto* client_config = add_leaf(*gateway, "client-config", CommandKind::gateway_client_config);
+        std::string client_config_profile_id;
+        std::string client_config_server_name;
+        auto* client_config_server_option = client_config->add_option("server-name", client_config_server_name);
+        client_config->add_option("profile-id", client_config_profile_id)->required();
+        client_config->callback([&, client_config_server_option]() {
+            parsed.kind = CommandKind::gateway_client_config;
+            command_selected = true;
+            append_value(client_config_profile_id);
+            if (client_config_server_option->count() > 0) {
+                append_value(client_config_server_name);
+            }
+        });
+
+        auto* client_config_all = add_leaf(*gateway, "client-config-all", CommandKind::gateway_all_client_configs);
+        bool ready_only = false;
+        std::string client_config_all_prefix;
+        auto* client_config_all_prefix_option = client_config_all->add_option("server-name-prefix", client_config_all_prefix);
+        client_config_all->add_flag("--ready-only", ready_only);
+        client_config_all->callback([&, client_config_all_prefix_option]() {
+            parsed.kind = CommandKind::gateway_all_client_configs;
+            command_selected = true;
+            if (ready_only) {
+                append_option("ready-only");
+            }
+            if (client_config_all_prefix_option->count() > 0) {
+                append_value(client_config_all_prefix);
+            }
+        });
+
+        auto* client_config_stdio = add_leaf(*gateway, "client-config-stdio", CommandKind::gateway_client_config_stdio);
+        std::string client_config_stdio_profile_id;
+        std::string client_config_stdio_server_name;
+        auto* client_config_stdio_server_option = client_config_stdio->add_option("server-name", client_config_stdio_server_name);
+        client_config_stdio->add_option("profile-id", client_config_stdio_profile_id)->required();
+        client_config_stdio->callback([&, client_config_stdio_server_option]() {
+            parsed.kind = CommandKind::gateway_client_config_stdio;
+            command_selected = true;
+            append_value(client_config_stdio_profile_id);
+            if (client_config_stdio_server_option->count() > 0) {
+                append_value(client_config_stdio_server_name);
+            }
+        });
+
+        auto* check = add_leaf(*gateway, "check", CommandKind::check_gateway);
+        std::string gateway_check_profile_id;
+        check->add_option("profile-id", gateway_check_profile_id)->required();
+        check->callback([&]() {
+            parsed.kind = CommandKind::check_gateway;
+            command_selected = true;
+            append_value(gateway_check_profile_id);
+        });
+
+        auto* check_all = add_leaf(*gateway, "check-all", CommandKind::check_all_gateways);
+        (void)check_all;
+
+        auto* preview = add_leaf(*gateway, "preview", CommandKind::preview_gateway);
+        std::string gateway_preview_profile_id;
+        preview->add_option("profile-id", gateway_preview_profile_id)->required();
+        preview->callback([&]() {
+            parsed.kind = CommandKind::preview_gateway;
+            command_selected = true;
+            append_value(gateway_preview_profile_id);
+        });
+
+        auto* serve_stdio = add_leaf(*gateway, "serve-stdio", CommandKind::serve_gateway_stdio);
+        std::string gateway_serve_stdio_profile_id;
+        serve_stdio->add_option("profile-id", gateway_serve_stdio_profile_id)->required();
+        serve_stdio->callback([&]() {
+            parsed.kind = CommandKind::serve_gateway_stdio;
+            command_selected = true;
+            append_value(gateway_serve_stdio_profile_id);
+        });
+
+        auto* serve_http = add_leaf(*gateway, "serve-http", CommandKind::serve_gateway_http);
+        std::string gateway_serve_http_profile_id;
+        serve_http->add_option("profile-id", gateway_serve_http_profile_id)->required();
+        serve_http->callback([&]() {
+            parsed.kind = CommandKind::serve_gateway_http;
+            command_selected = true;
+            append_value(gateway_serve_http_profile_id);
+        });
+
+        auto* serve_all = add_leaf(*gateway, "serve-all", CommandKind::serve_all_gateways_http);
+        bool serve_all_ready_only = false;
+        serve_all->add_flag("--ready-only", serve_all_ready_only);
+        serve_all->callback([&]() {
+            parsed.kind = CommandKind::serve_all_gateways_http;
+            command_selected = true;
+            if (serve_all_ready_only) {
+                append_option("ready-only");
+            }
+        });
+    }
+
+    std::vector<std::string> argv;
+    argv.reserve(args.size() + 1);
+    argv.emplace_back("cxxmcp");
+    for (const auto value : args) {
+        argv.emplace_back(value);
+    }
+
+    try {
+        app.parse(argv);
+    } catch (const CLI::ParseError& error) {
+        const auto cli_error = group_error(args[0]);
+        if (cli_error.message == "unknown command") {
+            return std::unexpected(make_cli_error(cli_error.message, std::string(args[0])));
+        }
+        return std::unexpected(make_cli_error(cli_error.message, error.what()));
+    }
+
+    if (!command_selected) {
+        return std::unexpected(group_error(args[0]));
+    }
+
+    return parsed;
+}
+
 std::string_view to_string(app::ApprovalState approval) {
     switch (approval) {
     case app::ApprovalState::pending:

@@ -1,18 +1,33 @@
 # cxxmcp
 
-`cxxmcp` 是一个面向 MCP 的 C++ SDK，提供 `protocol`、`client`、`server`，并可按需启用 `app`、`gateway` 和 `CLI`。
+`cxxmcp` 是一个 C++ MCP SDK。
+
+核心包只强调稳定、窄、可嵌入的 SDK 能力：MCP 协议模型、客户端库、服务端库、传输适配，以及 RMCP 风格的 peer / handler facade。`app`、`gateway` 和 CLI 是构建在 SDK 之上的可选运行时工具，不是主叙事。
 
 ## 特性
 
 - `protocol`：JSON-RPC 与 MCP 模型序列化
 - `client` / `server`：MCP 客户端和服务端库
 - 传输支持：stdio、HTTP
-- 可选运行层：上游 server 管理、发现、受控暴露
+- 可选运行时工具：上游 server 管理、发现、受控暴露
 - 可选工具：`cxxmcp` 命令、examples、tests
+
+## 作为库使用
+
+安装后的 CMake 使用方式应该像普通 SDK：
+
+```cmake
+find_package(cxxmcp CONFIG REQUIRED)
+
+target_link_libraries(my_client PRIVATE cxxmcp::client)
+target_link_libraries(my_server PRIVATE cxxmcp::server)
+```
+
+只有在同时需要 protocol / client / server 时，才使用聚合目标 `cxxmcp::sdk`。
 
 ## 构建
 
-默认只构建 `protocol`。
+默认构建 core SDK。
 
 ```powershell
 cmake -S . -B build
@@ -85,3 +100,13 @@ int main() {
 - [传输策略](docs/httplib_async_transport_strategy.md)
 - [能力矩阵](docs/capability_matrix.md)
 - [推荐项目布局](docs/recommended_project_layout.md)
+
+## 发布形态
+
+对外发布时按三层理解：
+
+- core SDK：`cxxmcp::protocol`、`cxxmcp::client`、`cxxmcp::server`、`cxxmcp::sdk`
+- runtime tools：gateway / app services / `cxxmcp` CLI
+- internal/reference：tests、examples、本地参考源码
+
+公开 SDK 头文件位于 `mcp/`。运行时状态、gateway profile、policy 和 CLI 默认目录不进入 core SDK 契约。

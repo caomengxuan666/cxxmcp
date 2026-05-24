@@ -1,12 +1,32 @@
 # Recommended Project Layout
 
-This document proposes a project layout that makes the repository usable as both:
+This document proposes a project layout that makes the repository usable primarily as:
 
 - a third-party MCP SDK library
-- a runtime/gateway product
-- a CLI application
+- optional runtime/gateway tools
+- an optional CLI application
 
 The goal is to make the SDK clean and installable without forcing third-party users to depend on gateway, CLI, runtime state, or repository-local paths.
+
+## Product Position
+
+The external positioning should be:
+
+```text
+cxxmcp is a C++ MCP SDK.
+```
+
+The first public story should be `protocol`, `transport`, `handler`, and `peer`. `client` and `server` remain useful compatibility and convenience wrappers. `runtime`, `gateway`, `cli`, `adapters`, and `plugin-sdk` are useful layers, but they should be presented as optional tools or extensions built on top of the SDK.
+
+This distinction matters more than the physical folder names. A user evaluating the project should quickly see:
+
+- stable public headers
+- installable CMake targets
+- small examples that embed the SDK
+- compatibility and versioning rules
+- runtime/gateway tools as secondary consumers of the SDK
+
+They should not have to understand gateway profiles, local state, policy, or CLI workflows before using `cxxmcp::client` or `cxxmcp::server`.
 
 ## Principle
 
@@ -24,18 +44,30 @@ cli -> runtime/gateway -> sdk
 
 The SDK must not depend on the runtime, gateway, or CLI.
 
+The public narrative should be even narrower:
+
+```text
+core SDK:      protocol / client / server
+runtime tools: gateway / cli / adapters
+internal:      app runtime internals, tests, reference code
+```
+
+`app` and gateway internals may stay in the repository, but they should not be part of the main SDK package story.
+
 ## Practical Recommendation
 
-The current repository layout is usable, but it does not yet read as a clean SDK package from the outside.
+The current repository layout is usable, but it should continue to read more like a clean SDK package from the outside.
 
 The best short-term approach is:
 
 1. Keep the physical tree mostly as-is.
 2. Treat `protocol`, `client`, and `server` as the SDK core.
-3. Treat `gateway` and `cli` as optional tools, not part of the core SDK story.
+3. Treat `gateway` and `cli` as optional runtime tools, not part of the core SDK story.
 4. Rename `app` to `runtime` when the next layout cleanup is convenient.
 5. Keep `plugin-sdk` as an optional extension layer until the plugin-loading story is complete.
 6. Keep `reference/` out of install and default build paths.
+7. Keep README first-screen content focused on library usage, not internal architecture.
+8. Keep `find_package(cxxmcp)` and `target_link_libraries(... cxxmcp::client)` as the intended consumption experience.
 
 In other words, do not do a large directory move first. Make the public package shape SDK-first first, then simplify the physical tree only if it still helps.
 
@@ -155,6 +187,17 @@ The public include surface should be stable:
 
 Third-party users should not need to know the repository's internal source layout.
 
+Recommended CMake usage:
+
+```cmake
+find_package(cxxmcp CONFIG REQUIRED)
+
+target_link_libraries(my_mcp_client PRIVATE cxxmcp::client)
+target_link_libraries(my_mcp_server PRIVATE cxxmcp::server)
+```
+
+The aggregate `cxxmcp::sdk` target is convenient for examples and small applications. Library consumers that only need one side should prefer the narrower target.
+
 ## Runtime and Gateway Layer
 
 The runtime layer is product-specific and can be heavier than the SDK.
@@ -174,6 +217,8 @@ It should contain:
 The runtime can depend on the SDK.
 
 The SDK must not depend on the runtime.
+
+The runtime should be documented as an optional tool layer. It is allowed to be product-shaped and opinionated because it is not the SDK contract.
 
 ## CLI Layer
 
@@ -259,6 +304,19 @@ target_link_libraries(my_app PRIVATE cxxmcp::client)
 ```
 
 That should not link gateway or CLI code.
+
+## Public Packaging Rules
+
+The SDK should feel stable, narrow, and embeddable:
+
+- public headers live under `mcp/`
+- installed targets use the `cxxmcp::` namespace
+- `protocol`, `client`, and `server` can be linked independently
+- `sdk` is an aggregate target, not a requirement
+- gateway, CLI, tests, examples, and reference code are not installed as part of the core SDK
+- API stability policy is documented before a public release
+
+The repository can contain more than the SDK, but the package consumed by third parties should look like a library first.
 
 ## Build Options
 

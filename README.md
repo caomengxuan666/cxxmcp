@@ -1,6 +1,8 @@
 # cxxmcp
 
-`cxxmcp` is a practical C++ SDK for the Model Context Protocol (MCP), with protocol models, client and server libraries, and optional gateway and CLI layers.
+`cxxmcp` is a C++ MCP SDK.
+
+The core package is intentionally narrow: `protocol`, `transport`, `handler`, and `peer` form the SDK shape, while `client` and `server` stay as embeddable compatibility wrappers and convenience entry points. Gateway and CLI code are optional runtime tools built on top of the SDK, not the main product surface.
 
 ## Features
 
@@ -8,8 +10,21 @@
 - Client SDK for HTTP, stdio, and process-based connections
 - Server SDK with typed tool, prompt, resource, and transport handlers
 - Streamable HTTP support, with legacy SSE compatibility where needed
-- Gateway and CLI layers for local runtime management
+- Optional gateway and CLI tools for local runtime management
 - Raw JSON-RPC request and notification escape hatches
+
+## Using as a Library
+
+Installed-package usage should look like a normal CMake SDK:
+
+```cmake
+find_package(cxxmcp CONFIG REQUIRED)
+
+target_link_libraries(my_client PRIVATE cxxmcp::client)
+target_link_libraries(my_server PRIVATE cxxmcp::server)
+```
+
+Use `cxxmcp::sdk` only when you want the aggregate protocol/client/server SDK target.
 
 ## Build
 
@@ -18,7 +33,7 @@ Requirements:
 - CMake 3.23+
 - A C++23 compiler
 
-Default build:
+Default SDK build:
 
 ```powershell
 cmake -S . -B build
@@ -92,6 +107,16 @@ int main() {
 - [Capability matrix](docs/capability_matrix.md)
 - [Transport strategy](docs/httplib_async_transport_strategy.md)
 - [Project layout notes](docs/recommended_project_layout.md)
+
+## Package Shape
+
+The intended public split is:
+
+- core SDK: `cxxmcp::protocol`, `cxxmcp::client`, `cxxmcp::server`, `cxxmcp::sdk`
+- runtime tools: gateway/app services and `cxxmcp` CLI
+- internal/reference: tests, examples, and local reference source used for compatibility checks
+
+Public SDK headers are under `mcp/`. Runtime state, gateway profiles, policy, and CLI defaults are not part of the core SDK contract.
 
 ## CMake Options
 

@@ -11,6 +11,8 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 set(BUILD_SHARED_LIBS OFF CACHE BOOL "Build static libraries by default" FORCE)
 
 include(CTest)
+include(CMakePackageConfigHelpers)
+include(GNUInstallDirs)
 
 option(MCP_BUILD_SDK "Build the public SDK layer" ON)
 option(MCP_BUILD_PROTOCOL "Build the MCP protocol library" ON)
@@ -61,28 +63,38 @@ if(MSVC)
 endif()
 
 add_library(mcp_core INTERFACE)
-target_include_directories(mcp_core INTERFACE core/include)
+set_target_properties(mcp_core PROPERTIES EXPORT_NAME core)
+target_include_directories(mcp_core INTERFACE
+    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/core/include>
+    $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>
+)
 
 add_library(jsonrpcpp INTERFACE)
 target_include_directories(jsonrpcpp INTERFACE
-    third_party/jsonrpcpp
-    third_party
+    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/third_party/jsonrpcpp>
+    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/third_party>
+    $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>
+    $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}/cxxmcp/third_party/jsonrpcpp>
 )
 
 add_library(cpp_httplib INTERFACE)
 target_include_directories(cpp_httplib INTERFACE
-    third_party/httplib
+    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/third_party/httplib>
+    $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>
+    $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}/cxxmcp/third_party/httplib>
 )
 
 add_subdirectory(third_party/spdlog EXCLUDE_FROM_ALL)
 
 if(MCP_ENABLE_PROTOCOL)
     add_library(mcp_protocol STATIC)
+    set_target_properties(mcp_protocol PROPERTIES EXPORT_NAME protocol)
     target_sources(mcp_protocol PRIVATE protocol/src/serialization.cpp)
     target_include_directories(mcp_protocol PUBLIC
-        sdk/include
-        protocol/include
-        ${CMAKE_CURRENT_SOURCE_DIR}/third_party
+        $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/sdk/include>
+        $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/protocol/include>
+        $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/third_party>
+        $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>
     )
     target_link_libraries(mcp_protocol PUBLIC mcp_core jsonrpcpp)
 endif()
@@ -94,9 +106,11 @@ if(MCP_ENABLE_CLIENT)
         client/src/process_stdio_transport.cpp
         client/src/stdio_transport.cpp
     )
+    set_target_properties(mcp_client PROPERTIES EXPORT_NAME client)
     target_include_directories(mcp_client PUBLIC
-        sdk/include
-        client/include
+        $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/sdk/include>
+        $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/client/include>
+        $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>
     )
     target_link_libraries(mcp_client PUBLIC mcp_core mcp_protocol cpp_httplib)
 endif()
@@ -108,16 +122,22 @@ if(MCP_ENABLE_SERVER)
         server/src/server.cpp
         server/src/stdio_transport.cpp
     )
+    set_target_properties(mcp_server PROPERTIES EXPORT_NAME server)
     target_include_directories(mcp_server PUBLIC
-        sdk/include
-        server/include
+        $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/sdk/include>
+        $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/server/include>
+        $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>
     )
     target_link_libraries(mcp_server PUBLIC mcp_core mcp_protocol cpp_httplib)
 endif()
 
 if(TARGET mcp_protocol OR TARGET mcp_client OR TARGET mcp_server)
     add_library(mcp_sdk INTERFACE)
-    target_include_directories(mcp_sdk INTERFACE sdk/include)
+    set_target_properties(mcp_sdk PROPERTIES EXPORT_NAME sdk)
+    target_include_directories(mcp_sdk INTERFACE
+        $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/sdk/include>
+        $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>
+    )
 
     if(TARGET mcp_protocol)
         target_link_libraries(mcp_sdk INTERFACE mcp_protocol)
@@ -190,18 +210,24 @@ if(MCP_ENABLE_GATEWAY)
 endif()
 
 if(MCP_ENABLE_CLI)
+    set(CLI11_BUILD_DOCS OFF CACHE BOOL "Disable CLI11 docs" FORCE)
+    set(CLI11_BUILD_EXAMPLES OFF CACHE BOOL "Disable CLI11 examples" FORCE)
+    set(CLI11_BUILD_EXAMPLES_JSON OFF CACHE BOOL "Disable CLI11 json examples" FORCE)
+    set(CLI11_BUILD_TESTS OFF CACHE BOOL "Disable CLI11 tests" FORCE)
+    set(CLI11_INSTALL OFF CACHE BOOL "Disable CLI11 install rules" FORCE)
+    set(CLI11_SINGLE_FILE OFF CACHE BOOL "Disable CLI11 single-file build" FORCE)
+    add_subdirectory(third_party/CLI11 EXCLUDE_FROM_ALL)
+
     add_library(mcp_cli STATIC
         cli/src/commands.cpp
     )
     target_include_directories(mcp_cli PUBLIC cli/include)
-    target_link_libraries(mcp_cli PUBLIC mcp_core mcp_app mcp_gateway mcp_client mcp_server mcp_plugin_sdk)
-
-    add_subdirectory(third_party/CLI11 EXCLUDE_FROM_ALL)
+    target_link_libraries(mcp_cli PUBLIC mcp_core mcp_app mcp_gateway mcp_client mcp_server mcp_plugin_sdk CLI11::CLI11)
 
     add_executable(mcp_cli_app
         cli/src/main.cpp
     )
-    target_link_libraries(mcp_cli_app PRIVATE mcp_cli CLI11::CLI11)
+    target_link_libraries(mcp_cli_app PRIVATE mcp_cli)
     target_compile_definitions(mcp_cli_app PRIVATE MCP_PROJECT_VERSION="${PROJECT_VERSION}")
     set_target_properties(mcp_cli_app PROPERTIES OUTPUT_NAME cxxmcp)
 endif()
@@ -213,3 +239,71 @@ endif()
 if(MCP_BUILD_EXAMPLES)
     add_subdirectory(examples)
 endif()
+
+set(CXXMCP_INSTALL_TARGETS mcp_core jsonrpcpp cpp_httplib)
+if(TARGET mcp_protocol)
+    list(APPEND CXXMCP_INSTALL_TARGETS mcp_protocol)
+endif()
+if(TARGET mcp_client)
+    list(APPEND CXXMCP_INSTALL_TARGETS mcp_client)
+endif()
+if(TARGET mcp_server)
+    list(APPEND CXXMCP_INSTALL_TARGETS mcp_server)
+endif()
+if(TARGET mcp_sdk)
+    list(APPEND CXXMCP_INSTALL_TARGETS mcp_sdk)
+endif()
+
+install(TARGETS ${CXXMCP_INSTALL_TARGETS}
+    EXPORT cxxmcpTargets
+    ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
+    LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
+    RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
+)
+
+install(DIRECTORY sdk/include/ DESTINATION ${CMAKE_INSTALL_INCLUDEDIR})
+if(TARGET mcp_protocol)
+    install(DIRECTORY protocol/include/ DESTINATION ${CMAKE_INSTALL_INCLUDEDIR})
+endif()
+if(TARGET mcp_client)
+    install(DIRECTORY client/include/ DESTINATION ${CMAKE_INSTALL_INCLUDEDIR})
+endif()
+if(TARGET mcp_server)
+    install(DIRECTORY server/include/ DESTINATION ${CMAKE_INSTALL_INCLUDEDIR})
+endif()
+install(DIRECTORY core/include/ DESTINATION ${CMAKE_INSTALL_INCLUDEDIR})
+install(FILES
+    third_party/jsonrpcpp/jsonrpcpp.hpp
+    DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/cxxmcp/third_party/jsonrpcpp
+)
+install(FILES
+    third_party/httplib/httplib.h
+    DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/cxxmcp/third_party/httplib
+)
+install(FILES
+    third_party/nlohmann/json.hpp
+    DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/nlohmann
+)
+
+write_basic_package_version_file(
+    "${CMAKE_CURRENT_BINARY_DIR}/cxxmcpConfigVersion.cmake"
+    VERSION ${PROJECT_VERSION}
+    COMPATIBILITY SameMajorVersion
+)
+
+configure_package_config_file(
+    "${CMAKE_CURRENT_SOURCE_DIR}/cmake/cxxmcpConfig.cmake.in"
+    "${CMAKE_CURRENT_BINARY_DIR}/cxxmcpConfig.cmake"
+    INSTALL_DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/cxxmcp
+)
+
+install(FILES
+    "${CMAKE_CURRENT_BINARY_DIR}/cxxmcpConfig.cmake"
+    "${CMAKE_CURRENT_BINARY_DIR}/cxxmcpConfigVersion.cmake"
+    DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/cxxmcp
+)
+
+install(EXPORT cxxmcpTargets
+    NAMESPACE cxxmcp::
+    DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/cxxmcp
+)

@@ -42,21 +42,29 @@ int main(int argc, char** argv) {
         .state_directory = mcp::cli::default_state_directory(),
     };
 
+    if (argc > 1 && argv != nullptr && argv[1] != nullptr) {
+        const std::string_view first_arg(argv[1]);
+        if (first_arg == "--help" || first_arg == "-h") {
+            mcp::cli::write_usage(std::cout);
+            return 0;
+        }
+        if (first_arg == "--version" || first_arg == "-V") {
+            std::cout << "cxxmcp " << MCP_PROJECT_VERSION << '\n';
+            return 0;
+        }
+    }
+
     std::string state_directory_value = runtime_options.state_directory.string();
     CLI::App cli_app{"cxxmcp command-line interface"};
     cli_app.allow_extras();
+    cli_app.set_help_flag("");
+    cli_app.set_help_all_flag("");
+    cli_app.set_version_flag("");
     cli_app.add_option("--state-dir", state_directory_value, "Use a specific runtime state directory.");
     cli_app.add_flag("--json", runtime_options.json_output, "Write structured JSON for automation-friendly commands.");
-    cli_app.set_version_flag("-V,--version", std::string("cxxmcp ") + MCP_PROJECT_VERSION);
 
     try {
         cli_app.parse(argc, argv);
-    } catch (const CLI::CallForHelp&) {
-        mcp::cli::write_usage(std::cout);
-        return 0;
-    } catch (const CLI::CallForVersion&) {
-        std::cout << "cxxmcp " << MCP_PROJECT_VERSION << '\n';
-        return 0;
     } catch (const CLI::ParseError& error) {
         return cli_app.exit(error);
     }
