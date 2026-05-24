@@ -186,7 +186,7 @@ int main() {
 
 The intended public split is:
 
-- core SDK: `cxxmcp::protocol`, `cxxmcp::client`, `cxxmcp::server`, `cxxmcp::handler`, `cxxmcp::service`, `cxxmcp::sdk`
+- core SDK: `cxxmcp::protocol`, `cxxmcp::transport`, `cxxmcp::peer`, `cxxmcp::client`, `cxxmcp::server`, `cxxmcp::handler`, `cxxmcp::service`, `cxxmcp::sdk`
 - runtime tools: gateway/runtime services and `cxxmcp` CLI
 - internal/reference: tests, examples, and local reference source used for compatibility checks
 
