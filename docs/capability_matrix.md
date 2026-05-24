@@ -1,7 +1,7 @@
 # Capability Matrix
 
 ## Position
-This project is a C++ MCP runtime / gateway with a thin public SDK on top of a shared app layer.
+This project is a C++ MCP SDK first. Runtime, gateway, CLI, adapters, and plugin tooling are optional layers built on top of the SDK.
 
 Parity target:
 - official Rust SDK `rmcp` 1.7.0
@@ -46,7 +46,7 @@ These are first-class and must remain stable.
 - raw JSON-RPC request / notification escape hatches
 
 ### Tier 2: Extended parity
-These are still core product behavior, not optional add-ons.
+These are extended SDK parity, not gateway-specific add-ons.
 - resource subscriptions and update notifications
 - client-side list-change notifications
 - client-side roots list updates
@@ -58,7 +58,7 @@ These are still core product behavior, not optional add-ons.
 - cancellation and progress propagation
 
 ### Tier 3: Gateway / runtime behavior
-These belong in `app` and `cli`, not in the protocol layer.
+These belong in `runtime` and `tools/cli`, not in the SDK protocol layer.
 - upstream server registry
 - discovery from stdio and HTTP MCP servers
 - exposure profiles
@@ -92,15 +92,15 @@ These are implementation adapters, not the product identity.
 | protocol | `nlohmann/json`, `jsonrpcpp`, standard library |
 | client | `cpp-httplib`, `nlohmann/json`, `spdlog` |
 | server | `cpp-httplib`, `OpenSSL`, `nlohmann/json`, `spdlog` |
-| plugin-sdk | `nlohmann/json`, standard library |
-| app | `nlohmann/json`, `spdlog`, standard library |
-| cli | `CLI11`, `spdlog`, `app`, `client`, `server` |
+| extensions/plugin-sdk | `nlohmann/json`, standard library |
+| runtime | `nlohmann/json`, `spdlog`, standard library |
+| tools/cli | `CLI11`, `spdlog`, `runtime`, `client`, `server` |
 | gui | deferred; no active CMake target |
 
 ## Notes
 - `cpp-httplib` covers the HTTP, HTTPS, and SSE compatibility path we need without introducing Asio.
 - `CLI11` is the right fit for a dense command surface with composable subcommands.
 - `spdlog` keeps logging consistent across CLI and runtime code.
-- GUI work is paused. When it returns, it should stay a thin shell over `app`.
+- GUI work is paused. When it returns, it should stay a thin shell over `runtime`.
 - The facade should be written in a C++17 style even if the internal build uses C++23.
-- The public SDK should still expose raw protocol and transport escape hatches, even when the fluent builder is the primary entry point.
+- The public SDK should still expose raw protocol and transport escape hatches, while `Peer` / `Service` remains the primary entry point.
