@@ -196,10 +196,12 @@ if(MCP_ENABLE_CLI)
     target_include_directories(mcp_cli PUBLIC cli/include)
     target_link_libraries(mcp_cli PUBLIC mcp_core mcp_app mcp_gateway mcp_client mcp_server mcp_plugin_sdk)
 
+    add_subdirectory(third_party/CLI11 EXCLUDE_FROM_ALL)
+
     add_executable(mcp_cli_app
         cli/src/main.cpp
     )
-    target_link_libraries(mcp_cli_app PRIVATE mcp_cli)
+    target_link_libraries(mcp_cli_app PRIVATE mcp_cli CLI11::CLI11)
     target_compile_definitions(mcp_cli_app PRIVATE MCP_PROJECT_VERSION="${PROJECT_VERSION}")
     set_target_properties(mcp_cli_app PROPERTIES OUTPUT_NAME cxxmcp)
 endif()
