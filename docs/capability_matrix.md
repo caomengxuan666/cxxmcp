@@ -93,6 +93,7 @@ These are implementation adapters, not the product identity.
 | client | `cpp-httplib`, `nlohmann/json`, `spdlog` |
 | server | `cpp-httplib`, `OpenSSL`, `nlohmann/json`, `spdlog` |
 | extensions/plugin-sdk | `nlohmann/json`, standard library |
+| extensions/adapters | `nlohmann/json`, SDK core, plugin-sdk |
 | runtime | `nlohmann/json`, `spdlog`, standard library |
 | tools/cli | `CLI11`, `spdlog`, `runtime`, `client`, `server` |
 | gui | deferred; no active CMake target |

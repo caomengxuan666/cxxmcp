@@ -208,6 +208,7 @@ target_link_libraries(my_mcp_server PRIVATE cxxmcp::server)
 ```
 
 The aggregate `cxxmcp::sdk` target is convenient for examples and small applications. Library consumers that only need one side should prefer the narrower target.
+Extension layers should also be linkable as first-class package targets, such as `cxxmcp::plugin_sdk` and `cxxmcp::adapters`, when a project needs to build on the SDK without depending on runtime tools.
 
 ## Runtime and Gateway Layer
 

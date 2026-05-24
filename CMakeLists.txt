@@ -261,14 +261,24 @@ endif()
 
 if(TARGET mcp_protocol)
     add_library(mcp_plugin_sdk INTERFACE)
-    target_include_directories(mcp_plugin_sdk INTERFACE extensions/plugin-sdk/include)
+    target_include_directories(mcp_plugin_sdk INTERFACE
+        $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/extensions/plugin-sdk/include>
+        $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>
+    )
     target_link_libraries(mcp_plugin_sdk INTERFACE mcp_core mcp_protocol)
+    set_target_properties(mcp_plugin_sdk PROPERTIES EXPORT_NAME plugin_sdk)
+    add_library(cxxmcp::plugin_sdk ALIAS mcp_plugin_sdk)
 endif()
 
 if(TARGET mcp_server AND TARGET mcp_plugin_sdk)
     add_library(mcp_adapters INTERFACE)
-    target_include_directories(mcp_adapters INTERFACE extensions/adapters/include)
+    target_include_directories(mcp_adapters INTERFACE
+        $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/extensions/adapters/include>
+        $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>
+    )
     target_link_libraries(mcp_adapters INTERFACE mcp_core mcp_protocol mcp_server mcp_plugin_sdk)
+    set_target_properties(mcp_adapters PROPERTIES EXPORT_NAME adapters)
+    add_library(cxxmcp::adapters ALIAS mcp_adapters)
 endif()
 
 add_library(mcp_observability INTERFACE)
@@ -395,6 +405,12 @@ endif()
 if(TARGET mcp_cli)
     list(APPEND CXXMCP_INSTALL_TARGETS mcp_cli)
 endif()
+if(TARGET mcp_plugin_sdk)
+    list(APPEND CXXMCP_INSTALL_TARGETS mcp_plugin_sdk)
+endif()
+if(TARGET mcp_adapters)
+    list(APPEND CXXMCP_INSTALL_TARGETS mcp_adapters)
+endif()
 
 install(TARGETS ${CXXMCP_INSTALL_TARGETS}
     EXPORT cxxmcpTargets
@@ -413,6 +429,12 @@ if(TARGET mcp_client)
 endif()
 if(TARGET mcp_server)
     install(DIRECTORY sdk/server/include/ DESTINATION ${CMAKE_INSTALL_INCLUDEDIR})
+endif()
+if(TARGET mcp_plugin_sdk)
+    install(DIRECTORY extensions/plugin-sdk/include/ DESTINATION ${CMAKE_INSTALL_INCLUDEDIR})
+endif()
+if(TARGET mcp_adapters)
+    install(DIRECTORY extensions/adapters/include/ DESTINATION ${CMAKE_INSTALL_INCLUDEDIR})
 endif()
 install(FILES
     third_party/tl/expected.hpp
