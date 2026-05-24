@@ -84,8 +84,9 @@ MCPServer.cpp/
         handler/
         client/
         server/
-        task/
         protocol.hpp
+        request.hpp
+        sdk.hpp
         client.hpp
         server.hpp
         transport.hpp
@@ -190,6 +191,8 @@ The public include surface should be stable:
 
 ```cpp
 #include <cxxmcp/protocol.hpp>
+#include <cxxmcp/request.hpp>
+#include <cxxmcp/sdk.hpp>
 #include <cxxmcp/client.hpp>
 #include <cxxmcp/server.hpp>
 #include <cxxmcp/transport.hpp>
@@ -364,6 +367,8 @@ The installed SDK should look like:
 include/
   cxxmcp/
     protocol.hpp
+    request.hpp
+    sdk.hpp
     client.hpp
     server.hpp
     transport.hpp
@@ -374,7 +379,6 @@ include/
     server/
     transport/
     handler/
-    task/
 
 lib/
   cmake/
