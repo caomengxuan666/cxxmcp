@@ -25,6 +25,8 @@ add_cxxmcp_package_smoke_target(
 add_cxxmcp_package_smoke_target(
     cxxmcp_package_sdk sdk.cpp cxxmcp::sdk)
 add_cxxmcp_package_smoke_target(
+    cxxmcp_package_request request.cpp cxxmcp::sdk)
+add_cxxmcp_package_smoke_target(
     cxxmcp_package_plugin_sdk plugin_sdk.cpp cxxmcp::plugin_sdk)
 add_cxxmcp_package_smoke_target(
     cxxmcp_package_adapters adapters.cpp cxxmcp::adapters)
