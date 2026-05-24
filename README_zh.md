@@ -26,7 +26,8 @@ target_link_libraries(my_server PRIVATE cxxmcp::server)
 
 只有在同时需要 protocol / client / server 时，才使用聚合目标 `cxxmcp::sdk`。
 
-公开头文件使用 `cxxmcp/` 前缀。
+公开头文件使用 `cxxmcp/` 前缀。常用聚合头包括
+`cxxmcp/protocol.hpp`、`cxxmcp/request.hpp` 和 `cxxmcp/sdk.hpp`。
 
 ## 构建
 
