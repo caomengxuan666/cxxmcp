@@ -179,7 +179,7 @@ int main() {
 
 对外发布时按三层理解：
 
-- core SDK：`cxxmcp::protocol`、`cxxmcp::client`、`cxxmcp::server`、`cxxmcp::sdk`
+- core SDK：`cxxmcp::protocol`、`cxxmcp::client`、`cxxmcp::server`、`cxxmcp::handler`、`cxxmcp::service`、`cxxmcp::sdk`
 - runtime tools：gateway / runtime services / `cxxmcp` CLI
 - internal/reference：tests、examples、本地参考源码
 
