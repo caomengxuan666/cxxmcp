@@ -1873,8 +1873,14 @@ core::Result<ParsedCommand> parse_cli11_command(std::span<const std::string_view
         argv.emplace_back(value);
     }
 
+    std::vector<char*> raw_argv;
+    raw_argv.reserve(argv.size());
+    for (auto& value : argv) {
+        raw_argv.push_back(value.data());
+    }
+
     try {
-        app.parse(argv);
+        app.parse(static_cast<int>(raw_argv.size()), raw_argv.data());
     } catch (const CLI::ParseError& error) {
         const auto cli_error = group_error(args[0]);
         if (cli_error.message == "unknown command") {

@@ -4,7 +4,6 @@
 #include "mcp/cli/commands.hpp"
 #include "mcp/cli/runtime.hpp"
 
-#include <CLI/CLI.hpp>
 #include <filesystem>
 #include <iostream>
 #include <string>
@@ -38,47 +37,32 @@ std::string executable_path(int argc, char** argv) {
 } // namespace
 
 int main(int argc, char** argv) {
-    mcp::cli::RuntimeOptions runtime_options{
-        .state_directory = mcp::cli::default_state_directory(),
-    };
-
-    if (argc > 1 && argv != nullptr && argv[1] != nullptr) {
-        const std::string_view first_arg(argv[1]);
-        if (first_arg == "--help" || first_arg == "-h") {
-            mcp::cli::write_usage(std::cout);
-            return 0;
-        }
-        if (first_arg == "--version" || first_arg == "-V") {
-            std::cout << "cxxmcp " << MCP_PROJECT_VERSION << '\n';
-            return 0;
-        }
-    }
-
-    std::string state_directory_value = runtime_options.state_directory.string();
-    CLI::App cli_app{"cxxmcp command-line interface"};
-    cli_app.allow_extras();
-    cli_app.set_help_flag("");
-    cli_app.set_help_all_flag("");
-    cli_app.set_version_flag("");
-    cli_app.add_option("--state-dir", state_directory_value, "Use a specific runtime state directory.");
-    cli_app.add_flag("--json", runtime_options.json_output, "Write structured JSON for automation-friendly commands.");
-
-    try {
-        cli_app.parse(argc, argv);
-    } catch (const CLI::ParseError& error) {
-        return cli_app.exit(error);
-    }
-
-    runtime_options.state_directory = std::filesystem::path(state_directory_value);
-
     std::vector<std::string_view> args;
-    const auto extra_args = cli_app.remaining(true);
-    args.reserve(extra_args.size());
-    for (const auto& value : extra_args) {
-        args.emplace_back(value);
+    for (int index = 1; index < argc; ++index) {
+        args.emplace_back(argv[index]);
     }
 
-    const auto& state = runtime_options.state_directory;
+    const auto runtime_options = mcp::cli::parse_runtime_options(args);
+    if (!runtime_options) {
+        std::cerr << runtime_options.error().message;
+        if (!runtime_options.error().detail.empty()) {
+            std::cerr << ": " << runtime_options.error().detail;
+        }
+        std::cerr << '\n';
+        mcp::cli::write_usage(std::cerr);
+        return runtime_options.error().code;
+    }
+
+    if (runtime_options->show_help) {
+        mcp::cli::write_usage(std::cout);
+        return 0;
+    }
+    if (runtime_options->show_version) {
+        std::cout << "cxxmcp " << MCP_PROJECT_VERSION << '\n';
+        return 0;
+    }
+
+    const auto& state = runtime_options->state_directory;
 
     mcp::app::MemoryToolCatalog tools;
     mcp::app::MemoryProfileStore profiles({default_profile()});
@@ -107,7 +91,7 @@ int main(int argc, char** argv) {
         .exposure_management = exposure_management,
         .executable_path = executable_path(argc, argv),
         .state_directory = state,
-        .json_output = runtime_options.json_output,
+        .json_output = runtime_options->json_output,
     });
 
     const auto result = app.run(args, std::cout, std::cerr);
