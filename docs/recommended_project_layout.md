@@ -16,7 +16,7 @@ The external positioning should be:
 cxxmcp is a C++ MCP SDK.
 ```
 
-The first public story should be `protocol`, `transport`, `handler`, and `peer`. `client` and `server` remain useful compatibility and convenience wrappers. `runtime`, `gateway`, `cli`, `adapters`, and `plugin-sdk` are useful layers, but they should be presented as optional tools or extensions built on top of the SDK.
+The first public story should be `protocol`, `transport`, `handler`, and `peer`. `client` and `server` remain useful compatibility and convenience wrappers. `runtime`, `gateway`, `cli`, `adapters`, and `extensions/plugin-sdk` are useful layers, but they should be presented as optional tools or extensions built on top of the SDK.
 
 This distinction matters more than the physical folder names. A user evaluating the project should quickly see:
 
@@ -64,7 +64,7 @@ The best short-term approach is:
 2. Treat `protocol`, `client`, and `server` as the SDK core.
 3. Treat `gateway` and `cli` as optional runtime tools, not part of the core SDK story.
 4. Keep `runtime` as the home for product runtime logic and gateway internals.
-5. Keep `plugin-sdk` as an optional extension layer until the plugin-loading story is complete.
+5. Keep `extensions/plugin-sdk` as an optional extension layer until the plugin-loading story is complete.
 6. Keep `reference/` out of install and default build paths.
 7. Keep README first-screen content focused on library usage, not internal architecture.
 8. Keep `find_package(cxxmcp)` and `target_link_libraries(... cxxmcp::client)` as the intended consumption experience.

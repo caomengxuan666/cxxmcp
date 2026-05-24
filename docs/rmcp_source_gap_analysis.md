@@ -48,7 +48,7 @@ The current C++ code already has useful MCP pieces:
 - `peer`: role-aware client/server facades
 - `service`: synchronous service lifecycle wrappers
 - `handler`: aggregate and interface-based callback contracts
-- `app`, `cli`, and gateway code: runtime orchestration and product behavior
+- `runtime`, `tools/cli`, and gateway code: orchestration and product behavior
 
 This shape is practical for the current product, but it is not yet RMCP-like as a pure SDK.
 

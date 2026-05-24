@@ -34,7 +34,7 @@ The current repository mixes several concerns:
 - `protocol` provides JSON-RPC types and MCP models
 - `client` exposes a concrete blocking client
 - `server` exposes a concrete blocking server with registries and transport wiring
-- `app`, `cli`, and gateway code add runtime orchestration and policy
+- `runtime`, `tools/cli`, and gateway code add orchestration and policy
 
 That is useful for a product runtime, but it is larger and more opinionated than an SDK.
 
@@ -140,7 +140,7 @@ Server-side handler responsibilities:
 - custom requests and notifications
 - progress and roots notifications
 
-### 5. `runtime` or `app`
+### 5. `runtime`
 
 Keep the following outside the SDK core:
 
@@ -310,7 +310,7 @@ Make sure raw failures from transport or handler code are translated into JSON-R
 ### Phase 4: Separate runtime concerns
 
 - move gateway, registry, policy, and CLI workflows out of the SDK public surface
-- keep them in `app` or a separate package
+- keep them in `runtime` or a separate package
 
 ### Phase 5: Align naming and docs
 
@@ -335,7 +335,7 @@ If the goal is an RMCP-like SDK, the repository should converge on this shape:
 
 - `protocol` for typed MCP data and serialization
 - `peer` for the public client/server API
-- `handler` for app callbacks
+- `handler` for application callbacks
 - `transport` for stdio and HTTP adapters
 - `runtime` for gateway/policy/persistence features
 
