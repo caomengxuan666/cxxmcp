@@ -49,10 +49,10 @@ The public narrative should be even narrower:
 ```text
 core SDK:      protocol / client / server
 runtime tools: gateway / cli / adapters
-internal:      app runtime internals, tests, reference code
+internal:      runtime internals, tests, reference code
 ```
 
-`app` and gateway internals may stay in the repository, but they should not be part of the main SDK package story.
+`runtime` and gateway internals may stay in the repository, but they should not be part of the main SDK package story.
 
 ## Practical Recommendation
 
@@ -60,10 +60,10 @@ The current repository layout is usable, but it should continue to read more lik
 
 The best short-term approach is:
 
-1. Keep the physical tree mostly as-is.
+1. Keep the SDK source tree under `sdk/` and do not reintroduce root-level `client/`, `server/`, `protocol/`, or `core/` folders.
 2. Treat `protocol`, `client`, and `server` as the SDK core.
 3. Treat `gateway` and `cli` as optional runtime tools, not part of the core SDK story.
-4. Rename `app` to `runtime` when the next layout cleanup is convenient.
+4. Keep `runtime` as the home for product runtime logic and gateway internals.
 5. Keep `plugin-sdk` as an optional extension layer until the plugin-loading story is complete.
 6. Keep `reference/` out of install and default build paths.
 7. Keep README first-screen content focused on library usage, not internal architecture.
@@ -77,7 +77,7 @@ In other words, do not do a large directory move first. Make the public package 
 MCPServer.cpp/
   sdk/
     include/
-      mcp/
+      cxxmcp/
         protocol/
         transport/
         peer/
@@ -90,6 +90,11 @@ MCPServer.cpp/
         server.hpp
         transport.hpp
         peer.hpp
+    core/
+      include/
+        cxxmcp/
+          core/
+            result.hpp
     src/
       protocol/
       transport/
@@ -103,12 +108,14 @@ MCPServer.cpp/
 
   runtime/
     include/
-      mcp/
+      cxxmcp/
         runtime/
         gateway/
         registry/
         policy/
         state/
+    observability/
+      include/
     src/
       gateway/
       registry/
@@ -117,18 +124,22 @@ MCPServer.cpp/
       discovery/
       observability/
 
-  cli/
-    src/
+  tools/
+    cli/
+      src/
+      include/
 
-  adapters/
-    filesystem/
-    shell/
-    git/
-    internal_rest/
-
-  plugin-sdk/
-    include/
-    src/
+  extensions/
+    adapters/
+      filesystem/
+      shell/
+      git/
+      internal_rest/
+      include/
+      src/
+    plugin-sdk/
+      include/
+      src/
 
   examples/
     sdk/
@@ -178,11 +189,11 @@ It should not contain:
 The public include surface should be stable:
 
 ```cpp
-#include <mcp/protocol.hpp>
-#include <mcp/client.hpp>
-#include <mcp/server.hpp>
-#include <mcp/transport.hpp>
-#include <mcp/peer.hpp>
+#include <cxxmcp/protocol.hpp>
+#include <cxxmcp/client.hpp>
+#include <cxxmcp/server.hpp>
+#include <cxxmcp/transport.hpp>
+#include <cxxmcp/peer.hpp>
 ```
 
 Third-party users should not need to know the repository's internal source layout.
@@ -309,7 +320,7 @@ That should not link gateway or CLI code.
 
 The SDK should feel stable, narrow, and embeddable:
 
-- public headers live under `mcp/`
+- public headers live under `cxxmcp/`
 - installed targets use the `cxxmcp::` namespace
 - `protocol`, `client`, and `server` can be linked independently
 - `sdk` is an aggregate target, not a requirement
@@ -348,12 +359,13 @@ The installed SDK should look like:
 
 ```text
 include/
-  mcp/
+  cxxmcp/
     protocol.hpp
     client.hpp
     server.hpp
     transport.hpp
     peer.hpp
+    core/
     protocol/
     client/
     server/
@@ -400,8 +412,9 @@ For process stdio transports:
 ### Phase 1: Create SDK Boundary
 
 - introduce `sdk/`
-- move or mirror public SDK headers under `sdk/include/mcp`
-- keep existing include paths working through compatibility forwarding headers
+- keep public SDK headers under `sdk/include/cxxmcp`
+- keep `sdk/core/include/cxxmcp/core` for shared helpers
+- avoid reintroducing root-level SDK folders
 
 ### Phase 2: Split Runtime
 
@@ -426,21 +439,6 @@ For process stdio transports:
 - keep public includes stable
 - move private headers out of installed include trees
 - document third-party usage examples
-
-## Compatibility Strategy
-
-Avoid breaking existing code immediately.
-
-Use forwarding headers where needed:
-
-```cpp
-// old path
-#include <mcp/client.hpp>
-
-// internally forwards to the new SDK layout
-```
-
-Keep current `Client` and `Server` classes as compatibility wrappers while introducing the RMCP-like peer and handler layer.
 
 ## Summary
 

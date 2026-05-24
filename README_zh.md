@@ -25,6 +25,8 @@ target_link_libraries(my_server PRIVATE cxxmcp::server)
 
 只有在同时需要 protocol / client / server 时，才使用聚合目标 `cxxmcp::sdk`。
 
+公开头文件使用 `cxxmcp/` 前缀。
+
 ## 构建
 
 默认构建 core SDK。
@@ -61,7 +63,7 @@ ctest --test-dir build-tests --output-on-failure
 ### Server
 
 ```cpp
-#include <mcp/server.hpp>
+#include <cxxmcp/server.hpp>
 
 int main() {
     return mcp::server::App::builder()
@@ -78,7 +80,7 @@ int main() {
 ### Client
 
 ```cpp
-#include <mcp/client.hpp>
+#include <cxxmcp/client.hpp>
 
 int main() {
     auto client = mcp::client::Client::connect_streamable_http({
@@ -106,7 +108,8 @@ int main() {
 对外发布时按三层理解：
 
 - core SDK：`cxxmcp::protocol`、`cxxmcp::client`、`cxxmcp::server`、`cxxmcp::sdk`
-- runtime tools：gateway / app services / `cxxmcp` CLI
+- runtime tools：gateway / runtime services / `cxxmcp` CLI
 - internal/reference：tests、examples、本地参考源码
 
-公开 SDK 头文件位于 `mcp/`。运行时状态、gateway profile、policy 和 CLI 默认目录不进入 core SDK 契约。
+公开 SDK 头文件位于 `cxxmcp/`。运行时状态、gateway profile、policy 和 CLI 默认目录不进入 core SDK 契约。
+

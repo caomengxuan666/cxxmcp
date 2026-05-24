@@ -8,7 +8,7 @@ The public surface should match the official Rust SDK parity set from `docs/rmcp
 ### Server
 
 ```cpp
-#include <mcp/server.hpp>
+#include <cxxmcp/server.hpp>
 
 struct EchoArgs {
     std::string value;
@@ -99,7 +99,7 @@ int main() {
 ### Client
 
 ```cpp
-#include <mcp/client.hpp>
+#include <cxxmcp/client.hpp>
 
 int main() {
     auto client = mcp::client::Client::connect_streamable_http({
@@ -146,7 +146,7 @@ int main() {
 ### Process stdio client
 
 ```cpp
-#include <mcp/client.hpp>
+#include <cxxmcp/client.hpp>
 
 int main() {
     mcp::client::McpClientSession session(std::make_unique<mcp::client::ProcessStdioTransport>(
@@ -183,14 +183,14 @@ int main() {
 ### Gateway
 
 ```cpp
-#include <mcp/gateway.hpp>
+#include <cxxmcp/gateway.hpp>
 
 int main() {
     auto gateway = mcp::gateway::Runtime::builder()
         .profile("profile.dev")
         .host("127.0.0.1")
         .port(39931)
-        .path("/mcp/dev")
+        .path("/cxxmcp/dev")
         .trust(true)
         .discover(true)
         .bind_server("filesystem")
@@ -394,3 +394,4 @@ public:
 - Legacy SSE remains for compatibility only.
 - The facade must stay C++17-friendly in examples and ownership style.
 - The public surface must not drop any capability family exposed by the official Rust SDK.
+

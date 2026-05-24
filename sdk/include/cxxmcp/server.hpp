@@ -1,0 +1,13 @@
+#pragma once
+
+/// @file
+/// @brief Umbrella include for the public cxxmcp server API.
+
+#include "cxxmcp/server/auth.hpp"
+#include "cxxmcp/server/http_transport.hpp"
+#include "cxxmcp/server/peer.hpp"
+#include "cxxmcp/server/rate_limit.hpp"
+#include "cxxmcp/server/registry.hpp"
+#include "cxxmcp/server/server.hpp"
+#include "cxxmcp/server/stdio_transport.hpp"
+#include "cxxmcp/server/transport.hpp"

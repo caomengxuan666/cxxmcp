@@ -1,6 +1,6 @@
-#include "mcp/client.hpp"
-#include "mcp/protocol/serialization.hpp"
-#include "mcp/server.hpp"
+#include "cxxmcp/client.hpp"
+#include "cxxmcp/protocol/serialization.hpp"
+#include "cxxmcp/server.hpp"
 
 #include <cstdint>
 #include <iostream>
@@ -13,128 +13,128 @@
 
 namespace {
 
-void require(bool condition, std::string_view message) {
-    if (!condition) {
-        throw std::runtime_error(std::string(message));
-    }
-}
-
-class LoopbackTransport final : public mcp::client::Transport {
-public:
-    explicit LoopbackTransport(mcp::server::Server& server)
-        : server_(server) {}
-
-    mcp::core::Result<mcp::protocol::JsonRpcResponse> send(const mcp::protocol::JsonRpcRequest& request) override {
-        return server_.handle_request(request, context_);
+    void require(bool condition, std::string_view message) {
+        if (!condition) {
+            throw std::runtime_error(std::string(message));
+        }
     }
 
-    mcp::core::Result<mcp::core::Unit> send_notification(
-            const mcp::protocol::JsonRpcNotification& notification) override {
-        notifications_.push_back(notification);
-        return mcp::core::Unit{};
-    }
+    class LoopbackTransport final : public mcp::client::Transport {
+    public:
+        explicit LoopbackTransport(mcp::server::Server &server)
+            : server_(server) {}
 
-    const std::vector<mcp::protocol::JsonRpcNotification>& notifications() const {
-        return notifications_;
-    }
+        mcp::core::Result<mcp::protocol::JsonRpcResponse> send(const mcp::protocol::JsonRpcRequest &request) override {
+            return server_.handle_request(request, context_);
+        }
 
-private:
-    mcp::server::Server& server_;
-    mcp::server::SessionContext context_{
-        .session_id = "example",
-        .remote_address = "127.0.0.1",
+        mcp::core::Result<mcp::core::Unit> send_notification(
+                const mcp::protocol::JsonRpcNotification &notification) override {
+            notifications_.push_back(notification);
+            return mcp::core::Unit{};
+        }
+
+        const std::vector<mcp::protocol::JsonRpcNotification> &notifications() const {
+            return notifications_;
+        }
+
+    private:
+        mcp::server::Server &server_;
+        mcp::server::SessionContext context_{
+                .session_id = "example",
+                .remote_address = "127.0.0.1",
+        };
+        std::vector<mcp::protocol::JsonRpcNotification> notifications_;
     };
-    std::vector<mcp::protocol::JsonRpcNotification> notifications_;
-};
 
-} // namespace
+}// namespace
 
 int main() {
     try {
         auto server = mcp::server::App::builder()
-            .name("cxxmcp-example-loopback-server")
-            .version("1.0.0")
-            .instructions("Example server used by the client facade example.")
-            .tool<mcp::protocol::Json, mcp::protocol::Json>("echo", [](const mcp::protocol::Json& input) {
-                return mcp::protocol::Json{{"echo", input}};
-            })
-            .tool<std::string, std::string>("shout", [](std::string text) {
-                return text + "!";
-            })
-            .prompt(mcp::protocol::Prompt{
-                        .name = "summarize",
-                        .description = "Summarize text",
-                    .arguments = {mcp::protocol::PromptArgument{
-                            .name = "text",
-                            .description = "Text to summarize",
-                            .required = true,
-                        }},
-                    },
-                    [](const mcp::server::PromptContext& context) {
-                const auto text = context.arguments.at("text").get<std::string>();
-                mcp::protocol::PromptsGetResult result;
-                result.description = "Summarize text";
-                result.messages.push_back(mcp::protocol::PromptMessage{
-                    .role = "user",
-                    .content = mcp::protocol::ContentBlock{
-                        .type = "text",
-                        .text = "Summarize " + text,
-                    },
-                });
-                return result;
-            })
-            .resource("file:///workspace/README.md", [] {
-                return mcp::protocol::ResourceContents{
-                    .uri = "file:///workspace/README.md",
-                    .mime_type = "text/markdown",
-                    .text = "hello from example",
-                };
-            })
-            .resource_template("file:///workspace/{path}", [] {
-                return mcp::protocol::ResourceTemplate{
-                    .uri_template = "file:///workspace/{path}",
-                    .name = "Workspace file",
-                    .description = "Address a file in the workspace",
-                    .mime_type = "text/plain",
-                };
-            })
-            .completion([](const mcp::protocol::Json& request) {
-                const auto prefix = request.value("prefix", std::string{});
-                return mcp::protocol::Json{
-                    {"completion", mcp::protocol::Json{
-                                       {"values", mcp::protocol::Json::array({
-                                           prefix + "alpha",
-                                           prefix + "beta",
-                                       })},
-                                       {"total", 2},
-                                   }},
-                };
-            })
-            .sampling([](const mcp::protocol::Json& request) {
-                return mcp::protocol::Json{
-                    {"role", "assistant"},
-                    {"content", mcp::protocol::Json{
-                                    {"type", "text"},
-                                    {"text", "Sampled: " + request.value("prompt", std::string{"hello"})},
-                                }},
-                    {"model", "cxxmcp-example"},
-                };
-            })
-            .logging([](std::string_view level, std::string_view message) {
-                (void)level;
-                (void)message;
-            })
-            .raw_request([](const mcp::protocol::JsonRpcRequest& request) -> std::optional<mcp::protocol::JsonRpcResponse> {
-                if (request.method == "example/health") {
-                    return mcp::protocol::make_response(request.id, mcp::protocol::Json{{"ok", true}});
-                }
-                return std::nullopt;
-            })
-            .build();
+                              .name("cxxmcp-example-loopback-server")
+                              .version("1.0.0")
+                              .instructions("Example server used by the client facade example.")
+                              .tool<mcp::protocol::Json, mcp::protocol::Json>("echo", [](const mcp::protocol::Json &input) {
+                                  return mcp::protocol::Json{{"echo", input}};
+                              })
+                              .tool<std::string, std::string>("shout", [](std::string text) {
+                                  return text + "!";
+                              })
+                              .prompt(mcp::protocol::Prompt{
+                                              .name = "summarize",
+                                              .description = "Summarize text",
+                                              .arguments = {mcp::protocol::PromptArgument{
+                                                      .name = "text",
+                                                      .description = "Text to summarize",
+                                                      .required = true,
+                                              }},
+                                      },
+                                      [](const mcp::server::PromptContext &context) {
+                                          const auto text = context.arguments.at("text").get<std::string>();
+                                          mcp::protocol::PromptsGetResult result;
+                                          result.description = "Summarize text";
+                                          result.messages.push_back(mcp::protocol::PromptMessage{
+                                                  .role = "user",
+                                                  .content = mcp::protocol::ContentBlock{
+                                                          .type = "text",
+                                                          .text = "Summarize " + text,
+                                                  },
+                                          });
+                                          return result;
+                                      })
+                              .resource("file:///workspace/README.md", [] {
+                                  return mcp::protocol::ResourceContents{
+                                          .uri = "file:///workspace/README.md",
+                                          .mime_type = "text/markdown",
+                                          .text = "hello from example",
+                                  };
+                              })
+                              .resource_template("file:///workspace/{path}", [] {
+                                  return mcp::protocol::ResourceTemplate{
+                                          .uri_template = "file:///workspace/{path}",
+                                          .name = "Workspace file",
+                                          .description = "Address a file in the workspace",
+                                          .mime_type = "text/plain",
+                                  };
+                              })
+                              .completion([](const mcp::protocol::Json &request) {
+                                  const auto prefix = request.value("prefix", std::string{});
+                                  return mcp::protocol::Json{
+                                          {"completion", mcp::protocol::Json{
+                                                                 {"values", mcp::protocol::Json::array({
+                                                                                    prefix + "alpha",
+                                                                                    prefix + "beta",
+                                                                            })},
+                                                                 {"total", 2},
+                                                         }},
+                                  };
+                              })
+                              .sampling([](const mcp::protocol::Json &request) {
+                                  return mcp::protocol::Json{
+                                          {"role", "assistant"},
+                                          {"content", mcp::protocol::Json{
+                                                              {"type", "text"},
+                                                              {"text", "Sampled: " + request.value("prompt", std::string{"hello"})},
+                                                      }},
+                                          {"model", "cxxmcp-example"},
+                                  };
+                              })
+                              .logging([](std::string_view level, std::string_view message) {
+                                  (void) level;
+                                  (void) message;
+                              })
+                              .raw_request([](const mcp::protocol::JsonRpcRequest &request) -> std::optional<mcp::protocol::JsonRpcResponse> {
+                                  if (request.method == "example/health") {
+                                      return mcp::protocol::make_response(request.id, mcp::protocol::Json{{"ok", true}});
+                                  }
+                                  return std::nullopt;
+                              })
+                              .build();
         require(server.has_value(), "failed to build example server");
 
         auto transport = std::make_unique<LoopbackTransport>(**server);
-        auto* transport_ptr = transport.get();
+        auto *transport_ptr = transport.get();
         mcp::client::Client client(std::move(transport));
 
         std::size_t logging_messages = 0;
@@ -153,9 +153,9 @@ int main() {
         client.on_tool_list_changed([&] { ++tool_notifications; });
         client.on_prompt_list_changed([&] { ++prompt_notifications; });
         client.on_resource_list_changed([&] { ++resource_notifications; });
-        client.on_resource_updated([&](const std::string& uri) { updated_uris.push_back(uri); });
+        client.on_resource_updated([&](const std::string &uri) { updated_uris.push_back(uri); });
         client.on_roots_list_changed([&] { ++root_notifications; });
-        client.on_raw_notification([&](const mcp::protocol::JsonRpcNotification& notification) {
+        client.on_raw_notification([&](const mcp::protocol::JsonRpcNotification &notification) {
             raw_methods.push_back(notification.method);
         });
 
@@ -206,9 +206,9 @@ int main() {
         require(sample->at("role") == "assistant", "client create_message role mismatch");
 
         const auto health = client.raw_request(mcp::protocol::JsonRpcRequest{
-            .method = "example/health",
-            .params = mcp::protocol::Json::object(),
-            .id = std::int64_t{9},
+                .method = "example/health",
+                .params = mcp::protocol::Json::object(),
+                .id = std::int64_t{9},
         });
         require(health.has_value() && health->value("ok", false), "client raw_request failed");
 
@@ -221,34 +221,40 @@ int main() {
         require(transport_ptr->notifications().size() == 4, "client notifications were not recorded");
 
         require(client.handle_notification(mcp::protocol::JsonRpcNotification{
-                    .method = "notifications/message",
-                    .params = mcp::protocol::Json{{"level", "info"}, {"data", "example log"}},
-                }).has_value(),
+                                                   .method = "notifications/message",
+                                                   .params = mcp::protocol::Json{{"level", "info"}, {"data", "example log"}},
+                                           })
+                        .has_value(),
                 "client logging notification failed");
         require(client.handle_notification(mcp::protocol::JsonRpcNotification{
-                    .method = "notifications/tools/list_changed",
-                    .params = mcp::protocol::Json::object(),
-                }).has_value(),
+                                                   .method = "notifications/tools/list_changed",
+                                                   .params = mcp::protocol::Json::object(),
+                                           })
+                        .has_value(),
                 "client tools list notification failed");
         require(client.handle_notification(mcp::protocol::JsonRpcNotification{
-                    .method = "notifications/prompts/list_changed",
-                    .params = mcp::protocol::Json::object(),
-                }).has_value(),
+                                                   .method = "notifications/prompts/list_changed",
+                                                   .params = mcp::protocol::Json::object(),
+                                           })
+                        .has_value(),
                 "client prompts list notification failed");
         require(client.handle_notification(mcp::protocol::JsonRpcNotification{
-                    .method = "notifications/resources/list_changed",
-                    .params = mcp::protocol::Json::object(),
-                }).has_value(),
+                                                   .method = "notifications/resources/list_changed",
+                                                   .params = mcp::protocol::Json::object(),
+                                           })
+                        .has_value(),
                 "client resources list notification failed");
         require(client.handle_notification(mcp::protocol::JsonRpcNotification{
-                    .method = "notifications/resources/updated",
-                    .params = mcp::protocol::Json{{"uri", "file:///workspace/README.md"}},
-                }).has_value(),
+                                                   .method = "notifications/resources/updated",
+                                                   .params = mcp::protocol::Json{{"uri", "file:///workspace/README.md"}},
+                                           })
+                        .has_value(),
                 "client resource updated notification failed");
         require(client.handle_notification(mcp::protocol::JsonRpcNotification{
-                    .method = "notifications/roots/list_changed",
-                    .params = mcp::protocol::Json::object(),
-                }).has_value(),
+                                                   .method = "notifications/roots/list_changed",
+                                                   .params = mcp::protocol::Json::object(),
+                                           })
+                        .has_value(),
                 "client roots list notification failed");
 
         require(logging_messages == 1, "client logging handler not called");
@@ -262,7 +268,7 @@ int main() {
 
         std::cout << "client facade example passed\n";
         return 0;
-    } catch (const std::exception& ex) {
+    } catch (const std::exception &ex) {
         std::cerr << "client facade example failed: " << ex.what() << '\n';
         return 1;
     }

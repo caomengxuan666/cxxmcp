@@ -2,7 +2,7 @@
 
 This is the distilled reference for the official Rust SDK surface we are matching.
 Sources:
-- https://docs.rs/rmcp/latest/rmcp/
+- https://docs.rs/rcxxmcp/latest/rcxxmcp/
 - https://github.com/modelcontextprotocol/rust-sdk
 
 Current upstream reference point:
@@ -58,3 +58,4 @@ Current upstream reference point:
 
 ## Note
 We should mirror the public shape of these families in C++, but keep our own naming and ownership style consistent with the rest of the codebase.
+

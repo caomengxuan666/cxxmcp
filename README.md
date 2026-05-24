@@ -26,6 +26,8 @@ target_link_libraries(my_server PRIVATE cxxmcp::server)
 
 Use `cxxmcp::sdk` only when you want the aggregate protocol/client/server SDK target.
 
+Public headers use the `cxxmcp/` prefix.
+
 ## Build
 
 Requirements:
@@ -67,7 +69,7 @@ ctest --test-dir build-tests --output-on-failure
 ### Server
 
 ```cpp
-#include <mcp/server.hpp>
+#include <cxxmcp/server.hpp>
 
 int main() {
     return mcp::server::App::builder()
@@ -85,7 +87,7 @@ int main() {
 ### Client
 
 ```cpp
-#include <mcp/client.hpp>
+#include <cxxmcp/client.hpp>
 
 int main() {
     auto client = mcp::client::Client::connect_streamable_http({
@@ -113,10 +115,10 @@ int main() {
 The intended public split is:
 
 - core SDK: `cxxmcp::protocol`, `cxxmcp::client`, `cxxmcp::server`, `cxxmcp::sdk`
-- runtime tools: gateway/app services and `cxxmcp` CLI
+- runtime tools: gateway/runtime services and `cxxmcp` CLI
 - internal/reference: tests, examples, and local reference source used for compatibility checks
 
-Public SDK headers are under `mcp/`. Runtime state, gateway profiles, policy, and CLI defaults are not part of the core SDK contract.
+Public SDK headers are under `cxxmcp/`. Runtime state, gateway profiles, policy, and CLI defaults are not part of the core SDK contract.
 
 ## CMake Options
 
@@ -131,4 +133,5 @@ Public SDK headers are under `mcp/`. Runtime state, gateway profiles, policy, an
 | `MCP_BUILD_EXAMPLES` | `OFF` | Build example executables |
 | `MCP_BUILD_TESTS` | `BUILD_TESTING` | Build tests for enabled layers |
 
-`MCP_BUILD_CLI` enables the gateway, app, server, client, and protocol layers it needs.
+`MCP_BUILD_CLI` enables the gateway, runtime, server, client, and protocol layers it needs.
+

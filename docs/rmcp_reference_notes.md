@@ -19,7 +19,8 @@ What stands out versus the current C++ surface:
 - RMCP exposes async request options and cancellable requests via `PeerRequestOptions`; the C++ surface does not expose that level of per-request control.
 
 Key local references:
-- `client/include/mcp/client/client.hpp`
-- `server/include/mcp/server/server.hpp`
-- `client/include/mcp/client/http_transport.hpp`
-- `server/include/mcp/server/http_transport.hpp`
+- `sdk/client/include/cxxmcp/client/client.hpp`
+- `sdk/server/include/cxxmcp/server/server.hpp`
+- `sdk/client/include/cxxmcp/client/http_transport.hpp`
+- `sdk/server/include/cxxmcp/server/http_transport.hpp`
+

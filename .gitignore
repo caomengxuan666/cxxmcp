@@ -1,2 +1,11 @@
-build*
-reference/rmcp/
+.cache/
+logs/
+.vscode
+out/
+build*/
+cmake-build-release/
+.idea/
+/out 
+.vs/
+reference/
+/compile_commands.json
