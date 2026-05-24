@@ -25,9 +25,10 @@ if(TARGET mcp_client AND TARGET mcp_server)
                                                           mcp_server)
 endif()
 
-if(TARGET mcp_client AND TARGET mcp_example_stdio_server)
+if(TARGET mcp_client AND TARGET mcp_server AND TARGET mcp_example_stdio_server)
     add_executable(mcp_example_process_stdio_client process_stdio_client.cpp)
-    target_link_libraries(mcp_example_process_stdio_client PRIVATE mcp_client)
+    target_link_libraries(mcp_example_process_stdio_client PRIVATE mcp_client
+                                                                  mcp_server)
     target_compile_definitions(
         mcp_example_process_stdio_client
         PRIVATE MCP_EXAMPLE_CHILD_EXE="$<TARGET_FILE:mcp_example_stdio_server>")
