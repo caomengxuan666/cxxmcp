@@ -3,6 +3,7 @@
 `cxxmcp` is a C++ MCP SDK.
 
 The core package is intentionally narrow: `protocol`, `transport`, `handler`, and `peer` form the SDK shape, while `client` and `server` stay as embeddable compatibility wrappers and convenience entry points. Gateway and CLI code are optional runtime tools built on top of the SDK, not the main product surface.
+Optional extension layers are also first-class package targets: `cxxmcp::plugin_sdk` and `cxxmcp::adapters`.
 
 ## Features
 

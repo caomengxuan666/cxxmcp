@@ -3,6 +3,7 @@
 `cxxmcp` 是一个 C++ MCP SDK。
 
 核心包只强调稳定、窄、可嵌入的 SDK 能力：MCP 协议模型、客户端库、服务端库、传输适配，以及 RMCP 风格的 peer / handler facade。`app`、`gateway` 和 CLI 是构建在 SDK 之上的可选运行时工具，不是主叙事。
+扩展层也作为一等包目标导出：`cxxmcp::plugin_sdk` 和 `cxxmcp::adapters`。
 
 ## 特性
 
