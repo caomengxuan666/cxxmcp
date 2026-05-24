@@ -180,7 +180,7 @@ int main() {
 对外发布时按三层理解：
 
 - core SDK：`cxxmcp::protocol`、`cxxmcp::transport`、`cxxmcp::peer`、`cxxmcp::client`、`cxxmcp::server`、`cxxmcp::handler`、`cxxmcp::service`、`cxxmcp::sdk`
-- runtime tools：gateway / runtime services / `cxxmcp` CLI
+- runtime tools：`cxxmcp::runtime`、`cxxmcp::gateway`、`cxxmcp::cli`
 - internal/reference：tests、examples、本地参考源码
 
 公开 SDK 头文件位于 `cxxmcp/`。运行时状态、gateway profile、policy 和 CLI 默认目录不进入 core SDK 契约。

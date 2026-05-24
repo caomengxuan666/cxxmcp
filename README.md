@@ -187,7 +187,7 @@ int main() {
 The intended public split is:
 
 - core SDK: `cxxmcp::protocol`, `cxxmcp::transport`, `cxxmcp::peer`, `cxxmcp::client`, `cxxmcp::server`, `cxxmcp::handler`, `cxxmcp::service`, `cxxmcp::sdk`
-- runtime tools: gateway/runtime services and `cxxmcp` CLI
+- runtime tools: `cxxmcp::runtime`, `cxxmcp::gateway`, `cxxmcp::cli`
 - internal/reference: tests, examples, and local reference source used for compatibility checks
 
 Public SDK headers are under `cxxmcp/`. Runtime state, gateway profiles, policy, and CLI defaults are not part of the core SDK contract.
