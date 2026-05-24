@@ -216,6 +216,7 @@ if(MCP_ENABLE_APP)
         runtime/src/exposure_management.cpp
         runtime/src/file_stores.cpp
         runtime/src/serialization.cpp
+        runtime/src/task_management.cpp
         runtime/src/upstream_client.cpp
         runtime/src/server_management.cpp
         runtime/src/services.cpp

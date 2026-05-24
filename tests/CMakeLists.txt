@@ -102,6 +102,14 @@ if(TARGET mcp_app)
     target_link_libraries(mcp_tool_management_tests PRIVATE mcp_app)
 
     add_test(NAME tool_management COMMAND mcp_tool_management_tests)
+
+    add_executable(mcp_task_management_tests
+        app/test_task_management.cpp
+    )
+
+    target_link_libraries(mcp_task_management_tests PRIVATE mcp_app)
+
+    add_test(NAME task_management COMMAND mcp_task_management_tests)
 endif()
 
 if(TARGET mcp_gateway AND TARGET mcp_test_stdio_child)

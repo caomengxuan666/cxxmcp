@@ -99,6 +99,38 @@
       }
     },
     {
+      "name": "examples",
+      "displayName": "Examples (Debug)",
+      "description": "Build the example executables in Debug mode.",
+      "inherits": "base-ninja-debug",
+      "cacheVariables": {
+        "MCP_BUILD_SDK": "ON",
+        "MCP_BUILD_CLIENT": "ON",
+        "MCP_BUILD_SERVER": "ON",
+        "MCP_BUILD_APP": "OFF",
+        "MCP_BUILD_GATEWAY": "OFF",
+        "MCP_BUILD_CLI": "OFF",
+        "MCP_BUILD_EXAMPLES": "ON",
+        "MCP_BUILD_TESTS": "OFF"
+      }
+    },
+    {
+      "name": "examples-release",
+      "displayName": "Examples (Release)",
+      "description": "Build the example executables in Release mode.",
+      "inherits": "base-ninja-release",
+      "cacheVariables": {
+        "MCP_BUILD_SDK": "ON",
+        "MCP_BUILD_CLIENT": "ON",
+        "MCP_BUILD_SERVER": "ON",
+        "MCP_BUILD_APP": "OFF",
+        "MCP_BUILD_GATEWAY": "OFF",
+        "MCP_BUILD_CLI": "OFF",
+        "MCP_BUILD_EXAMPLES": "ON",
+        "MCP_BUILD_TESTS": "OFF"
+      }
+    },
+    {
       "name": "tests",
       "displayName": "Tests (Debug)",
       "description": "Build the full runtime stack with tests enabled.",
@@ -147,6 +179,14 @@
     {
       "name": "cli-release",
       "configurePreset": "cli-release"
+    },
+    {
+      "name": "examples",
+      "configurePreset": "examples"
+    },
+    {
+      "name": "examples-release",
+      "configurePreset": "examples-release"
     },
     {
       "name": "tests",

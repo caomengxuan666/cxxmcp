@@ -1182,6 +1182,127 @@ core::Result<ParsedCommand> parse_cli11_command(
     return make_cli_error("unknown command", std::string(group));
   };
 
+  auto parse_servers_add_stdio =
+      [&](tcb::span<const std::string_view> tail) -> core::Result<ParsedCommand> {
+    ParsedCommand command{.kind = CommandKind::add_stdio_server};
+    auto values = tail;
+    while (!values.empty() && core::starts_with(values[0], "--")) {
+      if (values[0] == "--trust") {
+        command.options.push_back("trust");
+        values = values.subspan(1);
+        continue;
+      }
+      if (values[0] == "--discover") {
+        command.options.push_back("discover");
+        values = values.subspan(1);
+        continue;
+      }
+      if (values[0] == "--cwd") {
+        if (values.size() < 2) {
+          return std::unexpected(make_cli_error(
+              "invalid servers command", "missing value after --cwd"));
+        }
+        command.options.push_back("cwd");
+        command.options.push_back(values[1]);
+        values = values.subspan(2);
+        continue;
+      }
+      if (values[0] == "--env") {
+        if (values.size() < 3) {
+          return std::unexpected(make_cli_error(
+              "invalid servers command",
+              "expected <name> <value> after --env"));
+        }
+        command.options.push_back("env");
+        command.options.push_back(values[1]);
+        command.options.push_back(values[2]);
+        values = values.subspan(3);
+        continue;
+      }
+      return std::unexpected(
+          make_cli_error("invalid servers command", std::string(values[0])));
+    }
+    if (values.size() < 2) {
+      return std::unexpected(make_cli_error("invalid servers command",
+                                            "command is required"));
+    }
+    command.values.reserve(values.size());
+    for (const auto value : values) {
+      command.values.push_back(value);
+    }
+    return command;
+  };
+
+  auto parse_gateway_init_stdio =
+      [&](tcb::span<const std::string_view> tail) -> core::Result<ParsedCommand> {
+    ParsedCommand command{.kind = CommandKind::init_stdio_gateway};
+    auto store = [&](std::string_view value) -> std::string_view {
+      command.storage.push_back(std::make_unique<std::string>(value));
+      return *command.storage.back();
+    };
+    auto values = tail;
+    bool stdio_trust = false;
+    bool stdio_discover = false;
+    std::string_view stdio_path;
+    while (!values.empty() && core::starts_with(values[0], "--")) {
+      if (values[0] == "--trust") {
+        stdio_trust = true;
+        values = values.subspan(1);
+        continue;
+      }
+      if (values[0] == "--discover") {
+        stdio_discover = true;
+        values = values.subspan(1);
+        continue;
+      }
+      if (values[0] == "--path") {
+        if (values.size() < 2) {
+          return std::unexpected(make_cli_error(
+              "invalid gateway command", "missing value after --path"));
+        }
+        stdio_path = store(values[1]);
+        values = values.subspan(2);
+        continue;
+      }
+      if (values[0] == "--instructions") {
+        if (values.size() < 2) {
+          return std::unexpected(make_cli_error(
+              "invalid gateway command",
+              "missing value after --instructions"));
+        }
+        command.options.push_back("instructions");
+        command.options.push_back(values[1]);
+        values = values.subspan(2);
+        continue;
+      }
+      return std::unexpected(
+          make_cli_error("invalid gateway command", std::string(values[0])));
+    }
+    if (values.size() < 5) {
+      return std::unexpected(make_cli_error("invalid gateway command"));
+    }
+    command.values.push_back(stdio_discover ? "true" : "false");
+    command.values.push_back(stdio_trust ? "true" : "false");
+    command.values.push_back(stdio_path);
+    command.values.push_back(values[0]);
+    command.values.push_back(values[1]);
+    command.values.push_back(values[2]);
+    command.values.push_back(values[3]);
+    command.values.push_back(values[4]);
+    for (const auto value : values.subspan(5)) {
+      command.values.push_back(value);
+    }
+    return command;
+  };
+
+  if (args.size() >= 2 && (args[0] == "servers" || args[0] == "server") &&
+      args[1] == "add-stdio") {
+    return parse_servers_add_stdio(args.subspan(2));
+  }
+  if (args.size() >= 2 && args[0] == "gateway" && args[1] == "init-stdio") {
+    return parse_gateway_init_stdio(args.subspan(2));
+  }
+
   CLI::App app{"cxxmcp"};
   disable_builtin_help(&app);
 
@@ -1240,10 +1361,11 @@ core::Result<ParsedCommand> parse_cli11_command(
 
     auto* export_bundle =
         add_leaf(*bundle, "export", CommandKind::export_bundle);
+    export_bundle->positionals_at_end();
     std::string export_path;
     std::string profile_id;
-    auto* profile_option = export_bundle->add_option("profile-id", profile_id);
     export_bundle->add_option("path", export_path)->required();
+    auto* profile_option = export_bundle->add_option("profile-id", profile_id);
     export_bundle->callback([&, profile_option]() {
       parsed.kind = CommandKind::export_bundle;
       command_selected = true;
@@ -1275,7 +1397,7 @@ core::Result<ParsedCommand> parse_cli11_command(
     std::vector<std::string> env_values;
     std::string server_id;
     std::string command;
-    add_stdio->allow_extras();
+    add_stdio->prefix_command();
     add_stdio->add_flag("--trust", trust);
     add_stdio->add_flag("--discover", discover);
     auto* cwd_option = add_stdio->add_option("--cwd", cwd);
@@ -1298,14 +1420,18 @@ core::Result<ParsedCommand> parse_cli11_command(
         append_option(cwd);
       }
       if (env_option->count() > 0) {
-        for (const auto& value : env_values) {
-          append_option(value);
+        for (std::size_t index = 0; index + 1 < env_values.size();
+             index += 2) {
+          append_option("env");
+          append_option(env_values[index]);
+          append_option(env_values[index + 1]);
         }
       }
       append_value(server_id);
       append_value(command);
-      for (const auto& extra : add_stdio->remaining_for_passthrough()) {
-        append_value(extra);
+      const auto stdio_extras = add_stdio->remaining_for_passthrough();
+      for (auto it = stdio_extras.rbegin(); it != stdio_extras.rend(); ++it) {
+        append_value(*it);
       }
     });
 
@@ -1575,14 +1701,15 @@ core::Result<ParsedCommand> parse_cli11_command(
 
     auto* endpoint = add_leaf(*exposures, "endpoint",
                               CommandKind::configure_exposure_endpoint);
+    endpoint->positionals_at_end();
     std::string endpoint_id;
     std::string endpoint_host;
     std::string endpoint_port;
     std::string endpoint_path;
-    auto* endpoint_path_option = endpoint->add_option("path", endpoint_path);
     endpoint->add_option("profile-id", endpoint_id)->required();
     endpoint->add_option("host", endpoint_host)->required();
     endpoint->add_option("port", endpoint_port)->required();
+    auto* endpoint_path_option = endpoint->add_option("path", endpoint_path);
     endpoint->callback([&, endpoint_path_option]() {
       parsed.kind = CommandKind::configure_exposure_endpoint;
       command_selected = true;
@@ -1622,13 +1749,14 @@ core::Result<ParsedCommand> parse_cli11_command(
 
     auto* bind =
         add_leaf(*exposures, "bind", CommandKind::bind_exposure_capability);
+    bind->positionals_at_end();
     std::string bind_profile_id;
     std::string bind_capability_id;
     std::string bind_exposed_name;
-    auto* bind_exposed_name_option =
-        bind->add_option("exposed-name", bind_exposed_name);
     bind->add_option("profile-id", bind_profile_id)->required();
     bind->add_option("capability-id", bind_capability_id)->required();
+    auto* bind_exposed_name_option =
+        bind->add_option("exposed-name", bind_exposed_name);
     bind->callback([&, bind_exposed_name_option]() {
       parsed.kind = CommandKind::bind_exposure_capability;
       command_selected = true;
@@ -1779,8 +1907,9 @@ core::Result<ParsedCommand> parse_cli11_command(
           append_value(stdio_host);
           append_value(stdio_port);
           append_value(stdio_command);
-          for (const auto& extra : init_stdio->remaining_for_passthrough()) {
-            append_value(extra);
+          const auto stdio_extras = init_stdio->remaining_for_passthrough();
+          for (auto it = stdio_extras.rbegin(); it != stdio_extras.rend(); ++it) {
+            append_value(*it);
           }
           if (stdio_instructions_option->count() > 0) {
             append_option("instructions");
@@ -2484,6 +2613,11 @@ int add_stdio_server(app::ServerManagementService& management,
                      tcb::span<const std::string_view> values,
                      tcb::span<const std::string_view> options,
                      bool json_output, std::ostream& out, std::ostream& err) {
+  if (values.size() < 2) {
+    write_service_error(err, make_cli_error("invalid servers command",
+                                            "command is required"));
+    return 1;
+  }
   app::StdioLaunchConfig stdio{
       .command = std::string(values[1]),
   };

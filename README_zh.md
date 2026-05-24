@@ -50,6 +50,15 @@ cmake -S . -B build-cli -DMCP_BUILD_CLI=ON
 cmake --build build-cli
 ```
 
+构建 examples：
+
+```powershell
+cmake --preset examples
+cmake --build --preset examples
+```
+
+这个预设会在依赖满足时构建 stdio server、server peer、client loopback、process stdio client 和 gateway runtime 示例。
+
 运行测试：
 
 ```powershell
@@ -60,7 +69,9 @@ ctest --test-dir build-tests --output-on-failure
 
 ## 快速开始
 
-### Server
+### 运行时 Server
+
+这是更高层的 runtime builder 示例，适合产品型 server，但它不是 core 的 peer/handler 入口。
 
 ```cpp
 #include <cxxmcp/server.hpp>
@@ -80,17 +91,17 @@ int main() {
 ### Client
 
 ```cpp
-#include <cxxmcp/client.hpp>
+#include <cxxmcp/peer.hpp>
 
 int main() {
-    auto client = mcp::client::Client::connect_streamable_http({
+    auto peer = mcp::Peer<mcp::RoleClient>::connect_streamable_http({
         .host = "127.0.0.1",
         .port = 3000,
         .path = "/mcp",
     });
 
-    client.initialize();
-    const auto tools = client.list_all_tools();
+    peer.initialize();
+    const auto tools = peer.list_all_tools();
     (void)tools;
 }
 ```
@@ -99,6 +110,7 @@ int main() {
 
 - [SDK 设计指导](docs/rmcp_like_sdk_guidance.md)
 - [高层 API 草案](docs/high_level_api.md)
+- [事实标准路线](docs/de_facto_standard_roadmap.md)
 - [传输策略](docs/httplib_async_transport_strategy.md)
 - [能力矩阵](docs/capability_matrix.md)
 - [推荐项目布局](docs/recommended_project_layout.md)
@@ -112,4 +124,3 @@ int main() {
 - internal/reference：tests、examples、本地参考源码
 
 公开 SDK 头文件位于 `cxxmcp/`。运行时状态、gateway profile、policy 和 CLI 默认目录不进入 core SDK 契约。
-

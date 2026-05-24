@@ -56,6 +56,15 @@ cmake -S . -B build-cli -DMCP_BUILD_CLI=ON
 cmake --build build-cli
 ```
 
+Build examples:
+
+```powershell
+cmake --preset examples
+cmake --build --preset examples
+```
+
+That preset builds the stdio server, server peer, client loopback, process stdio client, and gateway runtime examples when their dependencies are enabled.
+
 Run tests:
 
 ```powershell
@@ -66,7 +75,9 @@ ctest --test-dir build-tests --output-on-failure
 
 ## Quick Start
 
-### Server
+### Runtime Server
+
+This is the higher-level runtime builder example. It stays useful for product-style servers, but it is not the core peer/handler surface.
 
 ```cpp
 #include <cxxmcp/server.hpp>
@@ -87,18 +98,18 @@ int main() {
 ### Client
 
 ```cpp
-#include <cxxmcp/client.hpp>
+#include <cxxmcp/peer.hpp>
 
 int main() {
-    auto client = mcp::client::Client::connect_streamable_http({
+    auto peer = mcp::Peer<mcp::RoleClient>::connect_streamable_http({
         .host = "127.0.0.1",
         .port = 3000,
         .path = "/mcp",
     });
 
-    client.initialize();
-    client.list_all_tools();
-    client.call_raw("echo", {{"value", "hello"}});
+    peer.initialize();
+    peer.list_all_tools();
+    peer.call_tool("echo", mcp::protocol::Json{{"value", "hello"}});
 }
 ```
 
@@ -106,6 +117,7 @@ int main() {
 
 - [High-level API](docs/high_level_api.md)
 - [SDK guidance](docs/rmcp_like_sdk_guidance.md)
+- [De facto standard roadmap](docs/de_facto_standard_roadmap.md)
 - [Capability matrix](docs/capability_matrix.md)
 - [Transport strategy](docs/httplib_async_transport_strategy.md)
 - [Project layout notes](docs/recommended_project_layout.md)
@@ -134,4 +146,3 @@ Public SDK headers are under `cxxmcp/`. Runtime state, gateway profiles, policy,
 | `MCP_BUILD_TESTS` | `BUILD_TESTING` | Build tests for enabled layers |
 
 `MCP_BUILD_CLI` enables the gateway, runtime, server, client, and protocol layers it needs.
-

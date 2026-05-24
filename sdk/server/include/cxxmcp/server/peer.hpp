@@ -175,7 +175,7 @@ class ClientPeer {
           return peer.notify_cancelled(std::move(request_id),
                                        std::move(reason));
         },
-        [peer, request_id, options]() mutable {
+        [peer, request_id, options]() mutable -> core::Result<protocol::RootsListResult> {
           auto payload = peer.request_with_id(
               std::string(protocol::RootsListMethod), protocol::Json::object(),
               request_id, options);
@@ -227,7 +227,7 @@ class ClientPeer {
           return peer.notify_cancelled(std::move(request_id),
                                        std::move(reason));
         },
-        [peer, params, request_id, options]() mutable {
+        [peer, params, request_id, options]() mutable -> core::Result<protocol::CreateMessageResult> {
           auto payload = peer.request_with_id(
               std::string(protocol::SamplingCreateMessageMethod),
               protocol::create_message_params_to_json(params), request_id,
@@ -291,7 +291,7 @@ class ClientPeer {
           return peer.notify_cancelled(std::move(request_id),
                                        std::move(reason));
         },
-        [peer, params, request_id, options]() mutable {
+        [peer, params, request_id, options]() mutable -> core::Result<protocol::CreateElicitationResult> {
           auto payload = peer.request_with_id(
               std::string(protocol::ElicitationCreateMethod),
               protocol::create_elicitation_request_param_to_json(params),

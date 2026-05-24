@@ -10,6 +10,7 @@
 #include <vector>
 
 #include "cxxmcp/client.hpp"
+#include "cxxmcp/peer.hpp"
 #include "cxxmcp/protocol/serialization.hpp"
 #include "cxxmcp/server.hpp"
 
@@ -151,7 +152,8 @@ int main() {
 
     auto transport = std::make_unique<LoopbackTransport>(**server);
     auto* transport_ptr = transport.get();
-    mcp::client::Client client(std::move(transport));
+    mcp::Peer<mcp::RoleClient> peer(mcp::client::Client(std::move(transport)));
+    auto& client = peer.client();
 
     std::size_t logging_messages = 0;
     std::size_t tool_notifications = 0;
@@ -178,65 +180,65 @@ int main() {
           raw_methods.push_back(notification.method);
         });
 
-    require(client.initialize().has_value(), "client initialize failed");
+    require(peer.initialize().has_value(), "client initialize failed");
 
-    const auto tools = client.list_tools();
+    const auto tools = peer.list_tools();
     require(tools.has_value() && tools->size() == 2,
             "client list_tools failed");
 
-    const auto all_tools = client.list_all_tools();
+    const auto all_tools = peer.list_all_tools();
     require(all_tools.has_value() && all_tools->size() == 2,
             "client list_all_tools failed");
 
     const auto echoed =
-        client.call_raw("echo", mcp::protocol::Json{{"value", "hello"}});
+        peer.call_tool("echo", mcp::protocol::Json{{"value", "hello"}});
     require(echoed.has_value(), "client call_tool failed");
 
     const auto shouted =
-        client.call_raw("shout", mcp::protocol::Json{{"value", "hello"}});
+        peer.call_tool("shout", mcp::protocol::Json{{"value", "hello"}});
     require(shouted.has_value(), "client typed call_tool failed");
 
-    const auto prompts = client.list_prompts();
+    const auto prompts = peer.list_prompts();
     require(prompts.has_value() && prompts->size() == 1,
             "client list_prompts failed");
 
-    const auto all_prompts = client.list_all_prompts();
+    const auto all_prompts = peer.list_all_prompts();
     require(all_prompts.has_value() && all_prompts->size() == 1,
             "client list_all_prompts failed");
 
     const auto prompt =
-        client.get_prompt("summarize", mcp::protocol::Json{{"text", "hello"}});
+        peer.get_prompt("summarize", mcp::protocol::Json{{"text", "hello"}});
     require(prompt.has_value() && !prompt->messages.empty(),
             "client get_prompt failed");
 
-    const auto resources = client.list_resources();
+    const auto resources = peer.list_resources();
     require(resources.has_value() && resources->size() == 1,
             "client list_resources failed");
 
-    const auto all_resources = client.list_all_resources();
+    const auto all_resources = peer.list_all_resources();
     require(all_resources.has_value() && all_resources->size() == 1,
             "client list_all_resources failed");
 
-    const auto resource = client.read_resource("file:///workspace/README.md");
+    const auto resource = peer.read_resource("file:///workspace/README.md");
     require(resource.has_value() && !resource->contents.empty(),
             "client read_resource failed");
 
-    const auto templates = client.list_resource_templates();
+    const auto templates = peer.list_resource_templates();
     require(templates.has_value() && templates->size() == 1,
             "client list_resource_templates failed");
 
-    const auto all_templates = client.list_all_resource_templates();
+    const auto all_templates = peer.list_all_resource_templates();
     require(all_templates.has_value() && all_templates->size() == 1,
             "client list_all_resource_templates failed");
 
     const auto completion =
-        client.complete(mcp::protocol::Json{{"prefix", "pr"}});
+        peer.complete(mcp::protocol::Json{{"prefix", "pr"}});
     require(completion.has_value(), "client complete failed");
     require(completion->at("completion").at("values").size() == 2,
             "client complete payload mismatch");
 
-    const auto sample = client.create_message(
-        mcp::protocol::Json{{"prompt", "write a summary"}});
+    const auto sample =
+        peer.create_message(mcp::protocol::Json{{"prompt", "write a summary"}});
     require(sample.has_value(), "client create_message failed");
     require(sample->at("role") == "assistant",
             "client create_message role mismatch");
@@ -249,15 +251,15 @@ int main() {
     require(health.has_value() && health->value("ok", false),
             "client raw_request failed");
 
-    require(client.set_level("info").has_value(), "client set_level failed");
+    require(peer.set_level("info").has_value(), "client set_level failed");
 
-    require(client.notify_initialized().has_value(),
+    require(peer.notify_initialized().has_value(),
             "client notify_initialized failed");
-    require(client.notify_cancelled(std::int64_t{7}, "done").has_value(),
+    require(peer.notify_cancelled(std::int64_t{7}, "done").has_value(),
             "client notify_cancelled failed");
-    require(client.notify_progress(std::int64_t{8}, 0.5, 1.0).has_value(),
+    require(peer.notify_progress(std::int64_t{8}, 0.5, 1.0).has_value(),
             "client notify_progress failed");
-    require(client.notify_roots_list_changed().has_value(),
+    require(peer.notify_roots_list_changed().has_value(),
             "client notify_roots_list_changed failed");
     require(transport_ptr->notifications().size() == 4,
             "client notifications were not recorded");
@@ -323,10 +325,10 @@ int main() {
     require(raw_methods.size() == 6,
             "client raw notification handler mismatch");
 
-    std::cout << "client facade example passed\n";
+    std::cout << "client peer example passed\n";
     return 0;
   } catch (const std::exception& ex) {
-    std::cerr << "client facade example failed: " << ex.what() << '\n';
+    std::cerr << "client peer example failed: " << ex.what() << '\n';
     return 1;
   }
 }

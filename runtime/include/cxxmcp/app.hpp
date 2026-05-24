@@ -17,6 +17,7 @@
 #include "cxxmcp/app/resource_catalog.hpp"
 #include "cxxmcp/app/serialization.hpp"
 #include "cxxmcp/app/server_management.hpp"
+#include "cxxmcp/app/task_management.hpp"
 #include "cxxmcp/app/services.hpp"
 #include "cxxmcp/app/tool_catalog.hpp"
 #include "cxxmcp/app/tool_management.hpp"
