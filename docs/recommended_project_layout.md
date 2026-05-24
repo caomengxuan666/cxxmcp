@@ -287,7 +287,9 @@ Recommended SDK targets:
 ```text
 cxxmcp::protocol
 cxxmcp::transport
+cxxmcp::handler
 cxxmcp::peer
+cxxmcp::service
 cxxmcp::client
 cxxmcp::server
 cxxmcp::sdk

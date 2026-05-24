@@ -168,6 +168,22 @@ if(TARGET mcp_client AND TARGET mcp_server)
         $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>
     )
     target_link_libraries(mcp_peer INTERFACE mcp_client mcp_server)
+
+    add_library(mcp_handler INTERFACE)
+    set_target_properties(mcp_handler PROPERTIES EXPORT_NAME handler)
+    target_include_directories(mcp_handler INTERFACE
+        $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/sdk/include>
+        $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>
+    )
+    target_link_libraries(mcp_handler INTERFACE mcp_client mcp_server)
+
+    add_library(mcp_service INTERFACE)
+    set_target_properties(mcp_service PROPERTIES EXPORT_NAME service)
+    target_include_directories(mcp_service INTERFACE
+        $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/sdk/include>
+        $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>
+    )
+    target_link_libraries(mcp_service INTERFACE mcp_peer)
 endif()
 
 if(TARGET mcp_sdk)
@@ -192,6 +208,14 @@ endif()
 
 if(TARGET mcp_peer)
     add_library(cxxmcp::peer ALIAS mcp_peer)
+endif()
+
+if(TARGET mcp_handler)
+    add_library(cxxmcp::handler ALIAS mcp_handler)
+endif()
+
+if(TARGET mcp_service)
+    add_library(cxxmcp::service ALIAS mcp_service)
 endif()
 
 if(TARGET mcp_protocol)
@@ -298,6 +322,12 @@ if(TARGET mcp_transport)
 endif()
 if(TARGET mcp_peer)
     list(APPEND CXXMCP_INSTALL_TARGETS mcp_peer)
+endif()
+if(TARGET mcp_handler)
+    list(APPEND CXXMCP_INSTALL_TARGETS mcp_handler)
+endif()
+if(TARGET mcp_service)
+    list(APPEND CXXMCP_INSTALL_TARGETS mcp_service)
 endif()
 
 install(TARGETS ${CXXMCP_INSTALL_TARGETS}

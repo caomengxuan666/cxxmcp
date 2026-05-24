@@ -55,6 +55,17 @@ if(TARGET mcp_client AND TARGET mcp_server)
     target_link_libraries(mcp_sdk_tests PRIVATE mcp_client mcp_server)
 
     add_test(NAME sdk COMMAND mcp_sdk_tests)
+
+    add_executable(mcp_public_target_tests
+        sdk/test_public_targets.cpp
+    )
+
+    target_link_libraries(mcp_public_target_tests PRIVATE
+        cxxmcp::handler
+        cxxmcp::service
+    )
+
+    add_test(NAME public_targets COMMAND mcp_public_target_tests)
 endif()
 
 if(TARGET mcp_protocol AND (TARGET mcp_client OR TARGET mcp_app OR TARGET mcp_gateway OR TARGET mcp_cli))
