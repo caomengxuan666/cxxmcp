@@ -88,6 +88,7 @@ MCPServer.cpp/
         protocol.hpp
         request.hpp
         sdk.hpp
+        handler.hpp
         client.hpp
         server.hpp
         transport.hpp
@@ -195,6 +196,7 @@ The public include surface should be stable:
 #include <cxxmcp/protocol.hpp>
 #include <cxxmcp/request.hpp>
 #include <cxxmcp/sdk.hpp>
+#include <cxxmcp/handler.hpp>
 #include <cxxmcp/client.hpp>
 #include <cxxmcp/server.hpp>
 #include <cxxmcp/transport.hpp>

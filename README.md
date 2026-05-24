@@ -28,8 +28,8 @@ target_link_libraries(my_server PRIVATE cxxmcp::server)
 Use `cxxmcp::sdk` only when you want the aggregate protocol/client/server SDK target.
 
 Public headers use the `cxxmcp/` prefix. Common public headers include
-`cxxmcp/protocol.hpp`, `cxxmcp/request.hpp`, `cxxmcp/service.hpp`, and
-`cxxmcp/sdk.hpp`.
+`cxxmcp/protocol.hpp`, `cxxmcp/request.hpp`, `cxxmcp/handler.hpp`,
+`cxxmcp/service.hpp`, and `cxxmcp/sdk.hpp`.
 
 ## Build
 
