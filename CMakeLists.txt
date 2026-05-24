@@ -14,26 +14,47 @@ include(CTest)
 include(CMakePackageConfigHelpers)
 include(GNUInstallDirs)
 
-option(MCP_BUILD_SDK "Build the public SDK layer" ON)
-option(MCP_BUILD_PROTOCOL "Build the MCP protocol library" ON)
-option(MCP_BUILD_CLIENT "Build the MCP client library" OFF)
-option(MCP_BUILD_SERVER "Build the MCP server library" OFF)
-option(MCP_BUILD_APP "Build the application service library" OFF)
-option(MCP_BUILD_GATEWAY "Build the gateway service library" OFF)
-option(MCP_BUILD_CLI "Build the command-line application" OFF)
-option(MCP_BUILD_EXAMPLES "Build example executables" OFF)
-option(MCP_BUILD_TESTS "Build tests for enabled layers" ${BUILD_TESTING})
-option(MCP_BUILD_DOCS "Build Doxygen API documentation" OFF)
+function(cxxmcp_build_option canonical legacy description default_value)
+    if(DEFINED ${legacy} AND NOT DEFINED ${canonical})
+        set(${canonical} "${${legacy}}" CACHE BOOL "${description}" FORCE)
+    endif()
+    option(${canonical} "${description}" "${default_value}")
+    set(${legacy} "${${canonical}}" CACHE BOOL
+        "Deprecated alias for ${canonical}" FORCE)
+    mark_as_advanced(${legacy})
+endfunction()
 
+cxxmcp_build_option(CXXMCP_BUILD_SDK MCP_BUILD_SDK
+    "Build the public SDK layer" ON)
+cxxmcp_build_option(CXXMCP_BUILD_PROTOCOL MCP_BUILD_PROTOCOL
+    "Build the MCP protocol library" ON)
+cxxmcp_build_option(CXXMCP_BUILD_CLIENT MCP_BUILD_CLIENT
+    "Build the MCP client library" OFF)
+cxxmcp_build_option(CXXMCP_BUILD_SERVER MCP_BUILD_SERVER
+    "Build the MCP server library" OFF)
+cxxmcp_build_option(CXXMCP_BUILD_APP MCP_BUILD_APP
+    "Build the runtime application service library" OFF)
+cxxmcp_build_option(CXXMCP_BUILD_GATEWAY MCP_BUILD_GATEWAY
+    "Build the gateway service library" OFF)
+cxxmcp_build_option(CXXMCP_BUILD_CLI MCP_BUILD_CLI
+    "Build the command-line application" OFF)
+cxxmcp_build_option(CXXMCP_BUILD_EXAMPLES MCP_BUILD_EXAMPLES
+    "Build example executables" OFF)
+cxxmcp_build_option(CXXMCP_BUILD_TESTS MCP_BUILD_TESTS
+    "Build tests for enabled layers" ${BUILD_TESTING})
+cxxmcp_build_option(CXXMCP_BUILD_DOCS MCP_BUILD_DOCS
+    "Build Doxygen API documentation" OFF)
+
+unset(CXXMCP_BUILD_GUI CACHE)
 unset(MCP_BUILD_GUI CACHE)
 
-set(MCP_ENABLE_PROTOCOL ${MCP_BUILD_PROTOCOL})
-set(MCP_ENABLE_CLIENT ${MCP_BUILD_CLIENT})
-set(MCP_ENABLE_SERVER ${MCP_BUILD_SERVER})
-set(MCP_ENABLE_APP ${MCP_BUILD_APP})
-set(MCP_ENABLE_GATEWAY ${MCP_BUILD_GATEWAY})
-set(MCP_ENABLE_CLI ${MCP_BUILD_CLI})
-set(MCP_ENABLE_SDK ${MCP_BUILD_SDK})
+set(MCP_ENABLE_PROTOCOL ${CXXMCP_BUILD_PROTOCOL})
+set(MCP_ENABLE_CLIENT ${CXXMCP_BUILD_CLIENT})
+set(MCP_ENABLE_SERVER ${CXXMCP_BUILD_SERVER})
+set(MCP_ENABLE_APP ${CXXMCP_BUILD_APP})
+set(MCP_ENABLE_GATEWAY ${CXXMCP_BUILD_GATEWAY})
+set(MCP_ENABLE_CLI ${CXXMCP_BUILD_CLI})
+set(MCP_ENABLE_SDK ${CXXMCP_BUILD_SDK})
 
 if(MCP_ENABLE_SDK)
     set(MCP_ENABLE_PROTOCOL ON)
@@ -41,7 +62,7 @@ if(MCP_ENABLE_SDK)
     set(MCP_ENABLE_SERVER ON)
 endif()
 
-if(MCP_BUILD_CLI)
+if(CXXMCP_BUILD_CLI)
     set(MCP_ENABLE_GATEWAY ON)
 endif()
 
@@ -285,16 +306,16 @@ if(MCP_ENABLE_CLI)
     set_target_properties(mcp_cli_app PROPERTIES OUTPUT_NAME cxxmcp)
 endif()
 
-if(MCP_BUILD_TESTS)
+if(CXXMCP_BUILD_TESTS)
     enable_testing()
     add_subdirectory(tests)
 endif()
 
-if(MCP_BUILD_EXAMPLES)
+if(CXXMCP_BUILD_EXAMPLES)
     add_subdirectory(examples)
 endif()
 
-if(MCP_BUILD_DOCS)
+if(CXXMCP_BUILD_DOCS)
     find_package(Doxygen REQUIRED)
     add_custom_target(docs
         COMMAND ${DOXYGEN_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/docs/Doxyfile

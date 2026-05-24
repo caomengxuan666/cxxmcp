@@ -40,14 +40,14 @@
       "description": "Build the public SDK libraries and their direct dependencies.",
       "inherits": "base-ninja-debug",
       "cacheVariables": {
-        "MCP_BUILD_SDK": "ON",
-        "MCP_BUILD_CLIENT": "OFF",
-        "MCP_BUILD_SERVER": "OFF",
-        "MCP_BUILD_APP": "OFF",
-        "MCP_BUILD_GATEWAY": "OFF",
-        "MCP_BUILD_CLI": "OFF",
-        "MCP_BUILD_EXAMPLES": "OFF",
-        "MCP_BUILD_TESTS": "OFF"
+        "CXXMCP_BUILD_SDK": "ON",
+        "CXXMCP_BUILD_CLIENT": "OFF",
+        "CXXMCP_BUILD_SERVER": "OFF",
+        "CXXMCP_BUILD_APP": "OFF",
+        "CXXMCP_BUILD_GATEWAY": "OFF",
+        "CXXMCP_BUILD_CLI": "OFF",
+        "CXXMCP_BUILD_EXAMPLES": "OFF",
+        "CXXMCP_BUILD_TESTS": "OFF"
       }
     },
     {
@@ -56,14 +56,14 @@
       "description": "Build the public SDK libraries and their direct dependencies in Release mode.",
       "inherits": "base-ninja-release",
       "cacheVariables": {
-        "MCP_BUILD_SDK": "ON",
-        "MCP_BUILD_CLIENT": "OFF",
-        "MCP_BUILD_SERVER": "OFF",
-        "MCP_BUILD_APP": "OFF",
-        "MCP_BUILD_GATEWAY": "OFF",
-        "MCP_BUILD_CLI": "OFF",
-        "MCP_BUILD_EXAMPLES": "OFF",
-        "MCP_BUILD_TESTS": "OFF"
+        "CXXMCP_BUILD_SDK": "ON",
+        "CXXMCP_BUILD_CLIENT": "OFF",
+        "CXXMCP_BUILD_SERVER": "OFF",
+        "CXXMCP_BUILD_APP": "OFF",
+        "CXXMCP_BUILD_GATEWAY": "OFF",
+        "CXXMCP_BUILD_CLI": "OFF",
+        "CXXMCP_BUILD_EXAMPLES": "OFF",
+        "CXXMCP_BUILD_TESTS": "OFF"
       }
     },
     {
@@ -72,14 +72,14 @@
       "description": "Build the command-line application and the layers it pulls in.",
       "inherits": "base-ninja-debug",
       "cacheVariables": {
-        "MCP_BUILD_SDK": "OFF",
-        "MCP_BUILD_CLIENT": "OFF",
-        "MCP_BUILD_SERVER": "OFF",
-        "MCP_BUILD_APP": "OFF",
-        "MCP_BUILD_GATEWAY": "OFF",
-        "MCP_BUILD_CLI": "ON",
-        "MCP_BUILD_EXAMPLES": "OFF",
-        "MCP_BUILD_TESTS": "OFF"
+        "CXXMCP_BUILD_SDK": "OFF",
+        "CXXMCP_BUILD_CLIENT": "OFF",
+        "CXXMCP_BUILD_SERVER": "OFF",
+        "CXXMCP_BUILD_APP": "OFF",
+        "CXXMCP_BUILD_GATEWAY": "OFF",
+        "CXXMCP_BUILD_CLI": "ON",
+        "CXXMCP_BUILD_EXAMPLES": "OFF",
+        "CXXMCP_BUILD_TESTS": "OFF"
       }
     },
     {
@@ -88,14 +88,14 @@
       "description": "Build the command-line application in Release mode.",
       "inherits": "base-ninja-release",
       "cacheVariables": {
-        "MCP_BUILD_SDK": "OFF",
-        "MCP_BUILD_CLIENT": "OFF",
-        "MCP_BUILD_SERVER": "OFF",
-        "MCP_BUILD_APP": "OFF",
-        "MCP_BUILD_GATEWAY": "OFF",
-        "MCP_BUILD_CLI": "ON",
-        "MCP_BUILD_EXAMPLES": "OFF",
-        "MCP_BUILD_TESTS": "OFF"
+        "CXXMCP_BUILD_SDK": "OFF",
+        "CXXMCP_BUILD_CLIENT": "OFF",
+        "CXXMCP_BUILD_SERVER": "OFF",
+        "CXXMCP_BUILD_APP": "OFF",
+        "CXXMCP_BUILD_GATEWAY": "OFF",
+        "CXXMCP_BUILD_CLI": "ON",
+        "CXXMCP_BUILD_EXAMPLES": "OFF",
+        "CXXMCP_BUILD_TESTS": "OFF"
       }
     },
     {
@@ -104,14 +104,14 @@
       "description": "Build the example executables in Debug mode.",
       "inherits": "base-ninja-debug",
       "cacheVariables": {
-        "MCP_BUILD_SDK": "ON",
-        "MCP_BUILD_CLIENT": "ON",
-        "MCP_BUILD_SERVER": "ON",
-        "MCP_BUILD_APP": "OFF",
-        "MCP_BUILD_GATEWAY": "OFF",
-        "MCP_BUILD_CLI": "OFF",
-        "MCP_BUILD_EXAMPLES": "ON",
-        "MCP_BUILD_TESTS": "OFF"
+        "CXXMCP_BUILD_SDK": "ON",
+        "CXXMCP_BUILD_CLIENT": "ON",
+        "CXXMCP_BUILD_SERVER": "ON",
+        "CXXMCP_BUILD_APP": "OFF",
+        "CXXMCP_BUILD_GATEWAY": "OFF",
+        "CXXMCP_BUILD_CLI": "OFF",
+        "CXXMCP_BUILD_EXAMPLES": "ON",
+        "CXXMCP_BUILD_TESTS": "OFF"
       }
     },
     {
@@ -120,14 +120,14 @@
       "description": "Build the example executables in Release mode.",
       "inherits": "base-ninja-release",
       "cacheVariables": {
-        "MCP_BUILD_SDK": "ON",
-        "MCP_BUILD_CLIENT": "ON",
-        "MCP_BUILD_SERVER": "ON",
-        "MCP_BUILD_APP": "OFF",
-        "MCP_BUILD_GATEWAY": "OFF",
-        "MCP_BUILD_CLI": "OFF",
-        "MCP_BUILD_EXAMPLES": "ON",
-        "MCP_BUILD_TESTS": "OFF"
+        "CXXMCP_BUILD_SDK": "ON",
+        "CXXMCP_BUILD_CLIENT": "ON",
+        "CXXMCP_BUILD_SERVER": "ON",
+        "CXXMCP_BUILD_APP": "OFF",
+        "CXXMCP_BUILD_GATEWAY": "OFF",
+        "CXXMCP_BUILD_CLI": "OFF",
+        "CXXMCP_BUILD_EXAMPLES": "ON",
+        "CXXMCP_BUILD_TESTS": "OFF"
       }
     },
     {
@@ -136,14 +136,14 @@
       "description": "Build the full runtime stack with tests enabled.",
       "inherits": "base-ninja-debug",
       "cacheVariables": {
-        "MCP_BUILD_SDK": "OFF",
-        "MCP_BUILD_CLIENT": "ON",
-        "MCP_BUILD_SERVER": "ON",
-        "MCP_BUILD_APP": "ON",
-        "MCP_BUILD_GATEWAY": "ON",
-        "MCP_BUILD_CLI": "OFF",
-        "MCP_BUILD_EXAMPLES": "OFF",
-        "MCP_BUILD_TESTS": "ON"
+        "CXXMCP_BUILD_SDK": "OFF",
+        "CXXMCP_BUILD_CLIENT": "ON",
+        "CXXMCP_BUILD_SERVER": "ON",
+        "CXXMCP_BUILD_APP": "ON",
+        "CXXMCP_BUILD_GATEWAY": "ON",
+        "CXXMCP_BUILD_CLI": "OFF",
+        "CXXMCP_BUILD_EXAMPLES": "OFF",
+        "CXXMCP_BUILD_TESTS": "ON"
       }
     },
     {
@@ -152,14 +152,14 @@
       "description": "Build the full runtime stack with tests enabled in Release mode.",
       "inherits": "base-ninja-release",
       "cacheVariables": {
-        "MCP_BUILD_SDK": "OFF",
-        "MCP_BUILD_CLIENT": "ON",
-        "MCP_BUILD_SERVER": "ON",
-        "MCP_BUILD_APP": "ON",
-        "MCP_BUILD_GATEWAY": "ON",
-        "MCP_BUILD_CLI": "OFF",
-        "MCP_BUILD_EXAMPLES": "OFF",
-        "MCP_BUILD_TESTS": "ON"
+        "CXXMCP_BUILD_SDK": "OFF",
+        "CXXMCP_BUILD_CLIENT": "ON",
+        "CXXMCP_BUILD_SERVER": "ON",
+        "CXXMCP_BUILD_APP": "ON",
+        "CXXMCP_BUILD_GATEWAY": "ON",
+        "CXXMCP_BUILD_CLI": "OFF",
+        "CXXMCP_BUILD_EXAMPLES": "OFF",
+        "CXXMCP_BUILD_TESTS": "ON"
       }
     }
   ],

@@ -39,14 +39,14 @@ cmake --build build
 构建 client / server：
 
 ```powershell
-cmake -S . -B build-sdk -DMCP_BUILD_CLIENT=ON -DMCP_BUILD_SERVER=ON
+cmake -S . -B build-sdk -DCXXMCP_BUILD_CLIENT=ON -DCXXMCP_BUILD_SERVER=ON
 cmake --build build-sdk
 ```
 
 构建 gateway / CLI：
 
 ```powershell
-cmake -S . -B build-cli -DMCP_BUILD_CLI=ON
+cmake -S . -B build-cli -DCXXMCP_BUILD_CLI=ON
 cmake --build build-cli
 ```
 
@@ -62,7 +62,7 @@ cmake --build --preset examples
 运行测试：
 
 ```powershell
-cmake -S . -B build-tests -DMCP_BUILD_CLIENT=ON -DMCP_BUILD_SERVER=ON -DMCP_BUILD_APP=ON -DMCP_BUILD_GATEWAY=ON -DMCP_BUILD_TESTS=ON
+cmake -S . -B build-tests -DCXXMCP_BUILD_CLIENT=ON -DCXXMCP_BUILD_SERVER=ON -DCXXMCP_BUILD_APP=ON -DCXXMCP_BUILD_GATEWAY=ON -DCXXMCP_BUILD_TESTS=ON
 cmake --build build-tests
 ctest --test-dir build-tests --output-on-failure
 ```

@@ -45,14 +45,14 @@ cmake --build build
 Build the client and server SDKs:
 
 ```powershell
-cmake -S . -B build-sdk -DMCP_BUILD_CLIENT=ON -DMCP_BUILD_SERVER=ON
+cmake -S . -B build-sdk -DCXXMCP_BUILD_CLIENT=ON -DCXXMCP_BUILD_SERVER=ON
 cmake --build build-sdk
 ```
 
 Build the gateway and CLI:
 
 ```powershell
-cmake -S . -B build-cli -DMCP_BUILD_CLI=ON
+cmake -S . -B build-cli -DCXXMCP_BUILD_CLI=ON
 cmake --build build-cli
 ```
 
@@ -68,7 +68,7 @@ That preset builds the stdio server, server peer, client peer, client loopback, 
 Run tests:
 
 ```powershell
-cmake -S . -B build-tests -DMCP_BUILD_CLIENT=ON -DMCP_BUILD_SERVER=ON -DMCP_BUILD_APP=ON -DMCP_BUILD_GATEWAY=ON -DMCP_BUILD_TESTS=ON
+cmake -S . -B build-tests -DCXXMCP_BUILD_CLIENT=ON -DCXXMCP_BUILD_SERVER=ON -DCXXMCP_BUILD_APP=ON -DCXXMCP_BUILD_GATEWAY=ON -DCXXMCP_BUILD_TESTS=ON
 cmake --build build-tests
 ctest --test-dir build-tests --output-on-failure
 ```
@@ -196,13 +196,13 @@ Public SDK headers are under `cxxmcp/`. Runtime state, gateway profiles, policy,
 
 | Option | Default | Description |
 |---|---:|---|
-| `MCP_BUILD_PROTOCOL` | `ON` | Build the MCP protocol library |
-| `MCP_BUILD_CLIENT` | `OFF` | Build the MCP client library |
-| `MCP_BUILD_SERVER` | `OFF` | Build the MCP server library |
-| `MCP_BUILD_APP` | `OFF` | Build the application service library |
-| `MCP_BUILD_GATEWAY` | `OFF` | Build the gateway service library |
-| `MCP_BUILD_CLI` | `OFF` | Build the command-line application |
-| `MCP_BUILD_EXAMPLES` | `OFF` | Build example executables |
-| `MCP_BUILD_TESTS` | `BUILD_TESTING` | Build tests for enabled layers |
+| `CXXMCP_BUILD_PROTOCOL` | `ON` | Build the MCP protocol library |
+| `CXXMCP_BUILD_CLIENT` | `OFF` | Build the MCP client library |
+| `CXXMCP_BUILD_SERVER` | `OFF` | Build the MCP server library |
+| `CXXMCP_BUILD_APP` | `OFF` | Build the application service library |
+| `CXXMCP_BUILD_GATEWAY` | `OFF` | Build the gateway service library |
+| `CXXMCP_BUILD_CLI` | `OFF` | Build the command-line application |
+| `CXXMCP_BUILD_EXAMPLES` | `OFF` | Build example executables |
+| `CXXMCP_BUILD_TESTS` | `BUILD_TESTING` | Build tests for enabled layers |
 
-`MCP_BUILD_CLI` enables the gateway, runtime, server, client, and protocol layers it needs.
+`CXXMCP_BUILD_CLI` enables the gateway, runtime, server, client, and protocol layers it needs.
