@@ -69,7 +69,7 @@ That preset builds the stdio server, server peer, client peer, client loopback, 
 Run tests:
 
 ```powershell
-cmake -S . -B build-tests -DCXXMCP_BUILD_CLIENT=ON -DCXXMCP_BUILD_SERVER=ON -DCXXMCP_BUILD_RUNTIME=ON -DCXXMCP_BUILD_TESTS=ON
+cmake -S . -B build-tests -DCXXMCP_BUILD_SDK=ON -DCXXMCP_BUILD_CLIENT=ON -DCXXMCP_BUILD_SERVER=ON -DCXXMCP_BUILD_RUNTIME=ON -DCXXMCP_BUILD_TESTS=ON
 cmake --build build-tests
 ctest --test-dir build-tests --output-on-failure
 ```

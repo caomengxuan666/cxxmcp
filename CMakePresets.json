@@ -138,7 +138,7 @@
       "description": "Build the full runtime stack with tests enabled.",
       "inherits": "base-ninja-debug",
       "cacheVariables": {
-        "CXXMCP_BUILD_SDK": "OFF",
+        "CXXMCP_BUILD_SDK": "ON",
         "CXXMCP_BUILD_CLIENT": "ON",
         "CXXMCP_BUILD_SERVER": "ON",
         "CXXMCP_BUILD_RUNTIME": "ON",
@@ -153,7 +153,7 @@
       "description": "Build the full runtime stack with tests enabled in Release mode.",
       "inherits": "base-ninja-release",
       "cacheVariables": {
-        "CXXMCP_BUILD_SDK": "OFF",
+        "CXXMCP_BUILD_SDK": "ON",
         "CXXMCP_BUILD_CLIENT": "ON",
         "CXXMCP_BUILD_SERVER": "ON",
         "CXXMCP_BUILD_RUNTIME": "ON",
