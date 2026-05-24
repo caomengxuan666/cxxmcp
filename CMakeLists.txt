@@ -23,6 +23,7 @@ option(MCP_BUILD_GATEWAY "Build the gateway service library" OFF)
 option(MCP_BUILD_CLI "Build the command-line application" OFF)
 option(MCP_BUILD_EXAMPLES "Build example executables" OFF)
 option(MCP_BUILD_TESTS "Build tests for enabled layers" ${BUILD_TESTING})
+option(MCP_BUILD_DOCS "Build Doxygen API documentation" OFF)
 
 unset(MCP_BUILD_GUI CACHE)
 
@@ -151,6 +152,24 @@ if(TARGET mcp_protocol OR TARGET mcp_client OR TARGET mcp_server)
     endif()
 endif()
 
+if(TARGET mcp_client AND TARGET mcp_server)
+    add_library(mcp_transport INTERFACE)
+    set_target_properties(mcp_transport PROPERTIES EXPORT_NAME transport)
+    target_include_directories(mcp_transport INTERFACE
+        $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/sdk/include>
+        $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>
+    )
+    target_link_libraries(mcp_transport INTERFACE mcp_client mcp_server)
+
+    add_library(mcp_peer INTERFACE)
+    set_target_properties(mcp_peer PROPERTIES EXPORT_NAME peer)
+    target_include_directories(mcp_peer INTERFACE
+        $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/sdk/include>
+        $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>
+    )
+    target_link_libraries(mcp_peer INTERFACE mcp_client mcp_server)
+endif()
+
 if(TARGET mcp_sdk)
     add_library(cxxmcp::sdk ALIAS mcp_sdk)
 endif()
@@ -165,6 +184,14 @@ endif()
 
 if(TARGET mcp_server)
     add_library(cxxmcp::server ALIAS mcp_server)
+endif()
+
+if(TARGET mcp_transport)
+    add_library(cxxmcp::transport ALIAS mcp_transport)
+endif()
+
+if(TARGET mcp_peer)
+    add_library(cxxmcp::peer ALIAS mcp_peer)
 endif()
 
 if(TARGET mcp_protocol)
@@ -234,11 +261,22 @@ if(MCP_ENABLE_CLI)
 endif()
 
 if(MCP_BUILD_TESTS)
+    enable_testing()
     add_subdirectory(tests)
 endif()
 
 if(MCP_BUILD_EXAMPLES)
     add_subdirectory(examples)
+endif()
+
+if(MCP_BUILD_DOCS)
+    find_package(Doxygen REQUIRED)
+    add_custom_target(docs
+        COMMAND ${DOXYGEN_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/docs/Doxyfile
+        WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+        COMMENT "Generating Doxygen API documentation"
+        VERBATIM
+    )
 endif()
 
 set(CXXMCP_INSTALL_TARGETS mcp_core jsonrpcpp cpp_httplib)
@@ -253,6 +291,12 @@ if(TARGET mcp_server)
 endif()
 if(TARGET mcp_sdk)
     list(APPEND CXXMCP_INSTALL_TARGETS mcp_sdk)
+endif()
+if(TARGET mcp_transport)
+    list(APPEND CXXMCP_INSTALL_TARGETS mcp_transport)
+endif()
+if(TARGET mcp_peer)
+    list(APPEND CXXMCP_INSTALL_TARGETS mcp_peer)
 endif()
 
 install(TARGETS ${CXXMCP_INSTALL_TARGETS}

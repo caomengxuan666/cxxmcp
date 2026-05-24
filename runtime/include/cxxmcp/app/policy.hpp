@@ -1,3 +1,5 @@
+// Copyright (c) 2025 [caomengxuan666]
+
 #pragma once
 
 #include <string>
@@ -5,23 +7,23 @@
 
 namespace mcp::app {
 
-    enum class Permission {
-        network_access,
-        filesystem_read,
-        filesystem_write,
-        command_execution,
-    };
+enum class Permission {
+  network_access,
+  filesystem_read,
+  filesystem_write,
+  command_execution,
+};
 
-    enum class ApprovalState {
-        pending,
-        approved,
-        denied,
-    };
+enum class ApprovalState {
+  pending,
+  approved,
+  denied,
+};
 
-    struct Policy {
-        ApprovalState approval = ApprovalState::pending;
-        std::unordered_set<Permission> permissions;
-        bool enabled = false;
-    };
+struct Policy {
+  ApprovalState approval = ApprovalState::pending;
+  std::unordered_set<Permission> permissions;
+  bool enabled = false;
+};
 
-}// namespace mcp::app
+}  // namespace mcp::app

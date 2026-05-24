@@ -1,0 +1,27 @@
+#!/usr/bin/env sh
+set -eu
+
+repo_root="$(git rev-parse --show-toplevel)"
+os_name="$(uname -s 2>/dev/null || echo unknown)"
+
+case "$os_name" in
+    MINGW*|MSYS*|CYGWIN*|Windows_NT)
+        if command -v cygpath >/dev/null 2>&1; then
+            repo_root_native="$(cygpath -w "$repo_root")"
+        else
+            repo_root_native="$repo_root"
+        fi
+
+        if command -v pwsh >/dev/null 2>&1; then
+            pwsh -NoLogo -NoProfile -ExecutionPolicy Bypass -File "$repo_root_native/scripts/format.ps1" -Check
+        elif command -v powershell.exe >/dev/null 2>&1; then
+            powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File "$repo_root_native/scripts/format.ps1" -Check
+        else
+            echo "pwsh is required to run scripts/format.ps1 on Windows." >&2
+            exit 1
+        fi
+        ;;
+    *)
+        bash "$repo_root/scripts/format.sh" --check
+        ;;
+esac

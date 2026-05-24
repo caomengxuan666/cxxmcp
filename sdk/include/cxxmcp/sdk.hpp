@@ -1,3 +1,5 @@
+// Copyright (c) 2025 [caomengxuan666]
+
 #pragma once
 
 /// @file
@@ -14,5 +16,7 @@
 #include "cxxmcp/handler.hpp"
 #include "cxxmcp/peer.hpp"
 #include "cxxmcp/protocol.hpp"
+#include "cxxmcp/request.hpp"
 #include "cxxmcp/server.hpp"
+#include "cxxmcp/service.hpp"
 #include "cxxmcp/transport.hpp"

@@ -1,0 +1,81 @@
+PROJECT_NAME           = "cxxmcp"
+PROJECT_NUMBER         = 2.0.0
+PROJECT_BRIEF          = "C++ MCP SDK and runtime"
+
+OUTPUT_DIRECTORY       = docs/doxygen
+HTML_OUTPUT            = html
+
+INPUT                  = README.md \
+                         sdk/include \
+                         sdk/core/include \
+                         sdk/protocol/include \
+                         sdk/client/include \
+                         sdk/server/include \
+                         runtime/include \
+                         runtime/observability/include \
+                         extensions/adapters/include \
+                         extensions/plugin-sdk/include \
+                         tools/cli/include
+USE_MDFILE_AS_MAINPAGE = README.md
+RECURSIVE              = YES
+
+FILE_PATTERNS          = *.h \
+                         *.hh \
+                         *.hpp \
+                         *.hxx \
+                         *.inl \
+                         *.ipp \
+                         *.ixx \
+                         *.c \
+                         *.cc \
+                         *.cpp \
+                         *.cxx \
+                         *.md
+
+EXCLUDE                = .cache \
+                         .git \
+                         .vs \
+                         .vscode \
+                         build \
+                         out \
+                         reference \
+                         third_party
+EXCLUDE_PATTERNS       = */.cache/* \
+                         */.git/* \
+                         */.vs/* \
+                         */.vscode/* \
+                         */build/* \
+                         */build-*/* \
+                         */cmake-build-*/* \
+                         */out/* \
+                         */reference/* \
+                         */third_party/*
+
+MARKDOWN_SUPPORT       = YES
+TOC_INCLUDE_HEADINGS   = 5
+JAVADOC_AUTOBRIEF      = YES
+QT_AUTOBRIEF           = YES
+MULTILINE_CPP_IS_BRIEF = NO
+
+OPTIMIZE_OUTPUT_FOR_C  = NO
+BUILTIN_STL_SUPPORT    = YES
+FULL_PATH_NAMES        = YES
+STRIP_FROM_PATH        = .
+
+EXTRACT_ALL            = NO
+EXTRACT_PRIVATE        = NO
+EXTRACT_STATIC         = NO
+HIDE_UNDOC_MEMBERS     = NO
+HIDE_UNDOC_CLASSES     = NO
+
+WARNINGS               = YES
+WARN_IF_UNDOCUMENTED   = NO
+WARN_IF_DOC_ERROR      = YES
+WARN_LOGFILE           = docs/doxygen/warnings.log
+
+GENERATE_HTML          = YES
+GENERATE_TREEVIEW      = YES
+SEARCHENGINE           = YES
+GENERATE_LATEX         = NO
+GENERATE_XML           = NO
+HAVE_DOT               = NO

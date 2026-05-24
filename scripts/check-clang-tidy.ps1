@@ -108,7 +108,7 @@ function Test-FileUnderDirectory {
         [System.IO.Path]::IsPathRooted($RelativePath))
 }
 
-function Resolve-CompileDatabaseDirectories {
+function Get-CompileDatabaseCandidates {
     if ($BuildDir) {
         $ResolvedBuildDir = Resolve-InputPath $BuildDir
         $CompileCommandsPath = Join-Path $ResolvedBuildDir "compile_commands.json"
@@ -118,7 +118,12 @@ function Resolve-CompileDatabaseDirectories {
             exit 2
         }
 
-        return @($ResolvedBuildDir)
+        $Item = Get-Item -LiteralPath $CompileCommandsPath
+        return @([pscustomobject]@{
+                Directory      = $ResolvedBuildDir
+                CompileDbPath  = $CompileCommandsPath
+                LastWriteTime  = $Item.LastWriteTimeUtc
+            })
     }
 
     $CandidateDirectories = @(
@@ -138,20 +143,26 @@ function Resolve-CompileDatabaseDirectories {
                 ForEach-Object { $_.FullName })
     }
 
-    $CompileDatabaseDirectories = @()
+    $CompileDatabaseCandidates = @()
 
     foreach ($CandidateDirectory in ($CandidateDirectories | Select-Object -Unique)) {
-        if (Test-Path -LiteralPath (Join-Path $CandidateDirectory "compile_commands.json")) {
-            $CompileDatabaseDirectories += $CandidateDirectory
+        $CompileCommandsPath = Join-Path $CandidateDirectory "compile_commands.json"
+        if (Test-Path -LiteralPath $CompileCommandsPath) {
+            $Item = Get-Item -LiteralPath $CompileCommandsPath
+            $CompileDatabaseCandidates += [pscustomobject]@{
+                Directory      = $CandidateDirectory
+                CompileDbPath  = $CompileCommandsPath
+                LastWriteTime  = $Item.LastWriteTimeUtc
+            }
         }
     }
 
-    if ($CompileDatabaseDirectories.Count -eq 0) {
+    if ($CompileDatabaseCandidates.Count -eq 0) {
         Write-Error "No compile_commands.json found. Run 'cmake --preset tests' or pass -BuildDir <dir>."
         exit 2
     }
 
-    return @($CompileDatabaseDirectories)
+    return @($CompileDatabaseCandidates | Sort-Object LastWriteTime -Descending)
 }
 
 function Get-CompileCommandEntries {
@@ -183,11 +194,11 @@ function Get-CompileCommandEntries {
     return @($Entries)
 }
 
-$CompileDatabaseDirectories = @(Resolve-CompileDatabaseDirectories)
+$CompileDatabaseCandidates = @(Get-CompileDatabaseCandidates)
 $EntriesByFile = [System.Collections.Generic.Dictionary[string, object]]::new([System.StringComparer]::OrdinalIgnoreCase)
 
-foreach ($CompileDatabaseDirectory in $CompileDatabaseDirectories) {
-    foreach ($Entry in (Get-CompileCommandEntries $CompileDatabaseDirectory)) {
+foreach ($CompileDatabaseCandidate in $CompileDatabaseCandidates) {
+    foreach ($Entry in (Get-CompileCommandEntries $CompileDatabaseCandidate.Directory)) {
         if (-not $EntriesByFile.ContainsKey($Entry.File)) {
             $EntriesByFile.Add($Entry.File, $Entry)
         }
@@ -236,5 +247,5 @@ if ($FailedFiles.Count -gt 0) {
     exit 1
 }
 
-$CompileDatabaseList = @($CompileDatabaseDirectories | ForEach-Object { Convert-ToRelativePath $_ }) -join ", "
+$CompileDatabaseList = @($CompileDatabaseCandidates | ForEach-Object { Convert-ToRelativePath $_.Directory }) -join ", "
 Write-Host "clang-tidy passed for $($Entries.Count) source file(s) using $CompileDatabaseList."

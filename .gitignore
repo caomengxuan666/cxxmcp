@@ -9,3 +9,4 @@ cmake-build-release/
 .vs/
 reference/
 /compile_commands.json
+docs/doxygen

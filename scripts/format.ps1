@@ -7,6 +7,7 @@ param(
 $ErrorActionPreference = "Stop"
 
 $Root = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
+$CopyrightLine = "// Copyright (c) 2025 [caomengxuan666]"
 
 $SourceExtensions = @(
     ".c",
@@ -93,6 +94,25 @@ function Convert-ToRelativePath {
     return $FullPath.Replace("\", "/")
 }
 
+function Test-HasCopyrightHeader {
+    param([string]$Path)
+
+    $FirstLine = Get-Content -LiteralPath $Path -TotalCount 1 -ErrorAction SilentlyContinue
+    return $FirstLine -eq $CopyrightLine
+}
+
+function Add-CopyrightHeader {
+    param([string]$Path)
+
+    if (Test-HasCopyrightHeader $Path) {
+        return
+    }
+
+    $Content = [System.IO.File]::ReadAllText($Path)
+    $Content = "$CopyrightLine`n`n$Content"
+    [System.IO.File]::WriteAllText($Path, $Content, [System.Text.UTF8Encoding]::new($false))
+}
+
 $Files = @(Get-SourceFiles $Root | Sort-Object)
 
 if ($List) {
@@ -109,6 +129,12 @@ if ($Check) {
     $FailedFiles = @()
 
     foreach ($File in $Files) {
+        if (-not (Test-HasCopyrightHeader $File)) {
+            $FailedFiles += $File
+            Write-Host "Missing copyright header: $(Convert-ToRelativePath $File)"
+            continue
+        }
+
         $Output = & $ClangFormat --dry-run --Werror --style=file $File 2>&1
         if ($LASTEXITCODE -ne 0) {
             $FailedFiles += $File
@@ -126,6 +152,7 @@ if ($Check) {
 }
 
 foreach ($File in $Files) {
+    Add-CopyrightHeader $File
     & $ClangFormat -i --style=file $File
     if ($LASTEXITCODE -ne 0) {
         Write-Error "clang-format failed for $(Convert-ToRelativePath $File)."

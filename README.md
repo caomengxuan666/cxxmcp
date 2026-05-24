@@ -33,7 +33,7 @@ Public headers use the `cxxmcp/` prefix.
 Requirements:
 
 - CMake 3.23+
-- A C++23 compiler
+- A C++17 compiler
 
 Default SDK build:
 

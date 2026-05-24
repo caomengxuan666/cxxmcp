@@ -3,6 +3,7 @@ set -euo pipefail
 
 mode="format"
 clang_format="${CLANG_FORMAT:-clang-format}"
+copyright_line='// Copyright (c) 2025 [caomengxuan666]'
 
 usage() {
     cat <<'EOF'
@@ -83,6 +84,27 @@ find_sources() {
         \) -print \) | sort
 }
 
+has_copyright() {
+    local file="$1"
+    grep -m1 -Fxq "$copyright_line" "$file"
+}
+
+add_copyright() {
+    local file="$1"
+
+    if has_copyright "$file"; then
+        return 0
+    fi
+
+    local tmp
+    tmp="$(mktemp)"
+    {
+        printf '%s\n\n' "$copyright_line"
+        cat "$file"
+    } > "$tmp"
+    mv "$tmp" "$file"
+}
+
 mapfile -t files < <(find_sources)
 
 case "$mode" in
@@ -96,6 +118,18 @@ case "$mode" in
             echo "No source files found."
             exit 0
         fi
+        failed_files=()
+        for file in "${files[@]}"; do
+            if ! has_copyright "$file"; then
+                printf 'Missing copyright header: %s\n' "${file#"$root"/}"
+                failed_files+=("$file")
+                continue
+            fi
+        done
+        if [[ ${#failed_files[@]} -gt 0 ]]; then
+            printf 'Copyright header missing in %d source file(s).\n' "${#failed_files[@]}" >&2
+            exit 1
+        fi
         "$clang_format" --dry-run --Werror --style=file "${files[@]}"
         echo "All ${#files[@]} source file(s) are formatted."
         ;;
@@ -104,6 +138,9 @@ case "$mode" in
             echo "No source files found."
             exit 0
         fi
+        for file in "${files[@]}"; do
+            add_copyright "$file"
+        done
         "$clang_format" -i --style=file "${files[@]}"
         echo "Formatted ${#files[@]} source file(s)."
         ;;

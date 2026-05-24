@@ -1,12 +1,28 @@
 param(
     [switch]$List,
-    [string]$Pylint = "pylint",
+    [string]$Cpplint = "cpplint",
     [string[]]$Path = @()
 )
 
 $ErrorActionPreference = "Stop"
 
 $Root = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
+
+$SourceExtensions = @(
+    ".c",
+    ".cc",
+    ".cpp",
+    ".cxx",
+    ".h",
+    ".hh",
+    ".hpp",
+    ".hxx",
+    ".inl",
+    ".ipp",
+    ".ixx",
+    ".m",
+    ".mm"
+)
 
 $IgnoredDirectoryNames = @(
     ".cache",
@@ -55,7 +71,7 @@ function Resolve-InputPath {
     return (Resolve-Path -LiteralPath (Join-Path $Root $InputPath)).Path
 }
 
-function Get-PythonFiles {
+function Get-SourceFiles {
     param([string[]]$StartDirectories)
 
     $PendingDirectories = [System.Collections.Generic.Stack[System.IO.DirectoryInfo]]::new()
@@ -72,7 +88,7 @@ function Get-PythonFiles {
                 ForEach-Object { $PendingDirectories.Push($_) }
 
         Get-ChildItem -LiteralPath $CurrentDirectory.FullName -File -Force -ErrorAction SilentlyContinue |
-                Where-Object { $_.Extension.ToLowerInvariant() -eq ".py" } |
+                Where-Object { $SourceExtensions -contains $_.Extension.ToLowerInvariant() } |
                 ForEach-Object { $_.FullName }
     }
 }
@@ -90,7 +106,7 @@ if ($Path.Count -gt 0) {
     $StartDirectories = @($Root)
 }
 
-$Files = @(Get-PythonFiles $StartDirectories | Sort-Object -Unique)
+$Files = @(Get-SourceFiles $StartDirectories | Sort-Object -Unique)
 
 if ($List) {
     $Files | ForEach-Object { Convert-ToRelativePath $_ }
@@ -98,19 +114,25 @@ if ($List) {
 }
 
 if ($Files.Count -eq 0) {
-    Write-Host "No Python files found."
+    Write-Host "No source files found."
     exit 0
 }
 
-if (-not (Get-Command $Pylint -ErrorAction SilentlyContinue)) {
-    Write-Error "pylint was not found. Install pylint or pass -Pylint <path>." -ErrorAction Continue
+if (Get-Command $Cpplint -ErrorAction SilentlyContinue) {
+    $CpplintCommand = @($Cpplint)
+}
+elseif (Get-Command uv -ErrorAction SilentlyContinue) {
+    $CpplintCommand = @("uv", "run", "--with", "cpplint", "cpplint")
+}
+else {
+    Write-Error "cpplint was not found. Install cpplint, install uv, or pass -Cpplint <path>." -ErrorAction Continue
     exit 2
 }
 
-& $Pylint @Files
+& $CpplintCommand @Files
 if ($LASTEXITCODE -ne 0) {
-    Write-Error "pylint failed for $($Files.Count) Python file(s)."
+    Write-Error "cpplint failed for $($Files.Count) source file(s)."
     exit $LASTEXITCODE
 }
 
-Write-Host "pylint passed for $($Files.Count) Python file(s)."
+Write-Host "cpplint passed for $($Files.Count) source file(s)."

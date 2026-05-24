@@ -1,33 +1,36 @@
-#pragma once
+// Copyright (c) 2025 [caomengxuan666]
 
-#include "cxxmcp/app/mcp_server.hpp"
-#include "cxxmcp/app/serialization.hpp"
-#include "cxxmcp/core/result.hpp"
+#pragma once
 
 #include <string>
 #include <string_view>
 #include <vector>
 
+#include "cxxmcp/app/mcp_server.hpp"
+#include "cxxmcp/app/serialization.hpp"
+#include "cxxmcp/core/result.hpp"
+
 namespace mcp::app {
 
-    class GatewayReadinessService;
+class GatewayReadinessService;
 
-    class GatewayClientConfigService final {
-    public:
-        explicit GatewayClientConfigService(const ExposureProfileStore &profiles);
+class GatewayClientConfigService final {
+ public:
+  explicit GatewayClientConfigService(const ExposureProfileStore& profiles);
 
-        core::Result<Json> make_http_client_config(std::string_view profile_id,
-                                                   std::string_view server_name = {}) const;
-        core::Result<Json> make_all_http_client_configs(std::string_view server_name_prefix = {}) const;
-        core::Result<Json> make_ready_http_client_configs(const GatewayReadinessService &readiness,
-                                                          std::string_view server_name_prefix = {}) const;
-        core::Result<Json> make_stdio_client_config(std::string_view profile_id,
-                                                    std::string_view command,
-                                                    std::vector<std::string> args,
-                                                    std::string_view server_name = {}) const;
+  core::Result<Json> make_http_client_config(
+      std::string_view profile_id, std::string_view server_name = {}) const;
+  core::Result<Json> make_all_http_client_configs(
+      std::string_view server_name_prefix = {}) const;
+  core::Result<Json> make_ready_http_client_configs(
+      const GatewayReadinessService& readiness,
+      std::string_view server_name_prefix = {}) const;
+  core::Result<Json> make_stdio_client_config(
+      std::string_view profile_id, std::string_view command,
+      std::vector<std::string> args, std::string_view server_name = {}) const;
 
-    private:
-        const ExposureProfileStore &profiles_;
-    };
+ private:
+  const ExposureProfileStore& profiles_;
+};
 
-}// namespace mcp::app
+}  // namespace mcp::app

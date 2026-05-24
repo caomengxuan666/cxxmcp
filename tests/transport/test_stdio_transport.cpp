@@ -1,6 +1,4 @@
-#include "cxxmcp/client.hpp"
-#include "cxxmcp/protocol/serialization.hpp"
-#include "cxxmcp/server.hpp"
+// Copyright (c) 2025 [caomengxuan666]
 
 #include <cstdint>
 #include <iostream>
@@ -10,220 +8,266 @@
 #include <string_view>
 #include <vector>
 
+#include "cxxmcp/client.hpp"
+#include "cxxmcp/protocol/serialization.hpp"
+#include "cxxmcp/server.hpp"
+
 namespace {
 
-    using mcp::protocol::Json;
+using mcp::protocol::Json;
 
-    void require(bool condition, std::string_view message) {
-        if (!condition) {
-            throw std::runtime_error(std::string(message));
-        }
-    }
+void require(bool condition, std::string_view message) {
+  if (!condition) {
+    throw std::runtime_error(std::string(message));
+  }
+}
 
-    std::string serialize_request_line(const mcp::protocol::JsonRpcRequest &request) {
-        const auto serialized = mcp::protocol::serialize_request(request);
-        require(serialized.has_value(), "request should serialize");
-        return *serialized + '\n';
-    }
+std::string serialize_request_line(
+    const mcp::protocol::JsonRpcRequest& request) {
+  const auto serialized = mcp::protocol::serialize_request(request);
+  require(serialized.has_value(), "request should serialize");
+  return *serialized + '\n';
+}
 
-    void test_client_handles_incoming_request_while_waiting_for_response() {
-        const auto incoming_request_text = serialize_request_line(mcp::protocol::JsonRpcRequest{
-                .method = "custom/echo",
-                .params = Json::object(),
-                .id = std::string("srv-1"),
-        });
-        const auto outgoing_response_text = mcp::protocol::serialize_response(
-                mcp::protocol::make_response(std::int64_t{7}, Json{{"ok", true}}));
-        require(outgoing_response_text.has_value(), "outgoing response should serialize");
+void test_client_handles_incoming_request_while_waiting_for_response() {
+  const auto incoming_request_text =
+      serialize_request_line(mcp::protocol::JsonRpcRequest{
+          .method = "custom/echo",
+          .params = Json::object(),
+          .id = std::string("srv-1"),
+      });
+  const auto outgoing_response_text = mcp::protocol::serialize_response(
+      mcp::protocol::make_response(std::int64_t{7}, Json{{"ok", true}}));
+  require(outgoing_response_text.has_value(),
+          "outgoing response should serialize");
 
-        std::istringstream input(incoming_request_text + *outgoing_response_text + '\n');
-        std::ostringstream output;
-        mcp::client::StdioTransport transport(input, output);
+  std::istringstream input(incoming_request_text + *outgoing_response_text +
+                           '\n');
+  std::ostringstream output;
+  mcp::client::StdioTransport transport(input, output);
 
-        bool custom_request_handled = false;
-        require(transport.start([&](const mcp::protocol::JsonRpcRequest &request) -> mcp::core::Result<mcp::protocol::JsonRpcResponse> {
-                             custom_request_handled = true;
-                             require(request.method == "custom/echo", "incoming client request method mismatch");
-                             return mcp::protocol::make_response(request.id, Json{{"echoed", true}});
-                         })
-                        .has_value(),
-                "client stdio transport start failed");
+  bool custom_request_handled = false;
+  require(transport
+              .start([&](const mcp::protocol::JsonRpcRequest& request)
+                         -> mcp::core::Result<mcp::protocol::JsonRpcResponse> {
+                custom_request_handled = true;
+                require(request.method == "custom/echo",
+                        "incoming client request method mismatch");
+                return mcp::protocol::make_response(request.id,
+                                                    Json{{"echoed", true}});
+              })
+              .has_value(),
+          "client stdio transport start failed");
 
-        const auto actual = transport.send(mcp::protocol::JsonRpcRequest{
-                .method = "ping",
-                .params = Json::object(),
-                .id = std::int64_t{7},
-        });
+  const auto actual = transport.send(mcp::protocol::JsonRpcRequest{
+      .method = "ping",
+      .params = Json::object(),
+      .id = std::int64_t{7},
+  });
 
-        require(actual.has_value(), "client stdio send should return response");
-        require(actual->result->at("ok") == true, "client stdio response mismatch");
-        require(custom_request_handled, "client stdio request handler should run");
+  require(actual.has_value(), "client stdio send should return response");
+  require(actual->result->at("ok") == true, "client stdio response mismatch");
+  require(custom_request_handled, "client stdio request handler should run");
 
-        const auto output_text = output.str();
-        const auto first_newline = output_text.find('\n');
-        require(first_newline != std::string::npos, "client stdio output should contain a request");
-        const auto second_newline = output_text.find('\n', first_newline + 1);
-        require(second_newline != std::string::npos, "client stdio output should contain a response");
+  const auto output_text = output.str();
+  const auto first_newline = output_text.find('\n');
+  require(first_newline != std::string::npos,
+          "client stdio output should contain a request");
+  const auto second_newline = output_text.find('\n', first_newline + 1);
+  require(second_newline != std::string::npos,
+          "client stdio output should contain a response");
 
-        const auto first_line = output_text.substr(0, first_newline);
-        const auto second_line = output_text.substr(first_newline + 1, second_newline - first_newline - 1);
-        const auto written_request = mcp::protocol::parse_request(first_line);
-        require(written_request.has_value(), "written client request should parse");
-        require(written_request->method == "ping", "written client request method mismatch");
-        const auto written_response = mcp::protocol::parse_response(second_line);
-        require(written_response.has_value(), "written client response should parse");
-        require(written_response->result->at("echoed") == true, "written client response mismatch");
-    }
+  const auto first_line = output_text.substr(0, first_newline);
+  const auto second_line =
+      output_text.substr(first_newline + 1, second_newline - first_newline - 1);
+  const auto written_request = mcp::protocol::parse_request(first_line);
+  require(written_request.has_value(), "written client request should parse");
+  require(written_request->method == "ping",
+          "written client request method mismatch");
+  const auto written_response = mcp::protocol::parse_response(second_line);
+  require(written_response.has_value(), "written client response should parse");
+  require(written_response->result->at("echoed") == true,
+          "written client response mismatch");
+}
 
-    void test_client_writes_request_and_reads_response() {
-        const auto response = mcp::protocol::make_response(std::int64_t{7}, Json{{"ok", true}});
-        const auto response_text = mcp::protocol::serialize_response(response);
-        require(response_text.has_value(), "response should serialize");
+void test_client_writes_request_and_reads_response() {
+  const auto response =
+      mcp::protocol::make_response(std::int64_t{7}, Json{{"ok", true}});
+  const auto response_text = mcp::protocol::serialize_response(response);
+  require(response_text.has_value(), "response should serialize");
 
-        std::istringstream input(*response_text + '\n');
-        std::ostringstream output;
-        mcp::client::StdioTransport transport(input, output);
+  std::istringstream input(*response_text + '\n');
+  std::ostringstream output;
+  mcp::client::StdioTransport transport(input, output);
 
-        const auto actual = transport.send(mcp::protocol::JsonRpcRequest{
-                .method = "ping",
-                .params = Json::object(),
-                .id = std::int64_t{7},
-        });
+  const auto actual = transport.send(mcp::protocol::JsonRpcRequest{
+      .method = "ping",
+      .params = Json::object(),
+      .id = std::int64_t{7},
+  });
 
-        require(actual.has_value(), "client send should return response");
-        require(actual->result.has_value(), "client response should contain result");
-        require(actual->result->at("ok") == true, "client response payload mismatch");
+  require(actual.has_value(), "client send should return response");
+  require(actual->result.has_value(), "client response should contain result");
+  require(actual->result->at("ok") == true, "client response payload mismatch");
 
-        const auto written = output.str();
-        require(!written.empty() && written.back() == '\n', "client request should be newline-delimited");
-        const auto parsed_request = mcp::protocol::parse_request(written.substr(0, written.size() - 1));
-        require(parsed_request.has_value(), "client request should parse");
-        require(parsed_request->method == "ping", "client request method mismatch");
-        require(std::get<std::int64_t>(parsed_request->id) == 7, "client request id mismatch");
-    }
+  const auto written = output.str();
+  require(!written.empty() && written.back() == '\n',
+          "client request should be newline-delimited");
+  const auto parsed_request =
+      mcp::protocol::parse_request(written.substr(0, written.size() - 1));
+  require(parsed_request.has_value(), "client request should parse");
+  require(parsed_request->method == "ping", "client request method mismatch");
+  require(std::get<std::int64_t>(parsed_request->id) == 7,
+          "client request id mismatch");
+}
 
-    void test_server_reads_request_and_writes_response() {
-        const auto input_text = serialize_request_line(mcp::protocol::JsonRpcRequest{
-                .method = "echo",
-                .params = Json{{"value", 42}},
-                .id = std::string("req-1"),
-        });
-        std::istringstream input(input_text);
-        std::ostringstream output;
-        mcp::server::StdioTransport transport(input, output);
+void test_server_reads_request_and_writes_response() {
+  const auto input_text = serialize_request_line(mcp::protocol::JsonRpcRequest{
+      .method = "echo",
+      .params = Json{{"value", 42}},
+      .id = std::string("req-1"),
+  });
+  std::istringstream input(input_text);
+  std::ostringstream output;
+  mcp::server::StdioTransport transport(input, output);
 
-        const auto started = transport.start([](const mcp::protocol::JsonRpcRequest &request,
-                                                const mcp::server::SessionContext &context) {
-            require(request.method == "echo", "server request method mismatch");
-            require(request.params.at("value") == 42, "server request params mismatch");
-            require(context.session_id == "stdio", "server session id mismatch");
-            require(context.remote_address == "stdio", "server remote address mismatch");
-            return mcp::protocol::make_response(request.id, Json{{"echoed", request.params}});
-        });
+  const auto started =
+      transport.start([](const mcp::protocol::JsonRpcRequest& request,
+                         const mcp::server::SessionContext& context) {
+        require(request.method == "echo", "server request method mismatch");
+        require(request.params.at("value") == 42,
+                "server request params mismatch");
+        require(context.session_id == "stdio", "server session id mismatch");
+        require(context.remote_address == "stdio",
+                "server remote address mismatch");
+        return mcp::protocol::make_response(request.id,
+                                            Json{{"echoed", request.params}});
+      });
 
-        require(started.has_value(), "server start should complete at EOF");
-        const auto parsed_response = mcp::protocol::parse_response(output.str());
-        require(parsed_response.has_value(), "server response should parse");
-        require(parsed_response->result.has_value(), "server response should contain result");
-        require(parsed_response->result->at("echoed").at("value") == 42, "server response payload mismatch");
-    }
+  require(started.has_value(), "server start should complete at EOF");
+  const auto parsed_response = mcp::protocol::parse_response(output.str());
+  require(parsed_response.has_value(), "server response should parse");
+  require(parsed_response->result.has_value(),
+          "server response should contain result");
+  require(parsed_response->result->at("echoed").at("value") == 42,
+          "server response payload mismatch");
+}
 
-    void test_server_writes_parse_error_for_bad_json() {
-        std::istringstream input("{not json\n");
-        std::ostringstream output;
-        mcp::server::StdioTransport transport(input, output);
+void test_server_writes_parse_error_for_bad_json() {
+  std::istringstream input("{not json\n");
+  std::ostringstream output;
+  mcp::server::StdioTransport transport(input, output);
 
-        bool called = false;
-        const auto started = transport.start([&called](const mcp::protocol::JsonRpcRequest &,
-                                                       const mcp::server::SessionContext &) {
-            called = true;
-            return mcp::protocol::make_response(std::int64_t{1}, Json::object());
-        });
+  bool called = false;
+  const auto started =
+      transport.start([&called](const mcp::protocol::JsonRpcRequest&,
+                                const mcp::server::SessionContext&) {
+        called = true;
+        return mcp::protocol::make_response(std::int64_t{1}, Json::object());
+      });
 
-        require(started.has_value(), "server should keep running through parse error until EOF");
-        require(!called, "server handler should not run for bad JSON");
-        const auto parsed_response = mcp::protocol::parse_response(output.str());
-        require(parsed_response.has_value(), "server parse error response should parse");
-        require(parsed_response->error.has_value(), "server parse error response should contain error");
-        require(parsed_response->error->code == static_cast<int>(mcp::protocol::ErrorCode::ParseError),
-                "server parse error code mismatch");
-        require(!parsed_response->id.has_value(), "server parse error id should be null");
-    }
+  require(started.has_value(),
+          "server should keep running through parse error until EOF");
+  require(!called, "server handler should not run for bad JSON");
+  const auto parsed_response = mcp::protocol::parse_response(output.str());
+  require(parsed_response.has_value(),
+          "server parse error response should parse");
+  require(parsed_response->error.has_value(),
+          "server parse error response should contain error");
+  require(parsed_response->error->code ==
+              static_cast<int>(mcp::protocol::ErrorCode::ParseError),
+          "server parse error code mismatch");
+  require(!parsed_response->id.has_value(),
+          "server parse error id should be null");
+}
 
-    void test_server_handles_notifications() {
-        const auto notification = mcp::protocol::make_notification(
-                std::string(mcp::protocol::RootsListChangedNotificationMethod),
-                Json::object());
-        const auto serialized = mcp::protocol::serialize_notification(notification);
-        require(serialized.has_value(), "notification should serialize");
+void test_server_handles_notifications() {
+  const auto notification = mcp::protocol::make_notification(
+      std::string(mcp::protocol::RootsListChangedNotificationMethod),
+      Json::object());
+  const auto serialized = mcp::protocol::serialize_notification(notification);
+  require(serialized.has_value(), "notification should serialize");
 
-        std::istringstream input(*serialized + '\n');
-        std::ostringstream output;
-        mcp::server::StdioTransport transport(input, output);
+  std::istringstream input(*serialized + '\n');
+  std::ostringstream output;
+  mcp::server::StdioTransport transport(input, output);
 
-        bool notification_called = false;
-        const auto started = transport.start([](const mcp::protocol::JsonRpcRequest &,
-                                                const mcp::server::SessionContext &) { return mcp::protocol::make_response(std::int64_t{1}, Json::object()); },
-                                             [&notification_called](const mcp::protocol::JsonRpcNotification &received,
-                                                                    const mcp::server::SessionContext &context) {
-                                                 notification_called = true;
-                                                 require(received.method == mcp::protocol::RootsListChangedNotificationMethod,
-                                                         "server notification method mismatch");
-                                                 require(context.session_id == "stdio", "server notification session mismatch");
-                                                 return mcp::core::Unit{};
-                                             });
+  bool notification_called = false;
+  const auto started = transport.start(
+      [](const mcp::protocol::JsonRpcRequest&,
+         const mcp::server::SessionContext&) {
+        return mcp::protocol::make_response(std::int64_t{1}, Json::object());
+      },
+      [&notification_called](const mcp::protocol::JsonRpcNotification& received,
+                             const mcp::server::SessionContext& context) {
+        notification_called = true;
+        require(received.method ==
+                    mcp::protocol::RootsListChangedNotificationMethod,
+                "server notification method mismatch");
+        require(context.session_id == "stdio",
+                "server notification session mismatch");
+        return mcp::core::Unit{};
+      });
 
-        require(started.has_value(), "server should complete after notification EOF");
-        require(notification_called, "server notification handler should run");
-        require(output.str().empty(), "server should not write a response for notifications");
-    }
+  require(started.has_value(), "server should complete after notification EOF");
+  require(notification_called, "server notification handler should run");
+  require(output.str().empty(),
+          "server should not write a response for notifications");
+}
 
-    void test_server_writes_outbound_notification_to_stdio() {
-        std::istringstream input;
-        std::ostringstream output;
-        mcp::server::StdioTransport transport(input, output);
+void test_server_writes_outbound_notification_to_stdio() {
+  std::istringstream input;
+  std::ostringstream output;
+  mcp::server::StdioTransport transport(input, output);
 
-        const auto sent = transport.send_notification(mcp::protocol::JsonRpcNotification{
-                .method = std::string(mcp::protocol::ToolsListChangedNotificationMethod),
-                .params = mcp::protocol::Json::object(),
-        });
-        require(sent.has_value(), "stdio transport outbound notification should succeed");
+  const auto sent =
+      transport.send_notification(mcp::protocol::JsonRpcNotification{
+          .method =
+              std::string(mcp::protocol::ToolsListChangedNotificationMethod),
+          .params = mcp::protocol::Json::object(),
+      });
+  require(sent.has_value(),
+          "stdio transport outbound notification should succeed");
 
-        const auto parsed = mcp::protocol::parse_notification(output.str());
-        require(parsed.has_value(), "stdio outbound notification should parse");
-        require(parsed->method == mcp::protocol::ToolsListChangedNotificationMethod,
-                "stdio outbound notification method mismatch");
-    }
+  const auto parsed = mcp::protocol::parse_notification(output.str());
+  require(parsed.has_value(), "stdio outbound notification should parse");
+  require(parsed->method == mcp::protocol::ToolsListChangedNotificationMethod,
+          "stdio outbound notification method mismatch");
+}
 
-}// namespace
+}  // namespace
 
 int main() {
-    const std::vector<std::pair<std::string_view, void (*)()>> tests = {
-            {"client writes request and reads response", test_client_writes_request_and_reads_response},
-            {"client handles incoming request while waiting for response",
-             test_client_handles_incoming_request_while_waiting_for_response},
-            {"server reads request and writes response", test_server_reads_request_and_writes_response},
-            {"server writes parse error for bad json", test_server_writes_parse_error_for_bad_json},
-            {"server handles notifications", test_server_handles_notifications},
-            {"server writes outbound notification to stdio", test_server_writes_outbound_notification_to_stdio},
-    };
+  const std::vector<std::pair<std::string_view, void (*)()>> tests = {
+      {"client writes request and reads response",
+       test_client_writes_request_and_reads_response},
+      {"client handles incoming request while waiting for response",
+       test_client_handles_incoming_request_while_waiting_for_response},
+      {"server reads request and writes response",
+       test_server_reads_request_and_writes_response},
+      {"server writes parse error for bad json",
+       test_server_writes_parse_error_for_bad_json},
+      {"server handles notifications", test_server_handles_notifications},
+      {"server writes outbound notification to stdio",
+       test_server_writes_outbound_notification_to_stdio},
+  };
 
-    std::size_t failures = 0;
-    for (const auto &[name, test]: tests) {
-        try {
-            test();
-            std::cout << "[PASS] " << name << '\n';
-        } catch (const std::exception &ex) {
-            ++failures;
-            std::cerr << "[FAIL] " << name << ": " << ex.what() << '\n';
-        }
+  std::size_t failures = 0;
+  for (const auto& [name, test] : tests) {
+    try {
+      test();
+      std::cout << "[PASS] " << name << '\n';
+    } catch (const std::exception& ex) {
+      ++failures;
+      std::cerr << "[FAIL] " << name << ": " << ex.what() << '\n';
     }
+  }
 
-    if (failures != 0) {
-        std::cerr << failures << " test(s) failed\n";
-        return 1;
-    }
+  if (failures != 0) {
+    std::cerr << failures << " test(s) failed\n";
+    return 1;
+  }
 
-    std::cout << tests.size() << " test(s) passed\n";
-    return 0;
+  std::cout << tests.size() << " test(s) passed\n";
+  return 0;
 }
