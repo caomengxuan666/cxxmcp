@@ -266,7 +266,7 @@ true:
 - [x] Add tests for cancellation notifications received from peers.
 - [x] Add tests for cancellation across client peer, server peer, HTTP, stdio,
   and process stdio.
-- [ ] Map transport, parse, handler, timeout, and cancellation failures to stable
+- [x] Map transport, parse, handler, timeout, and cancellation failures to stable
   error codes/messages.
 - [ ] Avoid leaking ad hoc exceptions or raw strings through public request
   APIs.

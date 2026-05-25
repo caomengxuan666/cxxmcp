@@ -24,8 +24,8 @@ namespace mcp::client {
 namespace detail {
 
 inline core::Error adapter_error(std::string_view message) {
-  return errors::make(protocol::ErrorCode::InvalidRequest,
-                      std::string(message));
+  return errors::make(protocol::ErrorCode::InvalidRequest, std::string(message),
+                      {}, "transport");
 }
 
 }  // namespace detail
