@@ -82,6 +82,8 @@ incrementally. Keep them concrete; do not replace them with broad claims.
         points.
   - [x] Client and server contract transport adapters cover duplicate response
         ids as stable unexpected-response failures.
+  - [x] Concrete process stdio client transport rejects mismatched response ids
+        with stable transport-category errors.
 - Request lifecycle:
   - [x] Client peer timeout emits `notifications/cancelled`.
   - [x] Server-side client peer timeout emits `notifications/cancelled`.

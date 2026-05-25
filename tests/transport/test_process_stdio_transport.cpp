@@ -358,6 +358,32 @@ void test_process_stdio_transport_handles_child_exit_before_response() {
           "child exit before response should fail initialize");
 }
 
+void test_process_stdio_transport_rejects_unexpected_response_id() {
+  auto transport = std::make_unique<mcp::client::ProcessStdioTransport>(
+      mcp::client::ProcessStdioTransportOptions{
+          .command = MCP_TEST_CHILD_EXE,
+          .args = {"--wrong-response-id"},
+          .cwd = {},
+          .env = {},
+      });
+
+  const auto result = transport->send(mcp::protocol::JsonRpcRequest{
+      .method = "custom/wrong-id",
+      .params = mcp::protocol::Json::object(),
+      .id = std::int64_t{77},
+  });
+
+  require(!result.has_value(),
+          "process stdio should reject unexpected response ids");
+  require(result.error().message ==
+              "process stdio transport received an unexpected response",
+          "process stdio unexpected response message mismatch");
+  require(result.error().detail == "999",
+          "process stdio unexpected response detail mismatch");
+  require(result.error().category == "transport",
+          "process stdio unexpected response category mismatch");
+}
+
 #ifndef _WIN32
 void test_posix_process_stdio_write_after_child_exit_returns_error() {
   mcp::client::ProcessStdioTransport transport(
@@ -785,6 +811,8 @@ int main() {
        test_process_stdio_transport_passes_args_cwd_and_env_without_shell},
       {"process stdio transport handles child exit before response",
        test_process_stdio_transport_handles_child_exit_before_response},
+      {"process stdio transport rejects unexpected response id",
+       test_process_stdio_transport_rejects_unexpected_response_id},
 #ifndef _WIN32
       {"posix process stdio write after child exit returns error",
        test_posix_process_stdio_write_after_child_exit_returns_error},

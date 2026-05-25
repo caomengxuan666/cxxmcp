@@ -255,6 +255,11 @@ int main(int argc, char** argv) {
     }
     if (const auto* request =
             std::get_if<mcp::protocol::JsonRpcRequest>(&*message)) {
+      if (argc > 1 && std::string_view(argv[1]) == "--wrong-response-id") {
+        write_response(mcp::protocol::make_response(std::int64_t{999},
+                                                    Json{{"ok", true}}));
+        continue;
+      }
       handle_request(*request);
     }
   }

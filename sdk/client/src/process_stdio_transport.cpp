@@ -851,7 +851,18 @@ core::Result<protocol::JsonRpcResponse> ProcessStdioTransport::send(
       return std::unexpected(line.error());
     }
 
-    return protocol::parse_response(*line);
+    auto response = protocol::parse_response(*line);
+    if (!response) {
+      return std::unexpected(response.error());
+    }
+    if (!response->id.has_value() || *response->id != request.id) {
+      return std::unexpected(make_process_error(
+          static_cast<int>(protocol::ErrorCode::InvalidRequest),
+          "process stdio transport received an unexpected response",
+          response->id.has_value() ? request_id_to_string(*response->id)
+                                   : std::string{"null"}));
+    }
+    return *response;
   }
 
   return impl_->send_request(request);
