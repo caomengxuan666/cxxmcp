@@ -731,6 +731,10 @@ class StreamableHttpClientTransport::Impl {
         {"queued", inbound_.size()},
         {"pendingServerRequests", pending_server_requests_.size()},
         {"requestWorkers", request_threads_.size()},
+        {"activeRequestWorkers", active_request_workers_},
+        {"completedRequestWorkers", completed_request_workers_},
+        {"failedRequestWorkers", failed_request_workers_},
+        {"timedOutRequestWorkers", timed_out_request_workers_},
     };
   }
 
@@ -855,13 +859,16 @@ class StreamableHttpClientTransport::Impl {
             protocol::ErrorCode::InvalidRequest,
             "streamable http client transport is closed"));
       }
+      ++active_request_workers_;
       request_threads_.emplace_back(
           [this, request = std::move(request)]() mutable {
             auto response = transport_.send(request);
             if (response) {
+              finish_request_worker(false, false);
               enqueue(protocol::JsonRpcMessage{std::move(*response)});
               return;
             }
+            finish_request_worker(true, is_timeout_error(response.error()));
             enqueue(protocol::JsonRpcMessage{protocol::make_error_response(
                 std::optional<protocol::RequestId>{request.id},
                 protocol::make_error(response.error().code,
@@ -872,6 +879,7 @@ class StreamableHttpClientTransport::Impl {
                                                response.error().detail}))});
           });
     } catch (const std::system_error& ex) {
+      finish_request_worker(true, false);
       return std::unexpected(make_native_http_error(
           protocol::ErrorCode::InternalError,
           "failed to start streamable http request worker", ex.what()));
@@ -933,6 +941,24 @@ class StreamableHttpClientTransport::Impl {
     receive_cv_.notify_one();
   }
 
+  static bool is_timeout_error(const core::Error& error) {
+    return error.message.find("timed out") != std::string::npos;
+  }
+
+  void finish_request_worker(bool failed, bool timed_out) {
+    std::lock_guard<std::mutex> lock(mutex_);
+    if (active_request_workers_ > 0) {
+      --active_request_workers_;
+    }
+    ++completed_request_workers_;
+    if (failed) {
+      ++failed_request_workers_;
+    }
+    if (timed_out) {
+      ++timed_out_request_workers_;
+    }
+  }
+
   core::Result<core::Unit> complete_server_request(
       protocol::JsonRpcResponse response) {
     const auto id = *response.id;
@@ -965,6 +991,10 @@ class StreamableHttpClientTransport::Impl {
   std::map<protocol::RequestId, std::shared_ptr<PendingServerRequest>>
       pending_server_requests_;
   std::vector<std::thread> request_threads_;
+  std::size_t active_request_workers_ = 0;
+  std::size_t completed_request_workers_ = 0;
+  std::size_t failed_request_workers_ = 0;
+  std::size_t timed_out_request_workers_ = 0;
   bool started_ = false;
   bool closed_ = false;
 };

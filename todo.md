@@ -52,6 +52,9 @@ incrementally. Keep them concrete; do not replace them with broad claims.
         through `ToolContext::cancelled()` and `notifications/cancelled`.
   - [x] RequestHandle timeout, cancellation, missing-task, and worker-exception
         failures use stable structured SDK errors.
+  - [x] Native process stdio and Streamable HTTP diagnostics expose active,
+        completed, failed, and timed-out request worker counts for timeout
+        cleanup tests.
   - [ ] Transport-level timeout cleanup is still blocked until each transport
         exposes observable pending-request cleanup or deterministic late
         response accounting.

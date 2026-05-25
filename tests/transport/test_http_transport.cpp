@@ -3,6 +3,7 @@
 #include <atomic>
 #include <chrono>
 #include <condition_variable>
+#include <cstddef>
 #include <cstdint>
 #include <functional>
 #include <iostream>
@@ -2271,10 +2272,88 @@ void test_native_streamable_http_transport_exposes_client_contract() {
           "native http tools/list should have result");
   require(tools_response->result->at("tools").size() == 1,
           "native http tools/list count mismatch");
+  const auto diagnostics = transport.diagnostics();
+  require(diagnostics.at("activeRequestWorkers").get<std::size_t>() == 0,
+          "native http request workers should be inactive");
+  require(diagnostics.at("completedRequestWorkers").get<std::size_t>() >= 2,
+          "native http completed request worker count mismatch");
+  require(diagnostics.at("failedRequestWorkers").get<std::size_t>() == 0,
+          "native http failed request worker count mismatch");
+  require(diagnostics.at("timedOutRequestWorkers").get<std::size_t>() == 0,
+          "native http timeout request worker count mismatch");
 
   const auto closed = transport.close();
   require(closed.has_value(), "native http close should succeed");
   server_transport.transport().stop();
+}
+
+void test_native_streamable_http_transport_diagnostics_timeout_cleanup() {
+  HttpServerFixture fixture;
+
+  fixture.server().Post(
+      "/mcp", [](const httplib::Request& request, httplib::Response& response) {
+        const auto parsed = mcp::protocol::parse_message(request.body);
+        require(parsed.has_value(), "native timeout request should parse");
+        std::this_thread::sleep_for(std::chrono::milliseconds(250));
+        const auto* rpc_request =
+            std::get_if<mcp::protocol::JsonRpcRequest>(&*parsed);
+        require(rpc_request != nullptr,
+                "native timeout server should receive a request");
+        response.set_header("Mcp-Session-Id", "native-timeout-session");
+        response.set_content(
+            serialize_test_response(mcp::protocol::JsonRpcResponse{
+                .id = rpc_request->id,
+                .result =
+                    Json{
+                        {"protocolVersion",
+                         std::string(mcp::protocol::McpProtocolVersion)},
+                        {"capabilities", Json::object()},
+                        {"serverInfo",
+                         Json{{"name", "native-timeout"}, {"version", "1"}}},
+                    },
+            }),
+            "application/json");
+      });
+
+  mcp::transport::StreamableHttpClientTransport transport(
+      mcp::transport::StreamableHttpClientTransportOptions{
+          .host = "127.0.0.1",
+          .port = fixture.port(),
+          .path = "/mcp",
+          .timeout = std::chrono::milliseconds(50),
+      });
+
+  auto sent = transport.send(mcp::protocol::JsonRpcRequest{
+      .method = std::string(mcp::protocol::InitializeMethod),
+      .params = Json::object(),
+      .id = std::int64_t{601},
+  });
+  require(sent.has_value(), "native http timeout request should send");
+
+  auto received = transport.receive();
+  require(received.has_value(), "native http timeout receive failed");
+  require(received->has_value(), "native http timeout response missing");
+  const auto* response =
+      std::get_if<mcp::protocol::JsonRpcResponse>(&received->value());
+  require(response != nullptr,
+          "native http timeout should receive response message");
+  require(response->error.has_value(),
+          "native http timeout should surface an error response");
+
+  const auto diagnostics = transport.diagnostics();
+  require(diagnostics.at("pendingServerRequests").get<std::size_t>() == 0,
+          "native http timeout should not leave pending server requests");
+  require(diagnostics.at("activeRequestWorkers").get<std::size_t>() == 0,
+          "native http timeout should not leave active request workers");
+  require(diagnostics.at("completedRequestWorkers").get<std::size_t>() >= 1,
+          "native http timeout completed worker count mismatch");
+  require(diagnostics.at("failedRequestWorkers").get<std::size_t>() >= 1,
+          "native http timeout failed worker count mismatch");
+  require(diagnostics.at("timedOutRequestWorkers").get<std::size_t>() >= 1,
+          "native http timeout worker count mismatch");
+
+  const auto closed = transport.close();
+  require(closed.has_value(), "native http timeout close should succeed");
 }
 
 void test_native_streamable_http_transport_receives_server_request() {
@@ -2510,6 +2589,8 @@ int main() {
        test_client_connect_streamable_http_accepts_uri_string},
       {"native streamable http transport exposes client contract",
        test_native_streamable_http_transport_exposes_client_contract},
+      {"native streamable http transport diagnostics timeout cleanup",
+       test_native_streamable_http_transport_diagnostics_timeout_cleanup},
       {"native streamable http transport receives server request",
        test_native_streamable_http_transport_receives_server_request},
       {"native streamable http server transport exposes server contract",

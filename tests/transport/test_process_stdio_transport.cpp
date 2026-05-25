@@ -2,6 +2,7 @@
 
 #include <atomic>
 #include <chrono>
+#include <cstddef>
 #include <cstdlib>
 #include <filesystem>
 #include <iostream>
@@ -598,9 +599,60 @@ void test_native_process_stdio_transport_exposes_client_contract() {
           "native process tools/list should have result");
   require(tools_response->result->at("tools").size() == 1,
           "native process tools/list count mismatch");
+  const auto diagnostics = transport.diagnostics();
+  require(diagnostics.at("activeRequestWorkers").get<std::size_t>() == 0,
+          "native process request workers should be inactive");
+  require(diagnostics.at("completedRequestWorkers").get<std::size_t>() >= 2,
+          "native process completed request worker count mismatch");
+  require(diagnostics.at("failedRequestWorkers").get<std::size_t>() == 0,
+          "native process failed request worker count mismatch");
+  require(diagnostics.at("timedOutRequestWorkers").get<std::size_t>() == 0,
+          "native process timeout request worker count mismatch");
 
   const auto closed = transport.close();
   require(closed.has_value(), "native process close should succeed");
+}
+
+void test_native_process_stdio_transport_diagnostics_timeout_cleanup() {
+  mcp::transport::ProcessStdioClientTransportOptions options;
+  options.command = MCP_TEST_CHILD_EXE;
+  options.args = {"--ignore-requests"};
+  options.request_timeout = std::chrono::milliseconds(100);
+  mcp::transport::ProcessStdioClientTransport transport(std::move(options));
+
+  auto sent = transport.send(mcp::protocol::JsonRpcRequest{
+      .method = std::string(mcp::protocol::InitializeMethod),
+      .params = mcp::protocol::Json::object(),
+      .id = std::int64_t{501},
+  });
+  require(sent.has_value(), "native process timeout request should send");
+
+  auto received = transport.receive();
+  require(received.has_value(), "native process timeout receive failed");
+  require(received->has_value(), "native process timeout response missing");
+  const auto* response =
+      std::get_if<mcp::protocol::JsonRpcResponse>(&received->value());
+  require(response != nullptr,
+          "native process timeout should receive response message");
+  require(response->error.has_value(),
+          "native process timeout should surface an error response");
+  require(response->error->message == "process stdio request timed out",
+          "native process timeout error message mismatch");
+
+  const auto diagnostics = transport.diagnostics();
+  require(diagnostics.at("pendingServerRequests").get<std::size_t>() == 0,
+          "native process timeout should not leave pending server requests");
+  require(diagnostics.at("activeRequestWorkers").get<std::size_t>() == 0,
+          "native process timeout should not leave active request workers");
+  require(diagnostics.at("completedRequestWorkers").get<std::size_t>() >= 1,
+          "native process timeout completed worker count mismatch");
+  require(diagnostics.at("failedRequestWorkers").get<std::size_t>() >= 1,
+          "native process timeout failed worker count mismatch");
+  require(diagnostics.at("timedOutRequestWorkers").get<std::size_t>() >= 1,
+          "native process timeout worker count mismatch");
+
+  const auto closed = transport.close();
+  require(closed.has_value(), "native process timeout close should succeed");
 }
 
 void test_native_process_stdio_transport_receives_server_request() {
@@ -692,6 +744,8 @@ int main() {
        test_process_stdio_transport_calls_rust_tool},
       {"native process stdio transport exposes client contract",
        test_native_process_stdio_transport_exposes_client_contract},
+      {"native process stdio transport diagnostics timeout cleanup",
+       test_native_process_stdio_transport_diagnostics_timeout_cleanup},
       {"native process stdio transport receives server request",
        test_native_process_stdio_transport_receives_server_request},
   };
