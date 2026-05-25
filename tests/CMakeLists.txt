@@ -244,6 +244,18 @@ if(TARGET mcp_client AND TARGET mcp_test_stdio_child)
     )
     cxxmcp_mark_release_blocking(
         interop_python_client_process_stdio interop process-stdio)
+
+    add_test(NAME interop_rmcp_client_process_stdio
+        COMMAND "${CMAKE_COMMAND}"
+            "-DFIXTURE_SOURCE_DIR=${PROJECT_SOURCE_DIR}/tests/fixtures/rmcp_process_stdio_client"
+            "-DRMCP_CRATE_DIR=${PROJECT_SOURCE_DIR}/reference/rmcp/crates/rmcp"
+            "-DSERVER_EXE=$<TARGET_FILE:mcp_test_stdio_child>"
+            "-DCARGO_TARGET_DIR=${PROJECT_BINARY_DIR}/cargo/rmcp_process_stdio_client"
+            "-DCARGO_WORK_DIR=${PROJECT_BINARY_DIR}/cargo/rmcp_process_stdio_client-src"
+            -P "${PROJECT_SOURCE_DIR}/tests/run_cargo_fixture.cmake"
+    )
+    cxxmcp_mark_release_blocking(
+        interop_rmcp_client_process_stdio interop process-stdio)
 endif()
 
 if(TARGET mcp_app AND TARGET mcp_gateway)
