@@ -52,7 +52,10 @@ The current C++ code already has useful MCP pieces:
 - `handler`: aggregate and interface-based callback contracts
 - `runtime`, `tools/cli`, and gateway code: orchestration and product behavior
 
-This shape is practical for the current product, but it is not yet RMCP-like as a pure SDK.
+This shape is practical for the current product. The SDK-facing peer/service
+facades now give it an RMCP-like entry point, while the remaining work is to
+make the lower-level protocol, transport, and task-operation behavior just as
+complete.
 
 ## Abstraction Difference Summary
 
@@ -96,9 +99,12 @@ protocol
 | Task support | integrated task manager and handler methods | protocol/client pieces and runtime task management exist; the remaining gap is deeper RMCP operation processor parity |
 | Product runtime | outside SDK core | gateway/runtime concepts are prominent in the repository |
 
-This means the current C++ design is product-friendly, while RMCP is SDK-first.
+This means the current C++ design has both product-friendly compatibility
+wrappers and an SDK-first facade. The standardization pressure is now on making
+the facade complete enough that users do not need to learn the wrappers first.
 
-The recommended direction is not to remove the current design. Instead, add an RMCP-like SDK facade below the gateway and CLI:
+The recommended direction is not to remove the current design. Keep tightening
+the RMCP-like SDK facade below the gateway and CLI:
 
 ```text
 protocol
@@ -180,8 +186,10 @@ Gap:
 
 - transport is not role-generic
 - transport does not model concurrent send plus sequential receive
-- cancellation and timeout are not part of the core transport contract
-- transport is not yet async-capable at the SDK boundary
+- cancellation and timeout are exposed at the peer/client request layer, not as
+  a role-generic transport contract
+- async request behavior exists through request handles, but the transport
+  contract itself is still request/response oriented
 
 Action:
 
@@ -193,7 +201,8 @@ Action:
 
 ### 4. Protocol Model Completeness
 
-RMCP's `model` layer is more complete and closer to the latest MCP spec.
+RMCP's `model` layer is more complete and closer to the MCP spec snapshot it
+tracks.
 
 Examples in RMCP:
 
@@ -334,19 +343,21 @@ RMCP has a richer request lifecycle:
 - running service cancellation
 - service shutdown waiting
 
-The current C++ client/server API is mostly synchronous and direct.
+The current C++ API now has request handles and timeout options in the
+peer/client layer, while the older concrete client/server API is still mostly
+synchronous and direct.
 
 Gap:
 
-- no request handle abstraction
 - no unified cancellation token
-- no SDK-level timeout/cancellation model
-- less explicit service lifecycle
+- timeout and cancellation behavior still needs a consistently role-generic
+  shape
+- service lifecycle is less explicit than RMCP's running-service model
 
 Action:
 
-- add request handles for async peer calls
-- add timeout options to peer requests
+- keep request handles as the public async request path
+- make timeout options consistent across peer request families
 - send cancellation notifications when timed out
 - add service start/stop/wait lifecycle objects
 
@@ -371,12 +382,17 @@ Action:
 
 ## Recommended Roadmap
 
-### Phase 1: Add RMCP-Like Facade Without Breaking Current API
+### Phase 1: RMCP-Like Facade Without Breaking Current API
 
-- add `Peer<RoleClient>` and `Peer<RoleServer>`
-- add `ClientHandler` and `ServerHandler`
-- add a shared async-capable transport abstraction
-- keep existing `Client` and `Server` as wrappers
+Current tree covers:
+
+- `Peer<RoleClient>` and `Peer<RoleServer>`
+- `ClientHandler` and `ServerHandler`
+- existing `Client` and `Server` as wrappers
+
+Still to close:
+
+- shared role-generic transport abstraction
 
 ### Phase 2: Align Core Protocol Models
 
@@ -386,10 +402,15 @@ Action:
 - expand tool/resource/prompt models
 - align capability serialization
 
-### Phase 3: Add Request Lifecycle
+### Phase 3: Complete Request Lifecycle
 
-- add request handles
-- add timeout options
+Current tree covers:
+
+- request handles
+- timeout options
+
+Still to close:
+
 - add cancellation tokens
 - add shutdown/wait lifecycle
 
@@ -427,11 +448,13 @@ Do not make task and elicitation mandatory if the first SDK milestone only needs
 
 ## Summary
 
-The current C++ code is functionally moving toward MCP parity, but RMCP-like SDK parity requires a different public shape.
+The current C++ code is functionally moving toward MCP parity and now has the
+right RMCP-like public facade. Remaining parity work is mostly depth: protocol
+models, role-generic transport, operation processing, and schema ergonomics.
 
 The most important work is:
 
-1. add `Peer + Handler + Transport` as the SDK facade
+1. keep `Peer + Handler + Transport` as the SDK facade
 2. keep gateway and CLI above that facade
 3. complete the protocol model layer
 4. add task and elicitation as optional but well-shaped extensions

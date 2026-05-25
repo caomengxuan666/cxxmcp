@@ -2,10 +2,10 @@
 
 This is the distilled reference for the official Rust SDK surface we are matching.
 Sources:
-- https://docs.rs/rcxxmcp/latest/rcxxmcp/
+- local source snapshot under `reference/rmcp`
 - https://github.com/modelcontextprotocol/rust-sdk
 
-Current upstream reference point:
+Pinned reference point:
 - docs.rs crate version: `rmcp 1.7.0`
 - GitHub release: `rmcp-v1.7.0`
 

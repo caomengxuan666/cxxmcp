@@ -4,8 +4,12 @@
 This project is a C++ MCP SDK first. Runtime, gateway, CLI, adapters, and plugin tooling are optional layers built on top of the SDK.
 
 Parity target:
-- official Rust SDK `rmcp` 1.7.0
-- current upstream docs / release: docs.rs and GitHub release `rmcp-v1.7.0`
+- local RMCP reference snapshot under `reference/rmcp`
+- currently tracked RMCP workspace version: `1.7.0`
+
+Upstream docs and releases are used when refreshing the local snapshot. This
+document should describe the pinned reference in the repository, not make a
+moving upstream-version claim.
 
 The public surface should not be smaller than the official Rust SDK. The core families are:
 - tools

@@ -107,11 +107,11 @@ int main() {
 }
 ```
 
-## Derived Interface Sketch
+## Public API Families
 
 This section is intentionally shape-level. Do not treat it as the authoritative
-signature reference; use the headers under `sdk/include/cxxmcp` for exact return
-types, overloads, and optional capability families.
+signature reference; use the headers under `sdk/include/cxxmcp` and generated
+Doxygen for exact return types, overloads, and optional capability families.
 
 ### Peer / Service
 
@@ -161,120 +161,40 @@ namespace mcp::protocol {
 } // namespace mcp::protocol
 ```
 
-### Client
+### Client Peer
 
-```cpp
-namespace mcp::client {
+The client peer family covers:
 
-class Client {
-public:
-    struct StreamableHttpEndpoint {
-        std::string host;
-        std::uint16_t port;
-        std::string path = "/mcp";
-    };
+- connection helpers for Streamable HTTP, legacy SSE, and stdio
+- initialize, initialized notification, ping, cancellation, and progress
+- tools, prompts, resources, resource templates, and roots
+- completion, sampling, elicitation, logging, subscriptions, and tasks
+- raw JSON-RPC requests and notifications
+- request handles for asynchronous raw calls
+- handler installation through `ClientHandler` / `ClientHandlerInterface`
 
-    struct StdioEndpoint {
-        std::string command;
-        std::vector<std::string> args;
-        std::string cwd;
-    };
+### Server Peer
 
-    struct Root {
-        std::string uri;
-        std::string name;
-    };
+The server peer family covers:
 
-    static Client connect_streamable_http(StreamableHttpEndpoint endpoint);
-    static Client connect_stdio(StdioEndpoint endpoint);
-    static Client connect_legacy_sse(StreamableHttpEndpoint endpoint);
+- `ServerBuilder` for name, version, instructions, capabilities, and handlers
+- tool, prompt, resource, resource-template, completion, task, and elicitation
+  registration
+- initialize, ping, request handling, notification handling, start, and stop
+- server-to-client notifications for list changes, progress, logging,
+  elicitation completion, and task status
+- raw JSON-RPC handling through the server implementation layer
+- handler installation through `ServerHandler` / `ServerHandlerInterface`
 
-    void initialize();
-    void ping();
-    std::vector<protocol::ToolDefinition> list_tools();
-    std::vector<protocol::ToolDefinition> list_all_tools();
-    std::vector<protocol::Prompt> list_prompts();
-    std::vector<protocol::Prompt> list_all_prompts();
-    std::vector<protocol::Resource> list_resources();
-    std::vector<protocol::Resource> list_all_resources();
-    std::vector<protocol::ResourceTemplate> list_resource_templates();
-    std::vector<protocol::ResourceTemplate> list_all_resource_templates();
-    std::vector<Root> list_roots();
-    void set_roots(std::vector<Root> roots);
+### Transports
 
-    protocol::Json complete(const protocol::Json& request);
-    protocol::Json create_message(const protocol::Json& request);
-    protocol::Json create_elicitation(const protocol::Json& request);
-    protocol::Json request(const protocol::JsonRpcRequest& request);
-    void notify(const protocol::JsonRpcNotification& notification);
+The transport family covers:
 
-    void on_initialized(std::function<void()> handler);
-    void on_cancelled(std::function<void(const protocol::RequestId&, std::string_view)> handler);
-    void on_logging_message(std::function<void(std::string_view, std::string_view)> handler);
-    void on_tool_list_changed(std::function<void()> handler);
-    void on_prompt_list_changed(std::function<void()> handler);
-    void on_resource_list_changed(std::function<void()> handler);
-    void on_resource_updated(std::function<void(const std::string& uri)> handler);
-    void on_roots_list_changed(std::function<void()> handler);
-
-    void subscribe(std::string uri);
-    void unsubscribe(std::string uri);
-
-    template <class Args, class Result>
-    Result call(std::string_view name, const Args& args);
-
-    protocol::ToolResult call_raw(std::string_view name, const protocol::Json& args);
-    protocol::PromptsGetResult get_prompt(std::string_view name, const protocol::Json& arguments);
-    protocol::ResourcesReadResult read_resource(std::string_view uri);
-    protocol::Json request(const protocol::JsonRpcRequest& request);
-    void notify(const protocol::JsonRpcNotification& notification);
-};
-
-} // namespace mcp::client
-```
-
-### Server
-
-```cpp
-namespace mcp::server {
-
-class App {
-public:
-    class Builder {
-    public:
-        Builder& name(std::string value);
-        Builder& version(std::string value);
-        Builder& instructions(std::string value);
-
-        Builder& stdio();
-        Builder& streamable_http(std::string host, std::uint16_t port, std::string path = "/mcp");
-        Builder& legacy_sse(std::string host, std::uint16_t port, std::string path = "/mcp");
-
-        template <class Args, class Result, class Handler>
-        Builder& tool(std::string name, Handler handler);
-        template <class Handler>
-        Builder& prompt(std::string name, Handler handler);
-        template <class Handler>
-        Builder& resource(std::string name, Handler handler);
-        template <class Handler>
-        Builder& resource_template(std::string name, Handler handler);
-        template <class Handler>
-        Builder& completion(Handler handler);
-        template <class Handler>
-        Builder& sampling(Handler handler);
-        template <class Handler>
-        Builder& logging(Handler handler);
-        template <class Handler>
-        Builder& raw_request(Handler handler);
-
-        int run();
-    };
-
-    static Builder builder();
-};
-
-} // namespace mcp::server
-```
+- client Streamable HTTP and legacy SSE transport
+- client stdio and process-stdio transport
+- server HTTP, stdio, and server transport interfaces
+- one umbrella include, `cxxmcp/transport.hpp`, for SDK users who need the
+  built-in transport types
 
 ## Rules
 

@@ -131,7 +131,7 @@ The SDK can coexist with these, but it should not depend on them.
 
 This is the shortest honest list of what blocked fact-standard status. The current tree now covers each item below.
 
-### 5.1 Public abstraction is not fully settled
+### 5.1 Public abstraction
 
 RMCP centers the API on role-aware peer/service objects. The C++ SDK is moving in that direction, but the compatibility wrappers are still visible.
 
@@ -141,7 +141,7 @@ Covered by current tree:
 - keep `Service<Role>` as the lifecycle story
 - make `Client` and `Server` look like compatibility layers, not the core abstraction
 
-### 5.2 Transport is not yet a first-class role-generic contract
+### 5.2 Transport contract
 
 RMCP's transport model is broader and more abstract.
 
@@ -152,7 +152,7 @@ Covered by current tree:
 - async-capable behavior at the SDK boundary
 - support for stdio, HTTP, and compatibility transports without leaking implementation detail
 
-### 5.3 Request lifecycle is still too light
+### 5.3 Request lifecycle
 
 The SDK has started to add request handles and timeout options, but this needs to become a stable public promise.
 
@@ -163,7 +163,7 @@ Covered by current tree:
 - explicit request options
 - consistent error mapping for transport and handler failures
 
-### 5.4 Protocol modeling still needs more depth
+### 5.4 Protocol modeling
 
 RMCP's model layer is richer.
 
@@ -174,9 +174,11 @@ Covered by current tree:
 - fuller content variants
 - capability serialization that matches spec shapes, not just bool-heavy shortcuts
 
-### 5.5 Task and elicitation need complete lifecycle stories
+### 5.5 Task and elicitation lifecycle
 
-These are already present in the codebase, but not yet standard enough.
+These are already present in the codebase and now have public SDK entry points.
+The remaining standardization work is lifecycle precision and compatibility
+coverage.
 
 Covered by current tree:
 
@@ -185,7 +187,7 @@ Covered by current tree:
 - server-side lifecycle support
 - documentation that says what is core, optional, or experimental
 
-### 5.6 Streamable HTTP needs a richer story
+### 5.6 Streamable HTTP
 
 The HTTP transport needs to feel like a product-grade MCP transport, not just a wrapper around a request library.
 
