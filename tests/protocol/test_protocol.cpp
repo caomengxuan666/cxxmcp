@@ -126,6 +126,8 @@ void test_supported_protocol_versions_are_explicit() {
   require(mcp::protocol::is_supported_protocol_version(
               mcp::protocol::McpProtocolVersion),
           "current MCP protocol version should be supported");
+  require(mcp::protocol::McpSupportedProtocolVersions.size() == 1,
+          "add multi-version protocol tests when a second version is enabled");
   require(!mcp::protocol::is_supported_protocol_version("2024-11-05"),
           "unknown MCP protocol version should not be supported");
 }

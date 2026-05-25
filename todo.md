@@ -279,7 +279,7 @@ true:
 - [x] Decide how long previous protocol snapshots remain supported.
 - [x] Decide whether unsupported versions produce protocol errors or negotiation
   fallback.
-- [ ] Add tests for multiple supported protocol versions once more than one is
+- [x] Add tests for multiple supported protocol versions once more than one is
   present.
 - [x] Add client initialize tests for unsupported versions.
 - [x] Add server initialize tests for unsupported versions.
