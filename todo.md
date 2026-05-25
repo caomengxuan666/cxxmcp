@@ -189,7 +189,7 @@ true:
       failures with stable structured errors.
 - [ ] Keep compatibility adapters for old concrete transports, but make them
   implementation details.
-- [ ] Stress-test all adapters for bidirectional request/notification flow.
+- [x] Stress-test all adapters for bidirectional request/notification flow.
 - [ ] Test unexpected response ids, duplicate ids, closed streams, handler
   errors, and malformed messages for every concrete transport.
 - [x] Define transport-level error categories and map them to JSON-RPC/core

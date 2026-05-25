@@ -5,6 +5,7 @@
 #include <iostream>
 #include <optional>
 #include <stdexcept>
+#include <string>
 #include <string_view>
 #include <utility>
 #include <variant>
@@ -406,6 +407,110 @@ void test_server_contract_transport_adapter_outbound() {
   require(contract.closed, "server contract adapter should close transport");
 }
 
+void test_contract_transport_adapters_bidirectional_stress() {
+  constexpr int kRounds = 64;
+
+  {
+    ScriptedClientContractTransport contract;
+    mcp::client::ContractTransportAdapter adapter(contract);
+    int notifications_seen = 0;
+    int requests_seen = 0;
+    const auto started = adapter.start(
+        [&](const mcp::protocol::JsonRpcRequest& request)
+            -> mcp::core::Result<mcp::protocol::JsonRpcResponse> {
+          ++requests_seen;
+          return mcp::protocol::make_response(request.id,
+                                              Json{{"method", request.method}});
+        },
+        [&](const mcp::protocol::JsonRpcNotification&)
+            -> mcp::core::Result<mcp::core::Unit> {
+          ++notifications_seen;
+          return mcp::core::Unit{};
+        });
+    require(started.has_value(), "client stress adapter should start");
+
+    for (int i = 0; i < kRounds; ++i) {
+      contract.push(mcp::protocol::JsonRpcNotification{
+          .method = "notifications/message",
+          .params = Json{{"round", i}},
+      });
+      contract.push(mcp::protocol::JsonRpcRequest{
+          .method = "roots/list",
+          .params = Json::object(),
+          .id = std::string("server-") + std::to_string(i),
+      });
+      contract.push(mcp::protocol::JsonRpcResponse{
+          .id = mcp::protocol::RequestId{std::int64_t{i}},
+          .result = Json{{"round", i}},
+      });
+
+      const auto response = adapter.send(mcp::protocol::JsonRpcRequest{
+          .method = "tools/list",
+          .params = Json::object(),
+          .id = std::int64_t{i},
+      });
+      require(response.has_value(), "client stress request should succeed");
+      require(response->result->at("round") == i,
+              "client stress response mismatch");
+
+      const auto notified =
+          adapter.send_notification(mcp::protocol::JsonRpcNotification{
+              .method = "notifications/initialized",
+              .params = Json{{"round", i}},
+          });
+      require(notified.has_value(),
+              "client stress notification should succeed");
+    }
+
+    require(notifications_seen == kRounds,
+            "client stress notification count mismatch");
+    require(requests_seen == kRounds, "client stress request count mismatch");
+    require(contract.sent.size() == static_cast<std::size_t>(kRounds * 3),
+            "client stress sent message count mismatch");
+  }
+
+  {
+    ScriptedServerContractTransport contract;
+    mcp::server::ContractTransportAdapter adapter(contract);
+
+    for (int i = 0; i < kRounds; ++i) {
+      contract.push(mcp::protocol::JsonRpcNotification{
+          .method = "notifications/progress",
+          .params = Json{{"round", i}},
+      });
+      contract.push(mcp::protocol::JsonRpcRequest{
+          .method = "ping",
+          .params = Json::object(),
+          .id = std::string("client-") + std::to_string(i),
+      });
+      contract.push(mcp::protocol::JsonRpcResponse{
+          .id = mcp::protocol::RequestId{std::int64_t{i}},
+          .result = Json{{"round", i}},
+      });
+
+      const auto response = adapter.send_request(mcp::protocol::JsonRpcRequest{
+          .method = "roots/list",
+          .params = Json::object(),
+          .id = std::int64_t{i},
+      });
+      require(response.has_value(), "server stress request should succeed");
+      require(response->result->at("round") == i,
+              "server stress response mismatch");
+
+      const auto notified =
+          adapter.send_notification(mcp::protocol::JsonRpcNotification{
+              .method = "notifications/tools/list_changed",
+              .params = Json{{"round", i}},
+          });
+      require(notified.has_value(),
+              "server stress notification should succeed");
+    }
+
+    require(contract.sent.size() == static_cast<std::size_t>(kRounds * 3),
+            "server stress sent message count mismatch");
+  }
+}
+
 void test_client_contract_transport_adapter_failure_paths() {
   {
     ScriptedClientContractTransport contract;
@@ -586,6 +691,7 @@ int main() {
     test_server_transport_adapter();
     test_server_contract_transport_adapter_start();
     test_server_contract_transport_adapter_outbound();
+    test_contract_transport_adapters_bidirectional_stress();
     test_client_contract_transport_adapter_failure_paths();
     test_server_contract_transport_adapter_failure_paths();
     std::cout << "transport adapter tests passed\n";
