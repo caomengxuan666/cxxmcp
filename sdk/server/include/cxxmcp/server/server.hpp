@@ -44,6 +44,9 @@ struct is_result : std::false_type {};
 template <class T>
 struct is_result<core::Result<T>> : std::true_type {};
 
+template <class>
+inline constexpr bool always_false_v = false;
+
 template <class T>
 inline protocol::Json value_to_json(T&& value) {
   using Value = std::decay_t<T>;
@@ -148,6 +151,32 @@ inline void apply_default_output_schema(protocol::ToolDefinition& definition) {
     if (definition.output_schema.empty()) {
       definition.output_schema = protocol::schema_for<Result>();
     }
+  }
+}
+
+template <class Handler, class Args>
+decltype(auto) invoke_tool_handler(Handler& handler, Args&& args,
+                                   const ToolContext& context) {
+  using Arg = std::decay_t<Args>;
+  if constexpr (std::is_invocable_v<Handler&, Arg, const ToolContext&>) {
+    return handler(std::forward<Args>(args), context);
+  } else if constexpr (std::is_invocable_v<Handler&, const ToolContext&, Arg>) {
+    return handler(context, std::forward<Args>(args));
+  } else if constexpr (std::is_invocable_v<Handler&, Arg, CancellationToken>) {
+    return handler(std::forward<Args>(args), context.cancellation);
+  } else if constexpr (std::is_invocable_v<Handler&, CancellationToken, Arg>) {
+    return handler(context.cancellation, std::forward<Args>(args));
+  } else if constexpr (std::is_invocable_v<Handler&, Arg>) {
+    return handler(std::forward<Args>(args));
+  } else if constexpr (std::is_invocable_v<Handler&, const ToolContext&>) {
+    return handler(context);
+  } else if constexpr (std::is_invocable_v<Handler&>) {
+    return handler();
+  } else {
+    static_assert(always_false_v<Handler>,
+                  "tool handler must accept Args, Args+ToolContext, "
+                  "ToolContext+Args, Args+CancellationToken, "
+                  "CancellationToken+Args, ToolContext, or no arguments");
   }
 }
 
@@ -889,14 +918,15 @@ App::Builder& App::Builder::tool(protocol::ToolDefinition definition,
           const ToolContext& context) -> core::Result<protocol::ToolResult> {
         try {
           auto args = detail::argument_from_json<Args>(context.arguments);
-          if constexpr (detail::is_result<decltype(handler(args))>::value) {
-            auto handled = handler(args);
+          auto handled =
+              detail::invoke_tool_handler(handler, std::move(args), context);
+          if constexpr (detail::is_result<decltype(handled)>::value) {
             if (!handled) {
               return std::unexpected(handled.error());
             }
             return detail::value_to_tool_result(*handled);
           } else {
-            return detail::value_to_tool_result(handler(args));
+            return detail::value_to_tool_result(std::move(handled));
           }
         } catch (const std::exception& exception) {
           return std::unexpected(core::Error{

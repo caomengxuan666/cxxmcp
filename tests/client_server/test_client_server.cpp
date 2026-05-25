@@ -2082,19 +2082,29 @@ void test_server_app_builder_registers_typed_tool() {
   using typed_tool_fixture::SumArgs;
   using typed_tool_fixture::SumResult;
 
-  auto built = mcp::server::App::builder()
-                   .tool(mcp::server::tool<SumArgs, SumResult>("sum")
-                             .description("Add two integers")
-                             .task_support(mcp::protocol::TaskSupport::Optional)
-                             .handler([](SumArgs args) {
-                               return SumResult{.sum = args.a + args.b};
-                             }))
-                   .build();
+  auto built =
+      mcp::server::App::builder()
+          .tool(mcp::server::tool<SumArgs, SumResult>("sum")
+                    .description("Add two integers")
+                    .task_support(mcp::protocol::TaskSupport::Optional)
+                    .handler([](SumArgs args) {
+                      return SumResult{.sum = args.a + args.b};
+                    }))
+          .tool<SumArgs, SumResult>(
+              "sum-with-context",
+              [](SumArgs args, const mcp::server::ToolContext& context) {
+                require(context.session_id == "typed-tool-session",
+                        "typed tool context session mismatch");
+                require(!context.cancelled(),
+                        "typed tool context should not be cancelled");
+                return SumResult{.sum = args.a + args.b + 1};
+              })
+          .build();
   require(built.has_value(), "typed tool server should build");
   auto& server = **built;
 
   const auto listed = server.list_tools();
-  require(listed.size() == 1, "typed tool count mismatch");
+  require(listed.size() == 2, "typed tool count mismatch");
   require(listed.front().name == "sum", "typed tool name mismatch");
   require(listed.front().description == "Add two integers",
           "typed tool description mismatch");
@@ -2114,6 +2124,14 @@ void test_server_app_builder_registers_typed_tool() {
           "typed tool structured content missing");
   require(result->structured_content->at("sum") == 5,
           "typed tool structured content mismatch");
+
+  const auto context_result = server.call_tool(
+      "sum-with-context", Json{{"a", 2}, {"b", 3}}, "typed-tool-session");
+  require(context_result.has_value(), "typed context tool call failed");
+  require(context_result->structured_content.has_value(),
+          "typed context tool structured content missing");
+  require(context_result->structured_content->at("sum") == 6,
+          "typed context tool structured content mismatch");
 
   const auto invalid =
       server.call_tool("sum", Json{{"a", 2}}, "typed-tool-session");

@@ -441,11 +441,13 @@ Covered by current tree:
 - fluent `ToolDefinition` builder for public server tool metadata
 - low-boilerplate `App::Builder` adapters for simple C++ callables
 - typed `mcp::server::tool<Args, Result>(...)` registration facade
+- typed tool handlers can accept decoded args, `ToolContext`, or a cooperative
+  cancellation token without dropping to the low-level `ToolHandler`
 
 Action:
 
 - add optional `json-schema-validator`
-- deepen typed helper templates for context/peer/cancellation injection
+- deepen typed helper templates beyond tools where context injection is useful
 - keep registry helpers as convenience wrappers over `ServerHandler`
 
 ## Recommended Roadmap
