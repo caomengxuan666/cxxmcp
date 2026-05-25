@@ -20,6 +20,14 @@ if(TARGET mcp_transport)
     target_link_libraries(mcp_transport_contract_tests PRIVATE mcp_transport)
 
     add_test(NAME transport_contract COMMAND mcp_transport_contract_tests)
+
+    add_executable(mcp_transport_stdio_contract_tests
+        transport/test_transport_stdio_contract.cpp
+    )
+
+    target_link_libraries(mcp_transport_stdio_contract_tests PRIVATE mcp_transport)
+
+    add_test(NAME transport_stdio_contract COMMAND mcp_transport_stdio_contract_tests)
 endif()
 
 if(TARGET mcp_client AND TARGET mcp_server)

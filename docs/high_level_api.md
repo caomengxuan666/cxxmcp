@@ -218,6 +218,7 @@ The server peer family covers:
 The transport family covers:
 
 - role-generic `mcp::transport::Transport<Role>` message contract
+- native role-generic stdio stream transport
 - client Streamable HTTP and legacy SSE transport
 - client stdio and process-stdio transport
 - server HTTP, stdio, and server transport interfaces

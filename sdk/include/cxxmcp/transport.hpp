@@ -9,4 +9,5 @@
 /// transport abstraction. Built-in concrete transports remain available from
 /// `cxxmcp/client.hpp`, `cxxmcp/server.hpp`, or their component headers.
 
+#include "cxxmcp/transport/stdio_transport.hpp"
 #include "cxxmcp/transport/transport.hpp"

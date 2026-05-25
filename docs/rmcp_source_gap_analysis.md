@@ -185,6 +185,7 @@ while the concrete built-in transports remain request/response oriented:
 
 - SDK transport contract exposes `mcp::transport::Transport<Role>` with
   message-level `send`, sequential `receive`, and explicit `close`
+- native role-generic stdio stream transport implements direct send/receive
 - client/server compatibility adapters can wrap the existing concrete
   transports for outbound request/notification flows
 - client transport has `send(request) -> response`
@@ -193,8 +194,10 @@ while the concrete built-in transports remain request/response oriented:
 
 Gap:
 
-- concrete built-in transports are only partially adapted to the role-generic
-  contract; inbound callback loops are not yet modeled as receive streams
+- HTTP and process-stdio transports are not yet fully native role-generic
+  receive streams
+- legacy client/server callback-loop transports are only partially adapted to
+  the role-generic contract
 - concurrency guarantees are documented at the interface but not yet stress
   tested against concrete adapters
 - cancellation and timeout are exposed at the peer/client request layer, not as
@@ -205,7 +208,8 @@ Gap:
 Action:
 
 - keep `cpp-httplib` internally for now
-- deepen HTTP/stdio adapters so inbound callback loops become receive streams
+- deepen HTTP and process-stdio adapters so inbound callback loops become
+  receive streams
 - make the peer API independent of httplib
 - defer Boost.Asio/Beast until load tests prove the need
 
