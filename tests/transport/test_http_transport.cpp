@@ -2479,6 +2479,61 @@ void test_native_streamable_http_transport_diagnostics_timeout_cleanup() {
   require(closed.has_value(), "native http timeout close should succeed");
 }
 
+void test_native_streamable_http_transport_rejects_unknown_server_response_id() {
+  mcp::transport::StreamableHttpClientTransport transport(
+      mcp::transport::StreamableHttpClientTransportOptions{
+          .host = "127.0.0.1",
+          .port = 40215,
+          .path = "/native-client-unknown-response",
+      });
+
+  const auto sent = transport.send(mcp::protocol::JsonRpcResponse{
+      .id = mcp::protocol::RequestId{std::string("unknown-server-request")},
+      .result = Json::object(),
+  });
+  require(!sent.has_value(),
+          "native http should reject response without pending server request");
+  require(sent.error().message ==
+              "streamable http client transport has no pending server request",
+          "native http unknown server response message mismatch");
+  require(sent.error().detail == "unknown-server-request",
+          "native http unknown server response detail mismatch");
+  require(sent.error().category == "transport",
+          "native http unknown server response category mismatch");
+
+  const auto closed = transport.close();
+  require(closed.has_value(),
+          "native http unknown server response close should succeed");
+}
+
+void test_native_streamable_http_transport_close_unblocks_receive() {
+  mcp::transport::StreamableHttpClientTransport transport(
+      mcp::transport::StreamableHttpClientTransportOptions{
+          .host = "127.0.0.1",
+          .port = 40216,
+          .path = "/native-client-close",
+      });
+
+  std::atomic<bool> receive_finished{false};
+  std::atomic<bool> received_end{false};
+  std::thread receive_thread([&]() {
+    const auto received = transport.receive();
+    received_end.store(received.has_value() && !received->has_value());
+    receive_finished.store(true);
+  });
+
+  std::this_thread::sleep_for(std::chrono::milliseconds(50));
+  require(!receive_finished.load(),
+          "native http receive should block before close");
+  const auto closed = transport.close();
+  require(closed.has_value(), "native http close should succeed");
+  if (receive_thread.joinable()) {
+    receive_thread.join();
+  }
+  require(receive_finished.load(), "native http close should unblock receive");
+  require(received_end.load(), "native http receive should report end");
+}
+
 void test_native_streamable_http_transport_receives_server_request() {
   constexpr int kPort = 40211;
   const std::string kPath = "/native-mcp";
@@ -2774,6 +2829,67 @@ void test_native_streamable_http_server_transport_diagnostics_timeout_cleanup() 
   require(closed.has_value(), "native timeout server close should succeed");
 }
 
+void test_native_streamable_http_server_transport_rejects_unknown_client_response_id() {
+  constexpr int kPort = 40217;
+  const std::string kPath = "/native-server-unknown-response";
+  mcp::transport::StreamableHttpServerTransport transport(
+      mcp::transport::StreamableHttpServerTransportOptions{
+          .listen_host = "127.0.0.1",
+          .listen_port = kPort,
+          .path = kPath,
+      });
+
+  const auto sent = transport.send(mcp::protocol::JsonRpcResponse{
+      .id = mcp::protocol::RequestId{std::string("unknown-client-request")},
+      .result = Json::object(),
+  });
+  require(
+      !sent.has_value(),
+      "native server should reject response without pending client request");
+  require(sent.error().message ==
+              "streamable http server transport has no pending client request",
+          "native server unknown client response message mismatch");
+  require(sent.error().detail == "unknown-client-request",
+          "native server unknown client response detail mismatch");
+  require(sent.error().category == "transport",
+          "native server unknown client response category mismatch");
+
+  const auto closed = transport.close();
+  require(closed.has_value(),
+          "native server unknown client response close should succeed");
+}
+
+void test_native_streamable_http_server_transport_close_unblocks_receive() {
+  constexpr int kPort = 40218;
+  const std::string kPath = "/native-server-close";
+  mcp::transport::StreamableHttpServerTransport transport(
+      mcp::transport::StreamableHttpServerTransportOptions{
+          .listen_host = "127.0.0.1",
+          .listen_port = kPort,
+          .path = kPath,
+      });
+
+  std::atomic<bool> receive_finished{false};
+  std::atomic<bool> received_end{false};
+  std::thread receive_thread([&]() {
+    const auto received = transport.receive();
+    received_end.store(received.has_value() && !received->has_value());
+    receive_finished.store(true);
+  });
+
+  std::this_thread::sleep_for(std::chrono::milliseconds(50));
+  require(!receive_finished.load(),
+          "native server receive should block before close");
+  const auto closed = transport.close();
+  require(closed.has_value(), "native server close should succeed");
+  if (receive_thread.joinable()) {
+    receive_thread.join();
+  }
+  require(receive_finished.load(),
+          "native server close should unblock receive");
+  require(received_end.load(), "native server receive should report end");
+}
+
 }  // namespace
 
 int main() {
@@ -2830,12 +2946,21 @@ int main() {
        test_native_streamable_http_transport_exposes_client_contract},
       {"native streamable http transport diagnostics timeout cleanup",
        test_native_streamable_http_transport_diagnostics_timeout_cleanup},
+      {"native streamable http transport rejects unknown server response id",
+       test_native_streamable_http_transport_rejects_unknown_server_response_id},
+      {"native streamable http transport close unblocks receive",
+       test_native_streamable_http_transport_close_unblocks_receive},
       {"native streamable http transport receives server request",
        test_native_streamable_http_transport_receives_server_request},
       {"native streamable http server transport exposes server contract",
        test_native_streamable_http_server_transport_exposes_server_contract},
       {"native streamable http server transport diagnostics timeout cleanup",
        test_native_streamable_http_server_transport_diagnostics_timeout_cleanup},
+      {"native streamable http server transport rejects unknown client "
+       "response id",
+       test_native_streamable_http_server_transport_rejects_unknown_client_response_id},
+      {"native streamable http server transport close unblocks receive",
+       test_native_streamable_http_server_transport_close_unblocks_receive},
   };
 
   std::size_t failures = 0;
