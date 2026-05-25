@@ -109,6 +109,8 @@ class ToolRegistry {
       const SessionContext& session_context) const;
 
   /// @brief Invoke a tool with only a session id.
+  /// @param name Registered tool name.
+  /// @param arguments JSON arguments passed to the handler.
   /// @param session_id Session id copied into ToolContext.
   core::Result<protocol::ToolResult> call(std::string_view name,
                                           protocol::Json arguments,

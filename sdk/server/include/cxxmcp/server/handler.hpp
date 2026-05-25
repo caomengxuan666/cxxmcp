@@ -217,7 +217,6 @@ struct ServerHandler {
 };
 
 /// @brief Installs all non-empty callbacks from a ServerHandler.
-/// @param handler Callback aggregate to apply.
 /// @return Reference to this server for chaining.
 inline Server& Server::set_handler(const ServerHandler& handler) {
   handler.apply_to(*this);

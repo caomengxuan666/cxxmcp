@@ -59,14 +59,14 @@ using Unit = std::monostate;
 ///
 /// Uses `std::expected` when the standard library provides it; otherwise the
 /// SDK falls back to `tl::expected` with the same value/error shape. The error
-/// side is always @ref Error.
+/// side is always mcp::core::Error.
 template <typename T>
 using Result = std::expected<T, Error>;
 #else
 /// @brief Alias for the SDK result type.
 ///
 /// Uses `tl::expected` on toolchains that do not yet provide
-/// `std::expected`. The error side is always @ref Error.
+/// `std::expected`. The error side is always mcp::core::Error.
 template <typename T>
 using Result = tl::expected<T, Error>;
 

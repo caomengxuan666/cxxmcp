@@ -202,7 +202,6 @@ struct ClientHandler {
 };
 
 /// @brief Installs all non-empty callbacks from a ClientHandler.
-/// @param handler Callback aggregate to apply.
 /// @return Reference to this client for chaining.
 inline Client& Client::set_handler(const ClientHandler& handler) {
   handler.apply_to(*this);
