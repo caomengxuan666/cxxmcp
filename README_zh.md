@@ -246,6 +246,11 @@ raw JSON-RPC request / notification API 会保留，用于 vendor-specific metho
 未来协议兼容和 conformance test。特殊 runtime 集成应通过 public transport
 contract 上的兼容 adapter 完成，而不是扩展协议本身。
 
+task 和 elicitation 已作为 typed SDK capability 暴露，但它们仍然是可选能力族。
+只要求 core MCP parity 的 milestone 不应强制应用实现 task 或 elicitation handler，
+除非该 milestone 明确覆盖这些能力。capability negotiation 和 raw JSON-RPC escape
+hatch 是部分实现或未来能力的兼容路径。
+
 ## 协议版本策略
 
 cxxmcp 跟随已发布的 MCP protocol snapshot，不自定义协议版本。SDK 只声明并校验

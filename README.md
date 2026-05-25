@@ -253,6 +253,13 @@ compatibility, and conformance tests. Unusual runtime integrations should be
 implemented through compatibility adapters over the public transport contracts,
 not by extending the protocol.
 
+Tasks and elicitation are exposed as typed SDK capabilities, but they remain
+optional feature families. A milestone that targets core MCP parity must not
+force applications to implement task or elicitation handlers unless that
+milestone explicitly covers those capabilities. Capability negotiation and raw
+JSON-RPC escape hatches remain the compatibility path for partial or future
+feature support.
+
 ## Protocol Version Policy
 
 cxxmcp tracks published MCP protocol snapshots and does not mint custom

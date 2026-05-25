@@ -667,9 +667,9 @@ true:
 - [x] Do not add a second JSON stack.
 - [x] Do not add a second HTTP stack just to look more async.
 - [x] Do not make gateway policy part of public SDK headers.
-- [ ] Do not make task and elicitation mandatory if a milestone only requires
+- [x] Do not make task and elicitation mandatory if a milestone only requires
   core MCP parity.
-- [ ] Do not optimize for clever abstraction at the cost of source
+- [x] Do not optimize for clever abstraction at the cost of source
   compatibility.
 - [x] Do not let examples present runtime/gateway APIs as the canonical SDK
   path.

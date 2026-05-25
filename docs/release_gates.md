@@ -64,3 +64,7 @@ Before a release, review public header diffs under:
 Public renames must add the new API first, keep the old name with
 `CXXMCP_DEPRECATED("message")`, document the migration, and remove the old name
 only in the next major release.
+
+Do not replace a stable public source API only to make the implementation
+abstraction cleaner. Prefer additive Peer/Service helpers, compatibility
+adapters, and documented deprecation over source-breaking abstraction churn.
