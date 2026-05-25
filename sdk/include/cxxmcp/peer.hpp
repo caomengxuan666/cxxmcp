@@ -1681,16 +1681,19 @@ class Peer<RoleServer> {
   }
 
   Peer& set_completion_handler(server::Server::JsonHandler handler) {
+    completion_handler_ = handler;
     server_->set_completion_handler(std::move(handler));
     return *this;
   }
 
   Peer& set_sampling_handler(server::Server::JsonHandler handler) {
+    sampling_handler_ = handler;
     server_->set_sampling_handler(std::move(handler));
     return *this;
   }
 
   Peer& set_logging_handler(server::Server::LoggingHandler handler) {
+    logging_handler_ = handler;
     server_->set_logging_handler(std::move(handler));
     return *this;
   }
@@ -2001,6 +2004,36 @@ class Peer<RoleServer> {
           request.id, protocol::resource_templates_list_result_to_json(result));
     }
 
+    if (request.method == protocol::CompletionCompleteMethod &&
+        completion_handler_) {
+      const auto result = completion_handler_(request.params);
+      if (!result) {
+        return detail::peer_error_response(request, result.error());
+      }
+      return protocol::make_response(request.id, *result);
+    }
+
+    if (request.method == protocol::SamplingCreateMessageMethod &&
+        sampling_handler_) {
+      const auto result = sampling_handler_(request.params);
+      if (!result) {
+        return detail::peer_error_response(request, result.error());
+      }
+      return protocol::make_response(request.id, *result);
+    }
+
+    if (request.method == protocol::LoggingSetLevelMethod && logging_handler_) {
+      if (!request.params.is_object() || !request.params.contains("level") ||
+          !request.params.at("level").is_string()) {
+        return detail::peer_error_response(
+            request, errors::make(protocol::ErrorCode::InvalidRequest,
+                                  "logging/setLevel requires a string level"));
+      }
+      logging_handler_(request.params.at("level").get<std::string>(),
+                       "logging level changed");
+      return protocol::make_response(request.id, protocol::Json::object());
+    }
+
     return server_->handle_request(request, context);
   } catch (const std::exception& ex) {
     return detail::peer_error_response(request,
@@ -2263,6 +2296,9 @@ class Peer<RoleServer> {
   std::vector<std::unique_ptr<server::Transport>> native_context_transports_;
   bool native_notification_state_ = false;
   server::Server::RawRequestHandler raw_request_handler_;
+  server::Server::JsonHandler completion_handler_;
+  server::Server::JsonHandler sampling_handler_;
+  server::Server::LoggingHandler logging_handler_;
   server::Server::RawNotificationHandler raw_notification_handler_;
   server::Server::ProgressHandler progress_handler_;
   server::Server::RootsListChangedHandler roots_list_changed_handler_;

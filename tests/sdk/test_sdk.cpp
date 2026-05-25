@@ -846,6 +846,64 @@ void test_server_peer_prompt_resource_dispatches_on_peer_boundary() {
       "resources/templates/list template mismatch");
 }
 
+void test_server_peer_handler_requests_dispatch_on_peer_boundary() {
+  mcp::ServerPeer peer;
+  std::string logged_level;
+  peer.set_completion_handler([](const Json& params) {
+        return mcp::core::Result<Json>{Json{
+            {"completion", params.value("prefix", std::string{}) + "llo"}}};
+      })
+      .set_sampling_handler([](const Json& params) {
+        return mcp::core::Result<Json>{
+            Json{{"sampled", params.at("messages").size()}}};
+      })
+      .set_logging_handler(
+          [&](std::string_view level, std::string_view reason) {
+            logged_level = std::string(level) + ":" + std::string(reason);
+          });
+
+  RecordingServerContractTransport transport;
+  transport.received.push_back(mcp::protocol::JsonRpcRequest{
+      .method = std::string(mcp::protocol::CompletionCompleteMethod),
+      .params = Json{{"prefix", "he"}},
+      .id = mcp::protocol::RequestId{std::int64_t{30}},
+  });
+  transport.received.push_back(mcp::protocol::JsonRpcRequest{
+      .method = std::string(mcp::protocol::SamplingCreateMessageMethod),
+      .params = Json{{"messages", Json::array({Json{{"role", "user"}}})}},
+      .id = mcp::protocol::RequestId{std::int64_t{31}},
+  });
+  transport.received.push_back(mcp::protocol::JsonRpcRequest{
+      .method = std::string(mcp::protocol::LoggingSetLevelMethod),
+      .params = Json{{"level", "debug"}},
+      .id = mcp::protocol::RequestId{std::int64_t{32}},
+  });
+
+  const auto served = peer.serve_transport(transport);
+  require(served.has_value(),
+          "server peer handler request dispatch should succeed");
+  require(transport.sent.size() == 3,
+          "server peer handler request response count mismatch");
+
+  const auto* completion =
+      std::get_if<mcp::protocol::JsonRpcResponse>(&transport.sent.at(0));
+  require(completion != nullptr, "completion response missing");
+  require(completion->result->at("completion") == "hello",
+          "completion result mismatch");
+
+  const auto* sampling =
+      std::get_if<mcp::protocol::JsonRpcResponse>(&transport.sent.at(1));
+  require(sampling != nullptr, "sampling response missing");
+  require(sampling->result->at("sampled") == 1, "sampling result mismatch");
+
+  const auto* logging =
+      std::get_if<mcp::protocol::JsonRpcResponse>(&transport.sent.at(2));
+  require(logging != nullptr, "logging response missing");
+  require(logging->result.has_value(), "logging result missing");
+  require(logged_level == "debug:logging level changed",
+          "logging handler should run at peer boundary");
+}
+
 void test_client_peer_native_raw_request_dispatches_interleaved_messages() {
   auto transport = std::make_unique<RecordingClientContractTransport>();
   auto* transport_ptr = transport.get();
@@ -1269,6 +1327,7 @@ int main() {
     test_server_peer_initialize_dispatches_on_peer_boundary();
     test_server_peer_tool_discovery_dispatches_on_peer_boundary();
     test_server_peer_prompt_resource_dispatches_on_peer_boundary();
+    test_server_peer_handler_requests_dispatch_on_peer_boundary();
     test_client_peer_native_raw_request_dispatches_interleaved_messages();
     test_client_peer_native_raw_request_reports_transport_failures();
     test_request_handle_rejects_invalid_state();
