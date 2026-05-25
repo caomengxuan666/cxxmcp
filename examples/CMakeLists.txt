@@ -26,6 +26,11 @@ if(TARGET mcp_client AND TARGET mcp_server)
     add_executable(mcp_example_client_loopback client_loopback.cpp)
     target_link_libraries(mcp_example_client_loopback PRIVATE mcp_client
                                                           mcp_server)
+
+    add_executable(mcp_example_task_async_client_server
+                   task_async_client_server.cpp)
+    target_link_libraries(mcp_example_task_async_client_server
+                          PRIVATE mcp_client mcp_server)
 endif()
 
 if(TARGET mcp_client AND TARGET mcp_server AND TARGET mcp_example_stdio_server)
