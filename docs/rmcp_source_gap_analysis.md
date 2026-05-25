@@ -443,11 +443,14 @@ Covered by current tree:
 - typed `mcp::server::tool<Args, Result>(...)` registration facade
 - typed tool handlers can accept decoded args, `ToolContext`, or a cooperative
   cancellation token without dropping to the low-level `ToolHandler`
+- prompt shorthand handlers can accept `PromptContext` alongside raw JSON or
+  string arguments without dropping to the low-level `PromptHandler`
 
 Action:
 
 - add optional `json-schema-validator`
-- deepen typed helper templates beyond tools where context injection is useful
+- deepen typed helper templates for resources and any remaining non-tool
+  surfaces where context injection is useful
 - keep registry helpers as convenience wrappers over `ServerHandler`
 
 ## Recommended Roadmap

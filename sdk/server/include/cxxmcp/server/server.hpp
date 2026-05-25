@@ -180,6 +180,44 @@ decltype(auto) invoke_tool_handler(Handler& handler, Args&& args,
   }
 }
 
+template <class Handler>
+decltype(auto) invoke_prompt_handler(Handler& handler,
+                                     const PromptContext& context) {
+  using Json = protocol::Json;
+  if constexpr (std::is_invocable_v<Handler&, const Json&,
+                                    const PromptContext&>) {
+    return handler(context.arguments, context);
+  } else if constexpr (std::is_invocable_v<Handler&, const PromptContext&,
+                                           const Json&>) {
+    return handler(context, context.arguments);
+  } else if constexpr (std::is_invocable_v<Handler&, std::string,
+                                           const PromptContext&>) {
+    auto text = argument_from_json<std::string>(context.arguments,
+                                                std::string_view("text"));
+    return handler(std::move(text), context);
+  } else if constexpr (std::is_invocable_v<Handler&, const PromptContext&,
+                                           std::string>) {
+    auto text = argument_from_json<std::string>(context.arguments,
+                                                std::string_view("text"));
+    return handler(context, std::move(text));
+  } else if constexpr (std::is_invocable_v<Handler&, const Json&>) {
+    return handler(context.arguments);
+  } else if constexpr (std::is_invocable_v<Handler&, std::string>) {
+    auto text = argument_from_json<std::string>(context.arguments,
+                                                std::string_view("text"));
+    return handler(std::move(text));
+  } else if constexpr (std::is_invocable_v<Handler&, const PromptContext&>) {
+    return handler(context);
+  } else if constexpr (std::is_invocable_v<Handler&>) {
+    return handler();
+  } else {
+    static_assert(always_false_v<Handler>,
+                  "prompt handler must accept Json, Json+PromptContext, "
+                  "PromptContext+Json, string, string+PromptContext, "
+                  "PromptContext+string, PromptContext, or no arguments");
+  }
+}
+
 }  // namespace detail
 
 /// @brief Configuration used to construct a Server.
@@ -832,8 +870,9 @@ class App {
 
     /// @brief Registers a prompt using a callable adapter.
     /// @param name Prompt name advertised to clients.
-    /// @param handler Callable accepting Json, string, or no argument and
-    /// returning prompt text/result or core::Result of either.
+    /// @param handler Callable accepting Json, string, PromptContext, one of
+    /// the Json/string plus PromptContext combinations, or no argument. Returns
+    /// prompt text/result or core::Result of either.
     template <class Handler>
     Builder& prompt(std::string name, Handler handler);
 
@@ -954,42 +993,14 @@ App::Builder& App::Builder::prompt(std::string name, Handler handler) {
       [handler = std::move(handler)](const PromptContext& context)
           -> core::Result<protocol::PromptsGetResult> {
         try {
-          if constexpr (std::is_invocable_v<Handler, const protocol::Json&>) {
-            auto handled = handler(context.arguments);
-            if constexpr (detail::is_result<decltype(handled)>::value) {
-              if (!handled) {
-                return std::unexpected(handled.error());
-              }
-              return detail::value_to_prompt_result(*handled);
-            } else {
-              return detail::value_to_prompt_result(std::move(handled));
+          auto handled = detail::invoke_prompt_handler(handler, context);
+          if constexpr (detail::is_result<decltype(handled)>::value) {
+            if (!handled) {
+              return std::unexpected(handled.error());
             }
-          } else if constexpr (std::is_invocable_v<Handler, std::string>) {
-            auto text = detail::argument_from_json<std::string>(
-                context.arguments, "text");
-            auto handled = handler(std::move(text));
-            if constexpr (detail::is_result<decltype(handled)>::value) {
-              if (!handled) {
-                return std::unexpected(handled.error());
-              }
-              return detail::value_to_prompt_result(*handled);
-            } else {
-              return detail::value_to_prompt_result(std::move(handled));
-            }
-          } else if constexpr (std::is_invocable_v<Handler>) {
-            auto handled = handler();
-            if constexpr (detail::is_result<decltype(handled)>::value) {
-              if (!handled) {
-                return std::unexpected(handled.error());
-              }
-              return detail::value_to_prompt_result(*handled);
-            } else {
-              return detail::value_to_prompt_result(std::move(handled));
-            }
+            return detail::value_to_prompt_result(*handled);
           } else {
-            static_assert(
-                std::is_invocable_v<Handler, const protocol::Json&>,
-                "prompt handler must accept Json, string, or no arguments");
+            return detail::value_to_prompt_result(std::move(handled));
           }
         } catch (const std::exception& exception) {
           return std::unexpected(core::Error{

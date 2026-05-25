@@ -1905,6 +1905,11 @@ void test_server_app_builder_registers_parity_surface() {
                 });
                 return result;
               })
+          .prompt("session-summary",
+                  [](const mcp::server::PromptContext& context) {
+                    return context.session_id + ":" +
+                           context.arguments.at("text").get<std::string>();
+                  })
           .resource(
               mcp::protocol::Resource{
                   .uri = "file:///tmp/readme.txt",
@@ -2011,6 +2016,20 @@ void test_server_app_builder_registers_parity_surface() {
   require(
       prompts->result->at("messages").at(0).at("content").at("text") == "hello",
       "facade prompt mismatch");
+
+  const auto context_prompt = server.handle_request(
+      mcp::protocol::JsonRpcRequest{
+          .method = "prompts/get",
+          .params = Json{{"name", "session-summary"},
+                         {"arguments", Json{{"text", "hello"}}}},
+          .id = std::int64_t{30},
+      },
+      context);
+  require(context_prompt.has_value(), "facade prompt context get failed");
+  require(
+      context_prompt->result->at("messages").at(0).at("content").at("text") ==
+          "facade:hello",
+      "facade prompt context mismatch");
 
   const auto resources = server.handle_request(
       mcp::protocol::JsonRpcRequest{
