@@ -72,6 +72,15 @@ auto server = mcp::server::App::builder()
         .handler([](SumArgs args) {
             return SumResult{.sum = args.a + args.b};
         }))
+    .prompt("summarize", [](std::string text,
+                            const mcp::server::PromptContext& context) {
+        return context.session_id + ": " + text;
+    })
+    .resource("file:///workspace/session.txt",
+              [](std::string uri,
+                 const mcp::server::ResourceContext& context) {
+        return context.session_id + ": " + uri;
+    })
     .build();
 ```
 

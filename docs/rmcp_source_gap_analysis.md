@@ -60,6 +60,49 @@ facades now give it an RMCP-like entry point, while the remaining work is to
 make the lower-level protocol, transport, and task-operation behavior just as
 complete.
 
+## Fact-Standard Readiness Compared With RMCP
+
+The current C++ SDK is a serious candidate for the default C++ MCP SDK, but it
+is not yet RMCP-level or reference-grade as an SDK. It has the right public
+shape and broad feature coverage, but RMCP still has the stronger SDK core:
+peer/service lifecycle, async transport, request cancellation, task processing,
+protocol modeling, and handler ergonomics are integrated more deeply.
+
+This is a technical SDK-readiness judgment, not an ecosystem adoption judgment.
+Even ignoring stars, package downloads, or downstream users, the C++ SDK should
+not yet be described as a de facto-standard-grade SDK. A more accurate label is
+`RMCP-like strong candidate`.
+
+| Dimension | RMCP | Current C++ SDK |
+|---|---|---|
+| SDK center | `Peer<Role>` / `Service<Role>` are the primary implementation model | `Peer` / `Service` are public facades over concrete `Client` / `Server` implementations |
+| Lifecycle | `RunningService` has real async run, shutdown, and wait semantics | `serve`, `close`, and `wait` exist, but the service layer is still mostly synchronous and `wait` is not a real driver join |
+| Transport | role-generic async transport is the native boundary | role-generic `Transport<Role>` exists, while HTTP and process-stdio still rely heavily on compatibility adapters and request/response-oriented internals |
+| Handler ergonomics | handler traits and macros are a first-class authoring model | handler interfaces, aggregates, and C++ builders are useful, but less integrated than RMCP traits and macros |
+| Protocol model | model layer is closer to the tracked MCP spec and richer in typed shapes | coverage is broad, but `_meta`, annotations, extension bags, elicitation/schema, and task result details still need tightening |
+| Request lifecycle | timeout, cancellation, request handles, and service cancellation are deeply connected | request handles and cooperative cancellation exist, but cancellation and timeout are not yet uniform from transport through service |
+| Task support | operation processing and task lifecycle are core SDK concepts | task APIs and server task processing exist, but hard cancellation and richer operation result transport remain gaps |
+| Packaging | Cargo makes the SDK easy to consume with consistent build settings | CMake package usage is now tested, but Conan/vcpkg and release artifact discipline still need to be established |
+
+The implication is that the C++ SDK does not need to copy RMCP line by line, but
+it should close the abstraction gap before claiming SDK-level standard status.
+The highest-value closure points are:
+
+1. make `Peer` / `Service` the real primary implementation path, not just the
+   public facade
+2. make built-in stdio, process-stdio, and HTTP transports native
+   `Transport<Role>` implementations with bidirectional receive loops
+3. give `RunningService::wait`, shutdown, and cancellation real lifecycle
+   semantics
+4. complete the protocol model details where the SDK still stores spec fields as
+   raw JSON or omits typed accessors
+5. keep package-smoke, RMCP conformance, and cross-SDK interop tests as required
+   gates for public releases
+
+This section is intentionally kept in the RMCP gap analysis because it is a
+snapshot judgment against RMCP's SDK shape. The durable release and ecosystem
+plan lives in [de_facto_standard_roadmap.md](./de_facto_standard_roadmap.md).
+
 ## Abstraction Difference Summary
 
 The most important conceptual difference is this:
@@ -450,12 +493,15 @@ Covered by current tree:
   cancellation token without dropping to the low-level `ToolHandler`
 - prompt shorthand handlers can accept `PromptContext` alongside raw JSON or
   string arguments without dropping to the low-level `PromptHandler`
+- resource shorthand handlers can accept read params, requested URI, and
+  `ResourceContext` combinations without dropping to the low-level
+  `ResourceReadHandler`
 
 Action:
 
 - add optional `json-schema-validator`
-- deepen typed helper templates for resources and any remaining non-tool
-  surfaces where context injection is useful
+- deepen typed helper templates for any remaining non-tool surfaces where
+  context injection is useful
 - keep registry helpers as convenience wrappers over `ServerHandler`
 
 ## Recommended Roadmap
@@ -553,3 +599,173 @@ The most important work is:
 5. keep `cpp-httplib` for now behind a replaceable transport adapter
 
 This approach preserves the current product layers while giving the project an SDK surface that feels much closer to RMCP.
+
+## Multi-Agent Fact-Standard Review
+
+Date: 2026-05-25.
+
+This review used four separate sub-agent passes:
+
+- protocol and public API coverage
+- transport, interoperability, and conformance
+- engineering quality, release, and maintainability
+- developer experience, packaging, and ecosystem readiness
+
+The combined conclusion is that `cxxmcp` is a strong candidate for becoming the
+default C++ MCP SDK, but it has not yet reached de facto-standard status. The
+aggregate score is about `6.5 / 10`.
+
+| Review area | Score | Summary |
+|---|---:|---|
+| Protocol and API coverage | 7 / 10 | Broad protocol families and peer/service facades exist, but protocol negotiation, HTTP auth, and public-contract stability need work. |
+| Transport and interop | 6 / 10 | stdio, process stdio, and Streamable HTTP are usable, but conformance coverage is narrow and HTTP session/backpressure/resume behavior is not yet standard-grade. |
+| Engineering and release maturity | 6.5 / 10 | CMake packaging, install targets, scripts, and release policy exist, but CI, API/ABI policy enforcement, dependency governance, and package smoke reliability are not enough. |
+| Developer experience and ecosystem | 6.5 / 10 | README, examples, CMake targets, CLI, and smoke tests are useful, but package-manager entry points, public docs, governance files, and community signals are missing. |
+
+### Current Baseline
+
+The current tree already has important standard-SDK ingredients:
+
+- SDK-first public story around `protocol`, `transport`, `handler`, `peer`,
+  `service`, `client`, and `server`
+- stable-looking CMake targets such as `cxxmcp::protocol`,
+  `cxxmcp::transport`, `cxxmcp::peer`, `cxxmcp::service`,
+  `cxxmcp::client`, `cxxmcp::server`, and `cxxmcp::sdk`
+- typed protocol models for tools, prompts, resources, roots, completion,
+  logging, sampling, elicitation, tasks, cancellation, and progress
+- stdio, process-stdio, and HTTP transport implementations
+- RMCP-style peer and service facades above compatibility client/server layers
+- package-smoke and RMCP conformance test entries
+- release policy, changelog, Doxygen support, formatting, cpplint, and
+  clang-tidy scripts
+
+That is enough to call the project a serious SDK candidate. It is not enough to
+call it the MCP C++ SDK fact standard yet.
+
+### Verification Results
+
+Local test verification captured by the review:
+
+```powershell
+ctest --test-dir build-client-server --output-on-failure
+```
+
+Result: `5 / 5` passed.
+
+Covered tests:
+
+- `protocol`
+- `client_server`
+- `stdio_transport`
+- `http_transport`
+- `process_stdio_transport`
+
+Broader smoke verification captured by the review:
+
+```powershell
+ctest --test-dir build-smoke -C Debug --output-on-failure
+```
+
+Result: `8 / 12` passed.
+
+Passed:
+
+- `protocol`
+- `client_server`
+- `stdio_transport`
+- `http_transport`
+- `rmcp_conformance`
+- `sdk`
+- `public_targets`
+- `process_stdio_transport`
+
+Failed or not runnable at the time of that review:
+
+- `transport_contract`: test executable was missing from the build directory
+- `transport_stdio_contract`: test executable was missing from the build
+  directory
+- `transport_adapters`: test executable was missing from the build directory
+- `package_smoke`: failed in the external consumer build because MSVC runtime
+  settings were mixed between `MTd_StaticDebug` and `MDd_DynamicDebug`
+
+This package-smoke failure was a release-grade blocker when the review was
+written. The durable requirement remains: a de facto-standard SDK must not
+merely build in-tree; it must install and link reliably from a clean consumer
+project on every supported toolchain.
+
+### Blocking Gaps
+
+1. Release validation must stay continuously enforced.
+
+   Installed-package consumption needs to remain a required release gate. CI
+   also needs to run the same package-smoke path on Windows, Linux, and macOS.
+
+2. Protocol version negotiation is too thin.
+
+   The SDK tracks `2025-11-25` as the current protocol version, but a standard
+   SDK needs explicit supported-version lists, initialize negotiation, rejection
+   behavior, and compatibility tests. Official MCP versioning requires client
+   and server to agree on one protocol version during initialization.
+
+3. Streamable HTTP is usable but not yet product-grade.
+
+   The implementation has session ids, POST, GET SSE, DELETE, and basic
+   server-to-client messaging, but standard-grade behavior needs multi-session
+   tests, bounded queues, backpressure, timeout/cancellation semantics,
+   reconnect behavior, event ids, and `Last-Event-ID` resume coverage.
+
+4. HTTP authorization is not yet an SDK-level contract.
+
+   The client can add bearer and custom headers, and the server has an auth
+   hook, but a standard SDK needs explicit request auth context, scopes,
+   claims, standard challenge/error behavior, and OAuth/resource-metadata
+   integration points.
+
+5. Process stdio is not cross-platform complete.
+
+   Non-Windows process stdio paths still need a POSIX implementation. MCP SDKs
+   are commonly used to spawn local MCP servers, so this is part of the core
+   SDK expectation.
+
+6. RMCP conformance coverage is still narrow.
+
+   The current conformance test proves useful interop, but it does not yet cover
+   a full matrix of tools, prompts, resources, sampling, elicitation, tasks,
+   progress, cancellation, error paths, HTTP sessions, and server/client
+   combinations across RMCP, TypeScript, Python, and cxxmcp.
+
+7. Ecosystem readiness is not there yet.
+
+   The project needs public CI status, release artifacts, package-manager
+   routes such as vcpkg or Conan, a minimal external consumer template,
+   published API docs, contribution/security docs, and a clear dependency
+   update policy before it can credibly be described as the default C++ MCP SDK.
+
+### Minimal Closure Plan
+
+The shortest path to a defensible fact-standard claim is:
+
+1. Keep `package_smoke` as a required release gate across supported generators
+   and runtimes.
+2. Add CI for Windows/MSVC, Linux/GCC, Linux/Clang, and macOS/AppleClang.
+3. Add protocol-version negotiation tests and initialize fixtures for the
+   tracked MCP version.
+4. Complete Streamable HTTP session, backpressure, cancellation, reconnect, and
+   resume semantics.
+5. Add POSIX process-stdio support.
+6. Expand RMCP and cross-SDK interoperability tests into a matrix, not a single
+   happy path.
+7. Publish install and package-manager paths for normal C++ consumers.
+
+Until those are closed, the right public description is:
+
+```text
+cxxmcp is an MCP C++ SDK and a strong candidate for the default C++ SDK,
+but it is not yet a de facto-standard-grade SDK.
+```
+
+Relevant protocol references:
+
+- https://modelcontextprotocol.io/specification
+- https://modelcontextprotocol.io/specification/2025-11-25/changelog
+- https://blog.modelcontextprotocol.io/tags/protocol/

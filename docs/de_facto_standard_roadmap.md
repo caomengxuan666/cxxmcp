@@ -390,4 +390,6 @@ Do not optimize for these if the goal is fact-standard SDK status:
 
 - [Capability Matrix](./capability_matrix.md)
 - [RMCP-Like SDK Guidance](./rmcp_like_sdk_guidance.md)
-- [RMCP Source Gap Analysis](./rmcp_source_gap_analysis.md)
+- [RMCP Source Gap Analysis](./rmcp_source_gap_analysis.md) records the
+  current RMCP comparison and fact-standard readiness snapshot; this roadmap
+  keeps the durable closure plan.

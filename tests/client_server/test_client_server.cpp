@@ -2096,11 +2096,11 @@ void test_server_app_builder_registers_parity_surface() {
                 });
                 return result;
               })
-          .prompt("session-summary",
-                  [](const mcp::server::PromptContext& context) {
-                    return context.session_id + ":" +
-                           context.arguments.at("text").get<std::string>();
-                  })
+          .prompt(
+              "session-summary",
+              [](std::string text, const mcp::server::PromptContext& context) {
+                return context.session_id + ":" + text;
+              })
           .resource(
               mcp::protocol::Resource{
                   .uri = "file:///tmp/readme.txt",
@@ -2117,6 +2117,12 @@ void test_server_app_builder_registers_parity_surface() {
                     .text = "hello",
                 });
                 return result;
+              })
+          .resource(
+              "file:///tmp/session.txt",
+              [](std::string uri, const mcp::server::ResourceContext& context) {
+                return context.session_id + ":" + uri + ":" +
+                       context.params.value("section", std::string("default"));
               })
           .resource_template(mcp::protocol::ResourceTemplate{
               .uri_template = "file:///tmp/{name}.txt",
@@ -2232,6 +2238,19 @@ void test_server_app_builder_registers_parity_surface() {
   require(resources.has_value(), "facade resource read failed");
   require(resources->result->at("contents").at(0).at("text") == "hello",
           "facade resource mismatch");
+
+  const auto context_resource = server.handle_request(
+      mcp::protocol::JsonRpcRequest{
+          .method = "resources/read",
+          .params =
+              Json{{"uri", "file:///tmp/session.txt"}, {"section", "api"}},
+          .id = std::int64_t{40},
+      },
+      context);
+  require(context_resource.has_value(), "facade resource context read failed");
+  require(context_resource->result->at("contents").at(0).at("text") ==
+              "facade:file:///tmp/session.txt:api",
+          "facade resource context mismatch");
 
   const auto templates = server.handle_request(
       mcp::protocol::JsonRpcRequest{

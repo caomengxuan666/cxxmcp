@@ -18,6 +18,7 @@
 #include <stdexcept>
 #include <string>
 #include <string_view>
+#include <tuple>
 #include <type_traits>
 #include <unordered_map>
 #include <unordered_set>
@@ -46,6 +47,35 @@ struct is_result<core::Result<T>> : std::true_type {};
 
 template <class>
 inline constexpr bool always_false_v = false;
+
+template <class T, class = void>
+struct callable_argument_types {
+  using type = void;
+};
+
+template <class Class, class Return, class... Args>
+struct callable_argument_types<Return (Class::*)(Args...) const, void> {
+  using type = std::tuple<std::decay_t<Args>...>;
+};
+
+template <class Class, class Return, class... Args>
+struct callable_argument_types<Return (Class::*)(Args...), void> {
+  using type = std::tuple<std::decay_t<Args>...>;
+};
+
+template <class Return, class... Args>
+struct callable_argument_types<Return (*)(Args...), void> {
+  using type = std::tuple<std::decay_t<Args>...>;
+};
+
+template <class T>
+struct callable_argument_types<T, std::void_t<decltype(&T::operator())>>
+    : callable_argument_types<decltype(&T::operator())> {};
+
+template <class Handler, class... Args>
+inline constexpr bool callable_arguments_match_v = std::is_same_v<
+    typename callable_argument_types<std::decay_t<Handler>>::type,
+    std::tuple<std::decay_t<Args>...>>;
 
 template <class T>
 inline protocol::Json value_to_json(T&& value) {
@@ -184,8 +214,31 @@ template <class Handler>
 decltype(auto) invoke_prompt_handler(Handler& handler,
                                      const PromptContext& context) {
   using Json = protocol::Json;
-  if constexpr (std::is_invocable_v<Handler&, const Json&,
-                                    const PromptContext&>) {
+  if constexpr (callable_arguments_match_v<Handler, Json, PromptContext>) {
+    return handler(context.arguments, context);
+  } else if constexpr (callable_arguments_match_v<Handler, PromptContext,
+                                                  Json>) {
+    return handler(context, context.arguments);
+  } else if constexpr (callable_arguments_match_v<Handler, std::string,
+                                                  PromptContext>) {
+    auto text = argument_from_json<std::string>(context.arguments,
+                                                std::string_view("text"));
+    return handler(std::move(text), context);
+  } else if constexpr (callable_arguments_match_v<Handler, PromptContext,
+                                                  std::string>) {
+    auto text = argument_from_json<std::string>(context.arguments,
+                                                std::string_view("text"));
+    return handler(context, std::move(text));
+  } else if constexpr (callable_arguments_match_v<Handler, Json>) {
+    return handler(context.arguments);
+  } else if constexpr (callable_arguments_match_v<Handler, std::string>) {
+    auto text = argument_from_json<std::string>(context.arguments,
+                                                std::string_view("text"));
+    return handler(std::move(text));
+  } else if constexpr (callable_arguments_match_v<Handler, PromptContext>) {
+    return handler(context);
+  } else if constexpr (std::is_invocable_v<Handler&, const Json&,
+                                           const PromptContext&>) {
     return handler(context.arguments, context);
   } else if constexpr (std::is_invocable_v<Handler&, const PromptContext&,
                                            const Json&>) {
@@ -215,6 +268,55 @@ decltype(auto) invoke_prompt_handler(Handler& handler,
                   "prompt handler must accept Json, Json+PromptContext, "
                   "PromptContext+Json, string, string+PromptContext, "
                   "PromptContext+string, PromptContext, or no arguments");
+  }
+}
+
+template <class Handler>
+decltype(auto) invoke_resource_handler(Handler& handler,
+                                       const ResourceContext& context) {
+  using Json = protocol::Json;
+  if constexpr (callable_arguments_match_v<Handler, Json, ResourceContext>) {
+    return handler(context.params, context);
+  } else if constexpr (callable_arguments_match_v<Handler, ResourceContext,
+                                                  Json>) {
+    return handler(context, context.params);
+  } else if constexpr (callable_arguments_match_v<Handler, std::string,
+                                                  ResourceContext>) {
+    return handler(context.uri, context);
+  } else if constexpr (callable_arguments_match_v<Handler, ResourceContext,
+                                                  std::string>) {
+    return handler(context, context.uri);
+  } else if constexpr (callable_arguments_match_v<Handler, Json>) {
+    return handler(context.params);
+  } else if constexpr (callable_arguments_match_v<Handler, std::string>) {
+    return handler(context.uri);
+  } else if constexpr (callable_arguments_match_v<Handler, ResourceContext>) {
+    return handler(context);
+  } else if constexpr (std::is_invocable_v<Handler&, const Json&,
+                                           const ResourceContext&>) {
+    return handler(context.params, context);
+  } else if constexpr (std::is_invocable_v<Handler&, const ResourceContext&,
+                                           const Json&>) {
+    return handler(context, context.params);
+  } else if constexpr (std::is_invocable_v<Handler&, std::string,
+                                           const ResourceContext&>) {
+    return handler(context.uri, context);
+  } else if constexpr (std::is_invocable_v<Handler&, const ResourceContext&,
+                                           std::string>) {
+    return handler(context, context.uri);
+  } else if constexpr (std::is_invocable_v<Handler&, const Json&>) {
+    return handler(context.params);
+  } else if constexpr (std::is_invocable_v<Handler&, std::string>) {
+    return handler(context.uri);
+  } else if constexpr (std::is_invocable_v<Handler&, const ResourceContext&>) {
+    return handler(context);
+  } else if constexpr (std::is_invocable_v<Handler&>) {
+    return handler();
+  } else {
+    static_assert(always_false_v<Handler>,
+                  "resource handler must accept Json, Json+ResourceContext, "
+                  "ResourceContext+Json, string, string+ResourceContext, "
+                  "ResourceContext+string, ResourceContext, or no arguments");
   }
 }
 
@@ -881,9 +983,10 @@ class App {
 
     /// @brief Registers a resource using a callable adapter.
     /// @param name Resource URI and default display name.
-    /// @param handler Callable accepting ResourceContext or no argument and
-    /// returning resource contents/result, protocol::Resource metadata, or
-    /// core::Result of these.
+    /// @param handler Callable accepting Json params, requested URI string,
+    /// ResourceContext, one of the Json/string plus ResourceContext
+    /// combinations, or no argument. Returns resource text/contents/result,
+    /// protocol::Resource metadata, or core::Result of these.
     template <class Handler>
     Builder& resource(std::string name, Handler handler);
 
@@ -1028,37 +1131,18 @@ App::Builder& App::Builder::resource(std::string name, Handler handler) {
       [handler = std::move(handler)](const ResourceContext& context)
           -> core::Result<protocol::ResourcesReadResult> {
         try {
-          if constexpr (std::is_invocable_v<Handler, const ResourceContext&>) {
-            auto handled = handler(context);
-            if constexpr (detail::is_result<decltype(handled)>::value) {
-              if (!handled) {
-                return std::unexpected(handled.error());
-              }
-              return detail::value_to_resource_read_result(*handled,
-                                                           context.uri);
-            } else {
-              return detail::value_to_resource_read_result(std::move(handled),
-                                                           context.uri);
+          auto handled = detail::invoke_resource_handler(handler, context);
+          if constexpr (std::is_same_v<std::decay_t<decltype(handled)>,
+                                       protocol::Resource>) {
+            return protocol::ResourcesReadResult{};
+          } else if constexpr (detail::is_result<decltype(handled)>::value) {
+            if (!handled) {
+              return std::unexpected(handled.error());
             }
-          } else if constexpr (std::is_invocable_v<Handler>) {
-            auto handled = handler();
-            if constexpr (std::is_same_v<std::decay_t<decltype(handled)>,
-                                         protocol::Resource>) {
-              return protocol::ResourcesReadResult{};
-            } else if constexpr (detail::is_result<decltype(handled)>::value) {
-              if (!handled) {
-                return std::unexpected(handled.error());
-              }
-              return detail::value_to_resource_read_result(*handled,
-                                                           context.uri);
-            } else {
-              return detail::value_to_resource_read_result(std::move(handled),
-                                                           context.uri);
-            }
+            return detail::value_to_resource_read_result(*handled, context.uri);
           } else {
-            static_assert(
-                std::is_invocable_v<Handler, const ResourceContext&>,
-                "resource handler must accept ResourceContext or no arguments");
+            return detail::value_to_resource_read_result(std::move(handled),
+                                                         context.uri);
           }
         } catch (const std::exception& exception) {
           return std::unexpected(core::Error{

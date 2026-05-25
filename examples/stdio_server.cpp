@@ -83,6 +83,11 @@ int main() {
                       .text = "hello from example",
                   };
                 })
+      .resource(
+          "file:///workspace/session.txt",
+          [](std::string uri, const mcp::server::ResourceContext& context) {
+            return context.session_id + ":" + uri;
+          })
       .resource_template("file:///workspace/{path}",
                          [] {
                            return mcp::protocol::ResourceTemplate{
