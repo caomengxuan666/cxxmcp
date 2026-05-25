@@ -94,7 +94,7 @@ if(TARGET mcp_client AND TARGET mcp_server)
     add_test(NAME public_targets COMMAND mcp_public_target_tests)
 endif()
 
-if(CXXMCP_BUILD_TESTS AND CXXMCP_BUILD_SDK AND CXXMCP_BUILD_PROTOCOL AND CXXMCP_BUILD_SERVER)
+if(CXXMCP_BUILD_TESTS AND TARGET mcp_sdk AND TARGET mcp_protocol AND TARGET mcp_server)
     set(package_smoke_args
         -DREPO_SOURCE_DIR=${PROJECT_SOURCE_DIR}
         -DBUILD_DIR=${PROJECT_BINARY_DIR}
