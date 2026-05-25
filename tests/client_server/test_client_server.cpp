@@ -1288,6 +1288,17 @@ void test_initialize_handshake_shape() {
           "protocol version mismatch");
   require(response->result->at("serverInfo").at("name") == "TestServer",
           "server name mismatch");
+  const auto& capabilities = response->result->at("capabilities");
+  require(capabilities.at("tools").at("listChanged") == true,
+          "server tools capability mismatch");
+  require(!capabilities.contains("resources"),
+          "inactive resources capability should be omitted");
+  require(!capabilities.contains("prompts"),
+          "inactive prompts capability should be omitted");
+  require(!capabilities.contains("logging"),
+          "inactive logging capability should be omitted");
+  require(!capabilities.contains("completions"),
+          "inactive completions capability should be omitted");
   require(response->result->at("capabilities").at("experimental").at("beta"),
           "server experimental mismatch");
   require(response->result->at("capabilities")
@@ -1295,6 +1306,18 @@ void test_initialize_handshake_shape() {
               .at("vendor/feature")
               .at("enabled"),
           "server extension mismatch");
+}
+
+void test_default_server_initialize_omits_inactive_capabilities() {
+  mcp::server::Server server(mcp::server::ServerOptions{});
+
+  const auto initialized = server.initialize();
+  require(initialized.has_value(), "default server initialize failed");
+
+  const auto& capabilities = initialized->at("capabilities");
+  require(capabilities.is_object(), "default capabilities must be an object");
+  require(capabilities.empty(),
+          "default server should not advertise inactive capabilities");
 }
 
 void test_server_app_builder_registers_parity_surface() {
@@ -1398,11 +1421,16 @@ void test_server_app_builder_registers_parity_surface() {
           "facade instructions mismatch");
   require(initialized->result->at("capabilities").contains("completions"),
           "completions capability missing");
-  require(
-      initialized->result->at("capabilities").at("completions").at("enabled"),
-      "completions capability should be enabled");
-  require(initialized->result->at("capabilities").at("logging").at("enabled"),
+  require(initialized->result->at("capabilities").at("completions").is_object(),
+          "completions capability should be an object");
+  require(initialized->result->at("capabilities").at("completions").empty(),
+          "completions capability should use object presence");
+  require(initialized->result->at("capabilities").contains("logging"),
           "logging capability missing");
+  require(initialized->result->at("capabilities").at("logging").is_object(),
+          "logging capability should be an object");
+  require(initialized->result->at("capabilities").at("logging").empty(),
+          "logging capability should use object presence");
 
   const auto tools = server.handle_request(
       mcp::protocol::JsonRpcRequest{
@@ -2455,6 +2483,8 @@ int main() {
       {"ping raw request", test_ping_raw_request},
       {"server info accessors and ping", test_server_info_accessors_and_ping},
       {"initialize handshake shape", test_initialize_handshake_shape},
+      {"default server initialize omits inactive capabilities",
+       test_default_server_initialize_omits_inactive_capabilities},
       {"server app builder registers parity surface",
        test_server_app_builder_registers_parity_surface},
       {"client session initialize and mark initialized",

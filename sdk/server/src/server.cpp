@@ -14,31 +14,6 @@ namespace mcp::server {
 
 namespace {
 
-protocol::Json capability_to_json(
-    const protocol::ServerCapabilities& capabilities) {
-  protocol::Json json = protocol::Json::object();
-  json["tools"] = {{"listChanged", capabilities.tools.list_changed}};
-  json["resources"] = {{"listChanged", capabilities.resources.list_changed},
-                       {"subscribe", capabilities.resources.subscribe}};
-  json["prompts"] = {{"listChanged", capabilities.prompts.list_changed}};
-  json["logging"] = {{"enabled", capabilities.logging.enabled}};
-  json["completions"] = {{"enabled", capabilities.completions.enabled}};
-  if (capabilities.tasks.has_value()) {
-    protocol::Json tasks =
-        protocol::task_capabilities_to_json(*capabilities.tasks);
-    if (!tasks.empty()) {
-      json["tasks"] = std::move(tasks);
-    }
-  }
-  if (capabilities.experimental.has_value()) {
-    json["experimental"] = *capabilities.experimental;
-  }
-  if (!capabilities.extensions.empty()) {
-    json["extensions"] = capabilities.extensions;
-  }
-  return json;
-}
-
 ServerInfo server_info_from_options(const ServerOptions& options) {
   return ServerInfo{
       .name = options.server_name,
@@ -58,7 +33,8 @@ protocol::Json server_info_to_json(const ServerOptions& options) {
 protocol::Json initialize_result_to_json(const ServerOptions& options) {
   protocol::Json result = protocol::Json::object();
   result["protocolVersion"] = std::string(protocol::McpProtocolVersion);
-  result["capabilities"] = capability_to_json(options.capabilities);
+  result["capabilities"] =
+      protocol::server_capabilities_to_json(options.capabilities);
   result["serverInfo"] = server_info_to_json(options);
   if (!options.instructions.empty()) {
     result["instructions"] = options.instructions;

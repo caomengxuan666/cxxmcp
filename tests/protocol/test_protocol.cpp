@@ -402,6 +402,53 @@ void test_task_protocol_round_trips() {
           "legacy task elicitation capability mismatch");
 }
 
+void test_server_capability_wire_shape() {
+  const auto empty_capabilities = mcp::protocol::server_capabilities_to_json(
+      mcp::protocol::ServerCapabilities{});
+  require(empty_capabilities.empty(),
+          "empty server capabilities should not advertise feature families");
+
+  mcp::protocol::ServerCapabilities capabilities;
+  capabilities.tools.list_changed = true;
+  capabilities.resources.subscribe = true;
+  capabilities.prompts.list_changed = true;
+  capabilities.logging.enabled = true;
+  capabilities.completions.enabled = true;
+  capabilities.tasks = mcp::protocol::TaskCapabilities{
+      .list = true,
+      .cancel = true,
+      .tools_call = true,
+  };
+  capabilities.experimental = Json{{"beta", true}};
+  capabilities.extensions = Json{{"vendor/feature", Json::object()}};
+
+  const auto json = mcp::protocol::server_capabilities_to_json(capabilities);
+  require(json.at("tools").at("listChanged") == true,
+          "server tools listChanged capability mismatch");
+  require(!json.at("tools").contains("enabled"),
+          "server tools capability should not use enabled marker");
+  require(!json.at("resources").contains("listChanged"),
+          "false resource listChanged capability should be omitted");
+  require(json.at("resources").at("subscribe") == true,
+          "server resources subscribe capability mismatch");
+  require(json.at("prompts").at("listChanged") == true,
+          "server prompts listChanged capability mismatch");
+  require(json.at("logging").is_object() && json.at("logging").empty(),
+          "server logging capability should use empty object presence");
+  require(json.at("completions").is_object() && json.at("completions").empty(),
+          "server completions capability should use empty object presence");
+  require(json.at("tasks").at("list").is_object(),
+          "server task list capability should use object presence");
+  require(json.at("tasks").at("cancel").is_object(),
+          "server task cancel capability should use object presence");
+  require(json.at("tasks").at("requests").at("tools").at("call").is_object(),
+          "server task tool call capability should use object presence");
+  require(json.at("experimental").at("beta"),
+          "server experimental capability mismatch");
+  require(json.at("extensions").at("vendor/feature").is_object(),
+          "server extension capability mismatch");
+}
+
 void test_prompt_protocol_round_trips() {
   require(mcp::protocol::PromptsListMethod == "prompts/list",
           "prompts/list method mismatch");
@@ -946,6 +993,7 @@ int main() {
       {"response round trips", test_response_round_trips},
       {"tool protocol round trips", test_tool_protocol_round_trips},
       {"task protocol round trips", test_task_protocol_round_trips},
+      {"server capability wire shape", test_server_capability_wire_shape},
       {"prompt protocol round trips", test_prompt_protocol_round_trips},
       {"resource protocol round trips", test_resource_protocol_round_trips},
       {"roots completion logging sampling round trips",

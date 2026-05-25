@@ -240,6 +240,61 @@ struct ServerCapabilities {
   Json extensions = Json::object();
 };
 
+/// @brief Serializes server capabilities to the MCP initialize result shape.
+/// @param capabilities Server capability flags and extension data.
+/// @return JSON object suitable for `initialize.result.capabilities`.
+inline Json server_capabilities_to_json(
+    const ServerCapabilities& capabilities) {
+  Json json = Json::object();
+
+  Json tools = Json::object();
+  if (capabilities.tools.list_changed) {
+    tools["listChanged"] = true;
+  }
+  if (!tools.empty()) {
+    json["tools"] = std::move(tools);
+  }
+
+  Json resources = Json::object();
+  if (capabilities.resources.list_changed) {
+    resources["listChanged"] = true;
+  }
+  if (capabilities.resources.subscribe) {
+    resources["subscribe"] = true;
+  }
+  if (!resources.empty()) {
+    json["resources"] = std::move(resources);
+  }
+
+  Json prompts = Json::object();
+  if (capabilities.prompts.list_changed) {
+    prompts["listChanged"] = true;
+  }
+  if (!prompts.empty()) {
+    json["prompts"] = std::move(prompts);
+  }
+
+  if (capabilities.logging.enabled) {
+    json["logging"] = Json::object();
+  }
+  if (capabilities.completions.enabled) {
+    json["completions"] = Json::object();
+  }
+  if (capabilities.tasks.has_value()) {
+    Json tasks = task_capabilities_to_json(*capabilities.tasks);
+    if (!tasks.empty()) {
+      json["tasks"] = std::move(tasks);
+    }
+  }
+  if (capabilities.experimental.has_value()) {
+    json["experimental"] = *capabilities.experimental;
+  }
+  if (!capabilities.extensions.empty()) {
+    json["extensions"] = capabilities.extensions;
+  }
+  return json;
+}
+
 /// @brief Parses client capabilities from an initialize request.
 /// @param json JSON object from `initialize.params.capabilities`.
 /// @return Parsed capabilities, or nullopt if the top-level value is invalid.
