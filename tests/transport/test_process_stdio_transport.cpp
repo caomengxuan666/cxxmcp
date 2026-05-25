@@ -384,6 +384,49 @@ void test_process_stdio_transport_rejects_unexpected_response_id() {
           "process stdio unexpected response category mismatch");
 }
 
+void test_process_stdio_transport_rejects_duplicate_request_id() {
+  auto transport = std::make_unique<mcp::client::ProcessStdioTransport>(
+      mcp::client::ProcessStdioTransportOptions{
+          .command = MCP_TEST_CHILD_EXE,
+          .args = {"--ignore-requests"},
+          .cwd = {},
+          .env = {},
+          .request_timeout = std::chrono::milliseconds(500),
+      });
+  require(transport->start({}).has_value(),
+          "process stdio duplicate test transport should start");
+
+  mcp::core::Result<mcp::protocol::JsonRpcResponse> first_result;
+  std::thread first_request([&] {
+    first_result = transport->send(mcp::protocol::JsonRpcRequest{
+        .method = "custom/pending",
+        .params = mcp::protocol::Json::object(),
+        .id = std::int64_t{77},
+    });
+  });
+  std::this_thread::sleep_for(std::chrono::milliseconds(50));
+
+  const auto duplicate = transport->send(mcp::protocol::JsonRpcRequest{
+      .method = "custom/duplicate",
+      .params = mcp::protocol::Json::object(),
+      .id = std::int64_t{77},
+  });
+
+  require(!duplicate.has_value(),
+          "process stdio should reject duplicate request ids");
+  require(duplicate.error().message == "duplicate process stdio request id",
+          "process stdio duplicate request message mismatch");
+  require(duplicate.error().detail == "77",
+          "process stdio duplicate request detail mismatch");
+  require(duplicate.error().category == "transport",
+          "process stdio duplicate request category mismatch");
+
+  transport->stop();
+  first_request.join();
+  require(!first_result.has_value(),
+          "first duplicate-id request should finish as an error after stop");
+}
+
 #ifndef _WIN32
 void test_posix_process_stdio_write_after_child_exit_returns_error() {
   mcp::client::ProcessStdioTransport transport(
@@ -813,6 +856,8 @@ int main() {
        test_process_stdio_transport_handles_child_exit_before_response},
       {"process stdio transport rejects unexpected response id",
        test_process_stdio_transport_rejects_unexpected_response_id},
+      {"process stdio transport rejects duplicate request id",
+       test_process_stdio_transport_rejects_duplicate_request_id},
 #ifndef _WIN32
       {"posix process stdio write after child exit returns error",
        test_posix_process_stdio_write_after_child_exit_returns_error},
