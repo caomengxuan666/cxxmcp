@@ -179,3 +179,36 @@ jobs:
         with:
           name: cxxmcp-doxygen-html
           path: docs/doxygen/html
+
+  source-artifact:
+    name: source-artifact
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Create source archive
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p release-artifacts
+          archive="release-artifacts/cxxmcp-source-${GITHUB_SHA}.tar.gz"
+          tar \
+            --exclude-vcs \
+            --exclude='./.cache' \
+            --exclude='./out' \
+            --exclude='./build' \
+            --exclude='./build-*' \
+            --exclude='./docs/doxygen' \
+            --exclude='./release-artifacts' \
+            -czf "${archive}" .
+          sha256sum "${archive}" > release-artifacts/SHA256SUMS.txt
+
+      - name: Upload source artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: cxxmcp-source
+          path: release-artifacts

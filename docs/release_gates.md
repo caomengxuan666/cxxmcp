@@ -63,6 +63,16 @@ link or attach those artifacts so package-smoke, public-header, transport,
 conformance, and interoperability results are auditable after the workflow run
 expires from the Actions UI.
 
+The same workflow uploads:
+
+- `cxxmcp-doxygen-html`: generated public API documentation.
+- `cxxmcp-source`: a source archive with recursive submodule contents and a
+  `SHA256SUMS.txt` file.
+
+Release candidates must attach the source and documentation artifacts, or
+replace them with equivalent versioned artifacts built from the same commit and
+with matching checksums recorded in the release notes.
+
 ## Public API Review
 
 Before a release, review public header diffs under:
