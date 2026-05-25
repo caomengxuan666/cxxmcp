@@ -44,6 +44,8 @@
   Peer-owned cancellation token propagation.
 - Routed `ServerPeer` prompt/resource discovery and read handling through the
   Peer boundary while preserving session context for handlers.
+- Routed resource subscribe/unsubscribe handling through `ServerPeer`, using the
+  native transport's compatibility adapter as the subscription identity.
 - Routed Peer-registered completion, sampling, and logging request handlers
   through the `ServerPeer` boundary.
 - Routed Peer-registered task lifecycle request handlers through the

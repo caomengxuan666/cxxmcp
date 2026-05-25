@@ -517,6 +517,10 @@ class Server {
   /// @param uri Resource URI that changed.
   core::Result<core::Unit> notify_resource_updated(std::string_view uri);
 
+  /// @brief Updates resource subscription routing for a transport session.
+  core::Result<core::Unit> set_resource_subscription(
+      const SessionContext& context, std::string_view uri, bool subscribed);
+
   /// @brief Sends a progress notification to connected clients.
   core::Result<core::Unit> notify_progress(
       const protocol::ProgressNotificationParams& params);
@@ -707,8 +711,6 @@ class Server {
       const protocol::JsonRpcNotification& notification);
   core::Result<core::Unit> notify_resource_subscribers(
       std::string_view uri, const protocol::JsonRpcNotification& notification);
-  core::Result<core::Unit> set_resource_subscription(
-      const SessionContext& context, std::string_view uri, bool subscribed);
   CancellationToken begin_request_cancellation(
       const protocol::RequestId& request_id);
   void end_request_cancellation(const protocol::RequestId& request_id) noexcept;

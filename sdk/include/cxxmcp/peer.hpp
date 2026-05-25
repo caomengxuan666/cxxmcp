@@ -1912,7 +1912,8 @@ class Peer<RoleServer> {
 
   core::Result<protocol::JsonRpcResponse> handle_request(
       const protocol::JsonRpcRequest& request,
-      const server::SessionContext& context = {}) try {
+      const server::SessionContext& context = {},
+      transport::ServerTransport* native_transport = nullptr) try {
     if (request.method == protocol::InitializeMethod) {
       const auto valid =
           detail::validate_peer_server_initialize_params(request.params);
@@ -2037,6 +2038,30 @@ class Peer<RoleServer> {
       result.resource_templates = list_resource_templates();
       return protocol::make_response(
           request.id, protocol::resource_templates_list_result_to_json(result));
+    }
+
+    if (request.method == protocol::ResourcesSubscribeMethod ||
+        request.method == protocol::ResourcesUnsubscribeMethod) {
+      if (!capabilities().resources.subscribe) {
+        return detail::peer_error_response(
+            request, errors::make(protocol::ErrorCode::MethodNotFound,
+                                  "resource subscriptions are not enabled"));
+      }
+      if (!request.params.is_object() || !request.params.contains("uri") ||
+          !request.params.at("uri").is_string()) {
+        return detail::peer_error_response(
+            request,
+            errors::make(protocol::ErrorCode::InvalidRequest,
+                         "resource subscription requires a string uri"));
+      }
+      const auto subscription = server_->set_resource_subscription(
+          subscription_context_for(context, native_transport),
+          request.params.at("uri").get<std::string>(),
+          request.method == protocol::ResourcesSubscribeMethod);
+      if (!subscription) {
+        return detail::peer_error_response(request, subscription.error());
+      }
+      return protocol::make_response(request.id, protocol::Json::object());
     }
 
     if (request.method == protocol::CompletionCompleteMethod &&
@@ -2261,9 +2286,10 @@ class Peer<RoleServer> {
   /// request-handle correlation paths.
   core::Result<std::optional<protocol::JsonRpcMessage>> dispatch_message(
       const protocol::JsonRpcMessage& message,
-      const server::SessionContext& context = {}) {
+      const server::SessionContext& context = {},
+      transport::ServerTransport* native_transport = nullptr) {
     if (const auto* request = std::get_if<protocol::JsonRpcRequest>(&message)) {
-      auto handled = handle_request(*request, context);
+      auto handled = handle_request(*request, context, native_transport);
       if (!handled) {
         return protocol::JsonRpcMessage{protocol::make_error_response(
             request->id,
@@ -2293,34 +2319,53 @@ class Peer<RoleServer> {
       CancellationToken cancellation = {}) {
     return detail::serve_transport_loop(
         transport, cancellation,
-        [this, &context](const protocol::JsonRpcMessage& message) {
-          return dispatch_message(message, context);
+        [this, &context, &transport](const protocol::JsonRpcMessage& message) {
+          return dispatch_message(message, context, &transport);
         });
   }
 
  private:
+  server::SessionContext subscription_context_for(
+      const server::SessionContext& context,
+      const transport::ServerTransport* native_transport) const {
+    server::SessionContext subscription_context = context;
+    if (subscription_context.transport || native_transport == nullptr) {
+      return subscription_context;
+    }
+
+    for (std::size_t index = 0; index < native_transports_.size(); ++index) {
+      if (native_transports_[index].get() == native_transport &&
+          index < native_context_transports_.size()) {
+        subscription_context.transport =
+            native_context_transports_[index].get();
+        break;
+      }
+    }
+    return subscription_context;
+  }
+
   CancellationToken begin_peer_request_cancellation(
       const protocol::RequestId& request_id) {
     CancellationSource source;
     auto token = source.token();
-    std::lock_guard lock(peer_request_cancellations_mutex_);
-    peer_request_cancellations_[detail::peer_request_cancellation_key(
+    std::lock_guard lock(*peer_request_cancellations_mutex_);
+    (*peer_request_cancellations_)[detail::peer_request_cancellation_key(
         request_id)] = std::move(source);
     return token;
   }
 
   void end_peer_request_cancellation(
       const protocol::RequestId& request_id) noexcept {
-    std::lock_guard lock(peer_request_cancellations_mutex_);
-    peer_request_cancellations_.erase(
+    std::lock_guard lock(*peer_request_cancellations_mutex_);
+    peer_request_cancellations_->erase(
         detail::peer_request_cancellation_key(request_id));
   }
 
   void cancel_peer_request(const protocol::RequestId& request_id) noexcept {
-    std::lock_guard lock(peer_request_cancellations_mutex_);
-    const auto it = peer_request_cancellations_.find(
+    std::lock_guard lock(*peer_request_cancellations_mutex_);
+    const auto it = peer_request_cancellations_->find(
         detail::peer_request_cancellation_key(request_id));
-    if (it != peer_request_cancellations_.end()) {
+    if (it != peer_request_cancellations_->end()) {
       it->second.cancel();
     }
   }
@@ -2414,9 +2459,11 @@ class Peer<RoleServer> {
   std::unique_ptr<server::Server> server_;
   std::vector<std::unique_ptr<transport::ServerTransport>> native_transports_;
   std::vector<std::unique_ptr<server::Transport>> native_context_transports_;
-  std::mutex peer_request_cancellations_mutex_;
-  std::unordered_map<std::string, CancellationSource>
-      peer_request_cancellations_;
+  std::shared_ptr<std::mutex> peer_request_cancellations_mutex_ =
+      std::make_shared<std::mutex>();
+  std::shared_ptr<std::unordered_map<std::string, CancellationSource>>
+      peer_request_cancellations_ = std::make_shared<
+          std::unordered_map<std::string, CancellationSource>>();
   bool native_notification_state_ = false;
   server::Server::RawRequestHandler raw_request_handler_;
   server::Server::JsonHandler completion_handler_;

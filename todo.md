@@ -95,6 +95,9 @@ incrementally. Keep them concrete; do not replace them with broad claims.
         boundary with Peer-owned cancellation token propagation.
   - [x] `ServerPeer` handles prompt and resource discovery/read requests at the
         Peer boundary while preserving full session context for handlers.
+  - [x] `ServerPeer` handles resource subscribe/unsubscribe requests at the Peer
+        boundary and maps native role-generic transports into the server
+        subscription table for update routing.
   - [x] `ServerPeer` owns Peer-registered completion, sampling, and logging
         handlers and dispatches those request families at the Peer boundary.
   - [x] `ServerPeer` owns Peer-registered task lifecycle handlers and dispatches

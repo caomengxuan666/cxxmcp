@@ -925,6 +925,52 @@ void test_server_peer_prompt_resource_dispatches_on_peer_boundary() {
       "resources/templates/list template mismatch");
 }
 
+void test_server_peer_resource_subscriptions_use_native_transport_identity() {
+  mcp::server::ServerOptions options;
+  options.capabilities.resources.enabled = true;
+  options.capabilities.resources.subscribe = true;
+  mcp::ServerPeer peer(std::move(options));
+
+  auto transport = std::make_unique<RecordingServerContractTransport>();
+  auto* transport_ptr = transport.get();
+  require(peer.add_transport(std::move(transport)).has_value(),
+          "server peer should accept subscription transport");
+
+  transport_ptr->received.push_back(mcp::protocol::JsonRpcRequest{
+      .method = std::string(mcp::protocol::ResourcesSubscribeMethod),
+      .params = Json{{"uri", "file:///tmp/data.txt"}},
+      .id = mcp::protocol::RequestId{std::int64_t{25}},
+  });
+  const auto subscribed = peer.serve_transport(*transport_ptr);
+  require(subscribed.has_value(),
+          "server peer resource subscribe dispatch should succeed");
+  require(transport_ptr->sent.size() == 1,
+          "resource subscribe should send one response");
+  const auto* subscribe_response =
+      std::get_if<mcp::protocol::JsonRpcResponse>(&transport_ptr->sent.front());
+  require(subscribe_response != nullptr, "resource subscribe response missing");
+  require(subscribe_response->result.has_value(),
+          "resource subscribe result missing");
+
+  transport_ptr->sent.clear();
+  require(peer.notify_resource_updated("file:///tmp/other.txt").has_value(),
+          "unmatched resource update should succeed");
+  require(transport_ptr->sent.empty(),
+          "unmatched resource update should not reach subscribed transport");
+
+  require(peer.notify_resource_updated("file:///tmp/data.txt").has_value(),
+          "matched resource update should succeed");
+  require(transport_ptr->sent.size() == 1,
+          "matched resource update should reach subscribed transport");
+  const auto* update = std::get_if<mcp::protocol::JsonRpcNotification>(
+      &transport_ptr->sent.front());
+  require(update != nullptr, "resource update notification missing");
+  require(update->method == mcp::protocol::ResourcesUpdatedNotificationMethod,
+          "resource update notification method mismatch");
+  require(update->params.at("uri") == "file:///tmp/data.txt",
+          "resource update notification uri mismatch");
+}
+
 void test_server_peer_handler_requests_dispatch_on_peer_boundary() {
   mcp::ServerPeer peer;
   std::string logged_level;
@@ -1507,6 +1553,7 @@ int main() {
     test_server_peer_tool_discovery_dispatches_on_peer_boundary();
     test_server_peer_tool_call_dispatches_on_peer_boundary();
     test_server_peer_prompt_resource_dispatches_on_peer_boundary();
+    test_server_peer_resource_subscriptions_use_native_transport_identity();
     test_server_peer_handler_requests_dispatch_on_peer_boundary();
     test_server_peer_task_handlers_dispatch_on_peer_boundary();
     test_client_peer_native_raw_request_dispatches_interleaved_messages();
