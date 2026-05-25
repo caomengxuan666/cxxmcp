@@ -19,6 +19,7 @@
 #include "cxxmcp/cancellation.hpp"
 #include "cxxmcp/core/executor.hpp"
 #include "cxxmcp/core/result.hpp"
+#include "cxxmcp/error.hpp"
 #include "cxxmcp/protocol/types.hpp"
 
 namespace mcp {
@@ -78,11 +79,7 @@ class RequestHandle {
     auto promise = std::make_shared<std::promise<ResultType>>();
     auto future = promise->get_future().share();
     if (!task) {
-      promise->set_value(std::unexpected(core::Error{
-          static_cast<int>(protocol::ErrorCode::InternalError),
-          "request task is not configured",
-          {},
-      }));
+      promise->set_value(std::unexpected(errors::request_task_missing()));
       return RequestHandle(std::move(request_id), std::move(timeout),
                            std::move(cancellation), std::move(cancel),
                            std::move(future));
@@ -93,17 +90,11 @@ class RequestHandle {
           try {
             promise->set_value(task());
           } catch (const std::exception& ex) {
-            promise->set_value(std::unexpected(core::Error{
-                static_cast<int>(protocol::ErrorCode::InternalError),
-                "request worker threw an exception",
-                ex.what(),
-            }));
+            promise->set_value(
+                std::unexpected(errors::request_worker_exception(ex.what())));
           } catch (...) {
-            promise->set_value(std::unexpected(core::Error{
-                static_cast<int>(protocol::ErrorCode::InternalError),
-                "request worker threw an unknown exception",
-                {},
-            }));
+            promise->set_value(
+                std::unexpected(errors::request_worker_unknown_exception()));
           }
         });
     if (!queued) {
@@ -144,11 +135,7 @@ class RequestHandle {
   /// terminal timeout or cancellation has been observed.
   core::Result<T> await_response() const {
     if (!response_.valid()) {
-      return std::unexpected(core::Error{
-          static_cast<int>(protocol::ErrorCode::InternalError),
-          "request handle has no response state",
-          {},
-      });
+      return std::unexpected(errors::request_state_missing());
     }
 
     if (const auto terminal = terminal_error(); terminal.has_value()) {
@@ -166,24 +153,13 @@ class RequestHandle {
       }
 
       if (cancellation_.has_value() && cancellation_->cancelled()) {
-        return fail_terminal(
-            "request cancelled",
-            core::Error{
-                static_cast<int>(protocol::ErrorCode::InternalError),
-                "request cancelled",
-                {},
-            });
+        return fail_terminal("request cancelled", errors::request_cancelled());
       }
 
       if (timeout_.has_value() &&
           std::chrono::steady_clock::now() - started_at >= *timeout_) {
-        return fail_terminal(
-            "request timeout",
-            core::Error{
-                static_cast<int>(protocol::ErrorCode::InternalError),
-                "request timed out",
-                std::to_string(timeout_->count()) + "ms",
-            });
+        return fail_terminal("request timeout",
+                             errors::request_timed_out(*timeout_));
       }
 
       const auto wait_slice =

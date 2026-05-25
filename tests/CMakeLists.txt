@@ -39,6 +39,8 @@ endfunction()
 if(TARGET mcp_protocol)
     add_cxxmcp_public_header_compile_test(
         protocol protocol_header.cpp cxxmcp::protocol)
+    add_cxxmcp_public_header_compile_test(
+        error error_header.cpp cxxmcp::protocol)
 endif()
 
 if(TARGET mcp_sdk)

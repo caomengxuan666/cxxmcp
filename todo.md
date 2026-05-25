@@ -50,6 +50,8 @@ incrementally. Keep them concrete; do not replace them with broad claims.
         is pending and still unblocks on stop.
   - [x] Normal non-task tool handler cancellation token propagation is covered
         through `ToolContext::cancelled()` and `notifications/cancelled`.
+  - [x] RequestHandle timeout, cancellation, missing-task, and worker-exception
+        failures use stable structured SDK errors.
   - [ ] Transport-level timeout cleanup is still blocked until each transport
         exposes observable pending-request cleanup or deterministic late
         response accounting.

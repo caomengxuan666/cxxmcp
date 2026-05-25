@@ -19,6 +19,7 @@
 #include "cxxmcp/client/client.hpp"
 #include "cxxmcp/client/session.hpp"
 #include "cxxmcp/client/transport_adapter.hpp"
+#include "cxxmcp/error.hpp"
 #include "cxxmcp/handler.hpp"
 #include "cxxmcp/roles.hpp"
 #include "cxxmcp/server/peer.hpp"
@@ -31,24 +32,13 @@ namespace mcp {
 namespace detail {
 
 inline core::Error peer_dispatch_error(std::string_view message) {
-  return core::Error{
-      static_cast<int>(protocol::ErrorCode::InvalidRequest),
-      std::string(message),
-      {},
-  };
+  return errors::make(protocol::ErrorCode::InvalidRequest,
+                      std::string(message));
 }
 
 inline protocol::ErrorObject peer_error_object_from_core_error(
     const core::Error& error) {
-  std::optional<protocol::Json> data;
-  if (!error.detail.empty()) {
-    data = error.detail;
-  }
-  protocol::ErrorObject object;
-  object.code = error.code;
-  object.message = error.message;
-  object.data = std::move(data);
-  return object;
+  return errors::to_json_rpc_error(error);
 }
 
 }  // namespace detail

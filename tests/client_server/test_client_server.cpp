@@ -4,6 +4,7 @@
 #include <chrono>
 #include <condition_variable>
 #include <cstdint>
+#include <functional>
 #include <iostream>
 #include <memory>
 #include <mutex>
@@ -1185,10 +1186,27 @@ void test_server_client_peer_request_handle_times_out_and_cancels() {
 
   const auto response = handle.await_response();
   require(!response.has_value(), "request handle should time out");
+  require(response.error().code ==
+              static_cast<int>(mcp::protocol::ErrorCode::InternalError),
+          "request handle timeout code mismatch");
   require(response.error().message == "request timed out",
           "request handle timeout message mismatch");
+  require(response.error().detail == "1ms",
+          "request handle timeout detail mismatch");
+
+  const auto repeated_response = handle.await_response();
+  require(!repeated_response.has_value(),
+          "request handle repeated timeout should fail");
+  require(repeated_response.error().code == response.error().code,
+          "request handle repeated timeout code mismatch");
+  require(repeated_response.error().message == response.error().message,
+          "request handle repeated timeout message mismatch");
+  require(repeated_response.error().detail == response.error().detail,
+          "request handle repeated timeout detail mismatch");
 
   transport.wait_until_notifications(1);
+  require(transport.notifications.size() == 1,
+          "request handle timeout should send one cancellation");
   require(transport.notifications.front().method ==
               mcp::protocol::CancelledNotificationMethod,
           "request handle cancellation notification mismatch");
@@ -1250,10 +1268,27 @@ void test_client_peer_request_handle_times_out_and_cancels() {
 
   const auto response = handle.await_response();
   require(!response.has_value(), "client request handle should time out");
+  require(response.error().code ==
+              static_cast<int>(mcp::protocol::ErrorCode::InternalError),
+          "client request handle timeout code mismatch");
   require(response.error().message == "request timed out",
           "client request handle timeout message mismatch");
+  require(response.error().detail == "1ms",
+          "client request handle timeout detail mismatch");
+
+  const auto repeated_response = handle.await_response();
+  require(!repeated_response.has_value(),
+          "client request repeated timeout should fail");
+  require(repeated_response.error().code == response.error().code,
+          "client request repeated timeout code mismatch");
+  require(repeated_response.error().message == response.error().message,
+          "client request repeated timeout message mismatch");
+  require(repeated_response.error().detail == response.error().detail,
+          "client request repeated timeout detail mismatch");
 
   recording->wait_until_notifications(1);
+  require(recording->notifications.size() == 1,
+          "client request timeout should send one cancellation");
   require(recording->notifications.front().method ==
               mcp::protocol::CancelledNotificationMethod,
           "client request handle cancellation notification mismatch");
@@ -1288,10 +1323,23 @@ void test_client_peer_request_handle_observes_cancellation_token() {
 
   const auto response = handle.await_response();
   require(!response.has_value(), "client request handle should cancel");
+  require(response.error().code ==
+              static_cast<int>(mcp::protocol::ErrorCode::InternalError),
+          "client request handle cancellation code mismatch");
   require(response.error().message == "request cancelled",
           "client request handle cancellation message mismatch");
 
+  const auto repeated_response = handle.await_response();
+  require(!repeated_response.has_value(),
+          "client request repeated cancellation should fail");
+  require(repeated_response.error().code == response.error().code,
+          "client request repeated cancellation code mismatch");
+  require(repeated_response.error().message == response.error().message,
+          "client request repeated cancellation message mismatch");
+
   recording->wait_until_notifications(1);
+  require(recording->notifications.size() == 1,
+          "client request cancellation should send one notification");
   require(recording->notifications.front().method ==
               mcp::protocol::CancelledNotificationMethod,
           "client request token cancellation notification mismatch");
@@ -1307,6 +1355,56 @@ void test_client_peer_request_handle_observes_cancellation_token() {
 
   recording->release();
   recording->wait_until_request_finished();
+}
+
+void test_request_handle_errors_are_stable_and_structured() {
+  mcp::RequestHandle<Json> empty_handle;
+  const auto empty = empty_handle.await_response();
+  require(!empty.has_value(), "empty request handle should fail");
+  require(empty.error().code ==
+              static_cast<int>(mcp::protocol::ErrorCode::InternalError),
+          "empty request handle error code mismatch");
+  require(empty.error().message == "request handle has no response state",
+          "empty request handle error message mismatch");
+
+  auto missing_task = mcp::RequestHandle<Json>::spawn(
+      std::int64_t{401}, std::nullopt, std::nullopt, {},
+      std::function<mcp::core::Result<Json>()>{});
+  const auto missing = missing_task.await_response();
+  require(!missing.has_value(), "missing request task should fail");
+  require(missing.error().code ==
+              static_cast<int>(mcp::protocol::ErrorCode::InternalError),
+          "missing request task error code mismatch");
+  require(missing.error().message == "request task is not configured",
+          "missing request task error message mismatch");
+
+  auto throwing_task = mcp::RequestHandle<Json>::spawn(
+      std::int64_t{402}, std::nullopt, std::nullopt, {},
+      []() -> mcp::core::Result<Json> { throw std::runtime_error("boom"); });
+  const auto thrown = throwing_task.await_response();
+  require(!thrown.has_value(), "throwing request task should fail");
+  require(thrown.error().code ==
+              static_cast<int>(mcp::protocol::ErrorCode::InternalError),
+          "throwing request task error code mismatch");
+  require(thrown.error().message == "request worker threw an exception",
+          "throwing request task error message mismatch");
+  require(thrown.error().detail == "boom",
+          "throwing request task error detail mismatch");
+
+  auto unknown_throwing_task = mcp::RequestHandle<Json>::spawn(
+      std::int64_t{403}, std::nullopt, std::nullopt, {},
+      []() -> mcp::core::Result<Json> { throw 7; });
+  const auto unknown_thrown = unknown_throwing_task.await_response();
+  require(!unknown_thrown.has_value(),
+          "unknown throwing request task should fail");
+  require(unknown_thrown.error().code ==
+              static_cast<int>(mcp::protocol::ErrorCode::InternalError),
+          "unknown throwing request task error code mismatch");
+  require(unknown_thrown.error().message ==
+              "request worker threw an unknown exception",
+          "unknown throwing request task error message mismatch");
+  require(unknown_thrown.error().detail.empty(),
+          "unknown throwing request task detail mismatch");
 }
 
 void test_client_peer_cancel_timeout_race_stress() {
@@ -3924,6 +4022,8 @@ int main() {
        test_client_peer_request_handle_times_out_and_cancels},
       {"client peer request handle cancellation token",
        test_client_peer_request_handle_observes_cancellation_token},
+      {"request handle errors are stable and structured",
+       test_request_handle_errors_are_stable_and_structured},
       {"client peer cancel timeout race stress",
        test_client_peer_cancel_timeout_race_stress},
       {"server client-peer cancel timeout race stress",
