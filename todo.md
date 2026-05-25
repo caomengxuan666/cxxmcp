@@ -53,6 +53,9 @@ incrementally. Keep them concrete; do not replace them with broad claims.
         when the peer was constructed from `transport::ClientTransport`.
   - [x] Client peer typed async helpers reuse Peer-level `request_async`
         instead of directly forwarding to concrete `client::Client` helpers.
+  - [x] Client peer core synchronous tools/prompts/resources helpers reuse
+        Peer-level `raw_request` instead of directly forwarding to concrete
+        `client::Client` helpers.
   - [x] Client and server contract transport adapters cover duplicate response
         ids as stable unexpected-response failures.
 - Request lifecycle:

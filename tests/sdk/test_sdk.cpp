@@ -281,6 +281,10 @@ void test_sdk_peer_and_service_surface() {
           "client peer should accept role-generic transport");
   require(contract_client_peer.ping().has_value(),
           "client peer generic transport ping failed");
+  const auto contract_tools = contract_client_peer.list_tools();
+  require(contract_tools.has_value() && contract_tools->size() == 1 &&
+              contract_tools->front().name == "native-echo",
+          "client peer generic transport list_tools failed");
   contract_client_peer.client().stop();
   require(contract_transport_ptr->stopped,
           "client peer generic transport should close");

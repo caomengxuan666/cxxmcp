@@ -201,7 +201,16 @@ class Peer<RoleClient> {
   }
 
   core::Result<std::vector<protocol::ToolDefinition>> list_tools() {
-    return client_.list_tools();
+    auto payload = request_json(std::string(protocol::ToolsListMethod),
+                                protocol::Json::object());
+    if (!payload) {
+      return std::unexpected(payload.error());
+    }
+    const auto result = protocol::tools_list_result_from_json(*payload);
+    if (!result) {
+      return std::unexpected(result.error());
+    }
+    return result->tools;
   }
 
   core::Result<std::vector<protocol::ToolDefinition>> list_all_tools() {
@@ -209,22 +218,49 @@ class Peer<RoleClient> {
   }
 
   core::Result<protocol::ToolResult> call_tool(const protocol::ToolCall& call) {
-    return client_.call_tool(call);
+    auto payload = request_json(std::string(protocol::ToolsCallMethod),
+                                protocol::tool_call_to_json(call));
+    if (!payload) {
+      return std::unexpected(payload.error());
+    }
+    return protocol::tool_result_from_json(*payload);
   }
 
   core::Result<protocol::CreateTaskResult> call_tool_task(
       const protocol::ToolCall& call) {
-    return client_.call_tool_task(call);
+    if (!call.task.has_value()) {
+      return std::unexpected(errors::make(
+          protocol::ErrorCode::InvalidRequest,
+          "task-aware tool call requires task parameters", {}, "protocol"));
+    }
+    auto payload = request_json(std::string(protocol::ToolsCallMethod),
+                                protocol::tool_call_to_json(call));
+    if (!payload) {
+      return std::unexpected(payload.error());
+    }
+    return protocol::create_task_result_from_json(*payload);
   }
 
   core::Result<protocol::ToolResult> call_tool(
       std::string_view name,
       const protocol::Json& arguments = protocol::Json::object()) {
-    return client_.call_raw(name, arguments);
+    protocol::ToolCall call;
+    call.name = std::string(name);
+    call.arguments = arguments;
+    return call_tool(call);
   }
 
   core::Result<std::vector<protocol::Prompt>> list_prompts() {
-    return client_.list_prompts();
+    auto payload = request_json(std::string(protocol::PromptsListMethod),
+                                protocol::Json::object());
+    if (!payload) {
+      return std::unexpected(payload.error());
+    }
+    const auto result = protocol::prompts_list_result_from_json(*payload);
+    if (!result) {
+      return std::unexpected(result.error());
+    }
+    return result->prompts;
   }
 
   core::Result<std::vector<protocol::Prompt>> list_all_prompts() {
@@ -233,17 +269,34 @@ class Peer<RoleClient> {
 
   core::Result<protocol::PromptsGetResult> get_prompt(
       const protocol::PromptsGetParams& params) {
-    return client_.get_prompt(params);
+    auto payload = request_json(std::string(protocol::PromptsGetMethod),
+                                protocol::prompts_get_params_to_json(params));
+    if (!payload) {
+      return std::unexpected(payload.error());
+    }
+    return protocol::prompts_get_result_from_json(*payload);
   }
 
   core::Result<protocol::PromptsGetResult> get_prompt(
       std::string_view name,
       const protocol::Json& arguments = protocol::Json::object()) {
-    return client_.get_prompt(name, arguments);
+    protocol::PromptsGetParams params;
+    params.name = std::string(name);
+    params.arguments = arguments;
+    return get_prompt(params);
   }
 
   core::Result<std::vector<protocol::Resource>> list_resources() {
-    return client_.list_resources();
+    auto payload = request_json(std::string(protocol::ResourcesListMethod),
+                                protocol::Json::object());
+    if (!payload) {
+      return std::unexpected(payload.error());
+    }
+    const auto result = protocol::resources_list_result_from_json(*payload);
+    if (!result) {
+      return std::unexpected(result.error());
+    }
+    return result->resources;
   }
 
   core::Result<std::vector<protocol::Resource>> list_all_resources() {
@@ -252,7 +305,18 @@ class Peer<RoleClient> {
 
   core::Result<std::vector<protocol::ResourceTemplate>>
   list_resource_templates() {
-    return client_.list_resource_templates();
+    auto payload =
+        request_json(std::string(protocol::ResourcesTemplatesListMethod),
+                     protocol::Json::object());
+    if (!payload) {
+      return std::unexpected(payload.error());
+    }
+    const auto result =
+        protocol::resource_templates_list_result_from_json(*payload);
+    if (!result) {
+      return std::unexpected(result.error());
+    }
+    return result->resource_templates;
   }
 
   core::Result<std::vector<protocol::ResourceTemplate>>
@@ -262,12 +326,18 @@ class Peer<RoleClient> {
 
   core::Result<protocol::ResourcesReadResult> read_resource(
       const protocol::ResourcesReadParams& params) {
-    return client_.read_resource(params);
+    auto payload =
+        request_json(std::string(protocol::ResourcesReadMethod),
+                     protocol::resources_read_params_to_json(params));
+    if (!payload) {
+      return std::unexpected(payload.error());
+    }
+    return protocol::resources_read_result_from_json(*payload);
   }
 
   core::Result<protocol::ResourcesReadResult> read_resource(
       std::string_view uri) {
-    return client_.read_resource(uri);
+    return read_resource(protocol::ResourcesReadParams{std::string(uri)});
   }
 
   core::Result<protocol::CompleteResult> complete(
@@ -742,6 +812,12 @@ class Peer<RoleClient> {
  private:
   std::int64_t next_peer_request_id() noexcept {
     return next_request_id_->fetch_add(1, std::memory_order_relaxed);
+  }
+
+  core::Result<protocol::Json> request_json(std::string method,
+                                            protocol::Json params) {
+    return raw_request(protocol::make_request(
+        std::move(method), next_peer_request_id(), std::move(params)));
   }
 
   core::Result<protocol::JsonRpcResponse> send_native_request(
