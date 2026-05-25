@@ -228,6 +228,8 @@ The transport family covers:
   or the component transport headers
 - compatibility adapters that wrap existing client/server transports as
   `mcp::transport::Transport<Role>`
+- a client adapter that lets the existing `mcp::client::Client` consume a
+  role-generic `mcp::transport::ClientTransport`
 
 ## Rules
 

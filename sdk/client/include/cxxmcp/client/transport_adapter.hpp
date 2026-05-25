@@ -15,9 +15,22 @@
 #include <variant>
 
 #include "cxxmcp/client/client.hpp"
+#include "cxxmcp/protocol/serialization.hpp"
 #include "cxxmcp/transport/transport.hpp"
 
 namespace mcp::client {
+
+namespace detail {
+
+inline core::Error adapter_error(std::string_view message) {
+  return core::Error{
+      static_cast<int>(protocol::ErrorCode::InvalidRequest),
+      std::string(message),
+      {},
+  };
+}
+
+}  // namespace detail
 
 /// @brief Adapts an existing client::Transport to transport::ClientTransport.
 ///
@@ -39,7 +52,7 @@ class TransportContractAdapter final : public transport::ClientTransport {
 
   core::Result<core::Unit> send(TxMessage message) override {
     if (transport_ == nullptr) {
-      return std::unexpected(adapter_error("client transport is null"));
+      return std::unexpected(detail::adapter_error("client transport is null"));
     }
 
     if (const auto* request = std::get_if<protocol::JsonRpcRequest>(&message)) {
@@ -56,8 +69,8 @@ class TransportContractAdapter final : public transport::ClientTransport {
       return transport_->send_notification(*notification);
     }
 
-    return std::unexpected(
-        adapter_error("client transport adapter cannot send responses"));
+    return std::unexpected(detail::adapter_error(
+        "client transport adapter cannot send responses"));
   }
 
   core::Result<std::optional<RxMessage>> receive() override {
@@ -77,17 +90,152 @@ class TransportContractAdapter final : public transport::ClientTransport {
   }
 
  private:
-  static core::Error adapter_error(std::string_view message) {
-    return core::Error{
-        static_cast<int>(protocol::ErrorCode::InvalidRequest),
-        std::string(message),
-        {},
-    };
-  }
-
   std::unique_ptr<mcp::client::Transport> owned_;
   mcp::client::Transport* transport_ = nullptr;
   std::deque<RxMessage> received_;
+};
+
+/// @brief Adapts a transport::ClientTransport to the existing client::Transport
+/// API.
+///
+/// This lets the established Client and ClientPeer facades run over the
+/// role-generic transport contract. Inbound notifications and requests received
+/// while waiting for the matching response are dispatched through handlers
+/// installed with start().
+class ContractTransportAdapter final : public mcp::client::Transport {
+ public:
+  explicit ContractTransportAdapter(transport::ClientTransport& transport)
+      : transport_(&transport) {}
+
+  explicit ContractTransportAdapter(
+      std::unique_ptr<transport::ClientTransport> transport)
+      : owned_(std::move(transport)), transport_(owned_.get()) {}
+
+  core::Result<protocol::JsonRpcResponse> send(
+      const protocol::JsonRpcRequest& request) override {
+    if (transport_ == nullptr) {
+      return std::unexpected(
+          detail::adapter_error("client contract transport is null"));
+    }
+
+    const auto sent = transport_->send(protocol::JsonRpcMessage{request});
+    if (!sent) {
+      return std::unexpected(sent.error());
+    }
+
+    while (true) {
+      auto received = transport_->receive();
+      if (!received) {
+        return std::unexpected(received.error());
+      }
+      if (!received->has_value()) {
+        return std::unexpected(detail::adapter_error(
+            "client contract transport closed before response"));
+      }
+
+      if (auto* response =
+              std::get_if<protocol::JsonRpcResponse>(&received->value())) {
+        if (response->id.has_value() && *response->id == request.id) {
+          return *response;
+        }
+        return std::unexpected(detail::adapter_error(
+            "client contract transport received unexpected response id"));
+      }
+
+      if (auto* notification =
+              std::get_if<protocol::JsonRpcNotification>(&received->value())) {
+        const auto handled = handle_notification(*notification);
+        if (!handled) {
+          return std::unexpected(handled.error());
+        }
+        continue;
+      }
+
+      if (auto* inbound_request =
+              std::get_if<protocol::JsonRpcRequest>(&received->value())) {
+        const auto handled = handle_request(*inbound_request);
+        if (!handled) {
+          return std::unexpected(handled.error());
+        }
+        continue;
+      }
+    }
+  }
+
+  core::Result<core::Unit> send_notification(
+      const protocol::JsonRpcNotification& notification) override {
+    if (transport_ == nullptr) {
+      return std::unexpected(
+          detail::adapter_error("client contract transport is null"));
+    }
+    return transport_->send(protocol::JsonRpcMessage{notification});
+  }
+
+  core::Result<core::Unit> start(
+      TransportRequestHandler request_handler,
+      TransportNotificationHandler notification_handler = {}) override {
+    request_handler_ = std::move(request_handler);
+    notification_handler_ = std::move(notification_handler);
+    return core::Unit{};
+  }
+
+  void stop() noexcept override {
+    if (transport_ != nullptr) {
+      (void)transport_->close();
+    }
+  }
+
+ private:
+  core::Result<core::Unit> handle_notification(
+      const protocol::JsonRpcNotification& notification) {
+    if (!notification_handler_) {
+      return core::Unit{};
+    }
+    return notification_handler_(notification);
+  }
+
+  core::Result<core::Unit> handle_request(
+      const protocol::JsonRpcRequest& request) {
+    protocol::JsonRpcResponse response;
+    if (request_handler_) {
+      auto handled = request_handler_(request);
+      if (!handled) {
+        response = protocol::make_error_response(
+            request.id, error_object_from_core_error(handled.error()));
+      } else {
+        response = std::move(*handled);
+      }
+    } else {
+      response = protocol::make_error_response(
+          request.id,
+          protocol::make_error(protocol::ErrorCode::MethodNotFound,
+                               "client request handler is not set"));
+    }
+
+    auto sent = transport_->send(protocol::JsonRpcMessage{std::move(response)});
+    if (!sent) {
+      return std::unexpected(sent.error());
+    }
+    return core::Unit{};
+  }
+
+  static protocol::ErrorObject error_object_from_core_error(
+      const core::Error& error) {
+    std::optional<protocol::Json> data;
+    if (!error.detail.empty()) {
+      data = error.detail;
+    }
+    return protocol::ErrorObject{
+        .code = error.code,
+        .message = error.message,
+        .data = std::move(data),
+    };
+  }
+
+  std::unique_ptr<transport::ClientTransport> owned_;
+  transport::ClientTransport* transport_ = nullptr;
+  TransportRequestHandler request_handler_;
+  TransportNotificationHandler notification_handler_;
 };
 
 }  // namespace mcp::client
