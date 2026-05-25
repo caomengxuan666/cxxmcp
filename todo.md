@@ -29,6 +29,15 @@ turning the SDK surface into a gateway/runtime product.
 - [ ] Do not claim fact-standard status yet. Current readiness is a strong
   candidate, roughly `85-90%` against the pinned RMCP SDK shape.
 
+Remaining non-P1/P2 proof gates before claiming fact-standard status:
+
+- Multi-compiler / multi-generator installed-package evidence has to be
+  produced, not only documented.
+- Public generated API docs and release artifacts have to be built and attached
+  to an actual release candidate.
+- README, examples, changelog, compatibility policy, and release artifacts have
+  to be audited together after the next successful release-blocking matrix run.
+
 ## Current P0 Executable Slices
 
 These are the release-blocking test slices that prove the remaining P0 work
