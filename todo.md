@@ -161,6 +161,10 @@ incrementally. Keep them concrete; do not replace them with broad claims.
         HTTP 400 and a JSON-RPC parse error body.
   - [x] Concrete stdio transports explicitly document duplicate in-flight
         request-id validation as N/A at that synchronous/message-level layer.
+  - [x] Concrete stdio, process stdio, HTTP/Streamable HTTP, and compatibility
+        adapters have release-blocking failure-path coverage for the applicable
+        unexpected id, duplicate id, closed stream/EOF, handler-error, and
+        malformed-message cases.
 - Conformance matrix:
   - [x] In-tree Streamable HTTP matrix covers initialize, tools, prompts,
         resources/templates/subscribe, roots/list_changed, completion, logging,
@@ -293,7 +297,7 @@ true:
 - [x] Keep compatibility adapters for old concrete transports, but make them
   implementation details.
 - [x] Stress-test all adapters for bidirectional request/notification flow.
-- [ ] Test unexpected response ids, duplicate ids, closed streams, handler
+- [x] Test unexpected response ids, duplicate ids, closed streams, handler
   errors, and malformed messages for every concrete transport.
 - [x] Define transport-level error categories and map them to JSON-RPC/core
   errors consistently.
@@ -745,7 +749,7 @@ true:
 
 - [x] Complete Streamable HTTP session/resume/backpressure semantics.
 - [x] Complete POSIX process stdio.
-- [ ] Expand HTTP, stdio, and process-stdio failure-path tests.
+- [x] Expand HTTP, stdio, and process-stdio failure-path tests.
 
 ### Milestone 4: Protocol And Capability Parity
 
