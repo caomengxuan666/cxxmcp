@@ -2370,6 +2370,21 @@ void test_server_app_builder_registers_typed_tool() {
           "typed tool invalid args error code mismatch");
 }
 
+void test_server_app_builder_typed_scalar_tool_rejects_empty_args() {
+  auto built = mcp::server::App::builder()
+                   .tool<std::string, std::string>(
+                       "shout", [](std::string text) { return text + "!"; })
+                   .build();
+  require(built.has_value(), "typed scalar tool server should build");
+
+  auto& server = **built;
+  const auto result = server.call_tool("shout", Json::object());
+  require(!result.has_value(), "typed scalar empty args should fail");
+  require(result.error().code ==
+              static_cast<int>(mcp::protocol::ErrorCode::InvalidParams),
+          "typed scalar empty args error code mismatch");
+}
+
 void test_client_session_initialize_and_mark_initialized() {
   auto transport = std::make_unique<RecordingTransport>();
   auto* recording = transport.get();
@@ -3370,6 +3385,8 @@ int main() {
        test_server_app_builder_registers_parity_surface},
       {"server app builder registers typed tool",
        test_server_app_builder_registers_typed_tool},
+      {"server app builder typed scalar tool rejects empty args",
+       test_server_app_builder_typed_scalar_tool_rejects_empty_args},
       {"client session initialize and mark initialized",
        test_client_session_initialize_and_mark_initialized},
       {"client initialize with empty explicit capabilities",
