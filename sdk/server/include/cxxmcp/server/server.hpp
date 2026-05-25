@@ -31,6 +31,7 @@
 #include "cxxmcp/server/auth.hpp"
 #include "cxxmcp/server/rate_limit.hpp"
 #include "cxxmcp/server/registry.hpp"
+#include "cxxmcp/server/task_manager.hpp"
 #include "cxxmcp/server/transport.hpp"
 
 namespace mcp::server {
@@ -184,6 +185,14 @@ class Server {
   /// @param options Server capabilities, name, version, and instructions.
   explicit Server(ServerOptions options);
 
+  /// @brief Stops transports and task workers before owned registries vanish.
+  ~Server();
+
+  Server(const Server&) = delete;
+  Server& operator=(const Server&) = delete;
+  Server(Server&&) noexcept;
+  Server& operator=(Server&&) noexcept;
+
   /// @brief Returns server metadata advertised during initialization.
   ServerInfo get_info() const;
 
@@ -212,6 +221,15 @@ class Server {
       std::string_view name,
       protocol::Json arguments = protocol::Json::object(),
       const std::string& session_id = {}) const;
+
+  /// @brief Enables the built-in SDK task processor.
+  Server& use_task_manager(TaskOperationProcessorOptions options = {});
+
+  /// @brief Installs a caller-owned task processor shared with this server.
+  Server& use_task_manager(std::shared_ptr<TaskOperationProcessor> processor);
+
+  /// @brief Returns the installed task processor, if any.
+  std::shared_ptr<TaskOperationProcessor> task_manager() const noexcept;
 
   /// @brief Returns the mutable prompt registry.
   PromptRegistry& prompts() noexcept;
@@ -447,6 +465,7 @@ class Server {
   PromptRegistry prompts_;
   ResourceRegistry resources_;
   ResourceTemplateRegistry resource_templates_;
+  std::shared_ptr<TaskOperationProcessor> task_processor_;
   std::unique_ptr<AuthProvider> auth_provider_;
   std::unique_ptr<RateLimiter> rate_limiter_;
   std::vector<std::unique_ptr<Transport>> transports_;
@@ -506,6 +525,13 @@ class ServerBuilder {
 
   /// @brief Sets the rate limiter owned by the built server.
   ServerBuilder& with_rate_limiter(std::unique_ptr<RateLimiter> rate_limiter);
+
+  /// @brief Enables the built-in SDK task processor on the built server.
+  ServerBuilder& with_task_manager(TaskOperationProcessorOptions options = {});
+
+  /// @brief Uses an explicit task processor on the built server.
+  ServerBuilder& with_task_manager(
+      std::shared_ptr<TaskOperationProcessor> processor);
 
   /// @brief Registers a tool definition and handler.
   /// @param definition Tool metadata advertised by list_tools().
@@ -595,6 +621,7 @@ class ServerBuilder {
   ServerOptions options_;
   std::unique_ptr<AuthProvider> auth_provider_;
   std::unique_ptr<RateLimiter> rate_limiter_;
+  std::shared_ptr<TaskOperationProcessor> task_processor_;
   std::vector<std::unique_ptr<Transport>> transports_;
   std::vector<ServerRegistration> registrations_;
   Server::JsonHandler completion_handler_;
@@ -652,6 +679,9 @@ class App {
     /// @brief Adds a caller-supplied transport.
     /// @param value Transport owned by the built server.
     Builder& transport(std::unique_ptr<Transport> value);
+
+    /// @brief Enables server-side task processing for task-aware tools.
+    Builder& tasks(TaskOperationProcessorOptions options = {});
 
     /// @brief Registers a tool using a typed argument adapter.
     /// @tparam Args Type decoded from the JSON arguments object.

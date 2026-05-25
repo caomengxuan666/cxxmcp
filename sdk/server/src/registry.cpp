@@ -96,6 +96,19 @@ core::Result<protocol::ToolResult> ToolRegistry::call(
   return this->call(std::move(call), SessionContext{});
 }
 
+core::Result<core::Unit> ToolRegistry::validate(
+    const protocol::ToolCall& call) const {
+  const auto it = tools_.find(call.name);
+  if (it == tools_.end()) {
+    return std::unexpected(core::Error{
+        static_cast<int>(protocol::ErrorCode::ToolNotFound),
+        "tool not found",
+        call.name,
+    });
+  }
+  return validate_tool_task_support(it->second.definition, call);
+}
+
 core::Result<protocol::ToolResult> ToolRegistry::call(
     std::string_view name, protocol::Json arguments,
     const SessionContext& session_context) const {
@@ -115,8 +128,7 @@ core::Result<protocol::ToolResult> ToolRegistry::call(
     });
   }
 
-  const auto task_support =
-      validate_tool_task_support(it->second.definition, call);
+  const auto task_support = validate(call);
   if (!task_support) {
     return std::unexpected(task_support.error());
   }

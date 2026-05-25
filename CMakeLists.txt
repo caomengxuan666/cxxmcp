@@ -169,6 +169,7 @@ if(MCP_ENABLE_SERVER)
         sdk/server/src/registry.cpp
         sdk/server/src/server.cpp
         sdk/server/src/stdio_transport.cpp
+        sdk/server/src/task_manager.cpp
     )
     set_target_properties(mcp_server PROPERTIES EXPORT_NAME server)
     target_include_directories(mcp_server PUBLIC

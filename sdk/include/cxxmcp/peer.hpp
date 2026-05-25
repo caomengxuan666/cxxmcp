@@ -115,6 +115,11 @@ class Peer<RoleClient> {
     return client_.call_tool(call);
   }
 
+  core::Result<protocol::CreateTaskResult> call_tool_task(
+      const protocol::ToolCall& call) {
+    return client_.call_tool_task(call);
+  }
+
   core::Result<protocol::ToolResult> call_tool(
       std::string_view name,
       const protocol::Json& arguments = protocol::Json::object()) {

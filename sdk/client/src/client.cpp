@@ -598,6 +598,35 @@ core::Result<protocol::ToolResult> Client::call_tool(
   return *tool_result;
 }
 
+core::Result<protocol::CreateTaskResult> Client::call_tool_task(
+    const protocol::ToolCall& call) {
+  if (!call.task.has_value()) {
+    return std::unexpected(
+        make_client_error(static_cast<int>(protocol::ErrorCode::InvalidRequest),
+                          "task-aware tool call requires task parameters"));
+  }
+
+  const auto response = send_rpc_request(protocol::JsonRpcRequest{
+      .method = std::string(protocol::ToolsCallMethod),
+      .params = protocol::tool_call_to_json(call),
+      .id = next_request_id_++,
+  });
+  if (!response) {
+    return std::unexpected(response.error());
+  }
+
+  const auto payload = require_result_payload(*response);
+  if (!payload) {
+    return std::unexpected(payload.error());
+  }
+
+  const auto task = protocol::create_task_result_from_json(*payload);
+  if (!task) {
+    return std::unexpected(task.error());
+  }
+  return *task;
+}
+
 core::Result<protocol::ToolResult> Client::call_raw(
     std::string_view name, const protocol::Json& arguments) {
   return call_tool(protocol::ToolCall{

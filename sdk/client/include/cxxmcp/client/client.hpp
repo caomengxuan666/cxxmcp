@@ -334,6 +334,10 @@ class Client {
   /// @brief Calls a tool using a protocol ToolCall object.
   core::Result<protocol::ToolResult> call_tool(const protocol::ToolCall& call);
 
+  /// @brief Calls a task-aware tool and returns the created task handle.
+  core::Result<protocol::CreateTaskResult> call_tool_task(
+      const protocol::ToolCall& call);
+
   /// @brief Calls a tool by name with optional JSON arguments.
   core::Result<protocol::ToolResult> call_raw(
       std::string_view name,

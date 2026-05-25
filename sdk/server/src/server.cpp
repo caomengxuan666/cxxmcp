@@ -81,6 +81,17 @@ core::Result<core::Unit> update_resource_subscription(
 
 Server::Server(ServerOptions options) : options_(std::move(options)) {}
 
+Server::~Server() {
+  stop();
+  if (task_processor_) {
+    task_processor_->stop();
+  }
+}
+
+Server::Server(Server&&) noexcept = default;
+
+Server& Server::operator=(Server&&) noexcept = default;
+
 ServerInfo Server::get_info() const {
   return server_info_from_options(options_);
 }
@@ -106,6 +117,29 @@ core::Result<protocol::ToolResult> Server::call_tool(
     std::string_view name, protocol::Json arguments,
     const std::string& session_id) const {
   return tools_.call(name, std::move(arguments), session_id);
+}
+
+Server& Server::use_task_manager(TaskOperationProcessorOptions options) {
+  return use_task_manager(
+      std::make_shared<TaskOperationProcessor>(std::move(options)));
+}
+
+Server& Server::use_task_manager(
+    std::shared_ptr<TaskOperationProcessor> processor) {
+  task_processor_ = std::move(processor);
+  if (task_processor_) {
+    if (!options_.capabilities.tasks.has_value()) {
+      options_.capabilities.tasks = protocol::TaskCapabilities{};
+    }
+    options_.capabilities.tasks->list = true;
+    options_.capabilities.tasks->cancel = true;
+    options_.capabilities.tasks->tools_call = true;
+  }
+  return *this;
+}
+
+std::shared_ptr<TaskOperationProcessor> Server::task_manager() const noexcept {
+  return task_processor_;
 }
 
 PromptRegistry& Server::prompts() noexcept { return prompts_; }
@@ -225,7 +259,7 @@ core::Result<protocol::JsonRpcResponse> Server::handle_request(
   }
 
   if (request.method == protocol::TasksListMethod) {
-    if (!task_list_handler_) {
+    if (!task_list_handler_ && !task_processor_) {
       return make_error_response(
           request, static_cast<int>(protocol::ErrorCode::MethodNotFound),
           "task list handler is not configured");
@@ -237,7 +271,9 @@ core::Result<protocol::JsonRpcResponse> Server::handle_request(
                                  params.error().message, params.error().detail);
     }
 
-    const auto result = task_list_handler_(*params, context);
+    const auto result = task_list_handler_
+                            ? task_list_handler_(*params, context)
+                            : task_processor_->list_tasks(*params);
     if (!result) {
       return make_error_response(request, result.error().code,
                                  result.error().message, result.error().detail);
@@ -248,7 +284,7 @@ core::Result<protocol::JsonRpcResponse> Server::handle_request(
   }
 
   if (request.method == protocol::TasksGetMethod) {
-    if (!task_get_handler_) {
+    if (!task_get_handler_ && !task_processor_) {
       return make_error_response(
           request, static_cast<int>(protocol::ErrorCode::MethodNotFound),
           "task get handler is not configured");
@@ -260,7 +296,8 @@ core::Result<protocol::JsonRpcResponse> Server::handle_request(
                                  params.error().message, params.error().detail);
     }
 
-    const auto result = task_get_handler_(*params, context);
+    const auto result = task_get_handler_ ? task_get_handler_(*params, context)
+                                          : task_processor_->get_task(*params);
     if (!result) {
       return make_error_response(request, result.error().code,
                                  result.error().message, result.error().detail);
@@ -270,7 +307,7 @@ core::Result<protocol::JsonRpcResponse> Server::handle_request(
   }
 
   if (request.method == protocol::TasksCancelMethod) {
-    if (!task_cancel_handler_) {
+    if (!task_cancel_handler_ && !task_processor_) {
       return make_error_response(
           request, static_cast<int>(protocol::ErrorCode::MethodNotFound),
           "task cancel handler is not configured");
@@ -282,7 +319,9 @@ core::Result<protocol::JsonRpcResponse> Server::handle_request(
                                  params.error().message, params.error().detail);
     }
 
-    const auto result = task_cancel_handler_(*params, context);
+    const auto result = task_cancel_handler_
+                            ? task_cancel_handler_(*params, context)
+                            : task_processor_->cancel_task(*params);
     if (!result) {
       return make_error_response(request, result.error().code,
                                  result.error().message, result.error().detail);
@@ -292,7 +331,7 @@ core::Result<protocol::JsonRpcResponse> Server::handle_request(
   }
 
   if (request.method == protocol::TasksResultMethod) {
-    if (!task_result_handler_) {
+    if (!task_result_handler_ && !task_processor_) {
       return make_error_response(
           request, static_cast<int>(protocol::ErrorCode::MethodNotFound),
           "task result handler is not configured");
@@ -304,7 +343,9 @@ core::Result<protocol::JsonRpcResponse> Server::handle_request(
                                  params.error().message, params.error().detail);
     }
 
-    const auto result = task_result_handler_(*params, context);
+    const auto result = task_result_handler_
+                            ? task_result_handler_(*params, context)
+                            : task_processor_->task_result(*params);
     if (!result) {
       return make_error_response(request, result.error().code,
                                  result.error().message, result.error().detail);
@@ -350,6 +391,27 @@ core::Result<protocol::JsonRpcResponse> Server::handle_request(
     if (!call) {
       return make_error_response(request, call.error().code,
                                  call.error().message, call.error().detail);
+    }
+
+    if (call->task.has_value()) {
+      const auto valid = tools_.validate(*call);
+      if (!valid) {
+        return make_error_response(request, valid.error().code,
+                                   valid.error().message, valid.error().detail);
+      }
+      if (!task_processor_) {
+        return make_error_response(
+            request, static_cast<int>(protocol::ErrorCode::MethodNotFound),
+            "task processor is not configured");
+      }
+      const auto task =
+          task_processor_->submit_tool_call(tools_, *call, context);
+      if (!task) {
+        return make_error_response(request, task.error().code,
+                                   task.error().message, task.error().detail);
+      }
+      return protocol::make_response(
+          request.id, protocol::create_task_result_to_json(*task));
     }
 
     const auto result = tools_.call(*call, context);
@@ -897,6 +959,26 @@ ServerBuilder& ServerBuilder::with_rate_limiter(
   return *this;
 }
 
+ServerBuilder& ServerBuilder::with_task_manager(
+    TaskOperationProcessorOptions options) {
+  return with_task_manager(
+      std::make_shared<TaskOperationProcessor>(std::move(options)));
+}
+
+ServerBuilder& ServerBuilder::with_task_manager(
+    std::shared_ptr<TaskOperationProcessor> processor) {
+  task_processor_ = std::move(processor);
+  if (task_processor_) {
+    if (!options_.capabilities.tasks.has_value()) {
+      options_.capabilities.tasks = protocol::TaskCapabilities{};
+    }
+    options_.capabilities.tasks->list = true;
+    options_.capabilities.tasks->cancel = true;
+    options_.capabilities.tasks->tools_call = true;
+  }
+  return *this;
+}
+
 ServerBuilder& ServerBuilder::add_tool(protocol::ToolDefinition definition,
                                        ToolHandler handler) {
   options_.capabilities.tools.enabled = true;
@@ -1043,6 +1125,7 @@ core::Result<std::unique_ptr<Server>> ServerBuilder::build() {
   auto server = std::make_unique<Server>(options_);
   server->set_auth_provider(std::move(auth_provider_));
   server->set_rate_limiter(std::move(rate_limiter_));
+  server->use_task_manager(std::move(task_processor_));
   server->set_completion_handler(std::move(completion_handler_));
   server->set_sampling_handler(std::move(sampling_handler_));
   server->set_logging_handler(std::move(logging_handler_));
@@ -1119,6 +1202,11 @@ App::Builder& App::Builder::legacy_sse(std::string host, std::uint16_t port,
 
 App::Builder& App::Builder::transport(std::unique_ptr<Transport> value) {
   builder_.with_transport(std::move(value));
+  return *this;
+}
+
+App::Builder& App::Builder::tasks(TaskOperationProcessorOptions options) {
+  builder_.with_task_manager(std::move(options));
   return *this;
 }
 

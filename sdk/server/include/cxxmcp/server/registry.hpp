@@ -109,6 +109,10 @@ class ToolRegistry {
   /// the handler's own error.
   core::Result<protocol::ToolResult> call(protocol::ToolCall call) const;
 
+  /// @brief Validate that a parsed tool call can target a registered tool.
+  /// @return Unit on success, ToolNotFound, or task-support validation failure.
+  core::Result<core::Unit> validate(const protocol::ToolCall& call) const;
+
   /// @brief Invoke a tool with full session metadata.
   /// @param name Registered tool name.
   /// @param arguments JSON arguments passed to the handler.

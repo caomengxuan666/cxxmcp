@@ -12,7 +12,7 @@ Already covered in the current tree:
 - `handler` aggregates and interface-based callback installation
 - client-side completion helpers
 - client-side elicitation helpers
-- task-related client and server APIs
+- task-related client and server APIs, including SDK server task processing
 - request handles for async peer calls
 - in-memory task management service in `runtime`
 
@@ -96,7 +96,7 @@ protocol
 | Request dispatch | typed request/response/notification enums | string method dispatch plus manual JSON conversion |
 | Bidirectional calls | `Peer` is first-class | partially supported, but not the core abstraction |
 | Timeout/cancellation | request handles and cancellation tokens | mostly ad hoc or transport-specific |
-| Task support | integrated task manager and handler methods | protocol/client pieces and runtime task management exist; the remaining gap is deeper RMCP operation processor parity |
+| Task support | integrated task manager and handler methods | SDK server task processor now covers task-aware `tools/call`; remaining gaps are harder cancellation, TTL cleanup, and deeper operation-processor parity |
 | Product runtime | outside SDK core | gateway/runtime concepts are prominent in the repository |
 
 This means the current C++ design has both product-friendly compatibility
@@ -289,7 +289,8 @@ RMCP has first-class task support:
 - task timeout handling
 - task result transport
 
-The C++ SDK now exposes task-related client and server APIs, plus task protocol types.
+The C++ SDK now exposes task-related client and server APIs, task protocol
+types, and a server-side task processor for task-aware tool calls.
 
 Covered by current tree:
 
@@ -298,14 +299,24 @@ Covered by current tree:
 - task result handlers on the server side
 - tool-level `TaskSupport` / `ToolExecution` wire modeling and server-side
   required/forbidden/optional invocation validation
+- SDK server task processor for `tools/call` requests with `task` parameters
+- task-aware `tools/call` returns `CreateTaskResult` and executes the tool in
+  the background
+- built-in server fallback handlers for `tasks/list`, `tasks/get`,
+  `tasks/result`, and `tasks/cancel` when no custom task handler is installed
+- `tasks/result` returns the original `ToolResult` JSON for completed
+  background tool calls
 - client and gateway `tools/call` paths preserve task request metadata
 - task status notifications
 - runtime task management service
 
 Still to close:
 
-- richer task lifecycle orchestration
-- retention and timeout policy
+- hard cancellation of already running C++ handlers; current behavior is
+  cooperative and suppresses late results after cancellation
+- TTL-based result cleanup; current SDK processor retains terminal records with
+  a bounded in-memory retention count
+- richer operation result transport abstractions beyond tool-call JSON payloads
 - deeper parity with RMCP's operation processor model
 
 ### 7. Elicitation
@@ -438,10 +449,19 @@ Still to close:
 
 ### Phase 4: Add Task Manager
 
-- add task operation processor
-- add task result retention
-- add task cancellation
-- add task status notifications
+Current tree covers:
+
+- SDK server task operation processor
+- task-aware `tools/call` creation and background execution
+- built-in `tasks/list`, `tasks/get`, `tasks/result`, and `tasks/cancel`
+  handling
+- task status notifications
+
+Still to close:
+
+- TTL-based task result cleanup
+- hard cancellation or a public cancellation token for running handlers
+- richer operation result transport parity with RMCP
 
 ### Phase 5: Add Elicitation Helpers
 

@@ -17,4 +17,5 @@
 #include "cxxmcp/server/registry.hpp"
 #include "cxxmcp/server/server.hpp"
 #include "cxxmcp/server/stdio_transport.hpp"
+#include "cxxmcp/server/task_manager.hpp"
 #include "cxxmcp/server/transport.hpp"

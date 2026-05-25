@@ -10,6 +10,7 @@
 #include <stdexcept>
 #include <string>
 #include <string_view>
+#include <thread>
 #include <utility>
 #include <variant>
 #include <vector>
@@ -30,6 +31,17 @@ void require(bool condition, std::string_view message) {
   if (!condition) {
     throw std::runtime_error(std::string(message));
   }
+}
+
+template <class Predicate>
+void wait_until(Predicate predicate, std::string_view message) {
+  for (int attempt = 0; attempt < 100; ++attempt) {
+    if (predicate()) {
+      return;
+    }
+    std::this_thread::sleep_for(std::chrono::milliseconds(5));
+  }
+  throw std::runtime_error(std::string(message));
 }
 
 class LoopbackTransport final : public mcp::client::Transport {
@@ -106,6 +118,22 @@ class RecordingTransport final : public mcp::client::Transport {
       };
     }
     if (request.method == "tools/call") {
+      if (request.params.contains("task")) {
+        return mcp::protocol::JsonRpcResponse{
+            .id = request.id,
+            .result = mcp::protocol::create_task_result_to_json(
+                mcp::protocol::CreateTaskResult{
+                    .task =
+                        mcp::protocol::Task{
+                            .task_id = "task-created",
+                            .status = mcp::protocol::TaskStatus::Working,
+                            .created_at = "2026-05-24T00:00:00Z",
+                            .ttl = std::int64_t{60},
+                            .last_updated_at = "2026-05-24T00:00:00Z",
+                        },
+                }),
+        };
+      }
       return mcp::protocol::JsonRpcResponse{
           .id = request.id,
           .result =
@@ -1247,13 +1275,17 @@ void test_client_call_tool_serializes_task_request() {
   auto* recording = transport.get();
   mcp::client::Client client(std::move(transport));
 
-  const auto result = client.call_tool(mcp::protocol::ToolCall{
+  const auto result = client.call_tool_task(mcp::protocol::ToolCall{
       .name = "fake-tool",
       .arguments = Json{{"value", 42}},
       .task = mcp::protocol::TaskRequestParameters{.ttl = std::int64_t{60}},
   });
 
-  require(result.has_value(), "task-aware call_tool should succeed");
+  require(result.has_value(), "task-aware call_tool should create task");
+  require(result->task.task_id == "task-created",
+          "task-aware call_tool task id mismatch");
+  require(result->task.status == mcp::protocol::TaskStatus::Working,
+          "task-aware call_tool task status mismatch");
   require(recording->requests.size() == 1,
           "task-aware call_tool should send one request");
   require(recording->requests.front().method ==
@@ -1274,6 +1306,7 @@ void test_server_tool_task_support_validation() {
       .tools_call = true,
   };
   mcp::server::Server server(options);
+  server.use_task_manager();
 
   int forbidden_calls = 0;
   const auto forbidden_added = server.tools().add(
@@ -1358,7 +1391,10 @@ void test_server_tool_task_support_validation() {
       mcp::server::SessionContext{.session_id = "session-1"});
   require(optional_task.has_value(), "optional task request failed");
   require(optional_task->result.has_value(), "optional task result missing");
-  require(optional_calls == 1, "optional task should call handler once");
+  require(optional_task->result->contains("task"),
+          "optional task should create a task");
+  wait_until([&] { return optional_calls == 1; },
+             "optional task should call handler once");
 
   const auto required_task = server.handle_request(
       mcp::protocol::JsonRpcRequest{
@@ -1371,7 +1407,166 @@ void test_server_tool_task_support_validation() {
       mcp::server::SessionContext{.session_id = "session-1"});
   require(required_task.has_value(), "required task request failed");
   require(required_task->result.has_value(), "required task result missing");
-  require(required_calls == 1, "required task should call handler once");
+  require(required_task->result->contains("task"),
+          "required task should create a task");
+  wait_until([&] { return required_calls == 1; },
+             "required task should call handler once");
+}
+
+void test_server_task_processor_tool_call_lifecycle() {
+  mcp::server::ServerBuilder builder;
+  builder.name("TaskServer")
+      .with_task_manager(mcp::server::TaskOperationProcessorOptions{
+          .worker_count = 1,
+          .queue_size = 8,
+          .poll_interval = std::int64_t{1},
+      });
+  builder.add_tool(
+      mcp::protocol::ToolDefinition{
+          .name = "long.echo",
+          .input_schema = Json::object(),
+          .execution = mcp::protocol::ToolExecution{}.with_task_support(
+              mcp::protocol::TaskSupport::Optional),
+      },
+      [](const mcp::server::ToolContext& context)
+          -> mcp::core::Result<mcp::protocol::ToolResult> {
+        require(context.session_id == "test-session",
+                "task tool session mismatch");
+        require(context.task.has_value(), "task tool context missing task");
+        require(context.task->ttl == 60, "task tool ttl mismatch");
+        mcp::protocol::ToolResult result;
+        result.structured_content =
+            Json{{"echo", context.arguments.at("value")}};
+        result.content.push_back(mcp::protocol::ContentBlock{
+            .type = "text",
+            .text = context.arguments.at("value").get<std::string>(),
+            .data = Json::object(),
+        });
+        return result;
+      });
+
+  auto built = builder.build();
+  require(built.has_value(), "task processor server build failed");
+  auto& server = **built;
+  mcp::client::Client client(std::make_unique<LoopbackTransport>(server));
+
+  const auto created = client.call_tool_task(mcp::protocol::ToolCall{
+      .name = "long.echo",
+      .arguments = Json{{"value", "hello"}},
+      .task = mcp::protocol::TaskRequestParameters{.ttl = std::int64_t{60}},
+  });
+  require(created.has_value(), "task-aware tool call should create task");
+  require(!created->task.task_id.empty(), "created task id missing");
+  require(created->task.status == mcp::protocol::TaskStatus::Working,
+          "created task should start as working");
+  require(created->task.poll_interval == 1, "created task poll mismatch");
+  require(std::holds_alternative<std::int64_t>(created->task.ttl),
+          "created task ttl missing");
+  require(std::get<std::int64_t>(created->task.ttl) == 60,
+          "created task ttl mismatch");
+
+  wait_until(
+      [&] {
+        const auto task = client.get_task(created->task.task_id);
+        return task.has_value() &&
+               task->status == mcp::protocol::TaskStatus::Completed;
+      },
+      "task-aware tool call should complete");
+
+  const auto listed = client.list_tasks();
+  require(listed.has_value(), "list tasks after tool call failed");
+  require(!listed->empty(), "created task should be listed");
+
+  const auto payload = client.task_result(created->task.task_id);
+  require(payload.has_value(), "completed task result failed");
+  require(payload->at("content").at(0).at("text") == "hello",
+          "completed task content mismatch");
+  require(payload->at("structuredContent").at("echo") == "hello",
+          "completed task structured content mismatch");
+}
+
+void test_server_task_processor_failed_and_cancelled_tasks() {
+  mcp::server::ServerBuilder builder;
+  builder.with_task_manager(mcp::server::TaskOperationProcessorOptions{
+      .worker_count = 1,
+      .queue_size = 8,
+  });
+  builder.add_tool(
+      mcp::protocol::ToolDefinition{
+          .name = "fail",
+          .input_schema = Json::object(),
+          .execution = mcp::protocol::ToolExecution{}.with_task_support(
+              mcp::protocol::TaskSupport::Optional),
+      },
+      [](const mcp::server::ToolContext&)
+          -> mcp::core::Result<mcp::protocol::ToolResult> {
+        return std::unexpected(mcp::core::Error{
+            static_cast<int>(mcp::protocol::ErrorCode::InternalError),
+            "planned failure",
+            {},
+        });
+      });
+  builder.add_tool(
+      mcp::protocol::ToolDefinition{
+          .name = "slow",
+          .input_schema = Json::object(),
+          .execution = mcp::protocol::ToolExecution{}.with_task_support(
+              mcp::protocol::TaskSupport::Optional),
+      },
+      [](const mcp::server::ToolContext&)
+          -> mcp::core::Result<mcp::protocol::ToolResult> {
+        std::this_thread::sleep_for(std::chrono::milliseconds(100));
+        mcp::protocol::ToolResult result;
+        result.content.push_back(mcp::protocol::ContentBlock{
+            .type = "text",
+            .text = "late",
+            .data = Json::object(),
+        });
+        return result;
+      });
+
+  auto built = builder.build();
+  require(built.has_value(), "failed/cancel task server build failed");
+  auto& server = **built;
+  mcp::client::Client client(std::make_unique<LoopbackTransport>(server));
+
+  const auto failed = client.call_tool_task(mcp::protocol::ToolCall{
+      .name = "fail",
+      .arguments = Json::object(),
+      .task = mcp::protocol::TaskRequestParameters{},
+  });
+  require(failed.has_value(), "failing task should be created");
+  wait_until(
+      [&] {
+        const auto task = client.get_task(failed->task.task_id);
+        return task.has_value() &&
+               task->status == mcp::protocol::TaskStatus::Failed;
+      },
+      "failing task should become failed");
+  const auto failed_result = client.task_result(failed->task.task_id);
+  require(!failed_result.has_value(), "failed task result should fail");
+  require(failed_result.error().message == "planned failure",
+          "failed task error mismatch");
+
+  const auto slow = client.call_tool_task(mcp::protocol::ToolCall{
+      .name = "slow",
+      .arguments = Json::object(),
+      .task = mcp::protocol::TaskRequestParameters{},
+  });
+  require(slow.has_value(), "slow task should be created");
+  const auto cancelled = client.cancel_task(slow->task.task_id);
+  require(cancelled.has_value(), "cancel task should succeed");
+  require(cancelled->status == mcp::protocol::TaskStatus::Cancelled,
+          "cancel task status mismatch");
+  std::this_thread::sleep_for(std::chrono::milliseconds(150));
+  const auto after_cancel = client.get_task(slow->task.task_id);
+  require(after_cancel.has_value(), "cancelled task should remain queryable");
+  require(after_cancel->status == mcp::protocol::TaskStatus::Cancelled,
+          "late slow result should not overwrite cancellation");
+  const auto cancelled_result = client.task_result(slow->task.task_id);
+  require(!cancelled_result.has_value(), "cancelled task result should fail");
+  require(cancelled_result.error().message == "Operation cancelled",
+          "cancelled task error mismatch");
 }
 
 void test_ping_raw_request() {
@@ -2648,6 +2843,10 @@ int main() {
        test_client_call_tool_serializes_task_request},
       {"server tool task support validation",
        test_server_tool_task_support_validation},
+      {"server task processor tool call lifecycle",
+       test_server_task_processor_tool_call_lifecycle},
+      {"server task processor failed and cancelled tasks",
+       test_server_task_processor_failed_and_cancelled_tasks},
       {"ping raw request", test_ping_raw_request},
       {"server info accessors and ping", test_server_info_accessors_and_ping},
       {"initialize handshake shape", test_initialize_handshake_shape},
