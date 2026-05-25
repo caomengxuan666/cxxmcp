@@ -228,6 +228,92 @@ void test_tool_protocol_round_trips() {
           "tool structured content mismatch");
 }
 
+void test_content_block_variants_round_trip() {
+  const std::vector<mcp::protocol::ContentBlock> blocks{
+      mcp::protocol::ContentBlock{
+          .type = "text",
+          .text = "hello",
+          .annotations = Json{{"audience", Json::array({"user"})}},
+          .meta = Json{{"trace", "text-1"}},
+      },
+      mcp::protocol::ContentBlock{
+          .type = "image",
+          .data = "base64-image",
+          .mime_type = "image/png",
+      },
+      mcp::protocol::ContentBlock{
+          .type = "audio",
+          .data = "base64-audio",
+          .mime_type = "audio/wav",
+      },
+      mcp::protocol::ContentBlock{
+          .type = "resource",
+          .resource =
+              mcp::protocol::ResourceContents{
+                  .uri = "file:///tmp/readme.txt",
+                  .mime_type = "text/plain",
+                  .text = std::string("hello resource"),
+              },
+      },
+      mcp::protocol::ContentBlock{
+          .type = "resource_link",
+          .resource_link =
+              mcp::protocol::Resource{
+                  .title = "Readme",
+                  .uri = "file:///tmp/readme.txt",
+                  .name = "readme.txt",
+                  .description = "Project readme",
+                  .mime_type = "text/plain",
+                  .size = std::int64_t{42},
+              },
+      },
+  };
+
+  const auto text_json = mcp::protocol::content_block_to_json(blocks.at(0));
+  require(text_json.at("text") == "hello", "text content mismatch");
+  require(text_json.at("annotations").at("audience").at(0) == "user",
+          "text annotations mismatch");
+  require(text_json.at("_meta").at("trace") == "text-1", "text meta mismatch");
+
+  const auto image_json = mcp::protocol::content_block_to_json(blocks.at(1));
+  require(image_json.at("type") == "image", "image content type mismatch");
+  require(image_json.at("data") == "base64-image",
+          "image content data mismatch");
+  require(image_json.at("mimeType") == "image/png",
+          "image content mimeType mismatch");
+
+  const auto audio_json = mcp::protocol::content_block_to_json(blocks.at(2));
+  require(audio_json.at("type") == "audio", "audio content type mismatch");
+  require(audio_json.at("data") == "base64-audio",
+          "audio content data mismatch");
+  require(audio_json.at("mimeType") == "audio/wav",
+          "audio content mimeType mismatch");
+
+  const auto resource_json = mcp::protocol::content_block_to_json(blocks.at(3));
+  require(resource_json.at("type") == "resource",
+          "embedded resource content type mismatch");
+  require(resource_json.at("resource").at("uri") == "file:///tmp/readme.txt",
+          "embedded resource uri mismatch");
+  require(resource_json.at("resource").at("text") == "hello resource",
+          "embedded resource text mismatch");
+
+  const auto link_json = mcp::protocol::content_block_to_json(blocks.at(4));
+  require(link_json.at("type") == "resource_link",
+          "resource link type mismatch");
+  require(link_json.at("uri") == "file:///tmp/readme.txt",
+          "resource link uri mismatch");
+  require(link_json.at("name") == "readme.txt", "resource link name mismatch");
+  require(link_json.at("size") == 42, "resource link size mismatch");
+
+  for (const auto& block : blocks) {
+    const auto json = mcp::protocol::content_block_to_json(block);
+    const auto parsed = mcp::protocol::content_block_from_json(json);
+    require(parsed.has_value(), "content block variant should parse");
+    require(mcp::protocol::content_block_to_json(*parsed) == json,
+            "content block variant should round trip");
+  }
+}
+
 void test_task_protocol_round_trips() {
   const mcp::protocol::Task task{
       .task_id = "task-1",
@@ -1073,6 +1159,8 @@ int main() {
       {"ping request round trip", test_ping_request_round_trip},
       {"response round trips", test_response_round_trips},
       {"tool protocol round trips", test_tool_protocol_round_trips},
+      {"content block variants round trip",
+       test_content_block_variants_round_trip},
       {"task protocol round trips", test_task_protocol_round_trips},
       {"client capability wire shape", test_client_capability_wire_shape},
       {"server capability wire shape", test_server_capability_wire_shape},

@@ -216,7 +216,8 @@ Examples in RMCP:
 
 The current C++ models are simpler:
 
-- `ContentBlock` is mostly text plus generic `data`
+- `ContentBlock` supports text, image, audio, embedded resource, and resource
+  link variants
 - `ToolDefinition` has name, description, input schema, and streaming flag
 - `Resource` and `Prompt` omit title, icons, annotations, and metadata
 - capability storage uses explicit presence flags plus compact booleans for
@@ -232,8 +233,8 @@ Gap:
 
 Action:
 
-- expand content models to match RMCP's tagged content variants
-- add annotations support
+- add remaining content convenience builders and typed accessors
+- finish annotations support where it is still represented as raw JSON
 - add `_meta` support at the proper model/request/notification levels
 - add tool output schema and tool execution/task support
 - add resource/prompt title, icons, and metadata fields

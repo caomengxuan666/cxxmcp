@@ -16,6 +16,7 @@
 #include <vector>
 
 #include "cxxmcp/core/result.hpp"
+#include "cxxmcp/protocol/resource.hpp"
 #include "cxxmcp/protocol/task.hpp"
 #include "cxxmcp/protocol/types.hpp"
 
@@ -23,12 +24,23 @@ namespace mcp::protocol {
 
 /// @brief A single content item returned by a tool or embedded in prompts.
 struct ContentBlock {
-  /// Content kind. `"text"` is the default SDK-supported kind.
+  /// Content kind. Common values are `text`, `image`, `audio`, `resource`, and
+  /// `resource_link`.
   std::string type = "text";
   /// Text payload for text blocks.
   std::string text;
-  /// Additional type-specific data for non-text or extended content.
+  /// Base64 payload for image/audio blocks or extension data for custom blocks.
   Json data = Json::object();
+  /// MIME type for image/audio blocks.
+  std::string mime_type;
+  /// Embedded resource contents for `resource` blocks.
+  std::optional<ResourceContents> resource;
+  /// Resource descriptor for `resource_link` blocks.
+  std::optional<Resource> resource_link;
+  /// Optional annotations for model or client presentation.
+  Json annotations = Json::object();
+  /// Optional `_meta` extension object preserved on the wire.
+  std::optional<Json> meta;
 };
 
 /// @brief Metadata describing a callable MCP tool.
@@ -91,11 +103,39 @@ inline core::Error tool_json_error(std::string message) {
 inline Json content_block_to_json(const ContentBlock& block) {
   Json json = Json::object();
   json["type"] = block.type;
-  json["text"] = block.text;
-  if (!block.data.empty()) {
-    json["data"] = block.data;
+  if (block.type == "resource" && block.resource.has_value()) {
+    json["resource"] = resource_contents_to_json(*block.resource);
+  } else if (block.type == "resource_link" && block.resource_link.has_value()) {
+    json = resource_to_json(*block.resource_link);
+    json["type"] = block.type;
+  } else {
+    if (!block.text.empty() || block.type == "text") {
+      json["text"] = block.text;
+    }
+    if (!block.data.empty()) {
+      json["data"] = block.data;
+    }
+    if (!block.mime_type.empty()) {
+      json["mimeType"] = block.mime_type;
+    }
+  }
+  if (!block.annotations.empty()) {
+    json["annotations"] = block.annotations;
+  }
+  if (block.meta.has_value()) {
+    json["_meta"] = *block.meta;
   }
   return json;
+}
+
+/// @brief Reads a required string member from a content object.
+inline core::Result<std::string> required_content_string(
+    const Json& json, std::string_view member, std::string message) {
+  const std::string key(member);
+  if (!json.contains(key) || !json.at(key).is_string()) {
+    return std::unexpected(tool_json_error(std::move(message)));
+  }
+  return json.at(key).get<std::string>();
 }
 
 /// @brief Parses a content block from JSON.
@@ -114,16 +154,63 @@ inline core::Result<ContentBlock> content_block_from_json(const Json& json) {
     block.type = json.at("type").get<std::string>();
   }
 
-  if (json.contains("text")) {
-    if (!json.at("text").is_string()) {
-      return std::unexpected(
-          tool_json_error("content block text must be a string"));
+  if (block.type == "image" || block.type == "audio") {
+    const auto data = required_content_string(
+        json, "data", block.type + " content block requires string data");
+    if (!data) {
+      return std::unexpected(data.error());
     }
-    block.text = json.at("text").get<std::string>();
+    const auto mime_type = required_content_string(
+        json, "mimeType",
+        block.type + " content block requires string mimeType");
+    if (!mime_type) {
+      return std::unexpected(mime_type.error());
+    }
+    block.data = *data;
+    block.mime_type = *mime_type;
+  } else if (block.type == "resource") {
+    if (!json.contains("resource")) {
+      return std::unexpected(
+          tool_json_error("resource content block requires resource"));
+    }
+    const auto resource = resource_contents_from_json(json.at("resource"));
+    if (!resource) {
+      return std::unexpected(resource.error());
+    }
+    block.resource = *resource;
+  } else if (block.type == "resource_link") {
+    const auto resource = resource_from_json(json);
+    if (!resource) {
+      return std::unexpected(resource.error());
+    }
+    block.resource_link = *resource;
+  } else {
+    if (json.contains("text")) {
+      if (!json.at("text").is_string()) {
+        return std::unexpected(
+            tool_json_error("content block text must be a string"));
+      }
+      block.text = json.at("text").get<std::string>();
+    }
+
+    if (json.contains("data")) {
+      block.data = json.at("data");
+    }
+
+    if (json.contains("mimeType")) {
+      if (!json.at("mimeType").is_string()) {
+        return std::unexpected(
+            tool_json_error("content block mimeType must be a string"));
+      }
+      block.mime_type = json.at("mimeType").get<std::string>();
+    }
   }
 
-  if (json.contains("data")) {
-    block.data = json.at("data");
+  if (json.contains("annotations")) {
+    block.annotations = json.at("annotations");
+  }
+  if (json.contains("_meta")) {
+    block.meta = json.at("_meta");
   }
 
   return block;
