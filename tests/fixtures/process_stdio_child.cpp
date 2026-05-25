@@ -204,7 +204,14 @@ void handle_request(const mcp::protocol::JsonRpcRequest& request) {
 
 }  // namespace
 
-int main() {
+int main(int argc, char** argv) {
+  if (argc > 1 && std::string_view(argv[1]) == "--ignore-requests") {
+    std::string ignored;
+    while (std::getline(std::cin, ignored)) {
+    }
+    return 0;
+  }
+
   std::string line;
   while (std::getline(std::cin, line)) {
     if (line.empty()) {

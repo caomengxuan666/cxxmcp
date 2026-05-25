@@ -6,7 +6,9 @@
 /// @brief Client transport that launches an MCP server process and talks over
 /// stdio.
 
+#include <chrono>
 #include <memory>
+#include <optional>
 #include <string>
 #include <unordered_map>
 #include <vector>
@@ -28,6 +30,11 @@ struct ProcessStdioTransportOptions {
 
   /// Extra environment variables for the child process.
   std::unordered_map<std::string, std::string> env;
+
+  /// Optional maximum time to wait for a JSON-RPC response from the child.
+  /// A null value waits indefinitely.
+  std::optional<std::chrono::milliseconds> request_timeout =
+      std::chrono::seconds(30);
 };
 
 /// @brief Client transport that owns a child process and exchanges JSON-RPC

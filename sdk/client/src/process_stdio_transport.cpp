@@ -3,6 +3,7 @@
 #include "cxxmcp/client/process_stdio_transport.hpp"
 
 #include <algorithm>
+#include <chrono>
 #include <condition_variable>
 #include <cwchar>
 #include <future>
@@ -296,7 +297,23 @@ class ProcessStdioTransport::Impl {
       return std::unexpected(written.error());
     }
 
-    return future.get();
+    if (!options_.request_timeout.has_value()) {
+      return future.get();
+    }
+
+    if (future.wait_for(*options_.request_timeout) ==
+        std::future_status::ready) {
+      return future.get();
+    }
+
+    {
+      std::lock_guard<std::mutex> lock(pending_mutex_);
+      pending_responses_.erase(request.id);
+    }
+
+    return std::unexpected(make_process_error(
+        static_cast<int>(protocol::ErrorCode::InternalError),
+        "process stdio request timed out", request_id_to_string(request.id)));
   }
 
   void reader_loop() {
@@ -426,6 +443,7 @@ class ProcessStdioTransport::Impl {
  private:
   core::Result<core::Unit> ensure_started() {
 #ifdef _WIN32
+    std::lock_guard<std::mutex> process_lock(process_mutex_);
     if (process_) {
       return core::Unit{};
     }
@@ -499,20 +517,23 @@ class ProcessStdioTransport::Impl {
   void stop() noexcept {
 #ifdef _WIN32
     running_ = false;
-    stdin_write_.reset();
-    if (process_) {
-      const DWORD wait_result = WaitForSingleObject(process_.get(), 1000);
-      if (wait_result == WAIT_TIMEOUT) {
-        TerminateProcess(process_.get(), 1);
-        WaitForSingleObject(process_.get(), 1000);
+    {
+      std::lock_guard<std::mutex> process_lock(process_mutex_);
+      stdin_write_.reset();
+      if (process_) {
+        const DWORD wait_result = WaitForSingleObject(process_.get(), 1000);
+        if (wait_result == WAIT_TIMEOUT) {
+          TerminateProcess(process_.get(), 1);
+          WaitForSingleObject(process_.get(), 1000);
+        }
       }
+      stdout_read_.reset();
+      thread_.reset();
+      process_.reset();
     }
-    stdout_read_.reset();
     if (reader_thread_.joinable()) {
       reader_thread_.join();
     }
-    thread_.reset();
-    process_.reset();
 #endif
   }
 
@@ -525,6 +546,7 @@ class ProcessStdioTransport::Impl {
   std::thread reader_thread_;
   std::mutex write_mutex_;
   std::mutex pending_mutex_;
+  std::mutex process_mutex_;
   std::map<protocol::RequestId, std::promise<protocol::JsonRpcResponse>>
       pending_responses_;
 

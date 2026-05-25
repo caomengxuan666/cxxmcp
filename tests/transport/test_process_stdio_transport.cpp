@@ -1,5 +1,6 @@
 // Copyright (c) 2025 [caomengxuan666]
 
+#include <chrono>
 #include <cstdlib>
 #include <filesystem>
 #include <iostream>
@@ -168,6 +169,24 @@ void test_process_stdio_transport_handles_interleaved_child_request() {
           "interleaved child request payload mismatch");
 }
 
+void test_process_stdio_transport_times_out_unresponsive_child() {
+  auto transport = std::make_unique<mcp::client::ProcessStdioTransport>(
+      mcp::client::ProcessStdioTransportOptions{
+          .command = MCP_TEST_CHILD_EXE,
+          .args = {"--ignore-requests"},
+          .cwd = {},
+          .env = {},
+          .request_timeout = std::chrono::milliseconds(100),
+      });
+  mcp::client::McpClientSession session(std::move(transport));
+
+  const auto initialized = session.initialize();
+  require(!initialized.has_value(),
+          "unresponsive process initialize should fail");
+  require(initialized.error().message == "process stdio request timed out",
+          "unresponsive process initialize should report timeout");
+}
+
 void test_process_stdio_transport_runs_python_mcp_server() {
   auto transport = std::make_unique<mcp::client::ProcessStdioTransport>(
       mcp::client::ProcessStdioTransportOptions{
@@ -306,6 +325,8 @@ int main() {
        test_process_stdio_transport_calls_child_tool},
       {"process stdio transport handles interleaved child request",
        test_process_stdio_transport_handles_interleaved_child_request},
+      {"process stdio transport times out unresponsive child",
+       test_process_stdio_transport_times_out_unresponsive_child},
       {"process stdio transport runs python MCP server",
        test_process_stdio_transport_runs_python_mcp_server},
       {"process stdio transport runs typescript MCP server",

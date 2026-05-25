@@ -70,6 +70,17 @@ class RequestHandle {
                              std::function<ResultType()> task) {
     auto promise = std::make_shared<std::promise<ResultType>>();
     auto future = promise->get_future().share();
+    if (!task) {
+      promise->set_value(std::unexpected(core::Error{
+          static_cast<int>(protocol::ErrorCode::InternalError),
+          "request task is not configured",
+          {},
+      }));
+      return RequestHandle(std::move(request_id), std::move(timeout),
+                           std::move(cancellation), std::move(cancel),
+                           std::move(future));
+    }
+
     const auto queued = detail::request_executor().enqueue(
         [promise, task = std::move(task)]() mutable {
           try {
@@ -107,6 +118,14 @@ class RequestHandle {
   }
 
   core::Result<T> await_response() const {
+    if (!response_.valid()) {
+      return std::unexpected(core::Error{
+          static_cast<int>(protocol::ErrorCode::InternalError),
+          "request handle has no response state",
+          {},
+      });
+    }
+
     if (!timeout_.has_value() && !cancellation_.has_value()) {
       return response_.get();
     }

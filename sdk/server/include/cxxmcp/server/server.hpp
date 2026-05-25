@@ -87,6 +87,30 @@ inline protocol::Json value_to_json(T&& value) {
   }
 }
 
+template <class Handler>
+inline bool callable_is_empty(const Handler&) noexcept {
+  return false;
+}
+
+template <class Return, class... Args>
+inline bool callable_is_empty(
+    const std::function<Return(Args...)>& handler) noexcept {
+  return !handler;
+}
+
+template <class Return, class... Args>
+inline bool callable_is_empty(Return (*handler)(Args...)) noexcept {
+  return handler == nullptr;
+}
+
+template <class Handler>
+inline void require_callable(const Handler& handler, std::string_view label) {
+  if (callable_is_empty(handler)) {
+    throw std::invalid_argument(std::string(label) +
+                                " handler must not be empty");
+  }
+}
+
 inline protocol::ToolResult value_to_tool_result(protocol::ToolResult result) {
   return result;
 }
@@ -889,6 +913,7 @@ class TypedToolBuilder {
 
   template <class Handler>
   TypedToolRegistration<Args, Result, Handler> handler(Handler value) {
+    detail::require_callable(value, "tool");
     return TypedToolRegistration<Args, Result, Handler>{
         .definition = std::move(definition_),
         .handler = std::move(value),
@@ -1041,6 +1066,7 @@ class App {
 
 template <class Args, class Result, class Handler>
 App::Builder& App::Builder::tool(std::string name, Handler handler) {
+  detail::require_callable(handler, "tool");
   auto definition =
       protocol::tool_definition(std::move(name)).input<Args>().build();
   detail::apply_default_output_schema<Result>(definition);
@@ -1050,6 +1076,7 @@ App::Builder& App::Builder::tool(std::string name, Handler handler) {
 template <class Args, class Result, class Handler>
 App::Builder& App::Builder::tool(protocol::ToolDefinition definition,
                                  Handler handler) {
+  detail::require_callable(handler, "tool");
   if (definition.input_schema.empty()) {
     definition.input_schema = protocol::schema_for<Args>();
   }
@@ -1089,6 +1116,7 @@ App::Builder& App::Builder::tool(
 
 template <class Handler>
 App::Builder& App::Builder::prompt(std::string name, Handler handler) {
+  detail::require_callable(handler, "prompt");
   protocol::Prompt prompt;
   prompt.name = std::move(name);
   return this->prompt(
@@ -1117,6 +1145,7 @@ App::Builder& App::Builder::prompt(std::string name, Handler handler) {
 
 template <class Handler>
 App::Builder& App::Builder::resource(std::string name, Handler handler) {
+  detail::require_callable(handler, "resource");
   protocol::Resource resource;
   resource.uri = std::move(name);
   resource.name = resource.uri;
@@ -1157,6 +1186,7 @@ App::Builder& App::Builder::resource(std::string name, Handler handler) {
 template <class Handler>
 App::Builder& App::Builder::resource_template(std::string name,
                                               Handler handler) {
+  detail::require_callable(handler, "resource_template");
   protocol::ResourceTemplate resource_template;
   if constexpr (std::is_invocable_v<Handler>) {
     auto handled = handler();
@@ -1186,6 +1216,7 @@ App::Builder& App::Builder::resource_template(std::string name,
 
 template <class Handler>
 App::Builder& App::Builder::completion(Handler handler) {
+  detail::require_callable(handler, "completion");
   builder_.on_completion(
       [handler = std::move(handler)](
           const protocol::Json& request) -> core::Result<protocol::Json> {
@@ -1200,6 +1231,7 @@ App::Builder& App::Builder::completion(Handler handler) {
 
 template <class Handler>
 App::Builder& App::Builder::sampling(Handler handler) {
+  detail::require_callable(handler, "sampling");
   builder_.on_sampling(
       [handler = std::move(handler)](
           const protocol::Json& request) -> core::Result<protocol::Json> {
@@ -1214,6 +1246,7 @@ App::Builder& App::Builder::sampling(Handler handler) {
 
 template <class Handler>
 App::Builder& App::Builder::logging(Handler handler) {
+  detail::require_callable(handler, "logging");
   builder_.on_logging([handler = std::move(handler)](std::string_view level,
                                                      std::string_view message) {
     handler(level, message);
@@ -1223,6 +1256,7 @@ App::Builder& App::Builder::logging(Handler handler) {
 
 template <class Handler>
 App::Builder& App::Builder::raw_request(Handler handler) {
+  detail::require_callable(handler, "raw_request");
   builder_.on_raw_request([handler = std::move(handler)](
                               const protocol::JsonRpcRequest& request,
                               const SessionContext& context)

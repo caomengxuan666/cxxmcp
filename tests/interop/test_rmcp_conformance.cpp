@@ -79,11 +79,14 @@ bool run_command_with_timeout(const std::string& command,
 
   STARTUPINFOW startup{};
   startup.cb = sizeof(startup);
-  startup.dwFlags = STARTF_USESHOWWINDOW;
+  startup.dwFlags = STARTF_USESHOWWINDOW | STARTF_USESTDHANDLES;
   startup.wShowWindow = SW_HIDE;
+  startup.hStdInput = GetStdHandle(STD_INPUT_HANDLE);
+  startup.hStdOutput = GetStdHandle(STD_OUTPUT_HANDLE);
+  startup.hStdError = GetStdHandle(STD_ERROR_HANDLE);
 
   PROCESS_INFORMATION process{};
-  if (!CreateProcessW(nullptr, buffer.data(), nullptr, nullptr, FALSE,
+  if (!CreateProcessW(nullptr, buffer.data(), nullptr, nullptr, TRUE,
                       CREATE_NO_WINDOW, nullptr, nullptr, &startup, &process)) {
     return false;
   }
@@ -305,6 +308,8 @@ void test_rmcp_conformance_client_tools_call() {
   const auto port = server.port();
 
   set_process_env("MCP_CONFORMANCE_SCENARIO", "tools_call");
+  set_process_env("NO_PROXY", "127.0.0.1,localhost");
+  set_process_env("no_proxy", "127.0.0.1,localhost");
   const auto command =
       quote_path(conformance_client_executable()) + " " +
       quote_text("http://127.0.0.1:" + std::to_string(port) + "/mcp");

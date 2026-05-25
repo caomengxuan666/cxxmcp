@@ -1,6 +1,7 @@
 // Copyright (c) 2025 [caomengxuan666]
 
 #include <deque>
+#include <functional>
 #include <iostream>
 #include <memory>
 #include <optional>
@@ -294,11 +295,64 @@ void test_sdk_peer_and_service_surface() {
           "server peer generic transport should close");
 }
 
+void test_request_handle_rejects_invalid_state() {
+  mcp::RequestHandle<Json> default_handle;
+  const auto default_result = default_handle.await_response();
+  require(!default_result.has_value(),
+          "default request handle should not have a response");
+  require(
+      default_result.error().message == "request handle has no response state",
+      "default request handle should report invalid state");
+
+  std::function<mcp::core::Result<Json>()> empty_task;
+  auto empty_task_handle = mcp::RequestHandle<Json>::spawn(
+      std::int64_t{7}, std::nullopt, std::nullopt, {}, std::move(empty_task));
+  const auto empty_task_result = empty_task_handle.await_response();
+  require(!empty_task_result.has_value(),
+          "empty request task should not produce a value");
+  require(empty_task_result.error().message == "request task is not configured",
+          "empty request task should report configuration error");
+}
+
+void test_app_builder_rejects_empty_std_function_handlers() {
+  std::function<std::string()> empty_resource;
+  bool threw = false;
+  try {
+    (void)mcp::server::App::builder().resource("file:///empty", empty_resource);
+  } catch (const std::invalid_argument& ex) {
+    threw = std::string_view(ex.what()) == "resource handler must not be empty";
+  }
+  require(threw, "empty resource std::function should be rejected");
+
+  std::function<mcp::protocol::Json(const mcp::protocol::Json&)>
+      empty_completion;
+  threw = false;
+  try {
+    (void)mcp::server::App::builder().completion(empty_completion);
+  } catch (const std::invalid_argument& ex) {
+    threw =
+        std::string_view(ex.what()) == "completion handler must not be empty";
+  }
+  require(threw, "empty completion std::function should be rejected");
+
+  mcp::core::Result<mcp::protocol::Json> (*empty_sampling)(
+      const mcp::protocol::Json&) = nullptr;
+  threw = false;
+  try {
+    (void)mcp::server::App::builder().sampling(empty_sampling);
+  } catch (const std::invalid_argument& ex) {
+    threw = std::string_view(ex.what()) == "sampling handler must not be empty";
+  }
+  require(threw, "empty sampling function pointer should be rejected");
+}
+
 }  // namespace
 
 int main() {
   try {
     test_sdk_peer_and_service_surface();
+    test_request_handle_rejects_invalid_state();
+    test_app_builder_rejects_empty_std_function_handlers();
     std::cout << "sdk peer/service test passed\n";
     return 0;
   } catch (const std::exception& ex) {
