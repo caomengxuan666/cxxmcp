@@ -2199,6 +2199,41 @@ void test_client_http_transport_times_out_initialize() {
   require(!response.has_value(), "initialize should honor HTTP timeout");
 }
 
+void test_client_http_transport_rejects_unexpected_response_id() {
+  HttpServerFixture fixture;
+
+  fixture.server().Post("/mcp", [](const httplib::Request&,
+                                   httplib::Response& response) {
+    response.set_content(serialize_test_response(mcp::protocol::JsonRpcResponse{
+                             .id = std::int64_t{8},
+                             .result = Json{{"ok", true}},
+                         }),
+                         "application/json");
+  });
+
+  mcp::client::HttpTransport transport(mcp::client::HttpTransportOptions{
+      .host = "127.0.0.1",
+      .port = fixture.port(),
+      .path = "/mcp",
+      .timeout = std::chrono::milliseconds(2000),
+  });
+
+  const auto response = transport.send(mcp::protocol::JsonRpcRequest{
+      .method = std::string(mcp::protocol::PingMethod),
+      .params = Json::object(),
+      .id = std::int64_t{7},
+  });
+  require(!response.has_value(),
+          "http transport should reject unexpected response ids");
+  require(response.error().message ==
+              "http transport received an unexpected response",
+          "http unexpected response message mismatch");
+  require(response.error().detail == "8",
+          "http unexpected response detail mismatch");
+  require(response.error().category == "transport",
+          "http unexpected response category mismatch");
+}
+
 void test_client_http_transport_uses_uri_and_auth_header() {
   HttpServerFixture fixture;
   std::atomic<bool> request_seen{false};
@@ -3029,6 +3064,8 @@ int main() {
        test_server_http_transport_writes_error_for_throwing_request_handler},
       {"client http transport times out initialize",
        test_client_http_transport_times_out_initialize},
+      {"client http transport rejects unexpected response id",
+       test_client_http_transport_rejects_unexpected_response_id},
       {"client http transport uses uri and auth header",
        test_client_http_transport_uses_uri_and_auth_header},
       {"client connect_streamable_http accepts uri string",

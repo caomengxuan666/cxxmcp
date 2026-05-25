@@ -492,6 +492,13 @@ struct HttpTransport::Impl {
       if (!parsed) {
         return std::unexpected(parsed.error());
       }
+      if (!parsed->id.has_value() || *parsed->id != request_id) {
+        return std::unexpected(make_transport_error(
+            static_cast<int>(protocol::ErrorCode::InvalidRequest),
+            "http transport received an unexpected response",
+            parsed->id.has_value() ? request_id_to_string(*parsed->id)
+                                   : std::string{}));
+      }
       return *parsed;
     }
 

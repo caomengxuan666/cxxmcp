@@ -121,6 +121,8 @@ incrementally. Keep them concrete; do not replace them with broad claims.
         concrete and role-generic transport paths.
   - [x] Stdio malformed-input failures are covered on concrete client reads and
         role-generic server receive/close paths.
+  - [x] Legacy HTTP client transport rejects mismatched JSON response ids with
+        stable transport errors.
 - Conformance matrix:
   - [x] In-tree Streamable HTTP matrix covers initialize, tools, prompts,
         resources/templates/subscribe, roots/list_changed, completion, logging,

@@ -20,4 +20,5 @@
 - Covered process stdio server-to-client handler-error round trips on both
   concrete and role-generic transports.
 - Covered stdio malformed-input and role-generic server close failure paths.
+- Reject mismatched JSON response ids on the legacy HTTP client transport.
 - Added a dedicated SDK umbrella test for `cxxmcp/sdk.hpp`.
