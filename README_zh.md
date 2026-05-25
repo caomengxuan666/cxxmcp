@@ -352,6 +352,7 @@ protocol 层。
 
 - [Fact-standard TODO](todo.md)
 - [Release gates](docs/release_gates.md)
+- [Release candidate checklist](docs/release_candidate_checklist.md)
 - [Peer/Service 迁移指南](docs/sdk_peer_service_migration.md)
 - [更新日志](CHANGELOG.md)
 

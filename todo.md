@@ -38,7 +38,8 @@ Remaining non-P1/P2 proof gates before claiming fact-standard status:
   release candidate.
 - README, examples, changelog, compatibility policy, CTest/JUnit evidence
   artifacts, and release artifacts have to be audited together after the next
-  successful release-blocking matrix run.
+  successful release-blocking matrix run using
+  `docs/release_candidate_checklist.md`.
 
 ## Current P0 Executable Slices
 

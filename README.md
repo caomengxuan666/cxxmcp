@@ -372,6 +372,7 @@ Current standardization work is tracked in [Fact-standard TODO](todo.md).
 
 - [Fact-standard TODO](todo.md)
 - [Release gates](docs/release_gates.md)
+- [Release candidate checklist](docs/release_candidate_checklist.md)
 - [Peer/Service migration guide](docs/sdk_peer_service_migration.md)
 - [Changelog](CHANGELOG.md)
 
