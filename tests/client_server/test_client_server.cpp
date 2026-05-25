@@ -936,6 +936,44 @@ void test_client_peer_request_handle_times_out_and_cancels() {
   recording->wait_until_request_finished();
 }
 
+void test_client_peer_request_handle_observes_cancellation_token() {
+  auto transport = std::make_unique<BlockingRequestClientTransport>();
+  auto* recording = transport.get();
+  mcp::Peer<mcp::RoleClient> peer(std::move(transport));
+
+  mcp::CancellationSource cancellation;
+  mcp::RequestOptions options;
+  options.cancellation_token = cancellation.token();
+
+  auto handle = peer.request_async("tools/list", Json::object(), options);
+  require(handle.cancellation_token().has_value(),
+          "request handle should expose cancellation token");
+  recording->wait_until_request_started();
+  cancellation.cancel();
+
+  const auto response = handle.await_response();
+  require(!response.has_value(), "client request handle should cancel");
+  require(response.error().message == "request cancelled",
+          "client request handle cancellation message mismatch");
+
+  recording->wait_until_notifications(1);
+  require(recording->notifications.front().method ==
+              mcp::protocol::CancelledNotificationMethod,
+          "client request token cancellation notification mismatch");
+
+  const auto cancelled = mcp::protocol::cancelled_notification_params_from_json(
+      recording->notifications.front().params);
+  require(cancelled.has_value(), "token cancelled params should parse");
+  require(cancelled->reason == "request cancelled",
+          "token cancelled reason mismatch");
+  require(std::get<std::int64_t>(cancelled->request_id) ==
+              std::get<std::int64_t>(handle.request_id()),
+          "token cancelled request id mismatch");
+
+  recording->release();
+  recording->wait_until_request_finished();
+}
+
 void test_service_lifecycle_facades_start_and_stop() {
   auto transport = std::make_unique<RecordingTransport>();
   auto* recording = transport.get();
@@ -3052,6 +3090,8 @@ int main() {
        test_server_client_peer_request_handle_times_out_and_cancels},
       {"client peer request handle timeout",
        test_client_peer_request_handle_times_out_and_cancels},
+      {"client peer request handle cancellation token",
+       test_client_peer_request_handle_observes_cancellation_token},
       {"service lifecycle facades",
        test_service_lifecycle_facades_start_and_stop},
       {"contract handlers override client and server requests",

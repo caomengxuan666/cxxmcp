@@ -3,6 +3,9 @@
 #include <cxxmcp/request.hpp>
 
 int main() {
+  mcp::CancellationSource cancellation;
   mcp::RequestHandle<mcp::protocol::Json> request;
-  return request.timeout().has_value() ? 1 : 0;
+  const auto token = cancellation.token();
+  cancellation.cancel();
+  return request.timeout().has_value() || !token.cancelled() ? 1 : 0;
 }

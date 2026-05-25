@@ -5,6 +5,7 @@
 /// @file
 /// @brief Request lifecycle helpers for cancellable SDK calls.
 
+#include <algorithm>
 #include <chrono>
 #include <exception>
 #include <functional>
@@ -14,6 +15,7 @@
 #include <string>
 #include <utility>
 
+#include "cxxmcp/cancellation.hpp"
 #include "cxxmcp/core/executor.hpp"
 #include "cxxmcp/core/result.hpp"
 #include "cxxmcp/protocol/types.hpp"
@@ -36,6 +38,10 @@ struct RequestOptions {
 
   /// Optional protocol metadata attached to the request envelope.
   std::optional<protocol::Json> meta;
+
+  /// Optional cooperative cancellation token observed while awaiting the
+  /// response.
+  std::optional<CancellationToken> cancellation_token;
 };
 
 template <class T>
@@ -49,6 +55,7 @@ class RequestHandle {
 
   static RequestHandle spawn(protocol::RequestId request_id,
                              std::optional<std::chrono::milliseconds> timeout,
+                             std::optional<CancellationToken> cancellation,
                              CancelCallback cancel,
                              std::function<ResultType()> task) {
     auto promise = std::make_shared<std::promise<ResultType>>();
@@ -75,7 +82,8 @@ class RequestHandle {
       promise->set_value(std::unexpected(queued.error()));
     }
     return RequestHandle(std::move(request_id), std::move(timeout),
-                         std::move(cancel), std::move(future));
+                         std::move(cancellation), std::move(cancel),
+                         std::move(future));
   }
 
   const protocol::RequestId& request_id() const noexcept { return request_id_; }
@@ -84,10 +92,28 @@ class RequestHandle {
     return timeout_;
   }
 
+  const std::optional<CancellationToken>& cancellation_token() const noexcept {
+    return cancellation_;
+  }
+
   core::Result<T> await_response() const {
-    if (timeout_.has_value()) {
-      const auto status = response_.wait_for(*timeout_);
-      if (status != std::future_status::ready) {
+    if (!timeout_.has_value() && !cancellation_.has_value()) {
+      return response_.get();
+    }
+
+    const auto started_at = std::chrono::steady_clock::now();
+    while (true) {
+      if (cancellation_.has_value() && cancellation_->cancelled()) {
+        (void)cancel("request cancelled");
+        return std::unexpected(core::Error{
+            static_cast<int>(protocol::ErrorCode::InternalError),
+            "request cancelled",
+            {},
+        });
+      }
+
+      if (timeout_.has_value() &&
+          std::chrono::steady_clock::now() - started_at >= *timeout_) {
         (void)cancel("request timeout");
         return std::unexpected(core::Error{
             static_cast<int>(protocol::ErrorCode::InternalError),
@@ -95,8 +121,15 @@ class RequestHandle {
             std::to_string(timeout_->count()) + "ms",
         });
       }
+
+      const auto wait_slice =
+          timeout_.has_value()
+              ? std::min(std::chrono::milliseconds(10), *timeout_)
+              : std::chrono::milliseconds(10);
+      if (response_.wait_for(wait_slice) == std::future_status::ready) {
+        return response_.get();
+      }
     }
-    return response_.get();
   }
 
   core::Result<core::Unit> cancel(std::string reason = {}) const {
@@ -109,14 +142,17 @@ class RequestHandle {
  private:
   RequestHandle(protocol::RequestId request_id,
                 std::optional<std::chrono::milliseconds> timeout,
+                std::optional<CancellationToken> cancellation,
                 CancelCallback cancel, std::shared_future<ResultType> response)
       : request_id_(std::move(request_id)),
         timeout_(std::move(timeout)),
+        cancellation_(std::move(cancellation)),
         cancel_(std::move(cancel)),
         response_(std::move(response)) {}
 
   protocol::RequestId request_id_;
   std::optional<std::chrono::milliseconds> timeout_;
+  std::optional<CancellationToken> cancellation_;
   CancelCallback cancel_;
   std::shared_future<ResultType> response_;
 };

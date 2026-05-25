@@ -113,7 +113,7 @@ class ClientPeer {
     const auto request_id = next_request_id();
     ClientPeer peer = *this;
     return RequestHandle<protocol::Json>::spawn(
-        request_id, options.timeout,
+        request_id, options.timeout, options.cancellation_token,
         [peer, request_id](std::string reason) mutable {
           return peer.notify_cancelled(std::move(request_id),
                                        std::move(reason));
@@ -170,7 +170,7 @@ class ClientPeer {
     const auto request_id = next_request_id();
     ClientPeer peer = *this;
     return RequestHandle<protocol::RootsListResult>::spawn(
-        request_id, options.timeout,
+        request_id, options.timeout, options.cancellation_token,
         [peer, request_id](std::string reason) mutable {
           return peer.notify_cancelled(std::move(request_id),
                                        std::move(reason));
@@ -223,7 +223,7 @@ class ClientPeer {
     const auto request_id = next_request_id();
     ClientPeer peer = *this;
     return RequestHandle<protocol::CreateMessageResult>::spawn(
-        request_id, options.timeout,
+        request_id, options.timeout, options.cancellation_token,
         [peer, request_id](std::string reason) mutable {
           return peer.notify_cancelled(std::move(request_id),
                                        std::move(reason));
@@ -288,7 +288,7 @@ class ClientPeer {
     const auto request_id = next_request_id();
     ClientPeer peer = *this;
     return RequestHandle<protocol::CreateElicitationResult>::spawn(
-        request_id, options.timeout,
+        request_id, options.timeout, options.cancellation_token,
         [peer, request_id](std::string reason) mutable {
           return peer.notify_cancelled(std::move(request_id),
                                        std::move(reason));

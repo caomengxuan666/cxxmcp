@@ -402,22 +402,23 @@ RMCP has a richer request lifecycle:
 - running service cancellation token
 - service shutdown waiting
 
-The current C++ API now has request handles and timeout options in the
-peer/client layer. Running services expose explicit `close()` and `wait()`
-lifecycle methods plus a shared cooperative cancellation token, while the older
-concrete client/server API is still mostly synchronous and direct.
+The current C++ API now has request handles, timeout options, and cooperative
+cancellation tokens in the peer/client layer. Running services expose explicit
+`close()` and `wait()` lifecycle methods plus a shared cooperative cancellation
+token, while the older concrete client/server API is still mostly synchronous
+and direct.
 
 Gap:
 
-- timeout and cancellation behavior still needs a consistently role-generic
-  request shape
+- timeout and cancellation behavior still needs broader coverage across every
+  typed peer request family
 - service lifecycle is synchronous and less featureful than RMCP's async
   running-service model
 
 Action:
 
 - keep request handles as the public async request path
-- make timeout options consistent across peer request families
+- make timeout and cancellation options consistent across peer request families
 - send cancellation notifications when timed out
 - deepen service lifecycle with real async wait handles
 

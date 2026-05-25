@@ -1192,7 +1192,7 @@ RequestHandle<protocol::Json> Client::request_async(std::string method,
 
   const auto request_id = request.id;
   return RequestHandle<protocol::Json>::spawn(
-      request_id, options.timeout,
+      request_id, options.timeout, options.cancellation_token,
       [this, request_id](std::string reason) mutable {
         return notify_cancelled(std::move(request_id), std::move(reason));
       },
