@@ -6,7 +6,7 @@
 /// @brief Convenience umbrella header for the complete public cxxmcp SDK.
 ///
 /// Include this header when an application wants the client API, server API,
-/// shared handlers, transport factories, peer/session abstractions, and MCP
+/// shared handlers, transport contracts, peer/session abstractions, and MCP
 /// protocol model types from a single entry point. Projects that need tighter
 /// compile-time boundaries can include the narrower `cxxmcp/client.hpp`,
 /// `cxxmcp/server.hpp`, `cxxmcp/protocol.hpp`, or transport-specific headers

@@ -201,16 +201,23 @@ if(TARGET mcp_protocol OR TARGET mcp_client OR TARGET mcp_server)
     cxxmcp_require_cxx20(mcp_sdk)
 endif()
 
-if(TARGET mcp_client AND TARGET mcp_server)
+if(TARGET mcp_protocol)
     add_library(mcp_transport INTERFACE)
     set_target_properties(mcp_transport PROPERTIES EXPORT_NAME transport)
     target_include_directories(mcp_transport INTERFACE
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/sdk/include>
+        $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/sdk/transport/include>
         $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>
     )
-    target_link_libraries(mcp_transport INTERFACE mcp_client mcp_server)
+    target_link_libraries(mcp_transport INTERFACE mcp_core mcp_protocol)
     cxxmcp_require_cxx20(mcp_transport)
+endif()
 
+if(TARGET mcp_sdk AND TARGET mcp_transport)
+    target_link_libraries(mcp_sdk INTERFACE mcp_transport)
+endif()
+
+if(TARGET mcp_client AND TARGET mcp_server)
     add_library(mcp_peer INTERFACE)
     set_target_properties(mcp_peer PROPERTIES EXPORT_NAME peer)
     target_include_directories(mcp_peer INTERFACE
@@ -458,6 +465,9 @@ if(TARGET mcp_client)
 endif()
 if(TARGET mcp_server)
     install(DIRECTORY sdk/server/include/ DESTINATION ${CMAKE_INSTALL_INCLUDEDIR})
+endif()
+if(TARGET mcp_transport)
+    install(DIRECTORY sdk/transport/include/ DESTINATION ${CMAKE_INSTALL_INCLUDEDIR})
 endif()
 if(TARGET mcp_plugin_sdk)
     install(DIRECTORY extensions/plugin-sdk/include/ DESTINATION ${CMAKE_INSTALL_INCLUDEDIR})

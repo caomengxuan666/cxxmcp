@@ -17,16 +17,11 @@
 #include "cxxmcp/client/client.hpp"
 #include "cxxmcp/client/session.hpp"
 #include "cxxmcp/handler.hpp"
+#include "cxxmcp/roles.hpp"
 #include "cxxmcp/server/peer.hpp"
 #include "cxxmcp/server/server.hpp"
 
 namespace mcp {
-
-/// @brief Marker for a client-side MCP peer.
-struct RoleClient {};
-
-/// @brief Marker for a server-side MCP peer.
-struct RoleServer {};
 
 /// @brief Role-specialized MCP peer facade.
 template <class Role>

@@ -3,14 +3,10 @@
 #pragma once
 
 /// @file
-/// @brief Convenience include for client and server MCP transport types.
+/// @brief Umbrella include for the role-generic MCP transport contract.
 ///
-/// Include this umbrella header when an SDK user needs the standard transport
-/// interfaces and built-in HTTP, stdio, or process-stdio implementations.
+/// Include this header when SDK code needs the lightweight message-level
+/// transport abstraction. Built-in concrete transports remain available from
+/// `cxxmcp/client.hpp`, `cxxmcp/server.hpp`, or their component headers.
 
-#include "cxxmcp/client/http_transport.hpp"
-#include "cxxmcp/client/process_stdio_transport.hpp"
-#include "cxxmcp/client/stdio_transport.hpp"
-#include "cxxmcp/server/http_transport.hpp"
-#include "cxxmcp/server/stdio_transport.hpp"
-#include "cxxmcp/server/transport.hpp"
+#include "cxxmcp/transport/transport.hpp"

@@ -12,6 +12,16 @@ if(TARGET mcp_protocol)
     add_test(NAME protocol COMMAND mcp_protocol_tests)
 endif()
 
+if(TARGET mcp_transport)
+    add_executable(mcp_transport_contract_tests
+        transport/test_transport_contract.cpp
+    )
+
+    target_link_libraries(mcp_transport_contract_tests PRIVATE mcp_transport)
+
+    add_test(NAME transport_contract COMMAND mcp_transport_contract_tests)
+endif()
+
 if(TARGET mcp_client AND TARGET mcp_server)
     add_executable(mcp_client_server_tests
         client_server/test_client_server.cpp
@@ -52,7 +62,7 @@ if(TARGET mcp_client AND TARGET mcp_server)
         sdk/test_sdk.cpp
     )
 
-    target_link_libraries(mcp_sdk_tests PRIVATE mcp_client mcp_server)
+    target_link_libraries(mcp_sdk_tests PRIVATE cxxmcp::sdk)
 
     add_test(NAME sdk COMMAND mcp_sdk_tests)
 

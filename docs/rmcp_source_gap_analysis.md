@@ -17,6 +17,7 @@ Already covered in the current tree:
 - in-memory task management service in `runtime`
 - public JSON Schema and tool-definition builders for lower-boilerplate server
   authoring
+- lightweight role-generic transport contract under `cxxmcp::transport`
 
 The remaining gaps in this document are the ones that still need attention.
 
@@ -93,7 +94,7 @@ protocol
 | Top-level abstraction | `Peer<Role>` + `Service<Role>` | `Peer` facades plus `Client` / `Server` compatibility wrappers |
 | Role model | `RoleClient` / `RoleServer` | role-aware peer facades over client/server implementations |
 | Application extension point | `ClientHandler` / `ServerHandler` | handler aggregates, interface contracts, and registries |
-| Transport | role-generic async send/receive | client/server-specific request/response transports |
+| Transport | role-generic async send/receive | lightweight role-generic contract plus client/server-specific concrete transports |
 | Lifecycle | `serve(...)` returns `RunningService` | `serve(...)` and `start()` / `stop()` wrappers are both present |
 | Request dispatch | typed request/response/notification enums | string method dispatch plus manual JSON conversion |
 | Bidirectional calls | `Peer` is first-class | partially supported, but not the core abstraction |
@@ -143,6 +144,7 @@ The C++ SDK now has matching public facades:
 Covered by current tree:
 
 - shared role-aware peer abstraction
+- shared role-generic transport contract
 - role markers
 - unified service lifecycle layer
 - compatibility wrappers that still expose the older concrete client/server entry points
@@ -178,16 +180,20 @@ RMCP transport is async and role-generic:
 - `close(...)` is explicit
 - `IntoTransport` adapts streams, workers, async read/write pairs, and concrete transports
 
-The current C++ transport model is more request/response oriented:
+The current C++ transport model now has a lightweight role-generic contract,
+while the concrete built-in transports remain request/response oriented:
 
+- SDK transport contract exposes `mcp::transport::Transport<Role>` with
+  message-level `send`, sequential `receive`, and explicit `close`
 - client transport has `send(request) -> response`
 - server transport has `send_request`, `send_notification`, `start`
 - HTTP and stdio behavior is embedded in separate client/server transport classes
 
 Gap:
 
-- transport is not role-generic
-- transport does not model concurrent send plus sequential receive
+- concrete built-in transports are not yet adapted to the role-generic contract
+- concurrency guarantees are documented at the interface but not yet stress
+  tested against concrete adapters
 - cancellation and timeout are exposed at the peer/client request layer, not as
   a role-generic transport contract
 - async request behavior exists through request handles, but the transport
@@ -195,7 +201,6 @@ Gap:
 
 Action:
 
-- introduce an async-capable transport contract above the existing transports
 - keep `cpp-httplib` internally for now
 - implement an httplib transport adapter using bounded executors
 - make the peer API independent of httplib
@@ -432,11 +437,13 @@ Current tree covers:
 
 - `Peer<RoleClient>` and `Peer<RoleServer>`
 - `ClientHandler` and `ServerHandler`
+- shared `mcp::transport::Transport<Role>` contract
 - existing `Client` and `Server` as wrappers
 
 Still to close:
 
-- shared role-generic transport abstraction
+- adapters from the existing HTTP/stdio transports into the role-generic
+  transport abstraction
 
 ### Phase 2: Align Core Protocol Models
 
@@ -504,7 +511,8 @@ Do not make task and elicitation mandatory if the first SDK milestone only needs
 
 The current C++ code is functionally moving toward MCP parity and now has the
 right RMCP-like public facade. Remaining parity work is mostly depth: protocol
-models, role-generic transport, operation processing, and schema ergonomics.
+models, concrete transport adapters, operation processing, and schema
+ergonomics.
 
 The most important work is:
 

@@ -217,11 +217,14 @@ The server peer family covers:
 
 The transport family covers:
 
+- role-generic `mcp::transport::Transport<Role>` message contract
 - client Streamable HTTP and legacy SSE transport
 - client stdio and process-stdio transport
 - server HTTP, stdio, and server transport interfaces
-- one umbrella include, `cxxmcp/transport.hpp`, for SDK users who need the
-  built-in transport types
+- one lightweight umbrella include, `cxxmcp/transport.hpp`, for SDK users who
+  need the shared transport contract
+- built-in concrete transports from `cxxmcp/client.hpp`, `cxxmcp/server.hpp`,
+  or the component transport headers
 
 ## Rules
 
