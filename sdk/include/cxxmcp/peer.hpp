@@ -16,6 +16,7 @@
 #include <utility>
 #include <variant>
 
+#include "cxxmcp/cancellation.hpp"
 #include "cxxmcp/client/client.hpp"
 #include "cxxmcp/client/session.hpp"
 #include "cxxmcp/client/transport_adapter_fwd.hpp"
@@ -473,8 +474,9 @@ class Peer<RoleClient> {
   /// @brief Runs a sequential receive loop over a role-generic client
   /// transport.
   core::Result<core::Unit> serve_transport(
-      transport::ClientTransport& transport) {
-    while (true) {
+      transport::ClientTransport& transport,
+      CancellationToken cancellation = {}) {
+    while (!cancellation.cancelled()) {
       auto received = transport.receive();
       if (!received) {
         return std::unexpected(received.error());
@@ -679,8 +681,9 @@ class Peer<RoleServer> {
   /// transport.
   core::Result<core::Unit> serve_transport(
       transport::ServerTransport& transport,
-      const server::SessionContext& context = {}) {
-    while (true) {
+      const server::SessionContext& context = {},
+      CancellationToken cancellation = {}) {
+    while (!cancellation.cancelled()) {
       auto received = transport.receive();
       if (!received) {
         return std::unexpected(received.error());

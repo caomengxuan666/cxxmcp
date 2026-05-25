@@ -284,16 +284,19 @@ class RunningService<RoleServer> {
     auto peer = peer_;
     auto transport = transport_;
     auto context = context_;
-    loop_ = std::thread([state, peer, transport, context]() noexcept {
-      const auto started = transport
-                               ? peer->serve_transport(*transport, context)
-                               : peer->start();
-      if (!started) {
-        detail::finish_service(state, started.error());
-      } else {
-        detail::finish_service(state);
-      }
-    });
+    auto cancellation = state_->cancellation.token();
+    loop_ =
+        std::thread([state, peer, transport, context, cancellation]() noexcept {
+          const auto started =
+              transport
+                  ? peer->serve_transport(*transport, context, cancellation)
+                  : peer->start();
+          if (!started) {
+            detail::finish_service(state, started.error());
+          } else {
+            detail::finish_service(state);
+          }
+        });
   }
 
   void join_loop() noexcept {

@@ -507,6 +507,57 @@ class QueuedRoleServerTransport final : public mcp::transport::ServerTransport {
   std::size_t next_inbound_ = 0;
 };
 
+class BlockingRoleServerTransport final
+    : public mcp::transport::ServerTransport {
+ public:
+  std::string_view name() const noexcept override { return "blocking-role"; }
+
+  mcp::core::Result<mcp::core::Unit> send(TxMessage message) override {
+    std::lock_guard<std::mutex> lock(mutex_);
+    sent.push_back(std::move(message));
+    return mcp::core::Unit{};
+  }
+
+  mcp::core::Result<std::optional<RxMessage>> receive() override {
+    {
+      std::lock_guard<std::mutex> lock(mutex_);
+      receiving_ = true;
+    }
+    cv_.notify_all();
+
+    std::unique_lock<std::mutex> lock(mutex_);
+    cv_.wait(lock, [this] { return closed_; });
+    return std::nullopt;
+  }
+
+  mcp::core::Result<mcp::core::Unit> close() override {
+    {
+      std::lock_guard<std::mutex> lock(mutex_);
+      closed_ = true;
+    }
+    cv_.notify_all();
+    return mcp::core::Unit{};
+  }
+
+  void wait_until_receiving() {
+    std::unique_lock<std::mutex> lock(mutex_);
+    cv_.wait(lock, [this] { return receiving_; });
+  }
+
+  bool closed() const {
+    std::lock_guard<std::mutex> lock(mutex_);
+    return closed_;
+  }
+
+  std::vector<TxMessage> sent;
+
+ private:
+  mutable std::mutex mutex_;
+  std::condition_variable cv_;
+  bool receiving_ = false;
+  bool closed_ = false;
+};
+
 class BlockingRequestServerTransport final : public mcp::server::Transport {
  public:
   mcp::core::Result<mcp::core::Unit> start(
@@ -1749,6 +1800,48 @@ void test_server_service_serves_role_generic_transport_receive_loop() {
           "server service should dispatch transport notifications");
   require(notification_session == "service-session",
           "server service should pass transport session context");
+}
+
+void test_server_service_native_transport_stop_cancels_loop() {
+  auto server = std::make_unique<mcp::server::Server>(make_server());
+  auto transport = std::make_unique<BlockingRoleServerTransport>();
+  auto* transport_ptr = transport.get();
+
+  auto running =
+      mcp::serve(mcp::ServerPeer(std::move(server)), std::move(transport));
+  require(running.has_value(),
+          "server service blocking role transport should start");
+  transport_ptr->wait_until_receiving();
+  require(running->running(),
+          "server service blocking role transport should be running");
+  require(!running->cancellation_token().cancelled(),
+          "server service token should not start cancelled");
+
+  std::atomic_bool wait_returned = false;
+  std::thread waiter([&] {
+    const auto waited = running->wait();
+    require(waited.has_value(),
+            "server service blocking role transport wait failed");
+    wait_returned.store(true);
+  });
+  std::this_thread::sleep_for(std::chrono::milliseconds(10));
+  require(!wait_returned.load(),
+          "server service blocking role transport wait should block");
+
+  const auto stopped = running->stop();
+  require(stopped.has_value(),
+          "server service blocking role transport stop failed");
+  if (waiter.joinable()) {
+    waiter.join();
+  }
+  require(wait_returned.load(),
+          "server service blocking role transport wait should return");
+  require(!running->running(),
+          "server service blocking role transport should stop");
+  require(running->cancellation_token().cancelled(),
+          "server service token should be cancelled after stop");
+  require(transport_ptr->closed(),
+          "server service stop should close native role transport");
 }
 
 void test_server_non_task_tool_observes_cancelled_notification() {
@@ -4093,6 +4186,8 @@ int main() {
        test_server_peer_serves_role_generic_transport_receive_loop},
       {"server service role-generic transport receive loop",
        test_server_service_serves_role_generic_transport_receive_loop},
+      {"server service native transport stop cancels loop",
+       test_server_service_native_transport_stop_cancels_loop},
       {"server non-task tool observes cancelled notification",
        test_server_non_task_tool_observes_cancelled_notification},
       {"contract handlers override client and server requests",
