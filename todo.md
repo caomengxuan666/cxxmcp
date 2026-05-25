@@ -84,6 +84,9 @@ incrementally. Keep them concrete; do not replace them with broad claims.
         ids as stable unexpected-response failures.
   - [x] Concrete process stdio client transport rejects mismatched response ids
         with stable transport-category errors.
+  - [x] Changelog and Peer/Service migration docs describe the current Peer
+        handler helpers, deprecated concrete accessors, and native peer routing
+        direction.
 - Request lifecycle:
   - [x] Client peer timeout emits `notifications/cancelled`.
   - [x] Server-side client peer timeout emits `notifications/cancelled`.

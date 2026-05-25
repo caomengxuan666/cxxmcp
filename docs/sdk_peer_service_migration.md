@@ -138,10 +138,29 @@ The typed request helpers remain the same shape through `running->peer()`.
 Use raw JSON-RPC helpers from the peer when a future MCP method or vendor
 extension is not covered by typed helpers yet.
 
+Client-side notification and server-request callbacks also belong on the peer
+surface for new code:
+
+```cpp
+mcp::ClientPeer peer(std::move(transport));
+peer.on_logging_message([](std::string_view level, std::string_view message) {
+  (void)level;
+  (void)message;
+});
+peer.on_list_roots_request([] {
+  return mcp::protocol::RootsListResult{};
+});
+```
+
+`ClientPeer::client()` and `ServerPeer::server()` are retained only as
+deprecated compatibility escape hatches for code that still needs a concrete
+implementation detail during migration.
+
 ## Compatibility Boundaries
 
 - `client::Client` and `server::Server` are compatibility wrappers and
-  implementation anchors.
+  implementation anchors. Prefer Peer methods; direct concrete accessors on
+  peers are deprecated escape hatches.
 - `server::App::builder()` is a convenience facade for compact demos and
   legacy-style stdio tools.
 - New docs should present `Peer` and `Service` first.
