@@ -164,8 +164,9 @@ Needed:
 - keep `Service<Role>` as the lifecycle story
 - make `Client` and `Server` look like compatibility layers, not the core
   abstraction
-- move the real request loop, shutdown, wait, and cancellation behavior behind
-  the peer/service path instead of leaving it as a facade over concrete wrappers
+- move the real request loop behind the peer/service path; shutdown, wait, and
+  cancellation now have explicit lifecycle state, but they still need to be
+  tied to a native async service driver instead of concrete wrappers
 
 ### 5.2 Transport contract
 

@@ -8,12 +8,82 @@
 /// This header provides a small synchronous lifecycle layer that mirrors RMCP's
 /// service-oriented public shape without introducing an async runtime yet.
 
+#include <condition_variable>
+#include <memory>
+#include <mutex>
 #include <utility>
 
 #include "cxxmcp/cancellation.hpp"
 #include "cxxmcp/peer.hpp"
 
 namespace mcp {
+
+namespace detail {
+
+struct ServiceLifecycleState {
+  mutable std::mutex mutex;
+  std::condition_variable cv;
+  CancellationSource cancellation;
+  bool running = true;
+  bool closing = false;
+};
+
+inline bool service_running(
+    const std::shared_ptr<ServiceLifecycleState>& state) noexcept {
+  if (!state) {
+    return false;
+  }
+  std::lock_guard lock(state->mutex);
+  return state->running;
+}
+
+inline CancellationToken service_cancellation_token(
+    const std::shared_ptr<ServiceLifecycleState>& state) noexcept {
+  return state ? state->cancellation.token() : CancellationToken{};
+}
+
+template <class Stop>
+inline core::Result<core::Unit> stop_service(
+    const std::shared_ptr<ServiceLifecycleState>& state, Stop stop) noexcept {
+  if (!state) {
+    return core::Unit{};
+  }
+
+  {
+    std::unique_lock lock(state->mutex);
+    if (!state->running) {
+      return core::Unit{};
+    }
+    if (state->closing) {
+      state->cv.wait(lock, [&] { return !state->running; });
+      return core::Unit{};
+    }
+    state->closing = true;
+    state->cancellation.cancel();
+  }
+
+  stop();
+
+  {
+    std::lock_guard lock(state->mutex);
+    state->running = false;
+    state->closing = false;
+  }
+  state->cv.notify_all();
+  return core::Unit{};
+}
+
+inline core::Result<core::Unit> wait_service(
+    const std::shared_ptr<ServiceLifecycleState>& state) noexcept {
+  if (!state) {
+    return core::Unit{};
+  }
+  std::unique_lock lock(state->mutex);
+  state->cv.wait(lock, [&] { return !state->running; });
+  return core::Unit{};
+}
+
+}  // namespace detail
 
 /// @brief Role-specialized MCP service before it is running.
 template <class Role>
@@ -32,18 +102,12 @@ class RunningService<RoleClient> {
   RunningService(const RunningService&) = delete;
   RunningService& operator=(const RunningService&) = delete;
   RunningService(RunningService&& other) noexcept
-      : peer_(std::move(other.peer_)),
-        cancellation_(std::move(other.cancellation_)),
-        running_(other.running_) {
-    other.running_ = false;
-  }
+      : peer_(std::move(other.peer_)), state_(std::move(other.state_)) {}
   RunningService& operator=(RunningService&& other) noexcept {
     if (this != &other) {
       (void)stop();
       peer_ = std::move(other.peer_);
-      cancellation_ = std::move(other.cancellation_);
-      running_ = other.running_;
-      other.running_ = false;
+      state_ = std::move(other.state_);
     }
     return *this;
   }
@@ -54,11 +118,11 @@ class RunningService<RoleClient> {
 
   const ClientPeer& peer() const noexcept { return peer_; }
 
-  bool running() const noexcept { return running_; }
+  bool running() const noexcept { return detail::service_running(state_); }
 
   /// @brief Returns the service cancellation token.
   CancellationToken cancellation_token() const noexcept {
-    return cancellation_.token();
+    return detail::service_cancellation_token(state_);
   }
 
   /// @brief Explicitly closes the running service.
@@ -66,24 +130,19 @@ class RunningService<RoleClient> {
 
   /// @brief Waits for service shutdown.
   ///
-  /// The current C++ service facade is synchronous, so there is no background
-  /// driver to join. The method is still part of the public lifecycle shape so
-  /// callers can write code against close/wait semantics.
-  core::Result<core::Unit> wait() noexcept { return core::Unit{}; }
+  /// Blocks until close() or stop() completes.
+  core::Result<core::Unit> wait() noexcept {
+    return detail::wait_service(state_);
+  }
 
   core::Result<core::Unit> stop() noexcept {
-    if (running_) {
-      cancellation_.cancel();
-      peer_.client().stop();
-      running_ = false;
-    }
-    return core::Unit{};
+    return detail::stop_service(state_, [this] { peer_.client().stop(); });
   }
 
  private:
   ClientPeer peer_;
-  CancellationSource cancellation_;
-  bool running_ = true;
+  std::shared_ptr<detail::ServiceLifecycleState> state_ =
+      std::make_shared<detail::ServiceLifecycleState>();
 };
 
 /// @brief Running server-side MCP service.
@@ -95,18 +154,12 @@ class RunningService<RoleServer> {
   RunningService(const RunningService&) = delete;
   RunningService& operator=(const RunningService&) = delete;
   RunningService(RunningService&& other) noexcept
-      : peer_(std::move(other.peer_)),
-        cancellation_(std::move(other.cancellation_)),
-        running_(other.running_) {
-    other.running_ = false;
-  }
+      : peer_(std::move(other.peer_)), state_(std::move(other.state_)) {}
   RunningService& operator=(RunningService&& other) noexcept {
     if (this != &other) {
       (void)stop();
       peer_ = std::move(other.peer_);
-      cancellation_ = std::move(other.cancellation_);
-      running_ = other.running_;
-      other.running_ = false;
+      state_ = std::move(other.state_);
     }
     return *this;
   }
@@ -117,11 +170,11 @@ class RunningService<RoleServer> {
 
   const ServerPeer& peer() const noexcept { return peer_; }
 
-  bool running() const noexcept { return running_; }
+  bool running() const noexcept { return detail::service_running(state_); }
 
   /// @brief Returns the service cancellation token.
   CancellationToken cancellation_token() const noexcept {
-    return cancellation_.token();
+    return detail::service_cancellation_token(state_);
   }
 
   /// @brief Explicitly closes the running service.
@@ -129,25 +182,19 @@ class RunningService<RoleServer> {
 
   /// @brief Waits for service shutdown.
   ///
-  /// Server transports are started by serve(); once serve() returns, the
-  /// synchronous start path has already completed or failed. This wait hook
-  /// keeps the lifecycle facade aligned with peer/service SDKs that expose a
-  /// separate shutdown wait step.
-  core::Result<core::Unit> wait() noexcept { return core::Unit{}; }
+  /// Blocks until close() or stop() completes.
+  core::Result<core::Unit> wait() noexcept {
+    return detail::wait_service(state_);
+  }
 
   core::Result<core::Unit> stop() noexcept {
-    if (running_) {
-      cancellation_.cancel();
-      peer_.stop();
-      running_ = false;
-    }
-    return core::Unit{};
+    return detail::stop_service(state_, [this] { peer_.stop(); });
   }
 
  private:
   ServerPeer peer_;
-  CancellationSource cancellation_;
-  bool running_ = true;
+  std::shared_ptr<detail::ServiceLifecycleState> state_ =
+      std::make_shared<detail::ServiceLifecycleState>();
 };
 
 /// @brief Client-side MCP service ready to be served.

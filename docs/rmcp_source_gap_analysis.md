@@ -95,7 +95,7 @@ transport and protocol family is covered by RMCP-grade behavior tests.
 | Dimension | RMCP | Current C++ SDK |
 |---|---|---|
 | SDK center | `Peer<Role>` / `Service<Role>` are the primary implementation model | `Peer` / `Service` are public facades over concrete `Client` / `Server` implementations |
-| Lifecycle | `RunningService` has real async run, shutdown, and wait semantics | `serve`, `close`, and `wait` exist, but the service layer is still mostly synchronous and `wait` is not a real driver join |
+| Lifecycle | `RunningService` has real async run, shutdown, and wait semantics | `serve`, `close`, and `wait` exist; `wait` now blocks until shutdown, but the service layer is still mostly synchronous and not yet a real async driver |
 | Transport | role-generic async transport is the native boundary | role-generic `Transport<Role>` exists, while HTTP and process-stdio still rely heavily on compatibility adapters and request/response-oriented internals |
 | Handler ergonomics | handler traits and macros are a first-class authoring model | handler interfaces, aggregates, and C++ builders are useful, but less integrated than RMCP traits and macros |
 | Protocol model | model layer is closer to the tracked MCP spec and richer in typed shapes | coverage is broad, but `_meta`, annotations, extension bags, elicitation/schema, and task result details still need tightening |
@@ -111,8 +111,8 @@ The highest-value closure points are:
    public facade
 2. make built-in stdio, process-stdio, and HTTP transports native
    `Transport<Role>` implementations with bidirectional receive loops
-3. give `RunningService::wait`, shutdown, and cancellation real lifecycle
-   semantics
+3. move `RunningService` from synchronous close/wait lifecycle semantics toward
+   a real async service driver
 4. complete the protocol model details where the SDK still stores spec fields as
    raw JSON or omits typed accessors
 5. keep package-smoke, RMCP conformance, and cross-SDK interop tests as required
@@ -466,10 +466,11 @@ RMCP has a richer request lifecycle:
 The current C++ API now has request handles, timeout options, and cooperative
 cancellation tokens in the peer/client layer. Running services expose explicit
 `close()` and `wait()` lifecycle methods plus a shared cooperative cancellation
-token. Client and client-peer APIs now expose typed async helpers for common
-tool, prompt, resource, resource-template, completion, sampling, elicitation,
-and task requests, while the older concrete server API is still mostly
-synchronous and direct.
+token; `wait()` now blocks until `close()` / `stop()` completes instead of
+returning immediately. Client and client-peer APIs now expose typed async
+helpers for common tool, prompt, resource, resource-template, completion,
+sampling, elicitation, and task requests, while the older concrete server API
+is still mostly synchronous and direct.
 Task-aware tool calls also share the synchronous local validation behavior when
 required task parameters are missing.
 Typed async helpers preserve `RequestOptions` metadata and expose cancellation
@@ -479,15 +480,15 @@ Gap:
 
 - timeout and cancellation behavior still needs stress coverage across typed
   peer request families and concrete transports
-- service lifecycle is synchronous and less featureful than RMCP's async
-  running-service model
+- service lifecycle has real close/wait state but is still synchronous and less
+  featureful than RMCP's async running-service model
 
 Action:
 
 - keep request handles as the public async request path
 - make timeout and cancellation options consistent across peer request families
 - send cancellation notifications when timed out
-- deepen service lifecycle with real async wait handles
+- deepen service lifecycle into a real async service driver
 
 ### 10. Macro and Schema Ergonomics
 
@@ -817,8 +818,9 @@ source after the latest local additions.
    RMCP's `Peer`, `Service`, and `RunningService` are the core execution model.
    In `cxxmcp`, the equivalent names exist and are useful, but they still wrap
    concrete `Client` / `Server` paths more than they drive the whole runtime.
-   `RunningService::wait()`, shutdown, and cancellation need to become real
-   lifecycle joins around the active transport/service loop.
+   `RunningService::wait()` now blocks until shutdown, but the next gap is to
+   make it wait on a real active transport/service loop rather than a
+   synchronous lifecycle state.
 
 2. RMCP's transport model is more native and async.
 

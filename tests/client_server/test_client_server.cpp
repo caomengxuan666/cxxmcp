@@ -1169,6 +1169,15 @@ void test_service_lifecycle_facades_start_and_stop() {
   auto running_client = mcp::serve(mcp::ClientPeer(std::move(transport)));
   require(running_client.has_value(), "client service should start");
   require(running_client->running(), "client service should report running");
+  std::atomic_bool client_wait_returned = false;
+  std::thread client_waiter([&] {
+    const auto waited = running_client->wait();
+    require(waited.has_value(), "client service wait failed");
+    client_wait_returned.store(true);
+  });
+  std::this_thread::sleep_for(std::chrono::milliseconds(10));
+  require(!client_wait_returned.load(),
+          "client service wait should block while running");
 
   const auto tools = running_client->peer().list_tools();
   require(tools.has_value(), "running client service list_tools failed");
@@ -1177,6 +1186,9 @@ void test_service_lifecycle_facades_start_and_stop() {
 
   const auto client_stopped = running_client->stop();
   require(client_stopped.has_value(), "client service stop failed");
+  client_waiter.join();
+  require(client_wait_returned.load(),
+          "client service wait should return after stop");
   require(!running_client->running(), "client service should report stopped");
   require(recording->stopped, "client service should stop transport");
 
@@ -1184,11 +1196,23 @@ void test_service_lifecycle_facades_start_and_stop() {
   auto running_server = mcp::serve(mcp::ServerPeer(std::move(server)));
   require(running_server.has_value(), "server service should start");
   require(running_server->running(), "server service should report running");
+  std::atomic_bool server_wait_returned = false;
+  std::thread server_waiter([&] {
+    const auto waited = running_server->wait();
+    require(waited.has_value(), "server service wait failed");
+    server_wait_returned.store(true);
+  });
+  std::this_thread::sleep_for(std::chrono::milliseconds(10));
+  require(!server_wait_returned.load(),
+          "server service wait should block while running");
   require(running_server->peer().list_tools().front().name == "echo",
           "running server service tool mismatch");
 
   const auto server_stopped = running_server->stop();
   require(server_stopped.has_value(), "server service stop failed");
+  server_waiter.join();
+  require(server_wait_returned.load(),
+          "server service wait should return after stop");
   require(!running_server->running(), "server service should report stopped");
 }
 
