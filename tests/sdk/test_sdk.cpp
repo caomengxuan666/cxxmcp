@@ -177,6 +177,14 @@ class RecordingServerContractTransport final
 };
 
 void test_sdk_peer_and_service_surface() {
+  mcp::CancellationSource cancellation_source;
+  const auto cancellation_token = cancellation_source.token();
+  require(!cancellation_token.cancelled(),
+          "cancellation token should start active");
+  cancellation_source.cancel();
+  require(cancellation_token.cancelled(),
+          "cancellation token should observe cancel");
+
   auto transport = std::make_unique<RecordingClientTransport>();
   auto* transport_ptr = transport.get();
   mcp::ClientPeer client_peer(std::move(transport));
@@ -199,7 +207,12 @@ void test_sdk_peer_and_service_surface() {
   require(call->content.front().text == "{\"value\":\"client\"}",
           "client tool call result mismatch");
 
+  const auto client_service_token = running_client->cancellation_token();
+  require(!client_service_token.cancelled(),
+          "client service token should start active");
   require(running_client->close().has_value(), "client service close failed");
+  require(client_service_token.cancelled(),
+          "client service token should cancel on close");
   require(running_client->wait().has_value(), "client service wait failed");
   require(transport_ptr->stopped, "client transport should stop");
 
@@ -254,7 +267,12 @@ void test_sdk_peer_and_service_surface() {
   auto running_server = mcp::serve(std::move(server_peer));
   require(running_server.has_value(), "server service should start");
   require(running_server->running(), "server service should report running");
+  const auto server_service_token = running_server->cancellation_token();
+  require(!server_service_token.cancelled(),
+          "server service token should start active");
   require(running_server->close().has_value(), "server service close failed");
+  require(server_service_token.cancelled(),
+          "server service token should cancel on close");
   require(running_server->wait().has_value(), "server service wait failed");
 
   mcp::ServerPeer contract_server_peer;

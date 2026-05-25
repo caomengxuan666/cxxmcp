@@ -12,6 +12,7 @@
 /// `cxxmcp/server.hpp`, `cxxmcp/protocol.hpp`, or transport-specific headers
 /// instead.
 
+#include "cxxmcp/cancellation.hpp"
 #include "cxxmcp/client.hpp"
 #include "cxxmcp/handler.hpp"
 #include "cxxmcp/peer.hpp"

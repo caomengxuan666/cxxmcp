@@ -2,15 +2,14 @@
 
 #pragma once
 
-#include <atomic>
 #include <functional>
-#include <memory>
 #include <optional>
 #include <string>
 #include <string_view>
 #include <unordered_map>
 #include <vector>
 
+#include "cxxmcp/cancellation.hpp"
 #include "cxxmcp/core/result.hpp"
 #include "cxxmcp/protocol/prompt.hpp"
 #include "cxxmcp/protocol/resource.hpp"
@@ -24,20 +23,7 @@
 namespace mcp::server {
 
 /// @brief Copyable cooperative cancellation token for server handlers.
-class CancellationToken {
- public:
-  CancellationToken() : cancelled_(std::make_shared<std::atomic_bool>(false)) {}
-
-  /// @brief Returns true after the owning operation has been cancelled.
-  bool cancelled() const noexcept { return cancelled_->load(); }
-
- private:
-  friend class TaskOperationProcessor;
-
-  void cancel() const noexcept { cancelled_->store(true); }
-
-  std::shared_ptr<std::atomic_bool> cancelled_;
-};
+using CancellationToken = mcp::CancellationToken;
 
 /// @brief Invocation context passed to tool handlers.
 ///

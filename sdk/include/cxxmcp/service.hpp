@@ -10,6 +10,7 @@
 
 #include <utility>
 
+#include "cxxmcp/cancellation.hpp"
 #include "cxxmcp/peer.hpp"
 
 namespace mcp {
@@ -31,13 +32,16 @@ class RunningService<RoleClient> {
   RunningService(const RunningService&) = delete;
   RunningService& operator=(const RunningService&) = delete;
   RunningService(RunningService&& other) noexcept
-      : peer_(std::move(other.peer_)), running_(other.running_) {
+      : peer_(std::move(other.peer_)),
+        cancellation_(std::move(other.cancellation_)),
+        running_(other.running_) {
     other.running_ = false;
   }
   RunningService& operator=(RunningService&& other) noexcept {
     if (this != &other) {
       (void)stop();
       peer_ = std::move(other.peer_);
+      cancellation_ = std::move(other.cancellation_);
       running_ = other.running_;
       other.running_ = false;
     }
@@ -52,6 +56,11 @@ class RunningService<RoleClient> {
 
   bool running() const noexcept { return running_; }
 
+  /// @brief Returns the service cancellation token.
+  CancellationToken cancellation_token() const noexcept {
+    return cancellation_.token();
+  }
+
   /// @brief Explicitly closes the running service.
   core::Result<core::Unit> close() noexcept { return stop(); }
 
@@ -64,6 +73,7 @@ class RunningService<RoleClient> {
 
   core::Result<core::Unit> stop() noexcept {
     if (running_) {
+      cancellation_.cancel();
       peer_.client().stop();
       running_ = false;
     }
@@ -72,6 +82,7 @@ class RunningService<RoleClient> {
 
  private:
   ClientPeer peer_;
+  CancellationSource cancellation_;
   bool running_ = true;
 };
 
@@ -84,13 +95,16 @@ class RunningService<RoleServer> {
   RunningService(const RunningService&) = delete;
   RunningService& operator=(const RunningService&) = delete;
   RunningService(RunningService&& other) noexcept
-      : peer_(std::move(other.peer_)), running_(other.running_) {
+      : peer_(std::move(other.peer_)),
+        cancellation_(std::move(other.cancellation_)),
+        running_(other.running_) {
     other.running_ = false;
   }
   RunningService& operator=(RunningService&& other) noexcept {
     if (this != &other) {
       (void)stop();
       peer_ = std::move(other.peer_);
+      cancellation_ = std::move(other.cancellation_);
       running_ = other.running_;
       other.running_ = false;
     }
@@ -105,6 +119,11 @@ class RunningService<RoleServer> {
 
   bool running() const noexcept { return running_; }
 
+  /// @brief Returns the service cancellation token.
+  CancellationToken cancellation_token() const noexcept {
+    return cancellation_.token();
+  }
+
   /// @brief Explicitly closes the running service.
   core::Result<core::Unit> close() noexcept { return stop(); }
 
@@ -118,6 +137,7 @@ class RunningService<RoleServer> {
 
   core::Result<core::Unit> stop() noexcept {
     if (running_) {
+      cancellation_.cancel();
       peer_.stop();
       running_ = false;
     }
@@ -126,6 +146,7 @@ class RunningService<RoleServer> {
 
  private:
   ServerPeer peer_;
+  CancellationSource cancellation_;
   bool running_ = true;
 };
 

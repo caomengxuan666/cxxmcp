@@ -198,7 +198,7 @@ TaskOperationProcessor::submit_operation(TaskOperationDescriptor descriptor,
   {
     std::lock_guard<std::mutex> lock(mutex_);
     task.task_id = make_task_id();
-    CancellationToken cancellation;
+    CancellationSource cancellation;
     tasks_.emplace(task.task_id,
                    TaskRecord{
                        .task = task,
@@ -214,7 +214,8 @@ TaskOperationProcessor::submit_operation(TaskOperationDescriptor descriptor,
   const auto cancellation = [&]() {
     std::lock_guard<std::mutex> lock(mutex_);
     const auto* record = find_task_locked(task_id);
-    return record == nullptr ? CancellationToken{} : record->cancellation;
+    return record == nullptr ? CancellationToken{}
+                             : record->cancellation.token();
   }();
   const auto queued = executor_.enqueue([this, operation = std::move(operation),
                                          task_id, cancellation]() mutable {
