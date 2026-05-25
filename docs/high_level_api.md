@@ -146,6 +146,9 @@ int main() {
 }
 ```
 
+For a complete child-process stdio client using `ClientPeer::connect_stdio`,
+see `examples/process_stdio_client.cpp`.
+
 ## Public API Families
 
 This section is intentionally shape-level. Do not treat it as the authoritative

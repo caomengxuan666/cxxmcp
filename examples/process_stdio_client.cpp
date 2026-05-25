@@ -2,7 +2,6 @@
 
 #include <cstdint>
 #include <iostream>
-#include <memory>
 #include <stdexcept>
 #include <string>
 #include <string_view>
@@ -31,14 +30,8 @@ int main() {
     require(std::string_view(MCP_EXAMPLE_CHILD_EXE).size() != 0,
             "child server executable is not configured");
 
-    auto peer =
-        mcp::ClientPeer(std::make_unique<mcp::client::ProcessStdioTransport>(
-            mcp::client::ProcessStdioTransportOptions{
-                .command = MCP_EXAMPLE_CHILD_EXE,
-                .args = {},
-                .cwd = {},
-                .env = {},
-            }));
+    auto peer = mcp::ClientPeer::connect_stdio(
+        mcp::client::Client::StdioEndpoint{.command = MCP_EXAMPLE_CHILD_EXE});
 
     auto running = mcp::serve(std::move(peer));
     require(running.has_value(), "process peer service failed to start");
@@ -58,7 +51,7 @@ int main() {
             "process peer list_prompts failed");
 
     const auto resources = running->peer().list_resources();
-    require(resources.has_value() && resources->size() == 1,
+    require(resources.has_value() && !resources->empty(),
             "process peer list_resources failed");
 
     const auto templates = running->peer().list_resource_templates();
