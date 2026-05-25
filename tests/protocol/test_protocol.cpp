@@ -191,6 +191,8 @@ void test_tool_protocol_round_trips() {
                               .with_sizes({"48x48"})
                               .with_theme(mcp::protocol::IconTheme::Light),
                       },
+                  .execution = mcp::protocol::ToolExecution{}.with_task_support(
+                      mcp::protocol::TaskSupport::Optional),
                   .annotations = Json{{"beta", true}},
                   .meta = Json{{"source", "unit-test"}},
               },
@@ -219,11 +221,36 @@ void test_tool_protocol_round_trips() {
   require(parsed_list->tools.front().icons.front().theme ==
               mcp::protocol::IconTheme::Light,
           "tool icon theme mismatch");
+  require(parsed_list->tools.front().execution.has_value(),
+          "tool execution missing");
+  require(parsed_list->tools.front().task_support() ==
+              mcp::protocol::TaskSupport::Optional,
+          "tool task support mismatch");
   require(parsed_list->tools.front().annotations.at("beta"),
           "tool annotations mismatch");
   require(parsed_list->tools.front().meta.has_value(), "tool meta mismatch");
   require(parsed_list->tools.front().meta->at("source") == "unit-test",
           "tool meta value mismatch");
+  require(mcp::protocol::tools_list_result_to_json(*parsed_list) == list_json,
+          "tools/list round-trip mismatch");
+
+  const auto empty_execution_tool =
+      mcp::protocol::tool_definition_from_json(Json{
+          {"name", "background"},
+          {"inputSchema", Json{{"type", "object"}}},
+          {"execution", Json::object()},
+      });
+  require(empty_execution_tool.has_value(),
+          "tool with empty execution should parse");
+  require(empty_execution_tool->execution.has_value(),
+          "empty tool execution should be preserved");
+  require(empty_execution_tool->task_support() ==
+              mcp::protocol::TaskSupport::Forbidden,
+          "empty tool execution should default to forbidden task support");
+  require(mcp::protocol::tool_definition_to_json(*empty_execution_tool)
+              .at("execution")
+              .empty(),
+          "empty tool execution should serialize as an empty object");
 
   const mcp::protocol::ToolCall call{
       .name = "echo",

@@ -22,6 +22,35 @@
 
 namespace mcp::protocol {
 
+/// @brief Per-tool support mode for task-based invocation.
+enum class TaskSupport {
+  /// Clients must not invoke this tool as a task.
+  Forbidden,
+  /// Clients may invoke this tool normally or as a task.
+  Optional,
+  /// Clients must invoke this tool as a task.
+  Required,
+};
+
+/// @brief Execution configuration advertised with a tool definition.
+struct ToolExecution {
+  /// Optional task support mode. Missing means forbidden by default.
+  std::optional<TaskSupport> task_support;
+
+  /// @brief Sets the optional task support mode on an lvalue execution object.
+  ToolExecution& with_task_support(TaskSupport value) & {
+    task_support = value;
+    return *this;
+  }
+
+  /// @brief Sets the optional task support mode while preserving fluent
+  /// temporary use.
+  ToolExecution&& with_task_support(TaskSupport value) && {
+    task_support = value;
+    return std::move(*this);
+  }
+};
+
 /// @brief A single content item returned by a tool or embedded in prompts.
 struct ContentBlock {
   /// Content kind. Common values are `text`, `image`, `audio`, `resource`, and
@@ -156,10 +185,20 @@ struct ToolDefinition {
   bool streaming = false;
   /// Optional icon descriptors for client presentation.
   std::vector<Icon> icons;
+  /// Optional execution configuration including task support mode.
+  std::optional<ToolExecution> execution;
   /// Optional annotations for model or client presentation.
   Json annotations = Json::object();
   /// Optional `_meta` extension object preserved on the wire.
   std::optional<Json> meta;
+
+  /// @brief Returns the effective task support mode for this tool.
+  TaskSupport task_support() const noexcept {
+    if (!execution.has_value() || !execution->task_support.has_value()) {
+      return TaskSupport::Forbidden;
+    }
+    return *execution->task_support;
+  }
 };
 
 /// @brief Parameters for `tools/call`.
@@ -196,6 +235,67 @@ struct ToolResult {
 inline core::Error tool_json_error(std::string message) {
   return core::Error{
       static_cast<int>(ErrorCode::InvalidRequest), std::move(message), {}};
+}
+
+/// @brief Converts a task support mode to the lowercase wire value.
+inline std::string_view task_support_to_string(TaskSupport support) noexcept {
+  switch (support) {
+    case TaskSupport::Forbidden:
+      return "forbidden";
+    case TaskSupport::Optional:
+      return "optional";
+    case TaskSupport::Required:
+      return "required";
+  }
+  return "forbidden";
+}
+
+/// @brief Parses a lowercase task support wire value.
+inline std::optional<TaskSupport> task_support_from_string(
+    std::string_view value) noexcept {
+  if (value == "forbidden") {
+    return TaskSupport::Forbidden;
+  }
+  if (value == "optional") {
+    return TaskSupport::Optional;
+  }
+  if (value == "required") {
+    return TaskSupport::Required;
+  }
+  return std::nullopt;
+}
+
+/// @brief Serializes tool execution configuration.
+inline Json tool_execution_to_json(const ToolExecution& execution) {
+  Json json = Json::object();
+  if (execution.task_support.has_value()) {
+    json["taskSupport"] = task_support_to_string(*execution.task_support);
+  }
+  return json;
+}
+
+/// @brief Parses tool execution configuration.
+/// @return Parsed execution configuration or validation error.
+inline core::Result<ToolExecution> tool_execution_from_json(const Json& json) {
+  if (!json.is_object()) {
+    return std::unexpected(tool_json_error("tool execution must be an object"));
+  }
+
+  ToolExecution execution;
+  if (json.contains("taskSupport")) {
+    if (!json.at("taskSupport").is_string()) {
+      return std::unexpected(
+          tool_json_error("tool execution taskSupport must be a string"));
+    }
+    const auto task_support = task_support_from_string(
+        json.at("taskSupport").get_ref<const std::string&>());
+    if (!task_support.has_value()) {
+      return std::unexpected(
+          tool_json_error("tool execution taskSupport is invalid"));
+    }
+    execution.task_support = *task_support;
+  }
+  return execution;
 }
 
 /// @brief Serializes a content block.
@@ -334,6 +434,9 @@ inline Json tool_definition_to_json(const ToolDefinition& definition) {
       json["icons"].push_back(icon_to_json(icon));
     }
   }
+  if (definition.execution.has_value()) {
+    json["execution"] = tool_execution_to_json(*definition.execution);
+  }
   if (!definition.annotations.empty()) {
     json["annotations"] = definition.annotations;
   }
@@ -403,6 +506,14 @@ inline core::Result<ToolDefinition> tool_definition_from_json(
       }
       definition.icons.push_back(*icon);
     }
+  }
+
+  if (json.contains("execution")) {
+    const auto execution = tool_execution_from_json(json.at("execution"));
+    if (!execution) {
+      return std::unexpected(execution.error());
+    }
+    definition.execution = *execution;
   }
 
   if (json.contains("annotations")) {

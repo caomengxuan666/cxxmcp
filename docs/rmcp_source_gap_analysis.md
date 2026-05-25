@@ -220,7 +220,8 @@ The current C++ models are simpler:
 - `ContentBlock` supports text, image, audio, embedded resource, and resource
   link variants
 - `ToolDefinition` has name, description, input schema, output schema,
-  streaming flag, icons, annotations, and metadata
+  streaming flag, icons, execution/task-support metadata, annotations, and
+  metadata
 - `Resource`, `ResourceTemplate`, and `Prompt` include title, icons,
   annotations, and metadata
 - capability storage uses explicit presence flags plus compact booleans for
@@ -240,7 +241,7 @@ Action:
   core `ContentBlock` helpers where higher-level APIs need them
 - finish annotations support where it is still represented as raw JSON
 - add `_meta` support at the proper model/request/notification levels
-- add tool execution/task support
+- enforce tool execution/task support in handler/runtime paths
 - keep simple helper constructors for common text-only cases
 
 ### 5. Capabilities
