@@ -425,6 +425,56 @@ void test_peer_serve_transport_observes_precancelled_token() {
           "pre-cancelled server serve loop must not receive");
 }
 
+void test_client_peer_native_raw_request_dispatches_interleaved_messages() {
+  auto transport = std::make_unique<RecordingClientContractTransport>();
+  auto* transport_ptr = transport.get();
+  transport_ptr->received.push_back(mcp::protocol::JsonRpcNotification{
+      .method = std::string(mcp::protocol::LoggingMessageNotificationMethod),
+      .params = Json{{"level", "info"}, {"data", "ready"}},
+  });
+  transport_ptr->received.push_back(mcp::protocol::JsonRpcRequest{
+      .method = std::string(mcp::protocol::RootsListMethod),
+      .params = Json::object(),
+      .id = std::string("server-roots"),
+  });
+  transport_ptr->received.push_back(mcp::protocol::JsonRpcResponse{
+      .id = mcp::protocol::RequestId{std::int64_t{77}},
+      .result = Json{{"ok", true}},
+  });
+
+  mcp::ClientPeer peer(std::move(transport));
+  peer.set_roots({mcp::protocol::Root{.uri = "file:///workspace"}});
+
+  bool logging_seen = false;
+  peer.client().on_logging_message(
+      [&](std::string_view level, std::string_view message) {
+        logging_seen = level == "info" && message == "ready";
+      });
+
+  const auto response = peer.raw_request(mcp::protocol::JsonRpcRequest{
+      .method = "tools/list",
+      .params = Json::object(),
+      .id = std::int64_t{77},
+  });
+  require(response.has_value(),
+          "native client peer raw_request should succeed");
+  require(response->at("ok") == true,
+          "native client peer raw_request response mismatch");
+  require(logging_seen,
+          "native client peer should dispatch interleaved notification");
+  require(transport_ptr->sent.size() == 2,
+          "native client peer should send request and interleaved response");
+  require(std::holds_alternative<mcp::protocol::JsonRpcRequest>(
+              transport_ptr->sent.front()),
+          "native client peer first send should be outbound request");
+  const auto* roots_response =
+      std::get_if<mcp::protocol::JsonRpcResponse>(&transport_ptr->sent.back());
+  require(roots_response != nullptr,
+          "native client peer should answer interleaved request");
+  require(roots_response->result.has_value(),
+          "native client peer interleaved response should contain result");
+}
+
 void test_request_handle_rejects_invalid_state() {
   mcp::RequestHandle<Json> default_handle;
   const auto default_result = default_handle.await_response();
@@ -754,6 +804,7 @@ int main() {
     test_sdk_peer_and_service_surface();
     test_running_service_moved_from_is_inert();
     test_peer_serve_transport_observes_precancelled_token();
+    test_client_peer_native_raw_request_dispatches_interleaved_messages();
     test_request_handle_rejects_invalid_state();
     test_public_dispatch_boundaries_translate_handler_exceptions();
     test_request_handle_latches_terminal_timeout();

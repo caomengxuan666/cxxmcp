@@ -10,6 +10,8 @@
 /// Transport<Role> can be the public service boundary while concrete Client and
 /// Server types remain lower-level convenience APIs.
 
+#include <atomic>
+#include <cstdint>
 #include <memory>
 #include <mutex>
 #include <optional>
@@ -42,9 +44,33 @@ inline core::Error peer_dispatch_error(std::string_view message) {
                       std::string(message));
 }
 
+inline core::Error peer_transport_error(std::string_view message) {
+  return errors::make(protocol::ErrorCode::InvalidRequest, std::string(message),
+                      {}, "transport");
+}
+
 inline protocol::ErrorObject peer_error_object_from_core_error(
     const core::Error& error) {
   return errors::to_json_rpc_error(error);
+}
+
+inline core::Result<protocol::Json> peer_require_result_payload(
+    const protocol::JsonRpcResponse& response) {
+  if (response.error.has_value()) {
+    return std::unexpected(core::Error{
+        response.error->code,
+        response.error->message,
+        response.error->data.has_value() ? response.error->data->dump()
+                                         : std::string{},
+        "protocol",
+    });
+  }
+  if (!response.result.has_value()) {
+    return std::unexpected(errors::make(protocol::ErrorCode::InvalidRequest,
+                                        "response did not contain a result", {},
+                                        "protocol"));
+  }
+  return *response.result;
 }
 
 template <class Transport, class Dispatch>
@@ -342,12 +368,36 @@ class Peer<RoleClient> {
 
   core::Result<protocol::Json> raw_request(
       const protocol::JsonRpcRequest& request) {
+    if (native_transport_) {
+      const auto response = send_native_request(request);
+      if (!response) {
+        return std::unexpected(response.error());
+      }
+      return detail::peer_require_result_payload(*response);
+    }
     return client_.raw_request(request);
   }
 
   RequestHandle<protocol::Json> request_async(
       std::string method, protocol::Json params = protocol::Json::object(),
       RequestOptions options = {}) {
+    if (native_transport_) {
+      protocol::JsonRpcRequest request = protocol::make_request(
+          std::move(method), next_peer_request_id(), std::move(params));
+      if (options.meta.has_value()) {
+        request.meta = std::move(options.meta);
+      }
+
+      const auto request_id = request.id;
+      return RequestHandle<protocol::Json>::spawn(
+          request_id, options.timeout, options.cancellation_token,
+          [this, request_id](std::string reason) mutable {
+            return notify_cancelled(std::move(request_id), std::move(reason));
+          },
+          [this, request = std::move(request)]() mutable {
+            return raw_request(request);
+          });
+    }
     return client_.request_async(std::move(method), std::move(params),
                                  std::move(options));
   }
@@ -355,6 +405,28 @@ class Peer<RoleClient> {
   template <class T, class Parser>
   RequestHandle<T> request_async(std::string method, protocol::Json params,
                                  Parser parser, RequestOptions options = {}) {
+    if (native_transport_) {
+      protocol::JsonRpcRequest request = protocol::make_request(
+          std::move(method), next_peer_request_id(), std::move(params));
+      if (options.meta.has_value()) {
+        request.meta = std::move(options.meta);
+      }
+
+      const auto request_id = request.id;
+      return RequestHandle<T>::spawn(
+          request_id, options.timeout, options.cancellation_token,
+          [this, request_id](std::string reason) mutable {
+            return notify_cancelled(std::move(request_id), std::move(reason));
+          },
+          [this, request = std::move(request),
+           parser = std::move(parser)]() mutable -> core::Result<T> {
+            auto payload = raw_request(request);
+            if (!payload) {
+              return std::unexpected(payload.error());
+            }
+            return parser(*payload);
+          });
+    }
     return client_.request_async<T>(std::move(method), std::move(params),
                                     std::move(parser), std::move(options));
   }
@@ -534,7 +606,52 @@ class Peer<RoleClient> {
   }
 
  private:
+  std::int64_t next_peer_request_id() noexcept {
+    return next_request_id_->fetch_add(1, std::memory_order_relaxed);
+  }
+
+  core::Result<protocol::JsonRpcResponse> send_native_request(
+      const protocol::JsonRpcRequest& request) {
+    auto sent = native_transport_->send(protocol::JsonRpcMessage{request});
+    if (!sent) {
+      return std::unexpected(sent.error());
+    }
+
+    while (true) {
+      auto received = native_transport_->receive();
+      if (!received) {
+        return std::unexpected(received.error());
+      }
+      if (!received->has_value()) {
+        return std::unexpected(detail::peer_transport_error(
+            "client peer transport closed before response"));
+      }
+
+      if (auto* response =
+              std::get_if<protocol::JsonRpcResponse>(&received->value())) {
+        if (response->id.has_value() && *response->id == request.id) {
+          return *response;
+        }
+        return std::unexpected(detail::peer_transport_error(
+            "client peer transport received unexpected response id"));
+      }
+
+      auto dispatched = dispatch_message(received->value());
+      if (!dispatched) {
+        return std::unexpected(dispatched.error());
+      }
+      if (dispatched->has_value()) {
+        sent = native_transport_->send(std::move(dispatched->value()));
+        if (!sent) {
+          return std::unexpected(sent.error());
+        }
+      }
+    }
+  }
+
   std::unique_ptr<transport::ClientTransport> native_transport_;
+  std::shared_ptr<std::atomic<std::int64_t>> next_request_id_ =
+      std::make_shared<std::atomic<std::int64_t>>(1);
   client::Client client_;
 };
 

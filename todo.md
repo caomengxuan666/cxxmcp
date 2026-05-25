@@ -48,6 +48,9 @@ incrementally. Keep them concrete; do not replace them with broad claims.
   - [x] `ClientPeer` owns role-generic client transports at the peer boundary;
         the concrete client compatibility adapter borrows that transport
         instead of owning it.
+  - [x] `ClientPeer::raw_request` and Peer-created raw/typed
+        `request_async` handles use a peer-level native transport request loop
+        when the peer was constructed from `transport::ClientTransport`.
   - [x] Client and server contract transport adapters cover duplicate response
         ids as stable unexpected-response failures.
 - Request lifecycle:
