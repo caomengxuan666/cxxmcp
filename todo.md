@@ -95,6 +95,9 @@ incrementally. Keep them concrete; do not replace them with broad claims.
         Peer boundary while preserving full session context for handlers.
   - [x] `ServerPeer` owns Peer-registered completion, sampling, and logging
         handlers and dispatches those request families at the Peer boundary.
+  - [x] `ServerPeer` owns Peer-registered task lifecycle handlers and dispatches
+        `tasks/list`, `tasks/get`, `tasks/cancel`, and `tasks/result` at the
+        Peer boundary.
   - [x] `ClientPeer::client()` and `ServerPeer::server()` are retained as
         deprecated compatibility escape hatches, not canonical SDK entry
         points.

@@ -44,4 +44,6 @@
   Peer boundary while preserving session context for handlers.
 - Routed Peer-registered completion, sampling, and logging request handlers
   through the `ServerPeer` boundary.
+- Routed Peer-registered task lifecycle request handlers through the
+  `ServerPeer` boundary.
 - Added a dedicated SDK umbrella test for `cxxmcp/sdk.hpp`.

@@ -904,6 +904,106 @@ void test_server_peer_handler_requests_dispatch_on_peer_boundary() {
           "logging handler should run at peer boundary");
 }
 
+void test_server_peer_task_handlers_dispatch_on_peer_boundary() {
+  auto make_task = [](std::string id, mcp::protocol::TaskStatus status) {
+    mcp::protocol::Task task;
+    task.task_id = std::move(id);
+    task.status = status;
+    task.created_at = "2025-01-01T00:00:00Z";
+    task.last_updated_at = "2025-01-01T00:00:01Z";
+    return task;
+  };
+
+  mcp::ServerPeer peer;
+  peer.set_task_list_handler([&](const mcp::protocol::TaskListParams&,
+                                 const mcp::server::SessionContext& context) {
+        mcp::protocol::TaskListResult result;
+        result.tasks.push_back(make_task(context.session_id + "-listed",
+                                         mcp::protocol::TaskStatus::Working));
+        return mcp::core::Result<mcp::protocol::TaskListResult>{result};
+      })
+      .set_task_get_handler([&](const mcp::protocol::TaskGetParams& params,
+                                const mcp::server::SessionContext& context) {
+        return mcp::core::Result<mcp::protocol::Task>{
+            make_task(context.session_id + "-" + params.task_id,
+                      mcp::protocol::TaskStatus::Completed)};
+      })
+      .set_task_cancel_handler(
+          [&](const mcp::protocol::TaskCancelParams& params,
+              const mcp::server::SessionContext&) {
+            return mcp::core::Result<mcp::protocol::Task>{make_task(
+                params.task_id, mcp::protocol::TaskStatus::Cancelled)};
+          })
+      .set_task_result_handler(
+          [&](const mcp::protocol::TaskResultParams& params,
+              const mcp::server::SessionContext& context) {
+            return mcp::core::Result<Json>{Json{{"taskId", params.task_id},
+                                                {"session", context.session_id},
+                                                {"value", 42}}};
+          });
+
+  RecordingServerContractTransport transport;
+  transport.received.push_back(mcp::protocol::JsonRpcRequest{
+      .method = std::string(mcp::protocol::TasksListMethod),
+      .params = Json::object(),
+      .id = mcp::protocol::RequestId{std::int64_t{40}},
+  });
+  transport.received.push_back(mcp::protocol::JsonRpcRequest{
+      .method = std::string(mcp::protocol::TasksGetMethod),
+      .params = Json{{"taskId", "task-a"}},
+      .id = mcp::protocol::RequestId{std::int64_t{41}},
+  });
+  transport.received.push_back(mcp::protocol::JsonRpcRequest{
+      .method = std::string(mcp::protocol::TasksCancelMethod),
+      .params = Json{{"taskId", "task-b"}},
+      .id = mcp::protocol::RequestId{std::int64_t{42}},
+  });
+  transport.received.push_back(mcp::protocol::JsonRpcRequest{
+      .method = std::string(mcp::protocol::TasksResultMethod),
+      .params = Json{{"taskId", "task-c"}},
+      .id = mcp::protocol::RequestId{std::int64_t{43}},
+  });
+
+  mcp::server::SessionContext context;
+  context.session_id = "peer-task-session";
+  const auto served = peer.serve_transport(transport, context);
+  require(served.has_value(),
+          "server peer task handler dispatch should succeed");
+  require(transport.sent.size() == 4,
+          "server peer task handler response count mismatch");
+
+  const auto* list_response =
+      std::get_if<mcp::protocol::JsonRpcResponse>(&transport.sent.at(0));
+  require(list_response != nullptr, "tasks/list response missing");
+  require(list_response->result->at("tasks").at(0).at("taskId") ==
+              "peer-task-session-listed",
+          "tasks/list result mismatch");
+
+  const auto* get_response =
+      std::get_if<mcp::protocol::JsonRpcResponse>(&transport.sent.at(1));
+  require(get_response != nullptr, "tasks/get response missing");
+  require(get_response->result->at("taskId") == "peer-task-session-task-a",
+          "tasks/get should preserve session context");
+  require(get_response->result->at("status") == "completed",
+          "tasks/get status mismatch");
+
+  const auto* cancel_response =
+      std::get_if<mcp::protocol::JsonRpcResponse>(&transport.sent.at(2));
+  require(cancel_response != nullptr, "tasks/cancel response missing");
+  require(cancel_response->result->at("taskId") == "task-b",
+          "tasks/cancel task id mismatch");
+  require(cancel_response->result->at("status") == "cancelled",
+          "tasks/cancel status mismatch");
+
+  const auto* result_response =
+      std::get_if<mcp::protocol::JsonRpcResponse>(&transport.sent.at(3));
+  require(result_response != nullptr, "tasks/result response missing");
+  require(result_response->result->at("taskId") == "task-c",
+          "tasks/result task id mismatch");
+  require(result_response->result->at("session") == "peer-task-session",
+          "tasks/result should preserve session context");
+}
+
 void test_client_peer_native_raw_request_dispatches_interleaved_messages() {
   auto transport = std::make_unique<RecordingClientContractTransport>();
   auto* transport_ptr = transport.get();
@@ -1328,6 +1428,7 @@ int main() {
     test_server_peer_tool_discovery_dispatches_on_peer_boundary();
     test_server_peer_prompt_resource_dispatches_on_peer_boundary();
     test_server_peer_handler_requests_dispatch_on_peer_boundary();
+    test_server_peer_task_handlers_dispatch_on_peer_boundary();
     test_client_peer_native_raw_request_dispatches_interleaved_messages();
     test_client_peer_native_raw_request_reports_transport_failures();
     test_request_handle_rejects_invalid_state();

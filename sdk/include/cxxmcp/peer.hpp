@@ -1727,21 +1727,25 @@ class Peer<RoleServer> {
   }
 
   Peer& set_task_list_handler(server::Server::TaskListHandler handler) {
+    task_list_handler_ = handler;
     server_->set_task_list_handler(std::move(handler));
     return *this;
   }
 
   Peer& set_task_get_handler(server::Server::TaskGetHandler handler) {
+    task_get_handler_ = handler;
     server_->set_task_get_handler(std::move(handler));
     return *this;
   }
 
   Peer& set_task_cancel_handler(server::Server::TaskCancelHandler handler) {
+    task_cancel_handler_ = handler;
     server_->set_task_cancel_handler(std::move(handler));
     return *this;
   }
 
   Peer& set_task_result_handler(server::Server::TaskResultHandler handler) {
+    task_result_handler_ = handler;
     server_->set_task_result_handler(std::move(handler));
     return *this;
   }
@@ -2034,6 +2038,59 @@ class Peer<RoleServer> {
       return protocol::make_response(request.id, protocol::Json::object());
     }
 
+    if (request.method == protocol::TasksListMethod && task_list_handler_) {
+      const auto params = protocol::task_list_params_from_json(request.params);
+      if (!params) {
+        return detail::peer_error_response(request, params.error());
+      }
+      const auto result = task_list_handler_(*params, context);
+      if (!result) {
+        return detail::peer_error_response(request, result.error());
+      }
+      return protocol::make_response(
+          request.id, protocol::task_list_result_to_json(*result));
+    }
+
+    if (request.method == protocol::TasksGetMethod && task_get_handler_) {
+      const auto params = protocol::task_get_params_from_json(request.params);
+      if (!params) {
+        return detail::peer_error_response(request, params.error());
+      }
+      const auto result = task_get_handler_(*params, context);
+      if (!result) {
+        return detail::peer_error_response(request, result.error());
+      }
+      return protocol::make_response(request.id,
+                                     protocol::task_to_json(*result));
+    }
+
+    if (request.method == protocol::TasksCancelMethod && task_cancel_handler_) {
+      const auto params =
+          protocol::task_cancel_params_from_json(request.params);
+      if (!params) {
+        return detail::peer_error_response(request, params.error());
+      }
+      const auto result = task_cancel_handler_(*params, context);
+      if (!result) {
+        return detail::peer_error_response(request, result.error());
+      }
+      return protocol::make_response(request.id,
+                                     protocol::task_to_json(*result));
+    }
+
+    if (request.method == protocol::TasksResultMethod && task_result_handler_) {
+      const auto params =
+          protocol::task_result_params_from_json(request.params);
+      if (!params) {
+        return detail::peer_error_response(request, params.error());
+      }
+      const auto result = task_result_handler_(*params, context);
+      if (!result) {
+        return detail::peer_error_response(request, result.error());
+      }
+      return protocol::make_response(request.id, *result);
+    }
+
     return server_->handle_request(request, context);
   } catch (const std::exception& ex) {
     return detail::peer_error_response(request,
@@ -2299,6 +2356,10 @@ class Peer<RoleServer> {
   server::Server::JsonHandler completion_handler_;
   server::Server::JsonHandler sampling_handler_;
   server::Server::LoggingHandler logging_handler_;
+  server::Server::TaskListHandler task_list_handler_;
+  server::Server::TaskGetHandler task_get_handler_;
+  server::Server::TaskCancelHandler task_cancel_handler_;
+  server::Server::TaskResultHandler task_result_handler_;
   server::Server::RawNotificationHandler raw_notification_handler_;
   server::Server::ProgressHandler progress_handler_;
   server::Server::RootsListChangedHandler roots_list_changed_handler_;
