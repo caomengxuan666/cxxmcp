@@ -40,4 +40,6 @@
   dispatcher.
 - Routed `ServerPeer` raw request override state plus `tools/list` and
   `tools/get` discovery handling through the Peer boundary.
+- Routed `ServerPeer` prompt/resource discovery and read handling through the
+  Peer boundary while preserving session context for handlers.
 - Added a dedicated SDK umbrella test for `cxxmcp/sdk.hpp`.

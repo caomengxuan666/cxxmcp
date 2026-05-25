@@ -748,6 +748,104 @@ void test_server_peer_tool_discovery_dispatches_on_peer_boundary() {
           "raw request handler should run before peer tool discovery");
 }
 
+void test_server_peer_prompt_resource_dispatches_on_peer_boundary() {
+  auto server =
+      mcp::server::App::builder()
+          .prompt(
+              "session-summary",
+              [](std::string text, const mcp::server::PromptContext& context) {
+                return context.session_id + ":" + text;
+              })
+          .resource(
+              "file:///tmp/session.txt",
+              [](std::string uri, const mcp::server::ResourceContext& context) {
+                return context.session_id + ":" + uri + ":" +
+                       context.params.value("section", std::string("default"));
+              })
+          .resource_template(mcp::protocol::ResourceTemplate{
+              .uri_template = "file:///tmp/{name}.txt",
+              .name = "Tmp file",
+              .description = "A tmp file",
+              .mime_type = "text/plain",
+          })
+          .build();
+  require(server.has_value(), "prompt/resource server build failed");
+  mcp::ServerPeer peer(std::move(*server));
+
+  RecordingServerContractTransport transport;
+  transport.received.push_back(mcp::protocol::JsonRpcRequest{
+      .method = std::string(mcp::protocol::PromptsListMethod),
+      .params = Json::object(),
+      .id = mcp::protocol::RequestId{std::int64_t{20}},
+  });
+  transport.received.push_back(mcp::protocol::JsonRpcRequest{
+      .method = std::string(mcp::protocol::PromptsGetMethod),
+      .params = Json{{"name", "session-summary"},
+                     {"arguments", Json{{"text", "hello"}}}},
+      .id = mcp::protocol::RequestId{std::int64_t{21}},
+  });
+  transport.received.push_back(mcp::protocol::JsonRpcRequest{
+      .method = std::string(mcp::protocol::ResourcesListMethod),
+      .params = Json::object(),
+      .id = mcp::protocol::RequestId{std::int64_t{22}},
+  });
+  transport.received.push_back(mcp::protocol::JsonRpcRequest{
+      .method = std::string(mcp::protocol::ResourcesReadMethod),
+      .params = Json{{"uri", "file:///tmp/session.txt"}, {"section", "intro"}},
+      .id = mcp::protocol::RequestId{std::int64_t{23}},
+  });
+  transport.received.push_back(mcp::protocol::JsonRpcRequest{
+      .method = std::string(mcp::protocol::ResourcesTemplatesListMethod),
+      .params = Json::object(),
+      .id = mcp::protocol::RequestId{std::int64_t{24}},
+  });
+
+  mcp::server::SessionContext context;
+  context.session_id = "peer-session";
+  const auto served = peer.serve_transport(transport, context);
+  require(served.has_value(),
+          "server peer prompt/resource dispatch should succeed");
+  require(transport.sent.size() == 5,
+          "server peer prompt/resource dispatch response count mismatch");
+
+  const auto* prompts_list =
+      std::get_if<mcp::protocol::JsonRpcResponse>(&transport.sent.at(0));
+  require(prompts_list != nullptr, "prompts/list response missing");
+  require(
+      prompts_list->result->at("prompts").at(0).at("name") == "session-summary",
+      "prompts/list prompt name mismatch");
+
+  const auto* prompt_get =
+      std::get_if<mcp::protocol::JsonRpcResponse>(&transport.sent.at(1));
+  require(prompt_get != nullptr, "prompts/get response missing");
+  require(prompt_get->result->at("messages").at(0).at("content").at("text") ==
+              "peer-session:hello",
+          "prompts/get should preserve session context");
+
+  const auto* resources_list =
+      std::get_if<mcp::protocol::JsonRpcResponse>(&transport.sent.at(2));
+  require(resources_list != nullptr, "resources/list response missing");
+  require(resources_list->result->at("resources").at(0).at("uri") ==
+              "file:///tmp/session.txt",
+          "resources/list uri mismatch");
+
+  const auto* resources_read =
+      std::get_if<mcp::protocol::JsonRpcResponse>(&transport.sent.at(3));
+  require(resources_read != nullptr, "resources/read response missing");
+  require(resources_read->result->at("contents").at(0).at("text") ==
+              "peer-session:file:///tmp/session.txt:intro",
+          "resources/read should preserve session context and params");
+
+  const auto* templates_list =
+      std::get_if<mcp::protocol::JsonRpcResponse>(&transport.sent.at(4));
+  require(templates_list != nullptr,
+          "resources/templates/list response missing");
+  require(
+      templates_list->result->at("resourceTemplates").at(0).at("uriTemplate") ==
+          "file:///tmp/{name}.txt",
+      "resources/templates/list template mismatch");
+}
+
 void test_client_peer_native_raw_request_dispatches_interleaved_messages() {
   auto transport = std::make_unique<RecordingClientContractTransport>();
   auto* transport_ptr = transport.get();
@@ -1170,6 +1268,7 @@ int main() {
     test_peer_serve_transport_observes_precancelled_token();
     test_server_peer_initialize_dispatches_on_peer_boundary();
     test_server_peer_tool_discovery_dispatches_on_peer_boundary();
+    test_server_peer_prompt_resource_dispatches_on_peer_boundary();
     test_client_peer_native_raw_request_dispatches_interleaved_messages();
     test_client_peer_native_raw_request_reports_transport_failures();
     test_request_handle_rejects_invalid_state();

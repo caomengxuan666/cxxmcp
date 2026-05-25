@@ -1946,6 +1946,61 @@ class Peer<RoleServer> {
                                      protocol::tool_definition_to_json(*tool));
     }
 
+    if (request.method == protocol::PromptsListMethod) {
+      protocol::PromptsListResult result;
+      result.prompts = list_prompts();
+      return protocol::make_response(
+          request.id, protocol::prompts_list_result_to_json(result));
+    }
+
+    if (request.method == protocol::PromptsGetMethod) {
+      const auto params =
+          protocol::prompts_get_params_from_json(request.params);
+      if (!params) {
+        return detail::peer_error_response(request, params.error());
+      }
+
+      const auto result =
+          server_->prompts().get(params->name, params->arguments, context);
+      if (!result) {
+        return detail::peer_error_response(request, result.error());
+      }
+
+      return protocol::make_response(
+          request.id, protocol::prompts_get_result_to_json(*result));
+    }
+
+    if (request.method == protocol::ResourcesListMethod) {
+      protocol::ResourcesListResult result;
+      result.resources = list_resources();
+      return protocol::make_response(
+          request.id, protocol::resources_list_result_to_json(result));
+    }
+
+    if (request.method == protocol::ResourcesReadMethod) {
+      const auto params =
+          protocol::resources_read_params_from_json(request.params);
+      if (!params) {
+        return detail::peer_error_response(request, params.error());
+      }
+
+      const auto result =
+          server_->resources().read(params->uri, request.params, context);
+      if (!result) {
+        return detail::peer_error_response(request, result.error());
+      }
+
+      return protocol::make_response(
+          request.id, protocol::resources_read_result_to_json(*result));
+    }
+
+    if (request.method == protocol::ResourcesTemplatesListMethod) {
+      protocol::ResourceTemplatesListResult result;
+      result.resource_templates = list_resource_templates();
+      return protocol::make_response(
+          request.id, protocol::resource_templates_list_result_to_json(result));
+    }
+
     return server_->handle_request(request, context);
   } catch (const std::exception& ex) {
     return detail::peer_error_response(request,
