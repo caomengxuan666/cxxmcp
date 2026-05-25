@@ -57,6 +57,12 @@ runtime, and Windows/MSVC Visual Studio with dynamic runtime. The same workflow
 also builds the Doxygen HTML artifact that must be attached to release
 candidates when API docs are advertised.
 
+Each matrix leg uploads a `cxxmcp-release-gates-*` artifact containing the
+`CMakeCache.txt`, CTest JUnit XML, and CTest log files. Release candidates must
+link or attach those artifacts so package-smoke, public-header, transport,
+conformance, and interoperability results are auditable after the workflow run
+expires from the Actions UI.
+
 ## Public API Review
 
 Before a release, review public header diffs under:

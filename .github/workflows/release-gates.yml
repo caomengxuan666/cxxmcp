@@ -125,16 +125,29 @@ jobs:
       - name: Run release-blocking tests
         shell: pwsh
         run: |
+          New-Item -ItemType Directory -Force -Path "build-release-gates/test-results" | Out-Null
           $ctestArgs = @(
             "--test-dir", "build-release-gates",
             "-L", "release-blocking",
             "--output-on-failure",
-            "--timeout", "300"
+            "--timeout", "300",
+            "--output-junit", "build-release-gates/test-results/release-blocking.xml"
           )
           if ("${{ matrix.config }}") {
             $ctestArgs += @("-C", "${{ matrix.config }}")
           }
           ctest @ctestArgs
+
+      - name: Upload release gate evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: cxxmcp-release-gates-${{ matrix.name }}
+          path: |
+            build-release-gates/CMakeCache.txt
+            build-release-gates/test-results/release-blocking.xml
+            build-release-gates/Testing/Temporary/*.log
+          if-no-files-found: warn
 
   docs-artifact:
     name: doxygen-docs

@@ -35,8 +35,9 @@ Remaining non-P1/P2 proof gates before claiming fact-standard status:
   produced by `.github/workflows/release-gates.yml`, not only documented.
 - Public generated API docs and release artifacts have to be built by the
   release-gates workflow and attached to an actual release candidate.
-- README, examples, changelog, compatibility policy, and release artifacts have
-  to be audited together after the next successful release-blocking matrix run.
+- README, examples, changelog, compatibility policy, CTest/JUnit evidence
+  artifacts, and release artifacts have to be audited together after the next
+  successful release-blocking matrix run.
 
 ## Current P0 Executable Slices
 
