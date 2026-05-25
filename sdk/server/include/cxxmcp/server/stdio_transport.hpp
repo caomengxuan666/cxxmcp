@@ -25,6 +25,11 @@ namespace mcp::server {
 /// must keep them alive for the whole transport lifetime. Outbound notification
 /// writes are mutex-protected so a handler can call SessionContext::client()
 /// while the read loop is active.
+///
+/// The server stdio loop handles one inbound line at a time and writes the
+/// corresponding response before reading the next request. It therefore has no
+/// concrete in-flight request registry; duplicate in-flight request-id
+/// validation is enforced by asynchronous peer/native/adapter layers.
 class StdioTransport final : public Transport {
  public:
   /// @brief Construct a transport using std::cin and std::cout.

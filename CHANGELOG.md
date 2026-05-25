@@ -27,4 +27,6 @@
   in-flight request ids with stable transport errors.
 - Return HTTP 400 for malformed Streamable HTTP POST bodies and cover the
   direct server transport path.
+- Documented why concrete stdio transports do not own duplicate in-flight
+  request-id validation.
 - Added a dedicated SDK umbrella test for `cxxmcp/sdk.hpp`.

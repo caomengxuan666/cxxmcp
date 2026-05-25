@@ -129,6 +129,8 @@ incrementally. Keep them concrete; do not replace them with broad claims.
         and duplicate in-flight request ids.
   - [x] Streamable HTTP server transport rejects malformed POST bodies with
         HTTP 400 and a JSON-RPC parse error body.
+  - [x] Concrete stdio transports explicitly document duplicate in-flight
+        request-id validation as N/A at that synchronous/message-level layer.
 - Conformance matrix:
   - [x] In-tree Streamable HTTP matrix covers initialize, tools, prompts,
         resources/templates/subscribe, roots/list_changed, completion, logging,

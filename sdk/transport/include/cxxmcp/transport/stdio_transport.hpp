@@ -27,6 +27,10 @@ namespace mcp::transport {
 /// closed; it makes later receive() calls return std::nullopt and later send()
 /// calls fail, but it cannot interrupt a platform stream read already blocked
 /// inside std::getline().
+///
+/// This message-level transport intentionally does not correlate requests and
+/// responses. Duplicate in-flight request-id checks are implemented by the
+/// peer/request engine or by transports that own an asynchronous pending map.
 template <class Role>
 class StdioTransport final : public Transport<Role> {
  public:
