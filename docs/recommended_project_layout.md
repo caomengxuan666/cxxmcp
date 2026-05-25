@@ -283,11 +283,9 @@ It should not:
 - be linked into SDK targets
 - affect third-party consumers
 
-Recommended behavior:
-
-```cmake
-CXXMCP_BUILD_REFERENCE=OFF
-```
+Recommended behavior: keep `reference/` outside normal CMake targets and
+install rules. Add a dedicated opt-in build option only if reference code ever
+needs to be compiled by this project.
 
 ## CMake Targets
 
@@ -350,7 +348,6 @@ CXXMCP_BUILD_RUNTIME=ON
 CXXMCP_BUILD_CLI=ON
 CXXMCP_BUILD_EXAMPLES=OFF
 CXXMCP_BUILD_TESTS=OFF
-CXXMCP_BUILD_REFERENCE=OFF
 ```
 
 For third-party library consumption, users should be able to configure:
@@ -361,7 +358,6 @@ CXXMCP_BUILD_RUNTIME=OFF
 CXXMCP_BUILD_CLI=OFF
 CXXMCP_BUILD_EXAMPLES=OFF
 CXXMCP_BUILD_TESTS=OFF
-CXXMCP_BUILD_REFERENCE=OFF
 ```
 
 ## Install Layout

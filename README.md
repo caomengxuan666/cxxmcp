@@ -200,6 +200,7 @@ Public SDK headers are under `cxxmcp/`. Runtime state, gateway profiles, policy,
 
 | Option | Default | Description |
 |---|---:|---|
+| `CXXMCP_BUILD_SDK` | `ON` | Build the aggregate public SDK layer |
 | `CXXMCP_BUILD_PROTOCOL` | `ON` | Build the MCP protocol library |
 | `CXXMCP_BUILD_CLIENT` | `OFF` | Build the MCP client library |
 | `CXXMCP_BUILD_SERVER` | `OFF` | Build the MCP server library |
@@ -209,5 +210,7 @@ Public SDK headers are under `cxxmcp/`. Runtime state, gateway profiles, policy,
 | `CXXMCP_BUILD_CLI` | `OFF` | Build the command-line application |
 | `CXXMCP_BUILD_EXAMPLES` | `OFF` | Build example executables |
 | `CXXMCP_BUILD_TESTS` | `BUILD_TESTING` | Build tests for enabled layers |
+| `CXXMCP_BUILD_DOCS` | `OFF` | Build Doxygen API documentation |
 
+`CXXMCP_BUILD_SDK` enables the protocol, client, and server layers.
 `CXXMCP_BUILD_CLI` enables the gateway, runtime, server, client, and protocol layers it needs.
