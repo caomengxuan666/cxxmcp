@@ -1596,6 +1596,76 @@ void test_server_peer_serves_role_generic_transport_receive_loop() {
           "server peer should pass transport session context");
 }
 
+void test_server_non_task_tool_observes_cancelled_notification() {
+  mcp::server::Server server(mcp::server::ServerOptions{});
+  std::atomic_bool handler_started = false;
+  std::atomic_bool handler_observed_cancel = false;
+  const auto added = server.tools().add(
+      mcp::protocol::ToolDefinition{
+          .name = "cancellable",
+          .input_schema = Json::object(),
+      },
+      [&](const mcp::server::ToolContext& context)
+          -> mcp::core::Result<mcp::protocol::ToolResult> {
+        handler_started.store(true);
+        wait_until([&] { return context.cancelled(); },
+                   "non-task tool should observe cancellation");
+        handler_observed_cancel.store(true);
+        return mcp::protocol::ToolResult{};
+      });
+  require(added.has_value(), "failed to register cancellable tool");
+
+  std::optional<mcp::protocol::JsonRpcResponse> response;
+  std::optional<mcp::core::Error> response_error;
+  std::exception_ptr thread_error;
+  const mcp::protocol::JsonRpcRequest request{
+      .method = std::string(mcp::protocol::ToolsCallMethod),
+      .params = Json{{"name", "cancellable"}, {"arguments", Json::object()}},
+      .id = std::int64_t{909},
+  };
+  std::thread worker([&] {
+    try {
+      const auto handled = server.handle_request(
+          request, mcp::server::SessionContext{.session_id = "cancel-session"});
+      if (handled) {
+        response = *handled;
+      } else {
+        response_error = handled.error();
+      }
+    } catch (...) {
+      thread_error = std::current_exception();
+    }
+  });
+
+  wait_until([&] { return handler_started.load(); },
+             "non-task cancellation handler should start");
+  const auto cancelled = server.handle_notification(
+      mcp::protocol::JsonRpcNotification{
+          .method = std::string(mcp::protocol::CancelledNotificationMethod),
+          .params = mcp::protocol::cancelled_notification_params_to_json(
+              mcp::protocol::CancelledNotificationParams{
+                  .request_id = std::int64_t{909},
+                  .reason = "client cancelled",
+              }),
+      },
+      mcp::server::SessionContext{.session_id = "cancel-session"});
+  require(cancelled.has_value(), "cancelled notification should be accepted");
+
+  if (worker.joinable()) {
+    worker.join();
+  }
+  if (thread_error) {
+    std::rethrow_exception(thread_error);
+  }
+  require(!response_error.has_value(),
+          "non-task cancellation request should not fail transport");
+  require(response.has_value(), "non-task cancellation response missing");
+  require(response->result.has_value(),
+          "non-task cancellation response should contain a result");
+  require(handler_observed_cancel.load(),
+          "non-task tool did not observe cancellation");
+}
+
 void test_contract_handlers_override_client_and_server_requests() {
   struct ContractClientHandler final : mcp::client::ClientHandlerInterface {
     std::optional<mcp::core::Result<mcp::protocol::RootsListResult>>
@@ -3864,6 +3934,8 @@ int main() {
        test_service_lifecycle_facades_start_and_stop},
       {"server peer role-generic transport receive loop",
        test_server_peer_serves_role_generic_transport_receive_loop},
+      {"server non-task tool observes cancelled notification",
+       test_server_non_task_tool_observes_cancelled_notification},
       {"contract handlers override client and server requests",
        test_contract_handlers_override_client_and_server_requests},
       {"server notification facade round trip",

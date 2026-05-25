@@ -700,6 +700,15 @@ class Server {
       std::string_view uri, const protocol::JsonRpcNotification& notification);
   core::Result<core::Unit> set_resource_subscription(
       const SessionContext& context, std::string_view uri, bool subscribed);
+  CancellationToken begin_request_cancellation(
+      const protocol::RequestId& request_id);
+  void end_request_cancellation(const protocol::RequestId& request_id) noexcept;
+  void cancel_request(const protocol::RequestId& request_id) noexcept;
+
+  std::shared_ptr<std::mutex> active_request_cancellations_mutex_ =
+      std::make_shared<std::mutex>();
+  std::unordered_map<std::string, CancellationSource>
+      active_request_cancellations_;
 };
 
 /// @brief Fluent builder for constructing a configured Server.

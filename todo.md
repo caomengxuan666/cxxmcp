@@ -48,8 +48,8 @@ incrementally. Keep them concrete; do not replace them with broad claims.
   - [x] Stdio receives and writes `notifications/cancelled`.
   - [x] Process stdio can send `notifications/cancelled` while another request
         is pending and still unblocks on stop.
-  - [ ] Normal non-task handler cancellation token propagation is still
-        blocked until handler contexts expose an explicit token.
+  - [x] Normal non-task tool handler cancellation token propagation is covered
+        through `ToolContext::cancelled()` and `notifications/cancelled`.
   - [ ] Transport-level timeout cleanup is still blocked until each transport
         exposes observable pending-request cleanup or deterministic late
         response accounting.
@@ -236,7 +236,7 @@ true:
 - [x] Keep request options consistent across all typed and raw request helpers.
 - [x] Preserve `_meta` / metadata through all typed async request helpers.
 - [x] Send `notifications/cancelled` on timeout where the protocol expects it.
-- [ ] Propagate cancellation token state into handler execution where possible.
+- [x] Propagate cancellation token state into handler execution where possible.
 - [ ] Ensure timeouts unblock or fail pending transport operations consistently.
 - [ ] Ensure timed-out requests clean up pending response state.
 - [x] Ensure late responses after timeout are handled deterministically.

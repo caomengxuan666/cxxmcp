@@ -2,6 +2,7 @@
 
 #include "cxxmcp/server/server.hpp"
 
+#include <memory>
 #include <optional>
 #include <utility>
 
@@ -81,6 +82,10 @@ core::Result<protocol::JsonRpcResponse> make_error_response(
                            detail.empty()
                                ? std::nullopt
                                : std::optional<protocol::Json>{detail}));
+}
+
+std::string request_cancellation_key(const protocol::RequestId& request_id) {
+  return protocol::request_id_to_json(request_id).dump();
 }
 
 core::Result<core::Unit> update_resource_subscription(
@@ -237,8 +242,39 @@ core::Result<protocol::Json> Server::ping(const SessionContext& context) {
   return *response->result;
 }
 
+CancellationToken Server::begin_request_cancellation(
+    const protocol::RequestId& request_id) {
+  CancellationSource source;
+  auto token = source.token();
+  std::lock_guard lock(*active_request_cancellations_mutex_);
+  active_request_cancellations_[request_cancellation_key(request_id)] =
+      std::move(source);
+  return token;
+}
+
+void Server::end_request_cancellation(
+    const protocol::RequestId& request_id) noexcept {
+  std::lock_guard lock(*active_request_cancellations_mutex_);
+  active_request_cancellations_.erase(request_cancellation_key(request_id));
+}
+
+void Server::cancel_request(const protocol::RequestId& request_id) noexcept {
+  std::lock_guard lock(*active_request_cancellations_mutex_);
+  const auto it =
+      active_request_cancellations_.find(request_cancellation_key(request_id));
+  if (it != active_request_cancellations_.end()) {
+    it->second.cancel();
+  }
+}
+
 core::Result<protocol::JsonRpcResponse> Server::handle_request(
     const protocol::JsonRpcRequest& request, const SessionContext& context) {
+  const auto request_cancellation = begin_request_cancellation(request.id);
+  const std::shared_ptr<void> request_cancellation_cleanup(
+      nullptr, [this, request_id = request.id](void*) noexcept {
+        end_request_cancellation(request_id);
+      });
+
   if (auth_provider_) {
     AuthRequest auth_request;
     auth_request.remote_address = context.remote_address;
@@ -446,7 +482,7 @@ core::Result<protocol::JsonRpcResponse> Server::handle_request(
           request.id, protocol::create_task_result_to_json(*task));
     }
 
-    const auto result = tools_.call(*call, context);
+    const auto result = tools_.call(*call, context, request_cancellation);
     if (!result) {
       return protocol::make_error_response(
           std::optional<protocol::RequestId>{request.id},
@@ -624,6 +660,7 @@ core::Result<core::Unit> Server::handle_notification(
           {},
       });
     }
+    cancel_request(cancelled->request_id);
   } else if (notification.method == protocol::ProgressNotificationMethod &&
              progress_handler_) {
     const auto params =
