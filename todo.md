@@ -81,6 +81,8 @@ incrementally. Keep them concrete; do not replace them with broad claims.
         Peer-owned roots and handler state instead of concrete `client::Client`.
   - [x] `ServerPeer` exposes server-side handler registration helpers so normal
         callbacks do not need `peer.server()`.
+  - [x] Native `ServerPeer` notification dispatch uses Peer-owned state for
+        Peer-registered notification handlers.
   - [x] `ClientPeer::client()` and `ServerPeer::server()` are retained as
         deprecated compatibility escape hatches, not canonical SDK entry
         points.

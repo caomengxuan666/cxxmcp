@@ -1657,6 +1657,8 @@ class Peer<RoleServer> {
 
   Peer& set_raw_notification_handler(
       server::Server::RawNotificationHandler handler) {
+    native_notification_state_ = true;
+    raw_notification_handler_ = handler;
     server_->set_raw_notification_handler(std::move(handler));
     return *this;
   }
@@ -1668,6 +1670,8 @@ class Peer<RoleServer> {
 
   Peer& set_custom_notification_handler(
       server::Server::RawNotificationHandler handler) {
+    native_notification_state_ = true;
+    raw_notification_handler_ = handler;
     server_->set_custom_notification_handler(std::move(handler));
     return *this;
   }
@@ -1693,42 +1697,104 @@ class Peer<RoleServer> {
   }
 
   Peer& set_progress_handler(server::Server::ProgressHandler handler) {
+    native_notification_state_ = true;
+    progress_handler_ = handler;
     server_->set_progress_handler(std::move(handler));
     return *this;
   }
 
   Peer& set_roots_list_changed_handler(
       server::Server::RootsListChangedHandler handler) {
+    native_notification_state_ = true;
+    roots_list_changed_handler_ = handler;
     server_->set_roots_list_changed_handler(std::move(handler));
     return *this;
   }
 
   Peer& set_tool_list_changed_handler(
       server::Server::ListChangedHandler handler) {
+    native_notification_state_ = true;
+    tool_list_changed_handler_ = handler;
     server_->set_tool_list_changed_handler(std::move(handler));
     return *this;
   }
 
   Peer& set_prompt_list_changed_handler(
       server::Server::ListChangedHandler handler) {
+    native_notification_state_ = true;
+    prompt_list_changed_handler_ = handler;
     server_->set_prompt_list_changed_handler(std::move(handler));
     return *this;
   }
 
   Peer& set_resource_list_changed_handler(
       server::Server::ListChangedHandler handler) {
+    native_notification_state_ = true;
+    resource_list_changed_handler_ = handler;
     server_->set_resource_list_changed_handler(std::move(handler));
     return *this;
   }
 
   Peer& set_resource_updated_handler(
       server::Server::ResourceUpdatedHandler handler) {
+    native_notification_state_ = true;
+    resource_updated_handler_ = handler;
     server_->set_resource_updated_handler(std::move(handler));
     return *this;
   }
 
   Peer& set_handler(const server::ServerHandler& handler) {
-    server_->set_handler(handler);
+    if (handler.on_completion) {
+      set_completion_handler(handler.on_completion);
+    }
+    if (handler.on_sampling) {
+      set_sampling_handler(handler.on_sampling);
+    }
+    if (handler.on_logging) {
+      set_logging_handler(handler.on_logging);
+    }
+    if (handler.on_raw_request) {
+      set_raw_request_handler(handler.on_raw_request);
+    }
+    if (handler.on_raw_notification) {
+      set_raw_notification_handler(handler.on_raw_notification);
+    }
+    if (handler.on_custom_request) {
+      set_custom_request_handler(handler.on_custom_request);
+    }
+    if (handler.on_custom_notification) {
+      set_custom_notification_handler(handler.on_custom_notification);
+    }
+    if (handler.on_task_list) {
+      set_task_list_handler(handler.on_task_list);
+    }
+    if (handler.on_task_get) {
+      set_task_get_handler(handler.on_task_get);
+    }
+    if (handler.on_task_cancel) {
+      set_task_cancel_handler(handler.on_task_cancel);
+    }
+    if (handler.on_task_result) {
+      set_task_result_handler(handler.on_task_result);
+    }
+    if (handler.on_progress) {
+      set_progress_handler(handler.on_progress);
+    }
+    if (handler.on_roots_list_changed) {
+      set_roots_list_changed_handler(handler.on_roots_list_changed);
+    }
+    if (handler.on_tool_list_changed) {
+      set_tool_list_changed_handler(handler.on_tool_list_changed);
+    }
+    if (handler.on_prompt_list_changed) {
+      set_prompt_list_changed_handler(handler.on_prompt_list_changed);
+    }
+    if (handler.on_resource_list_changed) {
+      set_resource_list_changed_handler(handler.on_resource_list_changed);
+    }
+    if (handler.on_resource_updated) {
+      set_resource_updated_handler(handler.on_resource_updated);
+    }
     return *this;
   }
 
@@ -1793,6 +1859,9 @@ class Peer<RoleServer> {
   core::Result<core::Unit> handle_notification(
       const protocol::JsonRpcNotification& notification,
       const server::SessionContext& context = {}) {
+    if (native_notification_state_) {
+      return handle_native_notification(notification, context);
+    }
     return server_->handle_notification(notification, context);
   }
 
@@ -1929,7 +1998,10 @@ class Peer<RoleServer> {
 
     if (const auto* notification =
             std::get_if<protocol::JsonRpcNotification>(&message)) {
-      const auto handled = server_->handle_notification(*notification, context);
+      const auto handled =
+          native_notification_state_
+              ? handle_native_notification(*notification, context)
+              : server_->handle_notification(*notification, context);
       if (!handled) {
         return std::unexpected(handled.error());
       }
@@ -1954,9 +2026,95 @@ class Peer<RoleServer> {
   }
 
  private:
+  core::Result<core::Unit> handle_native_notification(
+      const protocol::JsonRpcNotification& notification,
+      const server::SessionContext& context) try {
+    if (notification.method == protocol::CancelledNotificationMethod) {
+      return server_->handle_notification(notification, context);
+    }
+
+    if (raw_notification_handler_) {
+      const auto raw_result = raw_notification_handler_(notification, context);
+      if (!raw_result) {
+        return std::unexpected(raw_result.error());
+      }
+    }
+
+    if (notification.method == protocol::RootsListChangedNotificationMethod &&
+        roots_list_changed_handler_) {
+      const auto result = roots_list_changed_handler_(context);
+      if (!result) {
+        return std::unexpected(result.error());
+      }
+    } else if (notification.method == protocol::ProgressNotificationMethod &&
+               progress_handler_) {
+      const auto params =
+          protocol::progress_notification_params_from_json(notification.params);
+      if (!params) {
+        return std::unexpected(
+            errors::make(protocol::ErrorCode::InvalidParams,
+                         "progress notification requires valid params"));
+      }
+      const auto result = progress_handler_(*params, context);
+      if (!result) {
+        return std::unexpected(result.error());
+      }
+    } else if (notification.method ==
+                   protocol::ToolsListChangedNotificationMethod &&
+               tool_list_changed_handler_) {
+      const auto result = tool_list_changed_handler_(context);
+      if (!result) {
+        return std::unexpected(result.error());
+      }
+    } else if (notification.method ==
+                   protocol::PromptsListChangedNotificationMethod &&
+               prompt_list_changed_handler_) {
+      const auto result = prompt_list_changed_handler_(context);
+      if (!result) {
+        return std::unexpected(result.error());
+      }
+    } else if (notification.method ==
+                   protocol::ResourcesListChangedNotificationMethod &&
+               resource_list_changed_handler_) {
+      const auto result = resource_list_changed_handler_(context);
+      if (!result) {
+        return std::unexpected(result.error());
+      }
+    } else if (notification.method ==
+                   protocol::ResourcesUpdatedNotificationMethod &&
+               resource_updated_handler_) {
+      if (!notification.params.is_object() ||
+          !notification.params.contains("uri") ||
+          !notification.params.at("uri").is_string()) {
+        return std::unexpected(errors::make(
+            protocol::ErrorCode::InvalidParams,
+            "resource updated notification requires a string uri"));
+      }
+      const auto result = resource_updated_handler_(
+          notification.params.at("uri").get<std::string>(), context);
+      if (!result) {
+        return std::unexpected(result.error());
+      }
+    }
+
+    return core::Unit{};
+  } catch (const std::exception& ex) {
+    return std::unexpected(errors::handler_failed(ex.what()));
+  } catch (...) {
+    return std::unexpected(errors::handler_unknown_exception());
+  }
+
   std::unique_ptr<server::Server> server_;
   std::vector<std::unique_ptr<transport::ServerTransport>> native_transports_;
   std::vector<std::unique_ptr<server::Transport>> native_context_transports_;
+  bool native_notification_state_ = false;
+  server::Server::RawNotificationHandler raw_notification_handler_;
+  server::Server::ProgressHandler progress_handler_;
+  server::Server::RootsListChangedHandler roots_list_changed_handler_;
+  server::Server::ListChangedHandler tool_list_changed_handler_;
+  server::Server::ListChangedHandler prompt_list_changed_handler_;
+  server::Server::ListChangedHandler resource_list_changed_handler_;
+  server::Server::ResourceUpdatedHandler resource_updated_handler_;
 };
 
 using ClientPeer = Peer<RoleClient>;

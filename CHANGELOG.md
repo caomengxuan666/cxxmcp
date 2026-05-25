@@ -31,4 +31,6 @@
   request-id validation.
 - Moved native `ClientPeer` inbound request and notification dispatch onto
   Peer-owned roots and handler state.
+- Moved native `ServerPeer` notification dispatch for Peer-registered
+  notification handlers onto Peer-owned state.
 - Added a dedicated SDK umbrella test for `cxxmcp/sdk.hpp`.
