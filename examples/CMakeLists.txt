@@ -5,6 +5,9 @@ endif()
 if(TARGET mcp_server)
     add_executable(mcp_example_stdio_server stdio_server.cpp)
     target_link_libraries(mcp_example_stdio_server PRIVATE mcp_server)
+
+    add_executable(mcp_example_typed_stdio_server typed_stdio_server.cpp)
+    target_link_libraries(mcp_example_typed_stdio_server PRIVATE mcp_server)
 endif()
 
 if(TARGET mcp_client AND TARGET mcp_server)

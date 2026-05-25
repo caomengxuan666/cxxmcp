@@ -84,6 +84,9 @@ auto server = mcp::server::App::builder()
     .build();
 ```
 
+For a complete stdio server using typed arguments, typed results, schemas, and
+`ToolContext`, see `examples/typed_stdio_server.cpp`.
+
 ### Client Peer
 
 ```cpp
