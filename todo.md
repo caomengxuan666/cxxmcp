@@ -75,6 +75,8 @@ incrementally. Keep them concrete; do not replace them with broad claims.
   - [x] Canonical client loopback example routes raw requests and inbound
         notification dispatch through `ClientPeer` instead of concrete
         `client::Client`.
+  - [x] `ClientPeer` exposes client-side handler registration helpers so
+        canonical examples do not need `peer.client()` for normal callbacks.
   - [x] Client and server contract transport adapters cover duplicate response
         ids as stable unexpected-response failures.
 - Request lifecycle:

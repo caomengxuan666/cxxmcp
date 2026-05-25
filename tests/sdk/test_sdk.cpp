@@ -594,7 +594,7 @@ void test_client_peer_native_raw_request_dispatches_interleaved_messages() {
   peer.set_roots({mcp::protocol::Root{.uri = "file:///workspace"}});
 
   bool logging_seen = false;
-  peer.client().on_logging_message(
+  peer.on_logging_message(
       [&](std::string_view level, std::string_view message) {
         logging_seen = level == "info" && message == "ready";
       });

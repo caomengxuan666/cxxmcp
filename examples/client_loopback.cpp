@@ -153,7 +153,6 @@ int main() {
     auto transport = std::make_unique<LoopbackTransport>(**server);
     auto* transport_ptr = transport.get();
     mcp::ClientPeer peer(mcp::client::Client(std::move(transport)));
-    auto& client = peer.client();
 
     std::size_t logging_messages = 0;
     std::size_t tool_notifications = 0;
@@ -163,19 +162,19 @@ int main() {
     std::vector<std::string> updated_uris;
     std::vector<std::string> raw_methods;
 
-    client.on_logging_message(
+    peer.on_logging_message(
         [&](std::string_view level, std::string_view message) {
           ++logging_messages;
           require(!level.empty(), "logging level should be populated");
           require(!message.empty(), "logging message should be populated");
         });
-    client.on_tool_list_changed([&] { ++tool_notifications; });
-    client.on_prompt_list_changed([&] { ++prompt_notifications; });
-    client.on_resource_list_changed([&] { ++resource_notifications; });
-    client.on_resource_updated(
+    peer.on_tool_list_changed([&] { ++tool_notifications; });
+    peer.on_prompt_list_changed([&] { ++prompt_notifications; });
+    peer.on_resource_list_changed([&] { ++resource_notifications; });
+    peer.on_resource_updated(
         [&](const std::string& uri) { updated_uris.push_back(uri); });
-    client.on_roots_list_changed([&] { ++root_notifications; });
-    client.on_raw_notification(
+    peer.on_roots_list_changed([&] { ++root_notifications; });
+    peer.on_raw_notification(
         [&](const mcp::protocol::JsonRpcNotification& notification) {
           raw_methods.push_back(notification.method);
         });

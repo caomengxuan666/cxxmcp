@@ -290,6 +290,99 @@ class Peer<RoleClient> {
     return *this;
   }
 
+  Peer& on_initialized(client::Client::InitializedHandler handler) {
+    client_.on_initialized(std::move(handler));
+    return *this;
+  }
+
+  Peer& on_cancelled(client::Client::CancelledHandler handler) {
+    client_.on_cancelled(std::move(handler));
+    return *this;
+  }
+
+  Peer& on_logging_message(client::Client::LoggingMessageHandler handler) {
+    client_.on_logging_message(std::move(handler));
+    return *this;
+  }
+
+  Peer& on_tool_list_changed(client::Client::ListChangedHandler handler) {
+    client_.on_tool_list_changed(std::move(handler));
+    return *this;
+  }
+
+  Peer& on_prompt_list_changed(client::Client::ListChangedHandler handler) {
+    client_.on_prompt_list_changed(std::move(handler));
+    return *this;
+  }
+
+  Peer& on_resource_list_changed(client::Client::ListChangedHandler handler) {
+    client_.on_resource_list_changed(std::move(handler));
+    return *this;
+  }
+
+  Peer& on_resource_updated(client::Client::ResourceUpdatedHandler handler) {
+    client_.on_resource_updated(std::move(handler));
+    return *this;
+  }
+
+  Peer& on_progress(client::Client::ProgressHandler handler) {
+    client_.on_progress(std::move(handler));
+    return *this;
+  }
+
+  Peer& on_elicitation_complete(
+      client::Client::ElicitationCompleteHandler handler) {
+    client_.on_elicitation_complete(std::move(handler));
+    return *this;
+  }
+
+  Peer& on_task_status(client::Client::TaskStatusHandler handler) {
+    client_.on_task_status(std::move(handler));
+    return *this;
+  }
+
+  Peer& on_roots_list_changed(client::Client::ListChangedHandler handler) {
+    client_.on_roots_list_changed(std::move(handler));
+    return *this;
+  }
+
+  Peer& on_list_roots_request(client::Client::ListRootsRequestHandler handler) {
+    client_.on_list_roots_request(std::move(handler));
+    return *this;
+  }
+
+  Peer& on_create_message_request(
+      client::Client::CreateMessageRequestHandler handler) {
+    client_.on_create_message_request(std::move(handler));
+    return *this;
+  }
+
+  Peer& on_create_elicitation_request(
+      client::Client::CreateElicitationRequestHandler handler) {
+    client_.on_create_elicitation_request(std::move(handler));
+    return *this;
+  }
+
+  Peer& on_custom_request(client::Client::CustomRequestHandler handler) {
+    client_.on_custom_request(std::move(handler));
+    return *this;
+  }
+
+  Peer& on_raw_notification(client::Client::RawNotificationHandler handler) {
+    client_.on_raw_notification(std::move(handler));
+    return *this;
+  }
+
+  Peer& set_handler(const client::ClientHandler& handler) {
+    client_.set_handler(handler);
+    return *this;
+  }
+
+  Peer& set_handler(const client::ClientHandlerInterface& handler) {
+    client_.set_handler(handler);
+    return *this;
+  }
+
   core::Result<std::vector<protocol::ToolDefinition>> list_tools() {
     auto payload = request_json(std::string(protocol::ToolsListMethod),
                                 protocol::Json::object());
