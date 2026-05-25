@@ -46,6 +46,11 @@ struct Error {
 
   /// Optional extended diagnostic information.
   std::string detail;
+
+  /// Stable SDK error category such as "protocol", "transport", "handler",
+  /// "timeout", or "cancellation". Empty means the producer has not opted into
+  /// categorized errors yet.
+  std::string category;
 };
 
 /// @brief Success value for operations that only need to report failure.

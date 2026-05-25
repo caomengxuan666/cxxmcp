@@ -647,6 +647,30 @@ void test_executor_rejects_empty_task() {
           "empty executor task error mismatch");
 }
 
+void test_public_error_helpers_assign_stable_categories() {
+  const auto parse = mcp::errors::parse("bad json");
+  require(parse.category == "protocol", "parse category mismatch");
+  require(parse.detail == "bad json", "parse detail mismatch");
+
+  const auto handler = mcp::errors::handler_failed("boom");
+  require(handler.category == "handler", "handler category mismatch");
+  require(handler.message == "handler failed", "handler message mismatch");
+
+  const auto closed = mcp::errors::transport_closed("stdio");
+  require(closed.category == "transport", "transport category mismatch");
+  require(closed.message == "transport closed",
+          "transport closed message mismatch");
+
+  const auto timed_out =
+      mcp::errors::request_timed_out(std::chrono::milliseconds(25));
+  require(timed_out.category == "timeout", "timeout category mismatch");
+  require(timed_out.detail == "25ms", "timeout detail mismatch");
+
+  const auto cancelled = mcp::errors::request_cancelled();
+  require(cancelled.category == "cancellation",
+          "cancellation category mismatch");
+}
+
 }  // namespace
 
 int main() {
@@ -660,6 +684,7 @@ int main() {
     test_request_handle_timeout_race_stress();
     test_app_builder_rejects_empty_std_function_handlers();
     test_executor_rejects_empty_task();
+    test_public_error_helpers_assign_stable_categories();
     std::cout << "sdk peer/service test passed\n";
     return 0;
   } catch (const std::exception& ex) {
