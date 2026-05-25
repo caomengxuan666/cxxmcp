@@ -166,6 +166,8 @@ true:
 - [x] Add tests that compile the canonical headers independently.
 - [x] Keep `package_smoke` as a release-blocking test.
 - [x] Run package smoke on installed output, not only in-tree targets.
+- [x] Label package smoke and canonical SDK tests as release-blocking CTest
+  entries.
 
 ## P0: Transport Contract And Runtime Behavior
 
@@ -311,6 +313,8 @@ true:
 - [x] Test cxxmcp client against Python SDK server.
 - [ ] Test Python SDK client against cxxmcp server.
 - [ ] Make the interop matrix release-blocking.
+- [x] Label the existing RMCP conformance and process-stdio matrix tests as
+  release-blocking CTest entries.
 - [x] Record pinned SDK/reference versions in test output or docs.
 
 ## P1: Protocol Model Completeness

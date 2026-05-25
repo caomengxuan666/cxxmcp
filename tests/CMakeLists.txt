@@ -1,3 +1,10 @@
+function(cxxmcp_mark_release_blocking test_name)
+    if(TEST "${test_name}")
+        set(labels release-blocking ${ARGN})
+        set_tests_properties("${test_name}" PROPERTIES LABELS "${labels}")
+    endif()
+endfunction()
+
 if(TARGET mcp_protocol)
     add_executable(mcp_protocol_tests
         protocol/test_protocol.cpp
@@ -10,6 +17,7 @@ if(TARGET mcp_protocol)
     )
 
     add_test(NAME protocol COMMAND mcp_protocol_tests)
+    cxxmcp_mark_release_blocking(protocol protocol)
 endif()
 
 add_test(NAME sdk_boundary COMMAND
@@ -17,6 +25,7 @@ add_test(NAME sdk_boundary COMMAND
     "-DREPO_SOURCE_DIR=${PROJECT_SOURCE_DIR}"
     -P "${PROJECT_SOURCE_DIR}/tests/sdk_boundary.cmake"
 )
+cxxmcp_mark_release_blocking(sdk_boundary sdk-boundary)
 
 function(add_cxxmcp_public_header_compile_test test_name source_file package_target)
     add_executable("mcp_public_header_${test_name}"
@@ -34,6 +43,8 @@ function(add_cxxmcp_public_header_compile_test test_name source_file package_tar
     add_test(NAME "public_header_${test_name}"
         COMMAND "mcp_public_header_${test_name}"
     )
+    cxxmcp_mark_release_blocking(
+        "public_header_${test_name}" public-api)
 endfunction()
 
 if(TARGET mcp_protocol)
@@ -56,6 +67,7 @@ if(TARGET mcp_transport)
     target_link_libraries(mcp_transport_contract_tests PRIVATE mcp_transport)
 
     add_test(NAME transport_contract COMMAND mcp_transport_contract_tests)
+    cxxmcp_mark_release_blocking(transport_contract transport)
 
     add_executable(mcp_transport_stdio_contract_tests
         transport/test_transport_stdio_contract.cpp
@@ -64,6 +76,7 @@ if(TARGET mcp_transport)
     target_link_libraries(mcp_transport_stdio_contract_tests PRIVATE mcp_transport)
 
     add_test(NAME transport_stdio_contract COMMAND mcp_transport_stdio_contract_tests)
+    cxxmcp_mark_release_blocking(transport_stdio_contract transport)
 
     add_cxxmcp_public_header_compile_test(
         transport transport_header.cpp cxxmcp::transport)
@@ -90,6 +103,7 @@ if(TARGET mcp_client AND TARGET mcp_server)
     target_link_libraries(mcp_client_server_tests PRIVATE mcp_client mcp_server)
 
     add_test(NAME client_server COMMAND mcp_client_server_tests)
+    cxxmcp_mark_release_blocking(client_server peer-service)
 
     add_executable(mcp_stdio_transport_tests
         transport/test_stdio_transport.cpp
@@ -98,6 +112,7 @@ if(TARGET mcp_client AND TARGET mcp_server)
     target_link_libraries(mcp_stdio_transport_tests PRIVATE mcp_client mcp_server)
 
     add_test(NAME stdio_transport COMMAND mcp_stdio_transport_tests)
+    cxxmcp_mark_release_blocking(stdio_transport transport)
 
     add_executable(mcp_transport_adapter_tests
         transport/test_transport_adapters.cpp
@@ -106,6 +121,7 @@ if(TARGET mcp_client AND TARGET mcp_server)
     target_link_libraries(mcp_transport_adapter_tests PRIVATE mcp_client mcp_server)
 
     add_test(NAME transport_adapters COMMAND mcp_transport_adapter_tests)
+    cxxmcp_mark_release_blocking(transport_adapters transport)
 
     add_executable(mcp_http_transport_tests
         transport/test_http_transport.cpp
@@ -118,6 +134,7 @@ if(TARGET mcp_client AND TARGET mcp_server)
     )
 
     add_test(NAME http_transport COMMAND mcp_http_transport_tests)
+    cxxmcp_mark_release_blocking(http_transport transport http)
 
     add_executable(mcp_rmcp_conformance_tests
         interop/test_rmcp_conformance.cpp
@@ -133,6 +150,7 @@ if(TARGET mcp_client AND TARGET mcp_server)
     )
 
     add_test(NAME rmcp_conformance COMMAND mcp_rmcp_conformance_tests)
+    cxxmcp_mark_release_blocking(rmcp_conformance interop)
 
     add_executable(mcp_sdk_tests
         sdk/test_sdk.cpp
@@ -141,6 +159,7 @@ if(TARGET mcp_client AND TARGET mcp_server)
     target_link_libraries(mcp_sdk_tests PRIVATE cxxmcp::sdk)
 
     add_test(NAME sdk COMMAND mcp_sdk_tests)
+    cxxmcp_mark_release_blocking(sdk sdk)
 
     add_executable(mcp_public_target_tests
         sdk/test_public_targets.cpp
@@ -152,6 +171,7 @@ if(TARGET mcp_client AND TARGET mcp_server)
     )
 
     add_test(NAME public_targets COMMAND mcp_public_target_tests)
+    cxxmcp_mark_release_blocking(public_targets public-api package)
 endif()
 
 if(CXXMCP_BUILD_TESTS AND TARGET mcp_sdk AND TARGET mcp_protocol AND TARGET mcp_server)
@@ -182,6 +202,7 @@ if(CXXMCP_BUILD_TESTS AND TARGET mcp_sdk AND TARGET mcp_protocol AND TARGET mcp_
         ${package_smoke_args}
         -P "${PROJECT_SOURCE_DIR}/tests/package_smoke.cmake"
     )
+    cxxmcp_mark_release_blocking(package_smoke package)
 endif()
 
 if(TARGET mcp_protocol AND (TARGET mcp_client OR TARGET mcp_app OR TARGET mcp_gateway OR TARGET mcp_cli))
@@ -206,6 +227,7 @@ if(TARGET mcp_client AND TARGET mcp_test_stdio_child)
     add_dependencies(mcp_process_stdio_transport_tests mcp_test_stdio_child)
 
     add_test(NAME process_stdio_transport COMMAND mcp_process_stdio_transport_tests)
+    cxxmcp_mark_release_blocking(process_stdio_transport transport process-stdio)
 endif()
 
 if(TARGET mcp_app AND TARGET mcp_gateway)

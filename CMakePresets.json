@@ -211,6 +211,18 @@
       "output": {
         "outputOnFailure": true
       }
+    },
+    {
+      "name": "release-blocking",
+      "configurePreset": "tests",
+      "filter": {
+        "include": {
+          "label": "release-blocking"
+        }
+      },
+      "output": {
+        "outputOnFailure": true
+      }
     }
   ]
 }
