@@ -1578,6 +1578,89 @@ void test_server_task_processor_failed_and_cancelled_tasks() {
           "cancelled task error mismatch");
 }
 
+void test_server_task_processor_timeout_and_retention() {
+  mcp::server::ServerBuilder builder;
+  builder.with_task_manager(mcp::server::TaskOperationProcessorOptions{
+      .worker_count = 1,
+      .queue_size = 8,
+      .completed_task_ttl = std::chrono::milliseconds{25},
+  });
+  builder.add_tool(
+      mcp::protocol::ToolDefinition{
+          .name = "quick",
+          .input_schema = Json::object(),
+          .execution = mcp::protocol::ToolExecution{}.with_task_support(
+              mcp::protocol::TaskSupport::Optional),
+      },
+      [](const mcp::server::ToolContext&)
+          -> mcp::core::Result<mcp::protocol::ToolResult> {
+        mcp::protocol::ToolResult result;
+        result.content.push_back(mcp::protocol::ContentBlock{
+            .type = "text",
+            .text = "done",
+            .data = Json::object(),
+        });
+        return result;
+      });
+  builder.add_tool(
+      mcp::protocol::ToolDefinition{
+          .name = "timeout",
+          .input_schema = Json::object(),
+          .execution = mcp::protocol::ToolExecution{}.with_task_support(
+              mcp::protocol::TaskSupport::Optional),
+      },
+      [](const mcp::server::ToolContext& context)
+          -> mcp::core::Result<mcp::protocol::ToolResult> {
+        wait_until([&] { return context.cancelled(); },
+                   "timeout task should receive cancellation");
+        return mcp::protocol::ToolResult{};
+      });
+
+  auto built = builder.build();
+  require(built.has_value(), "timeout/retention task server build failed");
+  auto& server = **built;
+  mcp::client::Client client(std::make_unique<LoopbackTransport>(server));
+
+  const auto timed_out = client.call_tool_task(mcp::protocol::ToolCall{
+      .name = "timeout",
+      .arguments = Json::object(),
+      .task = mcp::protocol::TaskRequestParameters{.ttl = std::int64_t{0}},
+  });
+  require(timed_out.has_value(), "timeout task should be created");
+  const auto timeout_state = client.get_task(timed_out->task.task_id);
+  require(timeout_state.has_value(), "timeout task should remain queryable");
+  require(timeout_state->status == mcp::protocol::TaskStatus::Failed,
+          "timeout task status mismatch");
+  const auto timeout_result = client.task_result(timed_out->task.task_id);
+  require(!timeout_result.has_value(), "timeout task result should fail");
+  require(timeout_result.error().message == "Operation timed out",
+          "timeout task error mismatch");
+
+  const auto retained = client.call_tool_task(mcp::protocol::ToolCall{
+      .name = "quick",
+      .arguments = Json::object(),
+      .task = mcp::protocol::TaskRequestParameters{},
+  });
+  require(retained.has_value(), "retained task should be created");
+  wait_until(
+      [&] {
+        const auto task = client.get_task(retained->task.task_id);
+        return task.has_value() &&
+               task->status == mcp::protocol::TaskStatus::Completed;
+      },
+      "retained task should complete");
+  const auto retained_result = client.task_result(retained->task.task_id);
+  require(retained_result.has_value(), "retained task result should exist");
+
+  std::this_thread::sleep_for(std::chrono::milliseconds{40});
+  const auto after_ttl = client.list_tasks();
+  require(after_ttl.has_value(), "list tasks after retention ttl failed");
+  const auto expired = client.get_task(retained->task.task_id);
+  require(!expired.has_value(), "completed task should expire after ttl");
+  require(expired.error().message == "task not found",
+          "expired task error mismatch");
+}
+
 void test_ping_raw_request() {
   auto server = make_server();
   mcp::client::Client client(std::make_unique<LoopbackTransport>(server));
@@ -2856,6 +2939,8 @@ int main() {
        test_server_task_processor_tool_call_lifecycle},
       {"server task processor failed and cancelled tasks",
        test_server_task_processor_failed_and_cancelled_tasks},
+      {"server task processor timeout and retention",
+       test_server_task_processor_timeout_and_retention},
       {"ping raw request", test_ping_raw_request},
       {"server info accessors and ping", test_server_info_accessors_and_ping},
       {"initialize handshake shape", test_initialize_handshake_shape},

@@ -308,6 +308,8 @@ Covered by current tree:
   background tool calls
 - task-aware tool handlers receive a cooperative cancellation token through
   `ToolContext`
+- terminal task records support bounded count retention and optional completed
+  task TTL cleanup
 - client and gateway `tools/call` paths preserve task request metadata
 - task status notifications
 - runtime task management service
@@ -316,8 +318,6 @@ Still to close:
 
 - hard cancellation of already running C++ handlers; current behavior is a
   cooperative token and late-result suppression
-- TTL-based result cleanup; current SDK processor retains terminal records with
-  a bounded in-memory retention count
 - richer operation result transport abstractions beyond tool-call JSON payloads
 - deeper parity with RMCP's operation processor model
 
@@ -458,11 +458,11 @@ Current tree covers:
 - built-in `tasks/list`, `tasks/get`, `tasks/result`, and `tasks/cancel`
   handling
 - cooperative cancellation token for task-aware tool handlers
+- bounded and TTL-based cleanup for terminal task records
 - task status notifications
 
 Still to close:
 
-- TTL-based task result cleanup
 - hard cancellation for non-cooperative running handlers
 - richer operation result transport parity with RMCP
 

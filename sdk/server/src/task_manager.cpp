@@ -90,6 +90,7 @@ void TaskOperationProcessor::refresh_locked() {
       record.task.status = protocol::TaskStatus::Failed;
       record.task.status_message = "Operation timed out";
       record.task.last_updated_at = timestamp;
+      record.terminal_at = now;
       record.failure =
           make_task_error(protocol::ErrorCode::InternalError,
                           "Operation timed out", record.task.task_id);
@@ -100,6 +101,24 @@ void TaskOperationProcessor::refresh_locked() {
 }
 
 void TaskOperationProcessor::trim_completed_locked() {
+  const auto now = std::chrono::steady_clock::now();
+  if (options_.completed_task_ttl.has_value()) {
+    auto it = order_.begin();
+    while (it != order_.end()) {
+      auto record_it = tasks_.find(*it);
+      if (record_it != tasks_.end() &&
+          is_terminal(record_it->second.task.status) &&
+          record_it->second.terminal_at.has_value() &&
+          now - *record_it->second.terminal_at >=
+              *options_.completed_task_ttl) {
+        tasks_.erase(record_it);
+        it = order_.erase(it);
+      } else {
+        ++it;
+      }
+    }
+  }
+
   std::size_t terminal_count = 0;
   for (const auto& task_id : order_) {
     const auto* record = find_task_locked(task_id);
@@ -131,7 +150,9 @@ void TaskOperationProcessor::finish_task(std::string task_id,
     return;
   }
 
+  const auto now = std::chrono::steady_clock::now();
   record->task.last_updated_at = now_timestamp();
+  record->terminal_at = now;
   if (result) {
     record->task.status = protocol::TaskStatus::Completed;
     record->task.status_message.reset();
@@ -176,6 +197,7 @@ TaskOperationProcessor::submit_tool_call(const ToolRegistry& tools,
                    TaskRecord{
                        .task = task,
                        .started_at = std::chrono::steady_clock::now(),
+                       .terminal_at = std::nullopt,
                        .timeout = timeout,
                        .cancellation = cancellation,
                    });
@@ -252,6 +274,7 @@ core::Result<protocol::Task> TaskOperationProcessor::cancel_task(
   record->task.status = protocol::TaskStatus::Cancelled;
   record->task.status_message = "Operation cancelled";
   record->task.last_updated_at = now_timestamp();
+  record->terminal_at = std::chrono::steady_clock::now();
   record->failure = make_task_error(protocol::ErrorCode::InternalError,
                                     "Operation cancelled", params.task_id);
   record->result.reset();

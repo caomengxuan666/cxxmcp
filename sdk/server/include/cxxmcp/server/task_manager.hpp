@@ -34,6 +34,8 @@ struct TaskOperationProcessorOptions {
   std::chrono::seconds default_timeout{300};
   /// Recommended polling interval exposed in created task snapshots.
   std::optional<std::int64_t> poll_interval;
+  /// Optional age limit for terminal task records and stored results.
+  std::optional<std::chrono::milliseconds> completed_task_ttl;
   /// Maximum retained terminal task records.
   std::size_t max_completed_tasks = 128;
 };
@@ -77,6 +79,7 @@ class TaskOperationProcessor {
   struct TaskRecord {
     protocol::Task task;
     std::chrono::steady_clock::time_point started_at;
+    std::optional<std::chrono::steady_clock::time_point> terminal_at;
     std::optional<std::chrono::seconds> timeout;
     CancellationToken cancellation;
     std::optional<protocol::Json> result;
