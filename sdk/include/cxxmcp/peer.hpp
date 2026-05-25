@@ -117,6 +117,61 @@ inline std::unique_ptr<client::Transport> make_peer_client_transport_adapter(
   return std::make_unique<client::ContractTransportAdapter>(*transport);
 }
 
+inline protocol::ClientCapabilities default_peer_client_capabilities(
+    const std::optional<protocol::ClientCapabilities>& capabilities) {
+  if (capabilities.has_value()) {
+    return *capabilities;
+  }
+
+  protocol::ClientCapabilities defaults;
+  defaults.roots.enabled = true;
+  defaults.roots.list_changed = true;
+  defaults.sampling.enabled = true;
+  defaults.sampling.tools = true;
+  defaults.sampling.context = true;
+  defaults.elicitation.form = true;
+  defaults.elicitation.form_schema_validation = true;
+  defaults.elicitation.url = true;
+  return defaults;
+}
+
+inline protocol::Json make_peer_initialize_params(
+    std::string client_name, std::string client_version,
+    const std::optional<protocol::ClientCapabilities>& capabilities) {
+  protocol::Json params = protocol::Json::object();
+  params["protocolVersion"] = std::string(protocol::McpProtocolVersion);
+  params["capabilities"] = protocol::client_capabilities_to_json(
+      default_peer_client_capabilities(capabilities));
+  params["clientInfo"] = protocol::Json{
+      {"name", std::move(client_name)},
+      {"version", std::move(client_version)},
+  };
+  return params;
+}
+
+inline core::Result<protocol::Json> require_peer_initialize_payload(
+    const protocol::Json& payload) {
+  if (!payload.is_object()) {
+    return std::unexpected(errors::make(protocol::ErrorCode::InvalidRequest,
+                                        "initialize response must be an object",
+                                        {}, "protocol"));
+  }
+  if (!payload.contains("protocolVersion") ||
+      !payload.at("protocolVersion").is_string()) {
+    return std::unexpected(
+        errors::make(protocol::ErrorCode::InvalidRequest,
+                     "initialize response requires a string protocolVersion",
+                     {}, "protocol"));
+  }
+  const auto version = payload.at("protocolVersion").get<std::string>();
+  if (!protocol::is_supported_protocol_version(version)) {
+    return std::unexpected(errors::make(protocol::ErrorCode::InvalidRequest,
+                                        "unsupported MCP protocol version",
+                                        version, "protocol"));
+  }
+  return payload;
+}
+
 }  // namespace detail
 
 /// @brief Role-specialized MCP peer facade.
@@ -160,6 +215,17 @@ class Peer<RoleClient> {
 
   core::Result<protocol::Json> initialize(std::string client_name = "cxxmcp",
                                           std::string client_version = "0") {
+    if (native_transport_) {
+      auto payload =
+          request_json(std::string(protocol::InitializeMethod),
+                       detail::make_peer_initialize_params(
+                           std::move(client_name), std::move(client_version),
+                           client_capabilities_));
+      if (!payload) {
+        return std::unexpected(payload.error());
+      }
+      return detail::require_peer_initialize_payload(*payload);
+    }
     return client_.initialize(std::move(client_name),
                               std::move(client_version));
   }
@@ -213,6 +279,7 @@ class Peer<RoleClient> {
   }
 
   Peer& set_capabilities(protocol::ClientCapabilities capabilities) {
+    client_capabilities_ = capabilities;
     client_.set_capabilities(std::move(capabilities));
     return *this;
   }
@@ -1050,6 +1117,7 @@ class Peer<RoleClient> {
   std::unique_ptr<transport::ClientTransport> native_transport_;
   std::shared_ptr<std::atomic<std::int64_t>> next_request_id_ =
       std::make_shared<std::atomic<std::int64_t>>(1);
+  std::optional<protocol::ClientCapabilities> client_capabilities_;
   client::Client client_;
 };
 

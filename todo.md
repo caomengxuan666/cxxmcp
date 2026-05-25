@@ -64,6 +64,8 @@ incrementally. Keep them concrete; do not replace them with broad claims.
   - [x] Client peer ping, logging level, resource subscription, and outbound
         notification helpers use Peer-level request/notification paths on
         native role-generic transports.
+  - [x] Client peer initialize builds and validates the initialize exchange at
+        the Peer boundary for native role-generic transports.
   - [x] Client and server contract transport adapters cover duplicate response
         ids as stable unexpected-response failures.
 - Request lifecycle:
