@@ -337,6 +337,22 @@ void test_task_protocol_round_trips() {
       mcp::protocol::client_capabilities_to_json(client_capabilities);
   require(capabilities_json.contains("tasks"),
           "client capabilities should include tasks");
+  require(capabilities_json.at("tasks").at("list").is_object(),
+          "client capabilities task list should use object presence");
+  require(capabilities_json.at("tasks").at("cancel").is_object(),
+          "client capabilities task cancel should use object presence");
+  require(capabilities_json.at("tasks")
+              .at("requests")
+              .at("sampling")
+              .at("createMessage")
+              .is_object(),
+          "client capabilities sampling task should use object presence");
+  require(capabilities_json.at("tasks")
+              .at("requests")
+              .at("elicitation")
+              .at("create")
+              .is_object(),
+          "client capabilities elicitation task should use object presence");
   require(capabilities_json.at("experimental").at("beta"),
           "client capabilities experimental mismatch");
   require(capabilities_json.at("extensions").at("vendor/feature").at("enabled"),
@@ -356,6 +372,34 @@ void test_task_protocol_round_trips() {
           "parsed client capabilities experimental mismatch");
   require(parsed_capabilities->extensions.at("vendor/feature").at("enabled"),
           "parsed client capabilities extension mismatch");
+
+  Json legacy_json = Json::object();
+  legacy_json["tasks"] = Json{
+      {"list", true},
+      {"cancel", true},
+      {"requests",
+       Json{
+           {"tools", Json{{"call", true}}},
+           {"sampling", Json{{"createMessage", true}}},
+           {"elicitation", Json{{"create", true}}},
+       }},
+  };
+  const auto legacy_capabilities =
+      mcp::protocol::client_capabilities_from_json(legacy_json);
+  require(legacy_capabilities.has_value(),
+          "legacy boolean task capabilities should parse");
+  require(legacy_capabilities->tasks.has_value(),
+          "legacy task capabilities missing");
+  require(legacy_capabilities->tasks->list,
+          "legacy task list capability mismatch");
+  require(legacy_capabilities->tasks->cancel,
+          "legacy task cancel capability mismatch");
+  require(legacy_capabilities->tasks->tools_call,
+          "legacy task tools capability mismatch");
+  require(legacy_capabilities->tasks->sampling_create_message,
+          "legacy task sampling capability mismatch");
+  require(legacy_capabilities->tasks->elicitation_create,
+          "legacy task elicitation capability mismatch");
 }
 
 void test_prompt_protocol_round_trips() {

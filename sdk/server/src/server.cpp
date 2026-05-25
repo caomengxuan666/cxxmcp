@@ -24,17 +24,8 @@ protocol::Json capability_to_json(
   json["logging"] = {{"enabled", capabilities.logging.enabled}};
   json["completions"] = {{"enabled", capabilities.completions.enabled}};
   if (capabilities.tasks.has_value()) {
-    protocol::Json tasks = protocol::Json::object();
-    if (capabilities.tasks->list) {
-      tasks["list"] = true;
-    }
-    if (capabilities.tasks->cancel) {
-      tasks["cancel"] = true;
-    }
-    if (capabilities.tasks->tools_call) {
-      tasks["requests"] =
-          protocol::Json{{"tools", protocol::Json{{"call", true}}}};
-    }
+    protocol::Json tasks =
+        protocol::task_capabilities_to_json(*capabilities.tasks);
     if (!tasks.empty()) {
       json["tasks"] = std::move(tasks);
     }

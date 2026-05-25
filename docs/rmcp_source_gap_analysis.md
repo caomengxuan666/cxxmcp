@@ -241,17 +241,22 @@ Action:
 
 RMCP capabilities use optional objects, extension maps, and explicit nested capability models.
 
-The current C++ capabilities use booleans in many places.
+The current C++ capabilities now use object-presence semantics for task
+capabilities and preserve experimental / extension bags. Some older capability
+families still use compact boolean fields internally, so the remaining work is
+to audit each public wire shape against the pinned RMCP snapshot.
 
-Example gap:
+Covered by current tree:
 
-- RMCP task capabilities use object fields such as `list: {}` and `cancel: {}`
-- current C++ code can serialize those as booleans such as `list: true`
+- task capabilities serialize `list`, `cancel`, and task-enabled request
+  methods as object members
+- task capability parsing accepts the object form and legacy boolean form
+- client and server initialize paths share the same task capability serializer
 
 Action:
 
-- align capability serialization with RMCP/spec shapes
-- represent capability presence with optional empty objects when required
+- continue aligning non-task capability serialization with RMCP/spec shapes
+- represent capability presence with optional empty objects where required
 - add `experimental` and `extensions`
 - add builder helpers to avoid verbose capability setup
 

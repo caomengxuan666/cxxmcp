@@ -92,6 +92,84 @@ struct TaskCapabilities {
   bool elicitation_create = false;
 };
 
+/// @brief Serializes task capability flags using object presence semantics.
+/// @param capabilities Task capability flags.
+/// @return JSON object suitable for the `tasks` capability member.
+inline Json task_capabilities_to_json(const TaskCapabilities& capabilities) {
+  Json tasks = Json::object();
+  if (capabilities.list) {
+    tasks["list"] = Json::object();
+  }
+  if (capabilities.cancel) {
+    tasks["cancel"] = Json::object();
+  }
+
+  Json requests = Json::object();
+  if (capabilities.tools_call) {
+    requests["tools"] = Json{{"call", Json::object()}};
+  }
+  if (capabilities.sampling_create_message) {
+    requests["sampling"] = Json{{"createMessage", Json::object()}};
+  }
+  if (capabilities.elicitation_create) {
+    requests["elicitation"] = Json{{"create", Json::object()}};
+  }
+  if (!requests.empty()) {
+    tasks["requests"] = std::move(requests);
+  }
+  return tasks;
+}
+
+/// @brief Interprets either modern object presence or legacy boolean presence.
+/// @param json Capability member value.
+/// @return True when the capability is advertised.
+inline bool capability_member_enabled(const Json& json) {
+  return json.is_object() || (json.is_boolean() && json.get<bool>());
+}
+
+/// @brief Parses task capabilities from an MCP capability object.
+/// @param tasks JSON object from a `tasks` capability member.
+/// @return Parsed task capability flags.
+inline TaskCapabilities task_capabilities_from_json(const Json& tasks) {
+  TaskCapabilities task_capabilities;
+  if (!tasks.is_object()) {
+    return task_capabilities;
+  }
+
+  if (tasks.contains("list")) {
+    task_capabilities.list = capability_member_enabled(tasks.at("list"));
+  }
+  if (tasks.contains("cancel")) {
+    task_capabilities.cancel = capability_member_enabled(tasks.at("cancel"));
+  }
+  if (tasks.contains("requests") && tasks.at("requests").is_object()) {
+    const auto& requests = tasks.at("requests");
+    if (requests.contains("tools") && requests.at("tools").is_object()) {
+      const auto& tools = requests.at("tools");
+      if (tools.contains("call")) {
+        task_capabilities.tools_call =
+            capability_member_enabled(tools.at("call"));
+      }
+    }
+    if (requests.contains("sampling") && requests.at("sampling").is_object()) {
+      const auto& sampling = requests.at("sampling");
+      if (sampling.contains("createMessage")) {
+        task_capabilities.sampling_create_message =
+            capability_member_enabled(sampling.at("createMessage"));
+      }
+    }
+    if (requests.contains("elicitation") &&
+        requests.at("elicitation").is_object()) {
+      const auto& elicitation = requests.at("elicitation");
+      if (elicitation.contains("create")) {
+        task_capabilities.elicitation_create =
+            capability_member_enabled(elicitation.at("create"));
+      }
+    }
+  }
+  return task_capabilities;
+}
+
 /// @brief Capabilities advertised by an MCP client during initialization.
 struct ClientCapabilities {
   /// Roots feature support.
@@ -134,26 +212,7 @@ inline Json client_capabilities_to_json(
     json["extensions"] = capabilities.extensions;
   }
   if (capabilities.tasks.has_value()) {
-    Json tasks = Json::object();
-    if (capabilities.tasks->list) {
-      tasks["list"] = true;
-    }
-    if (capabilities.tasks->cancel) {
-      tasks["cancel"] = true;
-    }
-    Json requests = Json::object();
-    if (capabilities.tasks->tools_call) {
-      requests["tools"] = Json{{"call", true}};
-    }
-    if (capabilities.tasks->sampling_create_message) {
-      requests["sampling"] = Json{{"createMessage", true}};
-    }
-    if (capabilities.tasks->elicitation_create) {
-      requests["elicitation"] = Json{{"create", true}};
-    }
-    if (!requests.empty()) {
-      tasks["requests"] = std::move(requests);
-    }
+    Json tasks = task_capabilities_to_json(*capabilities.tasks);
     if (!tasks.empty()) {
       json["tasks"] = std::move(tasks);
     }
@@ -217,42 +276,7 @@ inline std::optional<ClientCapabilities> client_capabilities_from_json(
     }
   }
   if (json.contains("tasks") && json.at("tasks").is_object()) {
-    const auto& tasks = json.at("tasks");
-    TaskCapabilities task_capabilities;
-    if (tasks.contains("list") && tasks.at("list").is_boolean()) {
-      task_capabilities.list = tasks.at("list").get<bool>();
-    }
-    if (tasks.contains("cancel") && tasks.at("cancel").is_boolean()) {
-      task_capabilities.cancel = tasks.at("cancel").get<bool>();
-    }
-    if (tasks.contains("requests") && tasks.at("requests").is_object()) {
-      const auto& requests = tasks.at("requests");
-      if (requests.contains("tools") && requests.at("tools").is_object()) {
-        const auto& tools = requests.at("tools");
-        if (tools.contains("call") && tools.at("call").is_boolean()) {
-          task_capabilities.tools_call = tools.at("call").get<bool>();
-        }
-      }
-      if (requests.contains("sampling") &&
-          requests.at("sampling").is_object()) {
-        const auto& sampling = requests.at("sampling");
-        if (sampling.contains("createMessage") &&
-            sampling.at("createMessage").is_boolean()) {
-          task_capabilities.sampling_create_message =
-              sampling.at("createMessage").get<bool>();
-        }
-      }
-      if (requests.contains("elicitation") &&
-          requests.at("elicitation").is_object()) {
-        const auto& elicitation = requests.at("elicitation");
-        if (elicitation.contains("create") &&
-            elicitation.at("create").is_boolean()) {
-          task_capabilities.elicitation_create =
-              elicitation.at("create").get<bool>();
-        }
-      }
-    }
-    capabilities.tasks = std::move(task_capabilities);
+    capabilities.tasks = task_capabilities_from_json(json.at("tasks"));
   }
   if (json.contains("experimental")) {
     capabilities.experimental = json.at("experimental");

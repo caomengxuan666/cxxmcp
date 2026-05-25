@@ -1579,35 +1579,40 @@ void test_client_initialize_with_explicit_task_capabilities() {
               "tester",
           "explicit initialize client name mismatch");
   require(recording->requests.front()
-                  .params.at("capabilities")
-                  .at("tasks")
-                  .at("list") == true,
+              .params.at("capabilities")
+              .at("tasks")
+              .at("list")
+              .is_object(),
           "tasks list capability mismatch");
   require(recording->requests.front()
-                  .params.at("capabilities")
-                  .at("tasks")
-                  .at("cancel") == true,
+              .params.at("capabilities")
+              .at("tasks")
+              .at("cancel")
+              .is_object(),
           "tasks cancel capability mismatch");
   require(recording->requests.front()
-                  .params.at("capabilities")
-                  .at("tasks")
-                  .at("requests")
-                  .at("tools")
-                  .at("call") == true,
+              .params.at("capabilities")
+              .at("tasks")
+              .at("requests")
+              .at("tools")
+              .at("call")
+              .is_object(),
           "tasks tools call capability mismatch");
   require(recording->requests.front()
-                  .params.at("capabilities")
-                  .at("tasks")
-                  .at("requests")
-                  .at("sampling")
-                  .at("createMessage") == true,
+              .params.at("capabilities")
+              .at("tasks")
+              .at("requests")
+              .at("sampling")
+              .at("createMessage")
+              .is_object(),
           "tasks sampling createMessage capability mismatch");
   require(recording->requests.front()
-                  .params.at("capabilities")
-                  .at("tasks")
-                  .at("requests")
-                  .at("elicitation")
-                  .at("create") == true,
+              .params.at("capabilities")
+              .at("tasks")
+              .at("requests")
+              .at("elicitation")
+              .at("create")
+              .is_object(),
           "tasks elicitation create capability mismatch");
   require(recording->requests.front()
               .params.at("capabilities")
@@ -1756,8 +1761,42 @@ void test_server_task_request_round_trip() {
       .list = true,
       .cancel = true,
       .tools_call = true,
+      .sampling_create_message = true,
+      .elicitation_create = true,
   };
   mcp::server::Server server(options);
+
+  const auto initialize_result = server.initialize();
+  require(initialize_result.has_value(), "task server initialize failed");
+  require(
+      initialize_result->at("capabilities").at("tasks").at("list").is_object(),
+      "server task list capability should use object presence");
+  require(initialize_result->at("capabilities")
+              .at("tasks")
+              .at("cancel")
+              .is_object(),
+          "server task cancel capability should use object presence");
+  require(initialize_result->at("capabilities")
+              .at("tasks")
+              .at("requests")
+              .at("tools")
+              .at("call")
+              .is_object(),
+          "server task tools capability should use object presence");
+  require(initialize_result->at("capabilities")
+              .at("tasks")
+              .at("requests")
+              .at("sampling")
+              .at("createMessage")
+              .is_object(),
+          "server task sampling capability should use object presence");
+  require(initialize_result->at("capabilities")
+              .at("tasks")
+              .at("requests")
+              .at("elicitation")
+              .at("create")
+              .is_object(),
+          "server task elicitation capability should use object presence");
 
   mcp::server::ServerHandler handler;
   handler.on_task_list = [](const mcp::protocol::TaskListParams& params,
