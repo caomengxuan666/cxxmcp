@@ -18,6 +18,7 @@
 
 #include "cxxmcp/client/process_stdio_transport.hpp"
 #include "cxxmcp/client/session.hpp"
+#include "cxxmcp/error.hpp"
 #include "cxxmcp/transport/process_stdio_transport.hpp"
 
 namespace {
@@ -183,6 +184,42 @@ void test_process_stdio_transport_handles_interleaved_child_request() {
           "interleaved process request result mismatch");
   require(sampled_text == "hello from child",
           "interleaved child request payload mismatch");
+}
+
+void test_process_stdio_transport_returns_handler_error_to_child_request() {
+  mcp::client::ProcessStdioTransport transport(
+      mcp::client::ProcessStdioTransportOptions{
+          .command = MCP_TEST_CHILD_EXE,
+          .args = {},
+          .cwd = {},
+          .env = {},
+      });
+
+  const auto started = transport.start(
+      [](const mcp::protocol::JsonRpcRequest&)
+          -> mcp::core::Result<mcp::protocol::JsonRpcResponse> {
+        return std::unexpected(mcp::errors::handler_failed(
+            "process stdio handler rejected request"));
+      },
+      [](const mcp::protocol::JsonRpcNotification&)
+          -> mcp::core::Result<mcp::core::Unit> { return mcp::core::Unit{}; });
+  require(started.has_value(), "process handler-error transport should start");
+
+  const auto response = transport.send(mcp::protocol::JsonRpcRequest{
+      .method = "custom/interleave",
+      .params = mcp::protocol::Json::object(),
+      .id = std::int64_t{177},
+  });
+  require(response.has_value(),
+          "process handler-error request should receive child response");
+  require(response->result.has_value(),
+          "process handler-error child response should contain result");
+  require(response->result->at("ok") == false,
+          "process handler-error child response ok mismatch");
+  require(response->result->at("handlerError") == "handler failed",
+          "process handler-error message should be stable");
+
+  transport.stop();
 }
 
 void test_process_stdio_transport_times_out_unresponsive_child() {
@@ -834,6 +871,55 @@ void test_native_process_stdio_transport_receives_server_request() {
   require(closed.has_value(), "native interleave close should succeed");
 }
 
+void test_native_process_stdio_transport_round_trips_handler_error_response() {
+  mcp::transport::ProcessStdioClientTransportOptions options;
+  options.command = MCP_TEST_CHILD_EXE;
+  mcp::transport::ProcessStdioClientTransport transport(std::move(options));
+
+  auto sent = transport.send(mcp::protocol::JsonRpcRequest{
+      .method = "custom/interleave",
+      .params = mcp::protocol::Json::object(),
+      .id = std::int64_t{178},
+  });
+  require(sent.has_value(),
+          "native handler-error interleaved request send should succeed");
+
+  auto received = transport.receive();
+  require(received.has_value(),
+          "native handler-error server request receive failed");
+  require(received->has_value(), "native handler-error server request missing");
+  const auto* server_request =
+      std::get_if<mcp::protocol::JsonRpcRequest>(&received->value());
+  require(server_request != nullptr,
+          "native handler-error should receive server request first");
+
+  sent = transport.send(mcp::protocol::make_error_response(
+      std::optional<mcp::protocol::RequestId>{server_request->id},
+      mcp::protocol::make_error(
+          mcp::protocol::ErrorCode::InternalError, "handler failed",
+          mcp::protocol::Json("native handler rejected"))));
+  require(sent.has_value(), "native handler-error response should send");
+
+  received = transport.receive();
+  require(received.has_value(),
+          "native handler-error final response receive failed");
+  require(received->has_value(), "native handler-error final response missing");
+  const auto* final_response =
+      std::get_if<mcp::protocol::JsonRpcResponse>(&received->value());
+  require(final_response != nullptr,
+          "native handler-error should receive final response");
+  require(final_response->result.has_value(),
+          "native handler-error final response should have result");
+  require(final_response->result->at("ok") == false,
+          "native handler-error final response ok mismatch");
+  require(final_response->result->at("handlerError") == "handler failed",
+          "native handler-error final response message mismatch");
+
+  const auto closed = transport.close();
+  require(closed.has_value(),
+          "native handler-error interleave close should succeed");
+}
+
 }  // namespace
 
 int main() {
@@ -844,6 +930,8 @@ int main() {
        test_process_stdio_transport_calls_child_tool},
       {"process stdio transport handles interleaved child request",
        test_process_stdio_transport_handles_interleaved_child_request},
+      {"process stdio transport returns handler error to child request",
+       test_process_stdio_transport_returns_handler_error_to_child_request},
       {"process stdio transport times out unresponsive child",
        test_process_stdio_transport_times_out_unresponsive_child},
       {"process stdio transport stop unblocks pending request",
@@ -886,6 +974,8 @@ int main() {
        test_native_process_stdio_transport_surfaces_malformed_child_output},
       {"native process stdio transport receives server request",
        test_native_process_stdio_transport_receives_server_request},
+      {"native process stdio transport round trips handler error response",
+       test_native_process_stdio_transport_round_trips_handler_error_response},
   };
 
   std::size_t failures = 0;

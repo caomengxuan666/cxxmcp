@@ -117,6 +117,8 @@ incrementally. Keep them concrete; do not replace them with broad claims.
   - [x] Transport-level timeout cleanup is covered by observable pending
         cleanup or deterministic worker/late-response accounting across the
         role-generic stdio, process stdio, and Streamable HTTP paths.
+  - [x] Process stdio server-to-client handler errors round-trip through both
+        concrete and role-generic transport paths.
 - Conformance matrix:
   - [x] In-tree Streamable HTTP matrix covers initialize, tools, prompts,
         resources/templates/subscribe, roots/list_changed, completion, logging,

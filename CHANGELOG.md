@@ -17,4 +17,6 @@
 - Marked `ClientPeer::client()` and `ServerPeer::server()` as deprecated
   compatibility escape hatches.
 - Tightened process stdio response-id validation with stable transport errors.
+- Covered process stdio server-to-client handler-error round trips on both
+  concrete and role-generic transports.
 - Added a dedicated SDK umbrella test for `cxxmcp/sdk.hpp`.

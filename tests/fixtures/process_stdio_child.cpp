@@ -188,12 +188,21 @@ void handle_request(const mcp::protocol::JsonRpcRequest& request) {
     });
 
     const auto response = read_response();
-    if (!response || !response->result.has_value()) {
+    if (!response) {
       return;
     }
     if (!response->id.has_value() ||
         !std::holds_alternative<std::string>(*response->id) ||
         std::get<std::string>(*response->id) != "server-1") {
+      return;
+    }
+    if (response->error.has_value()) {
+      write_response(mcp::protocol::make_response(
+          request.id,
+          Json{{"handlerError", response->error->message}, {"ok", false}}));
+      return;
+    }
+    if (!response->result.has_value()) {
       return;
     }
 
