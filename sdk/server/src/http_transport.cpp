@@ -37,7 +37,7 @@ constexpr int HeaderMismatchCode = -32001;
 
 core::Error make_transport_error(int code, std::string message,
                                  std::string detail = {}) {
-  return core::Error{code, std::move(message), std::move(detail)};
+  return core::Error{code, std::move(message), std::move(detail), "transport"};
 }
 
 std::optional<protocol::RequestId> request_id_from_message(
@@ -1099,6 +1099,7 @@ core::Error make_native_server_http_error(protocol::ErrorCode code,
       static_cast<int>(code),
       std::move(message),
       std::move(detail),
+      "transport",
   };
 }
 

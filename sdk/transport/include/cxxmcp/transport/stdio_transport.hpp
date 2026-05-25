@@ -104,6 +104,7 @@ class StdioTransport final : public Transport<Role> {
         static_cast<int>(code),
         std::move(message),
         {},
+        "transport",
     };
   }
 

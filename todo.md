@@ -192,7 +192,7 @@ true:
 - [ ] Stress-test all adapters for bidirectional request/notification flow.
 - [ ] Test unexpected response ids, duplicate ids, closed streams, handler
   errors, and malformed messages for every concrete transport.
-- [ ] Define transport-level error categories and map them to JSON-RPC/core
+- [x] Define transport-level error categories and map them to JSON-RPC/core
   errors consistently.
 - [x] Keep `cpp-httplib` hidden behind transport interfaces so it can be
   replaced later if load testing requires it.

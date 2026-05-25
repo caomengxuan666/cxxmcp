@@ -26,7 +26,7 @@ namespace {
 
 core::Error make_client_error(int code, std::string message,
                               std::string detail = {}) {
-  return core::Error{code, std::move(message), std::move(detail)};
+  return core::Error{code, std::move(message), std::move(detail), "protocol"};
 }
 
 core::Result<protocol::Json> require_result_payload(
@@ -37,6 +37,7 @@ core::Result<protocol::Json> require_result_payload(
         response.error->message,
         response.error->data.has_value() ? response.error->data->dump()
                                          : std::string{},
+        "protocol",
     });
   }
 

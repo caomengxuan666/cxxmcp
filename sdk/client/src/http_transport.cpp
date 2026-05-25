@@ -32,7 +32,7 @@ constexpr std::string_view NameHeader = "Mcp-Name";
 
 core::Error make_transport_error(int code, std::string message,
                                  std::string detail = {}) {
-  return core::Error{code, std::move(message), std::move(detail)};
+  return core::Error{code, std::move(message), std::move(detail), "transport"};
 }
 
 std::string request_id_to_string(const protocol::RequestId& request_id) {
@@ -684,6 +684,7 @@ core::Error make_native_http_error(protocol::ErrorCode code,
       static_cast<int>(code),
       std::move(message),
       std::move(detail),
+      "transport",
   };
 }
 

@@ -68,6 +68,8 @@ void test_stdio_transport_reports_parse_errors_and_close() {
   require(invalid.error().code ==
               static_cast<int>(mcp::protocol::ErrorCode::ParseError),
           "invalid stdio error code mismatch");
+  require(invalid.error().category == "protocol",
+          "invalid stdio error category mismatch");
 
   require(transport.close().has_value(), "stdio close failed");
   require(transport.diagnostics().at("closed") == true,
@@ -82,6 +84,8 @@ void test_stdio_transport_reports_parse_errors_and_close() {
           .params = mcp::protocol::Json::object(),
       });
   require(!send_after_close.has_value(), "stdio send after close should fail");
+  require(send_after_close.error().category == "transport",
+          "stdio send after close category mismatch");
 }
 
 void test_stdio_transport_interops_without_process_ownership() {

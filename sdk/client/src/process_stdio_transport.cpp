@@ -44,7 +44,7 @@ namespace {
 
 core::Error make_process_error(int code, std::string message,
                                std::string detail = {}) {
-  return core::Error{code, std::move(message), std::move(detail)};
+  return core::Error{code, std::move(message), std::move(detail), "transport"};
 }
 
 core::Error make_process_error(std::string message, std::string detail = {}) {
@@ -881,6 +881,7 @@ core::Error make_native_process_error(protocol::ErrorCode code,
       static_cast<int>(code),
       std::move(message),
       std::move(detail),
+      "transport",
   };
 }
 

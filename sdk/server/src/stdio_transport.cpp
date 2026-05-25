@@ -16,7 +16,7 @@ namespace {
 
 core::Error make_transport_error(int code, std::string message,
                                  std::string detail = {}) {
-  return core::Error{code, std::move(message), std::move(detail)};
+  return core::Error{code, std::move(message), std::move(detail), "transport"};
 }
 
 core::Result<core::Unit> write_response(

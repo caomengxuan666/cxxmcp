@@ -15,13 +15,14 @@ namespace {
 
 core::Error make_protocol_error(int code, std::string message,
                                 std::string detail = {}) {
-  return core::Error{code, std::move(message), std::move(detail)};
+  return core::Error{code, std::move(message), std::move(detail), "protocol"};
 }
 
 core::Error translate_rpc_error(const jsonrpcpp::Error& error) {
   core::Error translated;
   translated.code = error.code();
   translated.message = error.message();
+  translated.category = "protocol";
   if (!error.data().is_null()) {
     translated.detail = error.data().dump();
   }
