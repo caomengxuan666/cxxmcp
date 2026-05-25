@@ -6,6 +6,7 @@
 #include <condition_variable>
 #include <ctime>
 #include <deque>
+#include <exception>
 #include <map>
 #include <mutex>
 #include <optional>
@@ -18,6 +19,7 @@
 #include <variant>
 #include <vector>
 
+#include "cxxmcp/error.hpp"
 #include "cxxmcp/protocol/serialization.hpp"
 #include "cxxmcp/transport/http_transport.hpp"
 #include "httplib.h"
@@ -530,7 +532,14 @@ struct HttpTransport::Impl {
         handler = notification_handler;
       }
       if (handler) {
-        const auto handled = handler(*notification);
+        core::Result<core::Unit> handled;
+        try {
+          handled = handler(*notification);
+        } catch (const std::exception& ex) {
+          handled = std::unexpected(errors::handler_failed(ex.what()));
+        } catch (...) {
+          handled = std::unexpected(errors::handler_unknown_exception());
+        }
         if (!handled) {
           return std::unexpected(handled.error());
         }
@@ -559,7 +568,14 @@ struct HttpTransport::Impl {
         return std::optional<protocol::JsonRpcResponse>{};
       }
 
-      auto response = handler(*request);
+      core::Result<protocol::JsonRpcResponse> response;
+      try {
+        response = handler(*request);
+      } catch (const std::exception& ex) {
+        response = std::unexpected(errors::handler_failed(ex.what()));
+      } catch (...) {
+        response = std::unexpected(errors::handler_unknown_exception());
+      }
       if (!response) {
         response = protocol::make_error_response(
             std::optional<protocol::RequestId>{request->id},

@@ -7,6 +7,7 @@
 #include <condition_variable>
 #include <cstdint>
 #include <deque>
+#include <exception>
 #include <map>
 #include <mutex>
 #include <optional>
@@ -21,6 +22,7 @@
 #include <variant>
 #include <vector>
 
+#include "cxxmcp/error.hpp"
 #include "cxxmcp/protocol/serialization.hpp"
 #include "cxxmcp/transport/http_transport.hpp"
 #include "httplib.h"
@@ -411,7 +413,14 @@ core::Result<core::Unit> HttpTransport::start(
         context.session_id = active_session_id;
         context.remote_address = request.remote_addr;
         context.transport = this;
-        const auto handled = notification_handler(*notification, context);
+        core::Result<core::Unit> handled;
+        try {
+          handled = notification_handler(*notification, context);
+        } catch (const std::exception& ex) {
+          handled = std::unexpected(errors::handler_failed(ex.what()));
+        } catch (...) {
+          handled = std::unexpected(errors::handler_unknown_exception());
+        }
         if (!handled) {
           write_error(response, handled.error().code, handled.error().message);
           return;
@@ -512,7 +521,14 @@ core::Result<core::Unit> HttpTransport::start(
     context.session_id = session_context_id;
     context.remote_address = request.remote_addr;
     context.transport = this;
-    auto rpc_response = handler(*rpc_request, context);
+    core::Result<protocol::JsonRpcResponse> rpc_response;
+    try {
+      rpc_response = handler(*rpc_request, context);
+    } catch (const std::exception& ex) {
+      rpc_response = std::unexpected(errors::handler_failed(ex.what()));
+    } catch (...) {
+      rpc_response = std::unexpected(errors::handler_unknown_exception());
+    }
     if (!rpc_response) {
       rpc_response = protocol::make_error_response(
           std::optional<protocol::RequestId>{rpc_request->id},

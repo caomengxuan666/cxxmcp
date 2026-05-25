@@ -301,6 +301,72 @@ void test_http_transport_decodes_sse_post_and_answers_interleaved_request() {
           "client should post response for interleaved request");
 }
 
+void test_http_transport_posts_error_for_throwing_interleaved_request_handler() {
+  std::atomic<bool> handler_error_seen{false};
+
+  HttpServerFixture fixture;
+  fixture.server().Post("/mcp", [&](const httplib::Request& request,
+                                    httplib::Response& response) {
+    const auto parsed = mcp::protocol::parse_message(request.body);
+    require(parsed.has_value(), "server should parse client message");
+
+    if (const auto* rpc_response =
+            std::get_if<mcp::protocol::JsonRpcResponse>(&*parsed)) {
+      require(rpc_response->error.has_value(),
+              "posted handler response should contain error");
+      require(rpc_response->error->message == "handler failed",
+              "posted handler response message mismatch");
+      require(rpc_response->error->data.has_value() &&
+                  *rpc_response->error->data == "client http handler threw",
+              "posted handler response detail mismatch");
+      handler_error_seen.store(true);
+      response.status = 202;
+      return;
+    }
+
+    const auto* rpc_request =
+        std::get_if<mcp::protocol::JsonRpcRequest>(&*parsed);
+    require(rpc_request != nullptr, "server should receive request");
+
+    const auto server_request =
+        serialize_test_request(mcp::protocol::JsonRpcRequest{
+            .method = std::string(mcp::protocol::SamplingCreateMessageMethod),
+            .params = Json{{"messages", Json::array()}, {"maxTokens", 16}},
+            .id = std::string("srv-throw"),
+        });
+    const auto final_response =
+        serialize_test_response(mcp::protocol::JsonRpcResponse{
+            .id = rpc_request->id, .result = Json{{"tools", Json::array()}}});
+
+    response.set_content(sse_event(server_request) + sse_event(final_response),
+                         "text/event-stream");
+  });
+
+  mcp::client::HttpTransport transport(mcp::client::HttpTransportOptions{
+      .host = "127.0.0.1",
+      .port = fixture.port(),
+      .path = "/mcp",
+      .timeout = std::chrono::milliseconds(2000),
+  });
+  const auto started =
+      transport.start([](const mcp::protocol::JsonRpcRequest&)
+                          -> mcp::core::Result<mcp::protocol::JsonRpcResponse> {
+        throw std::runtime_error("client http handler threw");
+      });
+  require(started.has_value(), "http transport should start");
+
+  const auto actual = transport.send(mcp::protocol::JsonRpcRequest{
+      .method = "tools/list",
+      .params = Json::object(),
+      .id = std::int64_t{19},
+  });
+  require(actual.has_value(),
+          "http transport should keep waiting after handler error response");
+  require(wait_for([&]() { return handler_error_seen.load(); },
+                   std::chrono::milliseconds(1000)),
+          "server should receive posted handler error response");
+}
+
 void test_http_transport_opens_get_sse_after_session_and_dispatches_notification() {
   std::atomic<bool> get_seen{false};
   std::atomic<bool> notification_seen{false};
@@ -407,6 +473,63 @@ void test_http_transport_opens_get_sse_after_session_and_dispatches_notification
           "http transport should dispatch SSE notification");
 
   transport.stop();
+}
+
+void test_server_http_transport_writes_error_for_throwing_request_handler() {
+  constexpr int kPort = 40214;
+  const std::string kPath = "/throwing-handler";
+  RunningServerTransportFixture server_transport(
+      std::make_unique<mcp::server::HttpTransport>(
+          mcp::server::HttpTransportOptions{
+              .listen_host = "127.0.0.1",
+              .listen_port = kPort,
+              .path = kPath,
+          }),
+      [](const mcp::protocol::JsonRpcRequest&,
+         const mcp::server::SessionContext&)
+          -> mcp::core::Result<mcp::protocol::JsonRpcResponse> {
+        throw std::runtime_error("server http handler threw");
+      });
+
+  std::optional<httplib::Result> posted;
+  const auto body = serialize_test_request(mcp::protocol::JsonRpcRequest{
+      .method = std::string(mcp::protocol::InitializeMethod),
+      .params = Json::object(),
+      .id = std::int64_t{29},
+  });
+  for (int attempt = 0; attempt < 100; ++attempt) {
+    httplib::Client client("127.0.0.1", kPort);
+    auto response = client.Post(
+        kPath,
+        httplib::Headers{
+            {"Accept", "application/json"},
+            {"Content-Type", "application/json"},
+            {"Mcp-Method", std::string(mcp::protocol::InitializeMethod)},
+        },
+        body, "application/json");
+    if (response) {
+      posted = std::move(response);
+      break;
+    }
+    std::this_thread::sleep_for(std::chrono::milliseconds(10));
+  }
+
+  require(posted.has_value(),
+          "server http throwing handler request should return");
+  require((*posted)->status == 200,
+          "server http throwing handler status mismatch");
+  const auto parsed = mcp::protocol::parse_response((*posted)->body);
+  require(parsed.has_value(),
+          "server http throwing handler response should parse");
+  require(parsed->error.has_value(),
+          "server http throwing handler should return error response");
+  require(parsed->error->message == "handler failed",
+          "server http throwing handler error message mismatch");
+  require(parsed->error->data.has_value() &&
+              *parsed->error->data == "server http handler threw",
+          "server http throwing handler error detail mismatch");
+
+  server_transport.transport().stop();
 }
 
 void test_http_transport_sets_method_and_name_headers() {
@@ -2657,6 +2780,8 @@ int main() {
   const std::vector<std::pair<std::string_view, void (*)()>> tests = {
       {"http transport decodes sse post and answers interleaved request",
        test_http_transport_decodes_sse_post_and_answers_interleaved_request},
+      {"http transport posts error for throwing interleaved request handler",
+       test_http_transport_posts_error_for_throwing_interleaved_request_handler},
       {"http transport opens get sse after session and dispatches notification",
        test_http_transport_opens_get_sse_after_session_and_dispatches_notification},
       {"http transport sets method and name headers",
@@ -2693,6 +2818,8 @@ int main() {
        test_server_http_transport_request_timeout_sends_cancelled_over_sse},
       {"server http transport explicit cancel sends cancelled over sse",
        test_server_http_transport_explicit_cancel_sends_cancelled_over_sse},
+      {"server http transport writes error for throwing request handler",
+       test_server_http_transport_writes_error_for_throwing_request_handler},
       {"client http transport times out initialize",
        test_client_http_transport_times_out_initialize},
       {"client http transport uses uri and auth header",
