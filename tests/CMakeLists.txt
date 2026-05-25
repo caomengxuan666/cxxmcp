@@ -27,6 +27,13 @@ add_test(NAME sdk_boundary COMMAND
 )
 cxxmcp_mark_release_blocking(sdk_boundary sdk-boundary)
 
+add_test(NAME release_gate_manifest COMMAND
+    "${CMAKE_COMMAND}"
+    "-DREPO_SOURCE_DIR=${PROJECT_SOURCE_DIR}"
+    -P "${PROJECT_SOURCE_DIR}/tests/release_gate_manifest.cmake"
+)
+cxxmcp_mark_release_blocking(release_gate_manifest release-gate)
+
 function(add_cxxmcp_public_header_compile_test test_name source_file package_target)
     add_executable("mcp_public_header_${test_name}"
         "sdk/public_headers/${source_file}"

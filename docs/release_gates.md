@@ -1,0 +1,66 @@
+# cxxmcp Release Gates
+
+This document records the release-blocking checks that must describe the same
+canonical SDK path as the README, examples, CMake package targets, and
+compatibility policy.
+
+## Required CTest Labels
+
+Every release-blocking test must carry the `release-blocking` CTest label. The
+static `release_gate_manifest` test verifies that the named gates below stay
+registered through `cxxmcp_mark_release_blocking()`.
+
+## SDK And Package Gates
+
+- `sdk_boundary`: public SDK headers cannot expose runtime, gateway, policy,
+  profile, discovery, `httplib`, or compatibility transport-adapter internals.
+- `public_header_*`: each canonical public header compiles independently under
+  the SDK C++ standard.
+- `public_targets`: narrow SDK package targets remain consumable without
+  linking runtime or gateway layers.
+- `package_smoke`: installed package output is consumed from a clean external
+  CMake project with `find_package(cxxmcp CONFIG REQUIRED)`.
+
+## Protocol, Transport, And Interop Gates
+
+- `protocol`: JSON-RPC and MCP protocol serialization, parsing, version policy,
+  and typed model basics.
+- `transport_contract` and `transport_stdio_contract`: role-generic transport
+  contract behavior.
+- `stdio_transport`, `process_stdio_transport`, `http_transport`, and
+  `transport_adapters`: concrete and compatibility transport behavior,
+  including failure-path coverage.
+- `client_server`, `sdk`: canonical Peer/Service, request lifecycle,
+  cancellation, progress, and public SDK ergonomics.
+- `rmcp_conformance`, `interop_typescript_client_process_stdio`,
+  `interop_python_client_process_stdio`, and
+  `interop_rmcp_client_process_stdio`: cross-SDK process-stdio and Streamable
+  HTTP interoperability.
+
+## Release Matrix
+
+A release may claim support only for compiler, generator, runtime-library, and
+platform combinations where the release-blocking set above passed. The intended
+matrix is:
+
+- Windows MSVC with Ninja and Visual Studio generators
+- Linux GCC with Ninja
+- Linux Clang with Ninja
+- macOS AppleClang with Ninja
+- MSVC static runtime and dynamic runtime modes when Windows artifacts are
+  advertised
+
+## Public API Review
+
+Before a release, review public header diffs under:
+
+- `sdk/include/cxxmcp`
+- `sdk/core/include/cxxmcp`
+- `sdk/protocol/include/cxxmcp`
+- `sdk/client/include/cxxmcp`
+- `sdk/server/include/cxxmcp`
+- `sdk/transport/include/cxxmcp`
+
+Public renames must add the new API first, keep the old name with
+`CXXMCP_DEPRECATED("message")`, document the migration, and remove the old name
+only in the next major release.
