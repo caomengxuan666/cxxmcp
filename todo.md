@@ -83,6 +83,8 @@ incrementally. Keep them concrete; do not replace them with broad claims.
         callbacks do not need `peer.server()`.
   - [x] Native `ServerPeer` notification dispatch uses Peer-owned state for
         Peer-registered notification handlers.
+  - [x] `ServerPeer` handles `ping` requests at the Peer boundary before
+        falling back to concrete server request dispatch.
   - [x] `ClientPeer::client()` and `ServerPeer::server()` are retained as
         deprecated compatibility escape hatches, not canonical SDK entry
         points.

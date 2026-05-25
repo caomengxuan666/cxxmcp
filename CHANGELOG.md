@@ -33,4 +33,6 @@
   Peer-owned roots and handler state.
 - Moved native `ServerPeer` notification dispatch for Peer-registered
   notification handlers onto Peer-owned state.
+- Routed `ServerPeer` ping request handling through the Peer boundary before
+  falling back to the concrete server dispatcher.
 - Added a dedicated SDK umbrella test for `cxxmcp/sdk.hpp`.

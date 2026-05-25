@@ -1853,6 +1853,9 @@ class Peer<RoleServer> {
   core::Result<protocol::JsonRpcResponse> handle_request(
       const protocol::JsonRpcRequest& request,
       const server::SessionContext& context = {}) {
+    if (request.method == protocol::PingMethod) {
+      return protocol::make_response(request.id, protocol::Json::object());
+    }
     return server_->handle_request(request, context);
   }
 
@@ -1987,7 +1990,7 @@ class Peer<RoleServer> {
       const protocol::JsonRpcMessage& message,
       const server::SessionContext& context = {}) {
     if (const auto* request = std::get_if<protocol::JsonRpcRequest>(&message)) {
-      auto handled = server_->handle_request(*request, context);
+      auto handled = handle_request(*request, context);
       if (!handled) {
         return protocol::JsonRpcMessage{protocol::make_error_response(
             request->id,
