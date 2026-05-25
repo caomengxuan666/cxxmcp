@@ -1,11 +1,14 @@
 // Copyright (c) 2025 [caomengxuan666]
 
+#include <deque>
 #include <iostream>
 #include <memory>
+#include <optional>
 #include <stdexcept>
 #include <string>
 #include <string_view>
 #include <utility>
+#include <variant>
 #include <vector>
 
 #include "cxxmcp/sdk.hpp"
@@ -95,6 +98,84 @@ class RecordingClientTransport final : public mcp::client::Transport {
   bool stopped = false;
 };
 
+class RecordingClientContractTransport final
+    : public mcp::transport::ClientTransport {
+ public:
+  std::string_view name() const noexcept override {
+    return "recording-client-contract";
+  }
+
+  mcp::core::Result<mcp::core::Unit> send(TxMessage message) override {
+    sent.push_back(message);
+    const auto* request = std::get_if<mcp::protocol::JsonRpcRequest>(&message);
+    if (request == nullptr) {
+      return mcp::core::Unit{};
+    }
+    if (request->method == "initialize") {
+      received.push_back(mcp::protocol::JsonRpcResponse{
+          .id = request->id,
+          .result =
+              Json{
+                  {"protocolVersion",
+                   std::string(mcp::protocol::McpProtocolVersion)},
+                  {"capabilities", Json::object()},
+                  {"serverInfo",
+                   Json{{"name", "sdk-test-server"}, {"version", "1"}}},
+              },
+      });
+    } else if (request->method == "ping") {
+      received.push_back(mcp::protocol::JsonRpcResponse{
+          .id = request->id,
+          .result = Json::object(),
+      });
+    }
+    return mcp::core::Unit{};
+  }
+
+  mcp::core::Result<std::optional<RxMessage>> receive() override {
+    if (received.empty()) {
+      return std::nullopt;
+    }
+    auto message = std::move(received.front());
+    received.pop_front();
+    return message;
+  }
+
+  mcp::core::Result<mcp::core::Unit> close() override {
+    stopped = true;
+    return mcp::core::Unit{};
+  }
+
+  std::vector<TxMessage> sent;
+  std::deque<RxMessage> received;
+  bool stopped = false;
+};
+
+class RecordingServerContractTransport final
+    : public mcp::transport::ServerTransport {
+ public:
+  std::string_view name() const noexcept override {
+    return "recording-server-contract";
+  }
+
+  mcp::core::Result<mcp::core::Unit> send(TxMessage message) override {
+    sent.push_back(std::move(message));
+    return mcp::core::Unit{};
+  }
+
+  mcp::core::Result<std::optional<RxMessage>> receive() override {
+    return std::nullopt;
+  }
+
+  mcp::core::Result<mcp::core::Unit> close() override {
+    stopped = true;
+    return mcp::core::Unit{};
+  }
+
+  std::vector<TxMessage> sent;
+  bool stopped = false;
+};
+
 void test_sdk_peer_and_service_surface() {
   auto transport = std::make_unique<RecordingClientTransport>();
   auto* transport_ptr = transport.get();
@@ -120,6 +201,18 @@ void test_sdk_peer_and_service_surface() {
 
   require(running_client->stop().has_value(), "client service stop failed");
   require(transport_ptr->stopped, "client transport should stop");
+
+  auto contract_transport =
+      std::make_unique<RecordingClientContractTransport>();
+  auto* contract_transport_ptr = contract_transport.get();
+  mcp::ClientPeer contract_client_peer(std::move(contract_transport));
+  require(contract_client_peer.initialize().has_value(),
+          "client peer should accept role-generic transport");
+  require(contract_client_peer.ping().has_value(),
+          "client peer generic transport ping failed");
+  contract_client_peer.client().stop();
+  require(contract_transport_ptr->stopped,
+          "client peer generic transport should close");
 
   mcp::server::ServerBuilder builder;
   builder.name("sdk-test-server")
@@ -161,6 +254,22 @@ void test_sdk_peer_and_service_surface() {
   require(running_server.has_value(), "server service should start");
   require(running_server->running(), "server service should report running");
   require(running_server->stop().has_value(), "server service stop failed");
+
+  mcp::ServerPeer contract_server_peer;
+  auto server_contract_transport =
+      std::make_unique<RecordingServerContractTransport>();
+  auto* server_contract_transport_ptr = server_contract_transport.get();
+  require(
+      contract_server_peer.add_transport(std::move(server_contract_transport))
+          .has_value(),
+      "server peer should accept role-generic transport");
+  auto running_contract_server = mcp::serve(std::move(contract_server_peer));
+  require(running_contract_server.has_value(),
+          "server peer generic transport service should start");
+  require(running_contract_server->stop().has_value(),
+          "server peer generic transport service should stop");
+  require(server_contract_transport_ptr->stopped,
+          "server peer generic transport should close");
 }
 
 }  // namespace

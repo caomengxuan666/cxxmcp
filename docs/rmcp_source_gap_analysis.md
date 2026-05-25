@@ -194,14 +194,16 @@ while the concrete built-in transports remain request/response oriented:
 - the existing `mcp::server::Server` can consume a role-generic
   `mcp::transport::ServerTransport` through an adapter that dispatches inbound
   requests and notifications and supports outbound server messages
+- `mcp::ClientPeer` and `mcp::ServerPeer` expose direct role-generic transport
+  entry points that wrap those adapters for SDK users
 - client transport has `send(request) -> response`
 - server transport has `send_request`, `send_notification`, `start`
 - HTTP and stdio behavior is embedded in separate client/server transport classes
 
 Gap:
 
-- peer/service still use the legacy client/server transport APIs as their
-  primary runtime surface, with role-generic transports bridged through adapters
+- service lifecycle still runs through the synchronous legacy client/server
+  runtime internally, with role-generic transports bridged through adapters
 - HTTP and process-stdio transports are not yet fully native role-generic
   receive streams
 - legacy client/server callback-loop transports are only partially adapted to
