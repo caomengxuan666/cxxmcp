@@ -342,70 +342,127 @@ class Peer<RoleClient> {
 
   core::Result<protocol::CompleteResult> complete(
       const protocol::CompleteParams& request) {
-    return client_.complete(request);
+    auto payload = request_json(std::string(protocol::CompletionCompleteMethod),
+                                protocol::complete_params_to_json(request));
+    if (!payload) {
+      return std::unexpected(payload.error());
+    }
+    return protocol::complete_result_from_json(*payload);
   }
 
   core::Result<protocol::Json> complete(const protocol::Json& request) {
-    return client_.complete(request);
+    return request_json(std::string(protocol::CompletionCompleteMethod),
+                        request);
   }
 
   core::Result<protocol::CompletionResult> complete_prompt_argument(
       std::string_view prompt_name, std::string_view argument_name,
       std::string current_value,
       protocol::Json context = protocol::Json::object()) {
-    return client_.complete_prompt_argument(prompt_name, argument_name,
-                                            std::move(current_value),
-                                            std::move(context));
+    protocol::CompletionArgument argument;
+    argument.name = std::string(argument_name);
+    argument.value = std::move(current_value);
+    protocol::CompleteParams params;
+    params.ref =
+        protocol::prompt_completion_reference(std::string(prompt_name));
+    params.argument = std::move(argument);
+    params.context = std::move(context);
+    const auto result = complete(params);
+    if (!result) {
+      return std::unexpected(result.error());
+    }
+    return result->completion;
   }
 
   core::Result<protocol::CompletionResult> complete_resource_argument(
       std::string_view uri_template, std::string_view argument_name,
       std::string current_value,
       protocol::Json context = protocol::Json::object()) {
-    return client_.complete_resource_argument(uri_template, argument_name,
-                                              std::move(current_value),
-                                              std::move(context));
+    protocol::CompletionArgument argument;
+    argument.name = std::string(argument_name);
+    argument.value = std::move(current_value);
+    protocol::CompleteParams params;
+    params.ref =
+        protocol::resource_completion_reference(std::string(uri_template));
+    params.argument = std::move(argument);
+    params.context = std::move(context);
+    const auto result = complete(params);
+    if (!result) {
+      return std::unexpected(result.error());
+    }
+    return result->completion;
   }
 
   core::Result<std::vector<std::string>> complete_prompt_simple(
       std::string_view prompt_name, std::string_view argument_name,
       std::string current_value,
       protocol::Json context = protocol::Json::object()) {
-    return client_.complete_prompt_simple(prompt_name, argument_name,
-                                          std::move(current_value),
-                                          std::move(context));
+    const auto completion =
+        complete_prompt_argument(prompt_name, argument_name,
+                                 std::move(current_value), std::move(context));
+    if (!completion) {
+      return std::unexpected(completion.error());
+    }
+    return completion->values;
   }
 
   core::Result<std::vector<std::string>> complete_resource_simple(
       std::string_view uri_template, std::string_view argument_name,
       std::string current_value,
       protocol::Json context = protocol::Json::object()) {
-    return client_.complete_resource_simple(uri_template, argument_name,
-                                            std::move(current_value),
-                                            std::move(context));
+    const auto completion = complete_resource_argument(
+        uri_template, argument_name, std::move(current_value),
+        std::move(context));
+    if (!completion) {
+      return std::unexpected(completion.error());
+    }
+    return completion->values;
   }
 
   core::Result<protocol::CreateMessageResult> create_message(
       const protocol::CreateMessageParams& request) {
-    return client_.create_message(request);
+    auto payload =
+        request_json(std::string(protocol::SamplingCreateMessageMethod),
+                     protocol::create_message_params_to_json(request));
+    if (!payload) {
+      return std::unexpected(payload.error());
+    }
+    return protocol::create_message_result_from_json(*payload);
   }
 
   core::Result<protocol::Json> create_message(const protocol::Json& request) {
-    return client_.create_message(request);
+    return request_json(std::string(protocol::SamplingCreateMessageMethod),
+                        request);
   }
 
   core::Result<protocol::CreateElicitationResult> create_elicitation(
       const protocol::CreateElicitationRequestParam& request) {
-    return client_.create_elicitation(request);
+    auto payload = request_json(
+        std::string(protocol::ElicitationCreateMethod),
+        protocol::create_elicitation_request_param_to_json(request));
+    if (!payload) {
+      return std::unexpected(payload.error());
+    }
+    return protocol::create_elicitation_result_from_json(*payload);
   }
 
   core::Result<protocol::Json> create_elicitation(
       const protocol::Json& request) {
-    return client_.create_elicitation(request);
+    return request_json(std::string(protocol::ElicitationCreateMethod),
+                        request);
   }
 
   core::Result<std::vector<protocol::Task>> list_tasks() {
-    return client_.list_tasks();
+    auto payload = request_json(std::string(protocol::TasksListMethod),
+                                protocol::Json::object());
+    if (!payload) {
+      return std::unexpected(payload.error());
+    }
+    const auto result = protocol::task_list_result_from_json(*payload);
+    if (!result) {
+      return std::unexpected(result.error());
+    }
+    return result->tasks;
   }
 
   core::Result<std::vector<protocol::Task>> list_all_tasks() {
@@ -413,15 +470,32 @@ class Peer<RoleClient> {
   }
 
   core::Result<protocol::Task> get_task(std::string_view task_id) {
-    return client_.get_task(task_id);
+    protocol::TaskGetParams params;
+    params.task_id = std::string(task_id);
+    auto payload = request_json(std::string(protocol::TasksGetMethod),
+                                protocol::task_get_params_to_json(params));
+    if (!payload) {
+      return std::unexpected(payload.error());
+    }
+    return protocol::task_from_json(*payload);
   }
 
   core::Result<protocol::Task> cancel_task(std::string_view task_id) {
-    return client_.cancel_task(task_id);
+    protocol::TaskCancelParams params;
+    params.task_id = std::string(task_id);
+    auto payload = request_json(std::string(protocol::TasksCancelMethod),
+                                protocol::task_cancel_params_to_json(params));
+    if (!payload) {
+      return std::unexpected(payload.error());
+    }
+    return protocol::task_from_json(*payload);
   }
 
   core::Result<protocol::Json> task_result(std::string_view task_id) {
-    return client_.task_result(task_id);
+    protocol::TaskResultParams params;
+    params.task_id = std::string(task_id);
+    return request_json(std::string(protocol::TasksResultMethod),
+                        protocol::task_result_params_to_json(params));
   }
 
   core::Result<core::Unit> set_level(std::string_view level) {
