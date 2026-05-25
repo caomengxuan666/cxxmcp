@@ -125,6 +125,8 @@ incrementally. Keep them concrete; do not replace them with broad claims.
         stable transport errors.
   - [x] Native Streamable HTTP client transport covers mismatched response ids
         and duplicate in-flight request ids.
+  - [x] Native process stdio client transport covers mismatched response ids
+        and duplicate in-flight request ids.
 - Conformance matrix:
   - [x] In-tree Streamable HTTP matrix covers initialize, tools, prompts,
         resources/templates/subscribe, roots/list_changed, completion, logging,

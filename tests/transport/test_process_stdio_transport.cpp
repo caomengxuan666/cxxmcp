@@ -770,6 +770,74 @@ void test_native_process_stdio_transport_diagnostics_timeout_cleanup() {
   require(closed.has_value(), "native process timeout close should succeed");
 }
 
+void test_native_process_stdio_transport_surfaces_unexpected_response_id() {
+  mcp::transport::ProcessStdioClientTransportOptions options;
+  options.command = MCP_TEST_CHILD_EXE;
+  options.args = {"--wrong-response-id"};
+  mcp::transport::ProcessStdioClientTransport transport(std::move(options));
+
+  auto sent = transport.send(mcp::protocol::JsonRpcRequest{
+      .method = "custom/wrong-id",
+      .params = mcp::protocol::Json::object(),
+      .id = std::int64_t{602},
+  });
+  require(sent.has_value(), "native process unexpected-id send should succeed");
+
+  auto received = transport.receive();
+  require(received.has_value(), "native process unexpected-id receive failed");
+  require(received->has_value(),
+          "native process unexpected-id response missing");
+  const auto* response =
+      std::get_if<mcp::protocol::JsonRpcResponse>(&received->value());
+  require(response != nullptr,
+          "native process unexpected-id should receive response message");
+  require(response->id == mcp::protocol::RequestId{std::int64_t{602}},
+          "native process unexpected-id response id mismatch");
+  require(response->error.has_value(),
+          "native process unexpected-id should surface an error response");
+  require(response->error->message ==
+              "process stdio transport received an unexpected response",
+          "native process unexpected-id error message mismatch");
+
+  const auto closed = transport.close();
+  require(closed.has_value(),
+          "native process unexpected-id close should succeed");
+}
+
+void test_native_process_stdio_transport_rejects_duplicate_request_id() {
+  mcp::transport::ProcessStdioClientTransportOptions options;
+  options.command = MCP_TEST_CHILD_EXE;
+  options.args = {"--ignore-requests"};
+  options.request_timeout = std::chrono::milliseconds(500);
+  mcp::transport::ProcessStdioClientTransport transport(std::move(options));
+
+  auto sent = transport.send(mcp::protocol::JsonRpcRequest{
+      .method = "custom/pending",
+      .params = mcp::protocol::Json::object(),
+      .id = std::int64_t{603},
+  });
+  require(sent.has_value(),
+          "native process duplicate first send should succeed");
+
+  const auto duplicate = transport.send(mcp::protocol::JsonRpcRequest{
+      .method = "custom/duplicate",
+      .params = mcp::protocol::Json::object(),
+      .id = std::int64_t{603},
+  });
+  require(!duplicate.has_value(),
+          "native process should reject duplicate in-flight request ids");
+  require(
+      duplicate.error().message == "duplicate process stdio client request id",
+      "native process duplicate request message mismatch");
+  require(duplicate.error().detail == "603",
+          "native process duplicate request detail mismatch");
+  require(duplicate.error().category == "transport",
+          "native process duplicate request category mismatch");
+
+  const auto closed = transport.close();
+  require(closed.has_value(), "native process duplicate close should succeed");
+}
+
 void test_native_process_stdio_transport_rejects_unknown_server_response_id() {
   mcp::transport::ProcessStdioClientTransportOptions options;
   options.command = MCP_TEST_CHILD_EXE;
@@ -968,6 +1036,10 @@ int main() {
        test_native_process_stdio_transport_exposes_client_contract},
       {"native process stdio transport diagnostics timeout cleanup",
        test_native_process_stdio_transport_diagnostics_timeout_cleanup},
+      {"native process stdio transport surfaces unexpected response id",
+       test_native_process_stdio_transport_surfaces_unexpected_response_id},
+      {"native process stdio transport rejects duplicate request id",
+       test_native_process_stdio_transport_rejects_duplicate_request_id},
       {"native process stdio transport rejects unknown server response id",
        test_native_process_stdio_transport_rejects_unknown_server_response_id},
       {"native process stdio transport surfaces malformed child output",
