@@ -16,6 +16,7 @@
 #include "cxxmcp/protocol/resource.hpp"
 #include "cxxmcp/protocol/roots.hpp"
 #include "cxxmcp/protocol/sampling.hpp"
+#include "cxxmcp/protocol/schema.hpp"
 #include "cxxmcp/protocol/serialization.hpp"
 #include "cxxmcp/protocol/task.hpp"
 
@@ -273,6 +274,61 @@ void test_tool_protocol_round_trips() {
           "tool result content mismatch");
   require(parsed_result->structured_content->at("value") == "hello",
           "tool structured content mismatch");
+}
+
+void test_schema_and_tool_definition_builders() {
+  const auto input_schema =
+      mcp::protocol::object_schema()
+          .title("Echo input")
+          .description("Arguments accepted by echo")
+          .required_property("value", mcp::protocol::JsonSchema::string())
+          .optional_property(
+              "mode", mcp::protocol::JsonSchema::string_enum({"plain", "loud"}))
+          .additional_properties(false)
+          .build();
+  require(input_schema.at("type") == "object", "object schema type mismatch");
+  require(input_schema.at("properties").at("value").at("type") == "string",
+          "required property schema mismatch");
+  require(input_schema.at("required").at(0) == "value",
+          "required schema entry mismatch");
+  require(!input_schema.at("additionalProperties"),
+          "additionalProperties mismatch");
+
+  const auto output_schema =
+      mcp::protocol::object_schema()
+          .required_property("ok", mcp::protocol::JsonSchema::boolean())
+          .required_property("count", mcp::protocol::JsonSchema::integer())
+          .optional_property("items", mcp::protocol::JsonSchema::array(
+                                          mcp::protocol::JsonSchema::string()))
+          .build();
+
+  const auto tool = mcp::protocol::tool_definition("echo")
+                        .title("Echo")
+                        .description("Echo values")
+                        .input_schema(input_schema)
+                        .output_schema(output_schema)
+                        .task_support(mcp::protocol::TaskSupport::Optional)
+                        .annotations(Json{{"readOnlyHint", true}})
+                        .meta(Json{{"source", "builder-test"}})
+                        .build();
+
+  require(tool.name == "echo", "tool builder name mismatch");
+  require(tool.title == "Echo", "tool builder title mismatch");
+  require(tool.task_support() == mcp::protocol::TaskSupport::Optional,
+          "tool builder task support mismatch");
+  require(tool.input_schema.at("properties").contains("mode"),
+          "tool builder input schema mismatch");
+  require(
+      tool.output_schema.at("properties").at("count").at("type") == "integer",
+      "tool builder output schema mismatch");
+
+  const auto tool_json = mcp::protocol::tool_definition_to_json(tool);
+  const auto parsed = mcp::protocol::tool_definition_from_json(tool_json);
+  require(parsed.has_value(), "tool built with builders should parse");
+  require(parsed->meta->at("source") == "builder-test",
+          "tool builder meta mismatch");
+  require(mcp::protocol::tool_definition_to_json(*parsed) == tool_json,
+          "tool built with builders should round trip");
 }
 
 void test_content_block_variants_round_trip() {
@@ -1244,6 +1300,8 @@ int main() {
       {"ping request round trip", test_ping_request_round_trip},
       {"response round trips", test_response_round_trips},
       {"tool protocol round trips", test_tool_protocol_round_trips},
+      {"schema and tool definition builders",
+       test_schema_and_tool_definition_builders},
       {"content block variants round trip",
        test_content_block_variants_round_trip},
       {"task protocol round trips", test_task_protocol_round_trips},

@@ -14,6 +14,7 @@ in the public headers and generated Doxygen.
 
 ```cpp
 #include <cxxmcp/peer.hpp>
+#include <cxxmcp/protocol.hpp>
 #include <cxxmcp/server.hpp>
 #include <cxxmcp/service.hpp>
 
@@ -23,11 +24,14 @@ int main() {
         .version("1.0.0")
         .instructions("Expose local tools over MCP.")
         .add_tool(
-            mcp::protocol::ToolDefinition{
-                .name = "echo",
-                .description = "Echo the incoming payload",
-                .input_schema = mcp::protocol::Json{{"type", "object"}},
-            },
+            mcp::protocol::tool_definition("echo")
+                .description("Echo the incoming payload")
+                .input_schema(
+                    mcp::protocol::object_schema()
+                        .required_property("value", mcp::protocol::JsonSchema::string())
+                        .additional_properties(false)
+                        .build())
+                .build(),
             [](const mcp::server::ToolContext& context) {
                 mcp::protocol::ToolResult result;
                 result.structured_content = context.arguments;

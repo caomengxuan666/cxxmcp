@@ -14,6 +14,7 @@
 #include "cxxmcp/protocol/resource.hpp"
 #include "cxxmcp/protocol/roots.hpp"
 #include "cxxmcp/protocol/sampling.hpp"
+#include "cxxmcp/protocol/schema.hpp"
 #include "cxxmcp/protocol/serialization.hpp"
 #include "cxxmcp/protocol/task.hpp"
 #include "cxxmcp/protocol/tool.hpp"

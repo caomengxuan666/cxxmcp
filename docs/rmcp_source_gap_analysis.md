@@ -15,6 +15,8 @@ Already covered in the current tree:
 - task-related client and server APIs, including SDK server task processing
 - request handles for async peer calls
 - in-memory task management service in `runtime`
+- public JSON Schema and tool-definition builders for lower-boilerplate server
+  authoring
 
 The remaining gaps in this document are the ones that still need attention.
 
@@ -408,9 +410,14 @@ The C++ project cannot copy Rust macros directly, but it can offer equivalent er
 - JSON schema validation
 - low-boilerplate handler adapters
 
+Covered by current tree:
+
+- JSON Schema object builder and primitive schema helpers
+- fluent `ToolDefinition` builder for public server tool metadata
+- low-boilerplate `App::Builder` adapters for simple C++ callables
+
 Action:
 
-- add JSON schema builder utilities
 - add optional `json-schema-validator`
 - add typed helper templates for tool registration
 - keep registry helpers as convenience wrappers over `ServerHandler`

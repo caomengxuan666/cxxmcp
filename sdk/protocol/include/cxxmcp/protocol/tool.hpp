@@ -201,6 +201,74 @@ struct ToolDefinition {
   }
 };
 
+/// @brief Fluent builder for advertised MCP tool metadata.
+class ToolDefinitionBuilder {
+ public:
+  explicit ToolDefinitionBuilder(std::string name) {
+    definition_.name = std::move(name);
+  }
+
+  ToolDefinitionBuilder& title(std::string value) {
+    definition_.title = std::move(value);
+    return *this;
+  }
+
+  ToolDefinitionBuilder& description(std::string value) {
+    definition_.description = std::move(value);
+    return *this;
+  }
+
+  ToolDefinitionBuilder& input_schema(Json schema) {
+    definition_.input_schema = std::move(schema);
+    return *this;
+  }
+
+  ToolDefinitionBuilder& output_schema(Json schema) {
+    definition_.output_schema = std::move(schema);
+    return *this;
+  }
+
+  ToolDefinitionBuilder& streaming(bool value = true) {
+    definition_.streaming = value;
+    return *this;
+  }
+
+  ToolDefinitionBuilder& icon(Icon value) {
+    definition_.icons.push_back(std::move(value));
+    return *this;
+  }
+
+  ToolDefinitionBuilder& task_support(TaskSupport value) {
+    if (!definition_.execution.has_value()) {
+      definition_.execution = ToolExecution{};
+    }
+    definition_.execution->task_support = value;
+    return *this;
+  }
+
+  ToolDefinitionBuilder& annotations(Json value) {
+    definition_.annotations = std::move(value);
+    return *this;
+  }
+
+  ToolDefinitionBuilder& meta(Json value) {
+    definition_.meta = std::move(value);
+    return *this;
+  }
+
+  ToolDefinition build() const& { return definition_; }
+
+  ToolDefinition build() && { return std::move(definition_); }
+
+ private:
+  ToolDefinition definition_;
+};
+
+/// @brief Creates a fluent builder for advertised MCP tool metadata.
+inline ToolDefinitionBuilder tool_definition(std::string name) {
+  return ToolDefinitionBuilder(std::move(name));
+}
+
 /// @brief Parameters for `tools/call`.
 struct ToolCall {
   /// Tool name matching a ToolDefinition.
