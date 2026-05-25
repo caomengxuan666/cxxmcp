@@ -131,6 +131,8 @@ true:
   only a synchronous lifecycle flag.
 - [x] Define exact `serve`, `close`, `stop`, `wait`, destructor, and moved-from
   behavior.
+- [x] Add a `serve(ServerPeer, transport::ServerTransport)` path that drives the
+  server loop through `Peer<RoleServer>::serve_transport`.
 - [ ] Make service cancellation token propagation explicit and consistent.
 - [x] Define whether client-side services can actively drive receive loops for
   every built-in transport.

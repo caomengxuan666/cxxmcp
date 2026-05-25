@@ -11,9 +11,11 @@
 /// Lifecycle contract:
 /// - serve(peer) transfers peer ownership into a RunningService.
 /// - Server services own a background service loop that calls
-///   ServerPeer::start(); client services do not create an additional universal
-///   receive loop because the current built-in client transports already drive
-///   inbound callbacks through the concrete Client transport model.
+///   ServerPeer::start(), or ServerPeer::serve_transport() when constructed
+///   with a role-generic server transport. Client services do not create an
+///   additional universal receive loop because the current built-in client
+///   transports already drive inbound callbacks through the concrete Client
+///   transport model.
 /// - close() and stop() are equivalent, idempotent, noexcept-safe shutdown
 ///   entry points. They cancel the service token, stop the underlying peer, and
 ///   unblock wait().
@@ -187,16 +189,29 @@ class RunningService<RoleServer> {
     start_loop();
   }
 
+  RunningService(ServerPeer peer,
+                 std::unique_ptr<transport::ServerTransport> transport,
+                 server::SessionContext context = {})
+      : peer_(std::make_shared<ServerPeer>(std::move(peer))),
+        transport_(std::move(transport)),
+        context_(std::move(context)) {
+    start_loop();
+  }
+
   RunningService(const RunningService&) = delete;
   RunningService& operator=(const RunningService&) = delete;
   RunningService(RunningService&& other) noexcept
       : peer_(std::move(other.peer_)),
+        transport_(std::move(other.transport_)),
+        context_(std::move(other.context_)),
         state_(std::move(other.state_)),
         loop_(std::move(other.loop_)) {}
   RunningService& operator=(RunningService&& other) noexcept {
     if (this != &other) {
       (void)stop();
       peer_ = std::move(other.peer_);
+      transport_ = std::move(other.transport_);
+      context_ = std::move(other.context_);
       state_ = std::move(other.state_);
       loop_ = std::move(other.loop_);
     }
@@ -254,6 +269,9 @@ class RunningService<RoleServer> {
       state_->closing = true;
       state_->cancellation.cancel();
     }
+    if (transport_) {
+      (void)transport_->close();
+    }
     if (peer_) {
       peer_->stop();
     }
@@ -264,8 +282,12 @@ class RunningService<RoleServer> {
   void start_loop() {
     auto state = state_;
     auto peer = peer_;
-    loop_ = std::thread([state, peer]() noexcept {
-      const auto started = peer->start();
+    auto transport = transport_;
+    auto context = context_;
+    loop_ = std::thread([state, peer, transport, context]() noexcept {
+      const auto started = transport
+                               ? peer->serve_transport(*transport, context)
+                               : peer->start();
       if (!started) {
         detail::finish_service(state, started.error());
       } else {
@@ -285,6 +307,8 @@ class RunningService<RoleServer> {
   }
 
   std::shared_ptr<ServerPeer> peer_;
+  std::shared_ptr<transport::ServerTransport> transport_;
+  server::SessionContext context_;
   std::shared_ptr<detail::ServiceLifecycleState> state_ =
       std::make_shared<detail::ServiceLifecycleState>();
   std::thread loop_;
@@ -314,16 +338,29 @@ class Service<RoleServer> {
  public:
   explicit Service(ServerPeer peer) : peer_(std::move(peer)) {}
 
+  Service(ServerPeer peer,
+          std::unique_ptr<transport::ServerTransport> transport,
+          server::SessionContext context = {})
+      : peer_(std::move(peer)),
+        transport_(std::move(transport)),
+        context_(std::move(context)) {}
+
   ServerPeer& peer() noexcept { return peer_; }
 
   const ServerPeer& peer() const noexcept { return peer_; }
 
   core::Result<RunningService<RoleServer>> serve() && {
+    if (transport_) {
+      return RunningService<RoleServer>(std::move(peer_), std::move(transport_),
+                                        std::move(context_));
+    }
     return RunningService<RoleServer>(std::move(peer_));
   }
 
  private:
   ServerPeer peer_;
+  std::unique_ptr<transport::ServerTransport> transport_;
+  server::SessionContext context_;
 };
 
 /// @brief Creates a client service from a role-aware peer.
@@ -336,6 +373,14 @@ inline Service<RoleServer> make_service(ServerPeer peer) {
   return Service<RoleServer>(std::move(peer));
 }
 
+/// @brief Creates a server service that is driven by a role-generic transport.
+inline Service<RoleServer> make_service(
+    ServerPeer peer, std::unique_ptr<transport::ServerTransport> transport,
+    server::SessionContext context = {}) {
+  return Service<RoleServer>(std::move(peer), std::move(transport),
+                             std::move(context));
+}
+
 /// @brief Starts a client service and returns its running handle.
 inline core::Result<RunningService<RoleClient>> serve(ClientPeer peer) {
   return make_service(std::move(peer)).serve();
@@ -344,6 +389,14 @@ inline core::Result<RunningService<RoleClient>> serve(ClientPeer peer) {
 /// @brief Starts a server service and returns its running handle.
 inline core::Result<RunningService<RoleServer>> serve(ServerPeer peer) {
   return make_service(std::move(peer)).serve();
+}
+
+/// @brief Starts a server service over a role-generic transport.
+inline core::Result<RunningService<RoleServer>> serve(
+    ServerPeer peer, std::unique_ptr<transport::ServerTransport> transport,
+    server::SessionContext context = {}) {
+  return make_service(std::move(peer), std::move(transport), std::move(context))
+      .serve();
 }
 
 }  // namespace mcp

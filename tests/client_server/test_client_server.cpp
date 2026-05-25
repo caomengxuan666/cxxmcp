@@ -1694,6 +1694,63 @@ void test_server_peer_serves_role_generic_transport_receive_loop() {
           "server peer should pass transport session context");
 }
 
+void test_server_service_serves_role_generic_transport_receive_loop() {
+  auto server = std::make_unique<mcp::server::Server>(make_server());
+  int raw_notifications = 0;
+  std::string notification_session;
+  server->set_raw_notification_handler(
+      [&](const mcp::protocol::JsonRpcNotification& notification,
+          const mcp::server::SessionContext& context)
+          -> mcp::core::Result<mcp::core::Unit> {
+        if (notification.method == "notifications/initialized") {
+          ++raw_notifications;
+          notification_session = context.session_id;
+        }
+        return mcp::core::Unit{};
+      });
+
+  auto transport = std::make_unique<QueuedRoleServerTransport>();
+  auto* transport_ptr = transport.get();
+  transport->inbound.push_back(mcp::protocol::JsonRpcRequest{
+      .method = "tools/list",
+      .params = Json::object(),
+      .id = std::int64_t{701},
+  });
+  transport->inbound.push_back(mcp::protocol::JsonRpcNotification{
+      .method = "notifications/initialized",
+      .params = Json::object(),
+  });
+
+  auto running = mcp::serve(
+      mcp::ServerPeer(std::move(server)), std::move(transport),
+      mcp::server::SessionContext{.session_id = "service-session",
+                                  .remote_address = "role-service-test"});
+  require(running.has_value(), "server service role transport should start");
+
+  const auto waited = running->wait();
+  require(waited.has_value(), "server service role transport wait failed");
+  require(!running->running(),
+          "server service role transport should stop after eof");
+  require(transport_ptr->sent.size() == 1,
+          "server service role transport should send one response");
+
+  const auto* response =
+      std::get_if<mcp::protocol::JsonRpcResponse>(&transport_ptr->sent.front());
+  require(response != nullptr,
+          "server service role transport should send a response message");
+  require(response->id.has_value(), "server service response id missing");
+  require(std::get<std::int64_t>(*response->id) == 701,
+          "server service response id mismatch");
+  require(response->result.has_value(),
+          "server service response result missing");
+  require(response->result->at("tools").front().at("name") == "echo",
+          "server service tools/list response mismatch");
+  require(raw_notifications == 1,
+          "server service should dispatch transport notifications");
+  require(notification_session == "service-session",
+          "server service should pass transport session context");
+}
+
 void test_server_non_task_tool_observes_cancelled_notification() {
   mcp::server::Server server(mcp::server::ServerOptions{});
   std::atomic_bool handler_started = false;
@@ -4034,6 +4091,8 @@ int main() {
        test_service_lifecycle_facades_start_and_stop},
       {"server peer role-generic transport receive loop",
        test_server_peer_serves_role_generic_transport_receive_loop},
+      {"server service role-generic transport receive loop",
+       test_server_service_serves_role_generic_transport_receive_loop},
       {"server non-task tool observes cancelled notification",
        test_server_non_task_tool_observes_cancelled_notification},
       {"contract handlers override client and server requests",
