@@ -38,4 +38,6 @@
 - Routed `ServerPeer` initialize request validation and response construction
   through the Peer boundary before falling back to the concrete server
   dispatcher.
+- Routed `ServerPeer` raw request override state plus `tools/list` and
+  `tools/get` discovery handling through the Peer boundary.
 - Added a dedicated SDK umbrella test for `cxxmcp/sdk.hpp`.

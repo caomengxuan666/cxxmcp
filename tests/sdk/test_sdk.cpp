@@ -662,6 +662,92 @@ void test_server_peer_initialize_dispatches_on_peer_boundary() {
           "server peer rejected initialize detail mismatch");
 }
 
+void test_server_peer_tool_discovery_dispatches_on_peer_boundary() {
+  auto server = mcp::server::App::builder()
+                    .tool(
+                        mcp::protocol::ToolDefinition{
+                            .name = "echo",
+                            .description = "Echo payload",
+                            .input_schema = Json{{"type", "object"}},
+                        },
+                        [] {
+                          mcp::protocol::ToolResult result;
+                          result.content.push_back(mcp::protocol::ContentBlock{
+                              .type = "text",
+                              .text = "ok",
+                              .data = Json::object(),
+                          });
+                          return result;
+                        })
+                    .build();
+  require(server.has_value(), "tool discovery server build failed");
+  mcp::ServerPeer peer(std::move(*server));
+
+  RecordingServerContractTransport transport;
+  transport.received.push_back(mcp::protocol::JsonRpcRequest{
+      .method = std::string(mcp::protocol::ToolsListMethod),
+      .params = Json::object(),
+      .id = mcp::protocol::RequestId{std::int64_t{10}},
+  });
+  transport.received.push_back(mcp::protocol::JsonRpcRequest{
+      .method = std::string(mcp::protocol::ToolsGetMethod),
+      .params = Json{{"name", "echo"}},
+      .id = mcp::protocol::RequestId{std::int64_t{11}},
+  });
+
+  const auto served = peer.serve_transport(transport);
+  require(served.has_value(),
+          "server peer tool discovery dispatch should succeed");
+  require(transport.sent.size() == 2,
+          "server peer tool discovery should send two responses");
+
+  const auto* list_response =
+      std::get_if<mcp::protocol::JsonRpcResponse>(&transport.sent.at(0));
+  require(list_response != nullptr, "tools/list response missing");
+  require(list_response->result.has_value(), "tools/list result missing");
+  require(list_response->result->at("tools").size() == 1,
+          "tools/list tool count mismatch");
+  require(list_response->result->at("tools").at(0).at("name") == "echo",
+          "tools/list tool name mismatch");
+
+  const auto* get_response =
+      std::get_if<mcp::protocol::JsonRpcResponse>(&transport.sent.at(1));
+  require(get_response != nullptr, "tools/get response missing");
+  require(get_response->result.has_value(), "tools/get result missing");
+  require(get_response->result->at("name") == "echo",
+          "tools/get tool name mismatch");
+
+  mcp::ServerPeer raw_peer;
+  raw_peer.set_raw_request_handler(
+      [](const mcp::protocol::JsonRpcRequest& request,
+         const mcp::server::SessionContext&)
+          -> std::optional<mcp::protocol::JsonRpcResponse> {
+        if (request.method == mcp::protocol::ToolsListMethod) {
+          return mcp::protocol::make_response(request.id,
+                                              Json{{"rawOverride", true}});
+        }
+        return std::nullopt;
+      });
+
+  RecordingServerContractTransport raw_transport;
+  raw_transport.received.push_back(mcp::protocol::JsonRpcRequest{
+      .method = std::string(mcp::protocol::ToolsListMethod),
+      .params = Json::object(),
+      .id = mcp::protocol::RequestId{std::int64_t{12}},
+  });
+  const auto raw_served = raw_peer.serve_transport(raw_transport);
+  require(raw_served.has_value(),
+          "server peer raw override dispatch should succeed");
+  require(raw_transport.sent.size() == 1,
+          "server peer raw override should send one response");
+  const auto* raw_response =
+      std::get_if<mcp::protocol::JsonRpcResponse>(&raw_transport.sent.front());
+  require(raw_response != nullptr, "raw override response missing");
+  require(raw_response->result.has_value(), "raw override result missing");
+  require(raw_response->result->at("rawOverride") == true,
+          "raw request handler should run before peer tool discovery");
+}
+
 void test_client_peer_native_raw_request_dispatches_interleaved_messages() {
   auto transport = std::make_unique<RecordingClientContractTransport>();
   auto* transport_ptr = transport.get();
@@ -1083,6 +1169,7 @@ int main() {
     test_running_service_moved_from_is_inert();
     test_peer_serve_transport_observes_precancelled_token();
     test_server_peer_initialize_dispatches_on_peer_boundary();
+    test_server_peer_tool_discovery_dispatches_on_peer_boundary();
     test_client_peer_native_raw_request_dispatches_interleaved_messages();
     test_client_peer_native_raw_request_reports_transport_failures();
     test_request_handle_rejects_invalid_state();

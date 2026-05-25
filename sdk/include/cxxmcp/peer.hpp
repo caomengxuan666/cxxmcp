@@ -54,6 +54,12 @@ inline protocol::ErrorObject peer_error_object_from_core_error(
   return errors::to_json_rpc_error(error);
 }
 
+inline protocol::JsonRpcResponse peer_error_response(
+    const protocol::JsonRpcRequest& request, const core::Error& error) {
+  return protocol::make_error_response(
+      request.id, peer_error_object_from_core_error(error));
+}
+
 inline core::Result<protocol::Json> peer_require_result_payload(
     const protocol::JsonRpcResponse& response) {
   if (response.error.has_value()) {
@@ -1690,6 +1696,7 @@ class Peer<RoleServer> {
   }
 
   Peer& set_raw_request_handler(server::Server::RawRequestHandler handler) {
+    raw_request_handler_ = handler;
     server_->set_raw_request_handler(std::move(handler));
     return *this;
   }
@@ -1703,6 +1710,7 @@ class Peer<RoleServer> {
   }
 
   Peer& set_custom_request_handler(server::Server::RawRequestHandler handler) {
+    raw_request_handler_ = handler;
     server_->set_custom_request_handler(std::move(handler));
     return *this;
   }
@@ -1891,14 +1899,12 @@ class Peer<RoleServer> {
 
   core::Result<protocol::JsonRpcResponse> handle_request(
       const protocol::JsonRpcRequest& request,
-      const server::SessionContext& context = {}) {
+      const server::SessionContext& context = {}) try {
     if (request.method == protocol::InitializeMethod) {
       const auto valid =
           detail::validate_peer_server_initialize_params(request.params);
       if (!valid) {
-        return protocol::make_error_response(
-            request.id,
-            detail::peer_error_object_from_core_error(valid.error()));
+        return detail::peer_error_response(request, valid.error());
       }
       return protocol::make_response(request.id,
                                      detail::make_peer_server_initialize_result(
@@ -1907,7 +1913,46 @@ class Peer<RoleServer> {
     if (request.method == protocol::PingMethod) {
       return protocol::make_response(request.id, protocol::Json::object());
     }
+
+    if (raw_request_handler_) {
+      const auto raw_response = raw_request_handler_(request, context);
+      if (raw_response.has_value()) {
+        return *raw_response;
+      }
+    }
+
+    if (request.method == protocol::ToolsListMethod) {
+      protocol::Json result = protocol::Json::object();
+      result["tools"] = protocol::Json::array();
+      for (const auto& tool : list_tools()) {
+        result["tools"].push_back(protocol::tool_definition_to_json(tool));
+      }
+      return protocol::make_response(request.id, std::move(result));
+    }
+
+    if (request.method == protocol::ToolsGetMethod) {
+      if (!request.params.is_object() || !request.params.contains("name") ||
+          !request.params.at("name").is_string()) {
+        return detail::peer_error_response(
+            request, errors::make(protocol::ErrorCode::InvalidRequest,
+                                  "tools/get requires a string name"));
+      }
+
+      const auto tool = get_tool(request.params.at("name").get<std::string>());
+      if (!tool) {
+        return detail::peer_error_response(request, tool.error());
+      }
+      return protocol::make_response(request.id,
+                                     protocol::tool_definition_to_json(*tool));
+    }
+
     return server_->handle_request(request, context);
+  } catch (const std::exception& ex) {
+    return detail::peer_error_response(request,
+                                       errors::handler_failed(ex.what()));
+  } catch (...) {
+    return detail::peer_error_response(request,
+                                       errors::handler_unknown_exception());
   }
 
   core::Result<core::Unit> handle_notification(
@@ -2162,6 +2207,7 @@ class Peer<RoleServer> {
   std::vector<std::unique_ptr<transport::ServerTransport>> native_transports_;
   std::vector<std::unique_ptr<server::Transport>> native_context_transports_;
   bool native_notification_state_ = false;
+  server::Server::RawRequestHandler raw_request_handler_;
   server::Server::RawNotificationHandler raw_notification_handler_;
   server::Server::ProgressHandler progress_handler_;
   server::Server::RootsListChangedHandler roots_list_changed_handler_;
