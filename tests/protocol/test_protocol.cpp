@@ -453,6 +453,13 @@ void test_client_capability_wire_shape() {
           "client form elicitation should use object presence by default");
   require(!json.contains("tasks"),
           "client tasks should be omitted when not advertised");
+
+  capabilities.tasks = mcp::protocol::TaskCapabilities{};
+  const auto with_empty_tasks =
+      mcp::protocol::client_capabilities_to_json(capabilities);
+  require(with_empty_tasks.at("tasks").is_object() &&
+              with_empty_tasks.at("tasks").empty(),
+          "explicit empty client tasks capability should be preserved");
 }
 
 void test_server_capability_wire_shape() {
@@ -500,6 +507,27 @@ void test_server_capability_wire_shape() {
           "server experimental capability mismatch");
   require(json.at("extensions").at("vendor/feature").is_object(),
           "server extension capability mismatch");
+
+  mcp::protocol::ServerCapabilities presence_capabilities;
+  presence_capabilities.tools.enabled = true;
+  presence_capabilities.resources.enabled = true;
+  presence_capabilities.prompts.enabled = true;
+  presence_capabilities.tasks = mcp::protocol::TaskCapabilities{};
+
+  const auto presence_json =
+      mcp::protocol::server_capabilities_to_json(presence_capabilities);
+  require(presence_json.at("tools").is_object() &&
+              presence_json.at("tools").empty(),
+          "explicit empty server tools capability should be preserved");
+  require(presence_json.at("resources").is_object() &&
+              presence_json.at("resources").empty(),
+          "explicit empty server resources capability should be preserved");
+  require(presence_json.at("prompts").is_object() &&
+              presence_json.at("prompts").empty(),
+          "explicit empty server prompts capability should be preserved");
+  require(presence_json.at("tasks").is_object() &&
+              presence_json.at("tasks").empty(),
+          "explicit empty server tasks capability should be preserved");
 }
 
 void test_prompt_protocol_round_trips() {

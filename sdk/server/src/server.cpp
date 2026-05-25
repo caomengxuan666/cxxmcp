@@ -918,6 +918,7 @@ ServerBuilder& ServerBuilder::with_rate_limiter(
 
 ServerBuilder& ServerBuilder::add_tool(protocol::ToolDefinition definition,
                                        ToolHandler handler) {
+  options_.capabilities.tools.enabled = true;
   options_.capabilities.tools.list_changed = true;
   registrations_.push_back(
       [definition = std::move(definition),
@@ -929,6 +930,7 @@ ServerBuilder& ServerBuilder::add_tool(protocol::ToolDefinition definition,
 
 ServerBuilder& ServerBuilder::add_prompt(protocol::Prompt prompt,
                                          PromptHandler handler) {
+  options_.capabilities.prompts.enabled = true;
   options_.capabilities.prompts.list_changed = true;
   registrations_.push_back(
       [prompt = std::move(prompt),
@@ -940,6 +942,7 @@ ServerBuilder& ServerBuilder::add_prompt(protocol::Prompt prompt,
 
 ServerBuilder& ServerBuilder::add_resource(protocol::Resource resource,
                                            ResourceReadHandler handler) {
+  options_.capabilities.resources.enabled = true;
   options_.capabilities.resources.list_changed = true;
   registrations_.push_back(
       [resource = std::move(resource),
@@ -951,6 +954,7 @@ ServerBuilder& ServerBuilder::add_resource(protocol::Resource resource,
 
 ServerBuilder& ServerBuilder::add_resource_template(
     protocol::ResourceTemplate resource_template) {
+  options_.capabilities.resources.enabled = true;
   options_.capabilities.resources.list_changed = true;
   registrations_.push_back([resource_template = std::move(resource_template)](
                                Server& server) mutable {

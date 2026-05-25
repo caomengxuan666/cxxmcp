@@ -20,12 +20,16 @@ namespace mcp::protocol {
 
 /// @brief Server capability flags for tool discovery and invocation.
 struct ToolCapabilities {
+  /// Whether the server supports tool discovery or invocation.
+  bool enabled = false;
   /// Whether `notifications/tools/list_changed` may be emitted.
   bool list_changed = false;
 };
 
 /// @brief Server capability flags for resources.
 struct ResourceCapabilities {
+  /// Whether the server supports resource listing or reading.
+  bool enabled = false;
   /// Whether `notifications/resources/list_changed` may be emitted.
   bool list_changed = false;
   /// Whether the server supports resource subscribe/unsubscribe methods.
@@ -34,6 +38,8 @@ struct ResourceCapabilities {
 
 /// @brief Server capability flags for prompts.
 struct PromptCapabilities {
+  /// Whether the server supports prompt listing or retrieval.
+  bool enabled = false;
   /// Whether `notifications/prompts/list_changed` may be emitted.
   bool list_changed = false;
 };
@@ -243,9 +249,7 @@ inline Json client_capabilities_to_json(
   }
   if (capabilities.tasks.has_value()) {
     Json tasks = task_capabilities_to_json(*capabilities.tasks);
-    if (!tasks.empty()) {
-      json["tasks"] = std::move(tasks);
-    }
+    json["tasks"] = std::move(tasks);
   }
   return json;
 }
@@ -281,7 +285,7 @@ inline Json server_capabilities_to_json(
   if (capabilities.tools.list_changed) {
     tools["listChanged"] = true;
   }
-  if (!tools.empty()) {
+  if (capabilities.tools.enabled || !tools.empty()) {
     json["tools"] = std::move(tools);
   }
 
@@ -292,7 +296,7 @@ inline Json server_capabilities_to_json(
   if (capabilities.resources.subscribe) {
     resources["subscribe"] = true;
   }
-  if (!resources.empty()) {
+  if (capabilities.resources.enabled || !resources.empty()) {
     json["resources"] = std::move(resources);
   }
 
@@ -300,7 +304,7 @@ inline Json server_capabilities_to_json(
   if (capabilities.prompts.list_changed) {
     prompts["listChanged"] = true;
   }
-  if (!prompts.empty()) {
+  if (capabilities.prompts.enabled || !prompts.empty()) {
     json["prompts"] = std::move(prompts);
   }
 
@@ -312,9 +316,7 @@ inline Json server_capabilities_to_json(
   }
   if (capabilities.tasks.has_value()) {
     Json tasks = task_capabilities_to_json(*capabilities.tasks);
-    if (!tasks.empty()) {
-      json["tasks"] = std::move(tasks);
-    }
+    json["tasks"] = std::move(tasks);
   }
   if (capabilities.experimental.has_value()) {
     json["experimental"] = *capabilities.experimental;

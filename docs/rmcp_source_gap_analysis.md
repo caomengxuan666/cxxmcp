@@ -219,8 +219,9 @@ The current C++ models are simpler:
 - `ContentBlock` is mostly text plus generic `data`
 - `ToolDefinition` has name, description, input schema, and streaming flag
 - `Resource` and `Prompt` omit title, icons, annotations, and metadata
-- capability storage still uses compact booleans in places, although client,
-  server, and task capability serialization now use RMCP-style object presence
+- capability storage uses explicit presence flags plus compact booleans for
+  optional members, and client, server, and task capability serialization now
+  use RMCP-style object presence
 - `_meta` exists only as raw optional JSON in some JSON-RPC types
 
 Gap:
@@ -244,9 +245,10 @@ RMCP capabilities use optional objects, extension maps, and explicit nested capa
 
 The current C++ capabilities now use object-presence semantics for client,
 server, and task capability families. They also preserve experimental /
-extension bags. Some older capability models still use compact boolean fields
-internally, so the remaining work is to audit each public wire shape and public
-configuration API against the pinned RMCP snapshot.
+extension bags. The capability model can now express present-but-empty roots,
+server tool/resource/prompt families, sampling, elicitation modes, and task
+families. The remaining work is to audit extension-bag edge cases and each
+public configuration API against the pinned RMCP snapshot.
 
 Covered by current tree:
 
@@ -260,11 +262,12 @@ Covered by current tree:
 - server initialize serialization omits inactive capability families, omits
   false optional members, and serializes `logging` / `completions` as empty
   capability objects
+- public capability structs can express present-but-empty roots, server
+  tool/resource/prompt families, sampling, elicitation modes, and tasks
 
 Action:
 
-- consider optional-object capability storage so public configuration can
-  express present-but-empty feature families where the spec allows them
+- tighten extension bag typing and empty-map semantics
 - add builder helpers to avoid verbose capability setup
 
 ### 6. Task Support
