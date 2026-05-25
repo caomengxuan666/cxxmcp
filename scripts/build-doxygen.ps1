@@ -36,6 +36,16 @@ try {
 }
 
 $IndexPath = Join-Path $OutputDirectory "html/index.html"
+$WarningLog = Join-Path $OutputDirectory "warnings.log"
+if ((Test-Path -LiteralPath $WarningLog) -and
+    ((Get-Item -LiteralPath $WarningLog).Length -gt 0)) {
+    Get-Content -LiteralPath $WarningLog | ForEach-Object {
+        Write-Host $_
+    }
+    Write-Error "doxygen produced warnings; see $WarningLog."
+    exit 1
+}
+
 if (Test-Path -LiteralPath $IndexPath) {
     Write-Host "Doxygen HTML generated at $IndexPath"
 } else {
