@@ -53,6 +53,16 @@ class RequestHandle {
 
   RequestHandle() = default;
 
+  /// @brief Creates a handle whose result is already available.
+  static RequestHandle ready(protocol::RequestId request_id,
+                             ResultType result) {
+    auto promise = std::make_shared<std::promise<ResultType>>();
+    auto future = promise->get_future().share();
+    promise->set_value(std::move(result));
+    return RequestHandle(std::move(request_id), std::nullopt, std::nullopt, {},
+                         std::move(future));
+  }
+
   static RequestHandle spawn(protocol::RequestId request_id,
                              std::optional<std::chrono::milliseconds> timeout,
                              std::optional<CancellationToken> cancellation,

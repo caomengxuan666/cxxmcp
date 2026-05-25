@@ -1319,6 +1319,14 @@ RequestHandle<protocol::ResourcesReadResult> Client::read_resource_async(
 
 RequestHandle<protocol::CreateTaskResult> Client::call_tool_task_async(
     const protocol::ToolCall& call, RequestOptions options) {
+  if (!call.task.has_value()) {
+    return RequestHandle<protocol::CreateTaskResult>::ready(
+        next_request_id_++,
+        std::unexpected(make_client_error(
+            static_cast<int>(protocol::ErrorCode::InvalidRequest),
+            "task-aware tool call requires task parameters")));
+  }
+
   return request_async<protocol::CreateTaskResult>(
       std::string(protocol::ToolsCallMethod), protocol::tool_call_to_json(call),
       [](const protocol::Json& payload) {

@@ -409,6 +409,8 @@ token. Client and client-peer APIs now expose typed async helpers for common
 tool, prompt, resource, resource-template, completion, sampling, elicitation,
 and task requests, while the older concrete server API is still mostly
 synchronous and direct.
+Task-aware tool calls also share the synchronous local validation behavior when
+required task parameters are missing.
 
 Gap:
 

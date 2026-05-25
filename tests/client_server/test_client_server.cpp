@@ -984,6 +984,22 @@ void test_client_peer_typed_async_helpers() {
   require(task_call->task.task_id == "task-created",
           "typed async call_tool_task result mismatch");
 
+  const auto requests_before_invalid_task_call = recording->requests.size();
+  const auto invalid_task_call = peer.call_tool_task_async(
+                                         mcp::protocol::ToolCall{
+                                             .name = "fake-tool",
+                                             .arguments = Json::object(),
+                                         },
+                                         options)
+                                     .await_response();
+  require(!invalid_task_call.has_value(),
+          "invalid typed async call_tool_task should fail");
+  require(invalid_task_call.error().message ==
+              "task-aware tool call requires task parameters",
+          "invalid typed async call_tool_task error mismatch");
+  require(recording->requests.size() == requests_before_invalid_task_call,
+          "invalid typed async call_tool_task should not send a request");
+
   const auto tasks = peer.list_tasks_async(options).await_response();
   require(tasks.has_value(), "typed async list_tasks failed");
   require(tasks->front().task_id == "task-1",
