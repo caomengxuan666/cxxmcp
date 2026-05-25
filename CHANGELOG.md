@@ -40,6 +40,8 @@
   dispatcher.
 - Routed `ServerPeer` raw request override state plus `tools/list` and
   `tools/get` discovery handling through the Peer boundary.
+- Routed non-task `tools/call` handling through the `ServerPeer` boundary with
+  Peer-owned cancellation token propagation.
 - Routed `ServerPeer` prompt/resource discovery and read handling through the
   Peer boundary while preserving session context for handlers.
 - Routed Peer-registered completion, sampling, and logging request handlers

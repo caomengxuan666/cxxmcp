@@ -91,6 +91,8 @@ incrementally. Keep them concrete; do not replace them with broad claims.
   - [x] `ServerPeer` owns Peer-registered raw request handler state and handles
         `tools/list` / `tools/get` discovery requests at the Peer boundary after
         raw-handler override.
+  - [x] `ServerPeer` handles non-task `tools/call` requests at the Peer
+        boundary with Peer-owned cancellation token propagation.
   - [x] `ServerPeer` handles prompt and resource discovery/read requests at the
         Peer boundary while preserving full session context for handlers.
   - [x] `ServerPeer` owns Peer-registered completion, sampling, and logging

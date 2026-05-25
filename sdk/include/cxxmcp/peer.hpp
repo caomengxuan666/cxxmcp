@@ -18,6 +18,7 @@
 #include <optional>
 #include <string_view>
 #include <thread>
+#include <unordered_map>
 #include <utility>
 #include <variant>
 #include <vector>
@@ -58,6 +59,11 @@ inline protocol::JsonRpcResponse peer_error_response(
     const protocol::JsonRpcRequest& request, const core::Error& error) {
   return protocol::make_error_response(
       request.id, peer_error_object_from_core_error(error));
+}
+
+inline std::string peer_request_cancellation_key(
+    const protocol::RequestId& request_id) {
+  return protocol::request_id_to_json(request_id).dump();
 }
 
 inline core::Result<protocol::Json> peer_require_result_payload(
@@ -1953,6 +1959,31 @@ class Peer<RoleServer> {
                                      protocol::tool_definition_to_json(*tool));
     }
 
+    if (request.method == protocol::ToolsCallMethod) {
+      const auto call = protocol::tool_call_from_json(request.params);
+      if (!call) {
+        return detail::peer_error_response(request, call.error());
+      }
+      if (call->task.has_value()) {
+        return server_->handle_request(request, context);
+      }
+
+      const auto request_cancellation =
+          begin_peer_request_cancellation(request.id);
+      const std::shared_ptr<void> request_cancellation_cleanup(
+          nullptr, [this, request_id = request.id](void*) noexcept {
+            end_peer_request_cancellation(request_id);
+          });
+      const auto result =
+          server_->tools().call(*call, context, request_cancellation);
+      if (!result) {
+        return detail::peer_error_response(request, result.error());
+      }
+
+      return protocol::make_response(request.id,
+                                     protocol::tool_result_to_json(*result));
+    }
+
     if (request.method == protocol::PromptsListMethod) {
       protocol::PromptsListResult result;
       result.prompts = list_prompts();
@@ -2103,7 +2134,8 @@ class Peer<RoleServer> {
   core::Result<core::Unit> handle_notification(
       const protocol::JsonRpcNotification& notification,
       const server::SessionContext& context = {}) {
-    if (native_notification_state_) {
+    if (notification.method == protocol::CancelledNotificationMethod ||
+        native_notification_state_) {
       return handle_native_notification(notification, context);
     }
     return server_->handle_notification(notification, context);
@@ -2242,10 +2274,7 @@ class Peer<RoleServer> {
 
     if (const auto* notification =
             std::get_if<protocol::JsonRpcNotification>(&message)) {
-      const auto handled =
-          native_notification_state_
-              ? handle_native_notification(*notification, context)
-              : server_->handle_notification(*notification, context);
+      const auto handled = handle_notification(*notification, context);
       if (!handled) {
         return std::unexpected(handled.error());
       }
@@ -2270,10 +2299,44 @@ class Peer<RoleServer> {
   }
 
  private:
+  CancellationToken begin_peer_request_cancellation(
+      const protocol::RequestId& request_id) {
+    CancellationSource source;
+    auto token = source.token();
+    std::lock_guard lock(peer_request_cancellations_mutex_);
+    peer_request_cancellations_[detail::peer_request_cancellation_key(
+        request_id)] = std::move(source);
+    return token;
+  }
+
+  void end_peer_request_cancellation(
+      const protocol::RequestId& request_id) noexcept {
+    std::lock_guard lock(peer_request_cancellations_mutex_);
+    peer_request_cancellations_.erase(
+        detail::peer_request_cancellation_key(request_id));
+  }
+
+  void cancel_peer_request(const protocol::RequestId& request_id) noexcept {
+    std::lock_guard lock(peer_request_cancellations_mutex_);
+    const auto it = peer_request_cancellations_.find(
+        detail::peer_request_cancellation_key(request_id));
+    if (it != peer_request_cancellations_.end()) {
+      it->second.cancel();
+    }
+  }
+
   core::Result<core::Unit> handle_native_notification(
       const protocol::JsonRpcNotification& notification,
       const server::SessionContext& context) try {
     if (notification.method == protocol::CancelledNotificationMethod) {
+      const auto cancelled = protocol::cancelled_notification_params_from_json(
+          notification.params);
+      if (!cancelled) {
+        return std::unexpected(
+            errors::make(protocol::ErrorCode::InvalidParams,
+                         "cancelled notification requires valid params"));
+      }
+      cancel_peer_request(cancelled->request_id);
       return server_->handle_notification(notification, context);
     }
 
@@ -2351,6 +2414,9 @@ class Peer<RoleServer> {
   std::unique_ptr<server::Server> server_;
   std::vector<std::unique_ptr<transport::ServerTransport>> native_transports_;
   std::vector<std::unique_ptr<server::Transport>> native_context_transports_;
+  std::mutex peer_request_cancellations_mutex_;
+  std::unordered_map<std::string, CancellationSource>
+      peer_request_cancellations_;
   bool native_notification_state_ = false;
   server::Server::RawRequestHandler raw_request_handler_;
   server::Server::JsonHandler completion_handler_;

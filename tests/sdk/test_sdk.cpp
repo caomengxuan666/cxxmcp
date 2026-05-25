@@ -748,6 +748,85 @@ void test_server_peer_tool_discovery_dispatches_on_peer_boundary() {
           "raw request handler should run before peer tool discovery");
 }
 
+void test_server_peer_tool_call_dispatches_on_peer_boundary() {
+  std::mutex mutex;
+  std::condition_variable cv;
+  bool entered = false;
+  auto server =
+      mcp::server::App::builder()
+          .tool(
+              mcp::protocol::ToolDefinition{
+                  .name = "wait",
+                  .description = "Cancellation-aware tool",
+                  .input_schema = Json{{"type", "object"}},
+              },
+              [&](const mcp::server::ToolContext& context)
+                  -> mcp::core::Result<mcp::protocol::ToolResult> {
+                {
+                  std::lock_guard lock(mutex);
+                  entered = true;
+                }
+                cv.notify_one();
+
+                const auto deadline = std::chrono::steady_clock::now() +
+                                      std::chrono::milliseconds(250);
+                while (!context.cancelled() &&
+                       std::chrono::steady_clock::now() < deadline) {
+                  std::this_thread::sleep_for(std::chrono::milliseconds(1));
+                }
+
+                mcp::protocol::ToolResult result;
+                result.content.push_back(mcp::protocol::ContentBlock{
+                    .type = "text",
+                    .text = context.cancelled() ? "cancelled"
+                                                : context.arguments.dump(),
+                    .data = Json::object(),
+                });
+                return result;
+              })
+          .build();
+  require(server.has_value(), "tool call server build failed");
+  mcp::ServerPeer peer(std::move(*server));
+
+  std::optional<mcp::core::Result<mcp::protocol::JsonRpcResponse>> response;
+  std::thread worker([&] {
+    response = peer.handle_request(mcp::protocol::JsonRpcRequest{
+        .method = std::string(mcp::protocol::ToolsCallMethod),
+        .params =
+            Json{{"name", "wait"}, {"arguments", Json{{"value", "peer"}}}},
+        .id = mcp::protocol::RequestId{std::int64_t{50}},
+    });
+  });
+
+  {
+    std::unique_lock lock(mutex);
+    cv.wait_for(lock, std::chrono::milliseconds(250), [&] { return entered; });
+  }
+  if (!entered) {
+    worker.join();
+    require(false, "tool call handler should start");
+  }
+
+  mcp::protocol::CancelledNotificationParams cancelled;
+  cancelled.request_id = mcp::protocol::RequestId{std::int64_t{50}};
+  cancelled.reason = "test cancellation";
+  const auto cancelled_notification =
+      peer.handle_notification(mcp::protocol::JsonRpcNotification{
+          .method = std::string(mcp::protocol::CancelledNotificationMethod),
+          .params =
+              mcp::protocol::cancelled_notification_params_to_json(cancelled),
+      });
+  worker.join();
+  require(cancelled_notification.has_value(),
+          "server peer cancellation notification should succeed");
+
+  require(response.has_value(), "tool call response missing");
+  require(response->has_value(), "tool call response should succeed");
+  require((*response)->result.has_value(), "tool call result missing");
+  require((*response)->result->at("content").at(0).at("text") == "cancelled",
+          "tool call should receive peer cancellation token");
+}
+
 void test_server_peer_prompt_resource_dispatches_on_peer_boundary() {
   auto server =
       mcp::server::App::builder()
@@ -1426,6 +1505,7 @@ int main() {
     test_peer_serve_transport_observes_precancelled_token();
     test_server_peer_initialize_dispatches_on_peer_boundary();
     test_server_peer_tool_discovery_dispatches_on_peer_boundary();
+    test_server_peer_tool_call_dispatches_on_peer_boundary();
     test_server_peer_prompt_resource_dispatches_on_peer_boundary();
     test_server_peer_handler_requests_dispatch_on_peer_boundary();
     test_server_peer_task_handlers_dispatch_on_peer_boundary();
