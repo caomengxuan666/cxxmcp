@@ -187,7 +187,7 @@ true:
 - [x] Keep compatibility transport adapters out of canonical SDK entry headers.
 - [x] Cover compatibility adapter closed-stream and unexpected-response-id
       failures with stable structured errors.
-- [ ] Keep compatibility adapters for old concrete transports, but make them
+- [x] Keep compatibility adapters for old concrete transports, but make them
   implementation details.
 - [x] Stress-test all adapters for bidirectional request/notification flow.
 - [ ] Test unexpected response ids, duplicate ids, closed streams, handler
