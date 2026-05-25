@@ -291,10 +291,11 @@ Covered by current tree:
 - public capability structs can express present-but-empty roots, server
   tool/resource/prompt families, sampling, elicitation modes, and tasks
 - fluent client/server capability builders avoid verbose nested boolean setup
+- client/server capability serialization emits only object-shaped experimental
+  and extension bags; client parsing rejects non-object bags
 
 Action:
-
-- tighten extension bag typing and empty-map semantics
+- audit extension bag behavior against future MCP/RMCP snapshots
 
 ### 6. Task Support
 

@@ -329,10 +329,11 @@ inline Json client_capabilities_to_json(
   if (!elicitation.empty()) {
     json["elicitation"] = std::move(elicitation);
   }
-  if (capabilities.experimental.has_value()) {
+  if (capabilities.experimental.has_value() &&
+      capabilities.experimental->is_object()) {
     json["experimental"] = *capabilities.experimental;
   }
-  if (!capabilities.extensions.empty()) {
+  if (capabilities.extensions.is_object() && !capabilities.extensions.empty()) {
     json["extensions"] = capabilities.extensions;
   }
   if (capabilities.tasks.has_value()) {
@@ -497,10 +498,11 @@ inline Json server_capabilities_to_json(
     Json tasks = task_capabilities_to_json(*capabilities.tasks);
     json["tasks"] = std::move(tasks);
   }
-  if (capabilities.experimental.has_value()) {
+  if (capabilities.experimental.has_value() &&
+      capabilities.experimental->is_object()) {
     json["experimental"] = *capabilities.experimental;
   }
-  if (!capabilities.extensions.empty()) {
+  if (capabilities.extensions.is_object() && !capabilities.extensions.empty()) {
     json["extensions"] = capabilities.extensions;
   }
   return json;
@@ -559,9 +561,15 @@ inline std::optional<ClientCapabilities> client_capabilities_from_json(
     capabilities.tasks = task_capabilities_from_json(json.at("tasks"));
   }
   if (json.contains("experimental")) {
+    if (!json.at("experimental").is_object()) {
+      return std::nullopt;
+    }
     capabilities.experimental = json.at("experimental");
   }
   if (json.contains("extensions")) {
+    if (!json.at("extensions").is_object()) {
+      return std::nullopt;
+    }
     capabilities.extensions = json.at("extensions");
   }
   return capabilities;

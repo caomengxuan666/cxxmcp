@@ -603,6 +603,15 @@ void test_task_protocol_round_trips() {
   require(parsed_capabilities->extensions.at("vendor/feature").at("enabled"),
           "parsed client capabilities extension mismatch");
 
+  require(!mcp::protocol::client_capabilities_from_json(
+               Json{{"experimental", "invalid"}})
+               .has_value(),
+          "client experimental capability bag must be an object");
+  require(!mcp::protocol::client_capabilities_from_json(
+               Json{{"extensions", Json::array()}})
+               .has_value(),
+          "client extensions capability bag must be an object");
+
   Json legacy_json = Json::object();
   legacy_json["tasks"] = Json{
       {"list", true},
@@ -661,6 +670,23 @@ void test_client_capability_wire_shape() {
   require(with_empty_tasks.at("tasks").is_object() &&
               with_empty_tasks.at("tasks").empty(),
           "explicit empty client tasks capability should be preserved");
+
+  capabilities.experimental = Json::array();
+  const auto with_invalid_experimental =
+      mcp::protocol::client_capabilities_to_json(capabilities);
+  require(!with_invalid_experimental.contains("experimental"),
+          "non-object client experimental should be omitted");
+
+  capabilities.extensions = Json::array();
+  const auto with_invalid_extensions =
+      mcp::protocol::client_capabilities_to_json(capabilities);
+  require(!with_invalid_extensions.contains("extensions"),
+          "non-object client extensions should be omitted");
+
+  require(!mcp::protocol::client_capabilities_from_json(
+               Json{{"extensions", Json::array()}})
+               .has_value(),
+          "non-object client extensions should be rejected");
 }
 
 void test_server_capability_wire_shape() {
@@ -729,6 +755,18 @@ void test_server_capability_wire_shape() {
   require(presence_json.at("tasks").is_object() &&
               presence_json.at("tasks").empty(),
           "explicit empty server tasks capability should be preserved");
+
+  presence_capabilities.experimental = Json::array();
+  const auto invalid_experimental_json =
+      mcp::protocol::server_capabilities_to_json(presence_capabilities);
+  require(!invalid_experimental_json.contains("experimental"),
+          "non-object server experimental should be omitted");
+
+  presence_capabilities.extensions = Json::array();
+  const auto invalid_extensions_json =
+      mcp::protocol::server_capabilities_to_json(presence_capabilities);
+  require(!invalid_extensions_json.contains("extensions"),
+          "non-object server extensions should be omitted");
 }
 
 void test_capability_builders_match_wire_shape() {
