@@ -20,10 +20,6 @@
 /// @file
 /// @brief Streamable HTTP server transport for MCP JSON-RPC sessions.
 
-namespace httplib {
-class Server;
-}
-
 namespace mcp::server {
 
 /// @brief Configuration for HttpTransport.
@@ -50,8 +46,8 @@ struct HttpTransportOptions {
 ///
 /// HttpTransport accepts JSON-RPC messages over POST, exposes server-initiated
 /// notifications and requests over a GET text/event-stream, and terminates the
-/// session on DELETE. It owns the underlying httplib::Server instance after
-/// start() begins.
+/// session on DELETE. It owns the underlying HTTP server instance after start()
+/// begins.
 ///
 /// The server transport is stateful. Every successful initialize request
 /// creates a distinct MCP session id returned in Mcp-Session-Id. Later POST,
@@ -141,6 +137,10 @@ class HttpTransport final : public Transport {
   std::string_view name() const noexcept override;
 
  private:
+  struct HttpServerDeleter {
+    void operator()(void* server) const noexcept;
+  };
+
   struct PendingRequest {
     std::mutex mutex;
     std::condition_variable cv;
@@ -179,7 +179,7 @@ class HttpTransport final : public Transport {
   void close_sse_stream(std::string_view session_id) noexcept;
 
   HttpTransportOptions options_;
-  std::unique_ptr<httplib::Server> server_;
+  std::unique_ptr<void, HttpServerDeleter> server_;
   mutable std::mutex mutex_;
   std::condition_variable notification_cv_;
   std::unordered_map<std::string, SessionState> sessions_;

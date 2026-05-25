@@ -14,6 +14,7 @@ set(public_include_roots
 set(forbidden_include_patterns
     "#[ \t]*include[ \t]*[<\"]cxxmcp/(app|runtime|gateway|cli)/"
     "#[ \t]*include[ \t]*[<\"]cxxmcp/(profile|policy|discovery)/"
+    "#[ \t]*include[ \t]*[<\"]httplib\\.h"
 )
 
 set(forbidden_type_patterns
@@ -25,6 +26,7 @@ set(forbidden_type_patterns
     "\\bImport[A-Za-z0-9_]*\\b"
     "\\bExport[A-Za-z0-9_]*\\b"
     "\\bDiscovery[A-Za-z0-9_]*\\b"
+    "\\bhttplib::"
 )
 
 foreach(root IN LISTS public_include_roots)

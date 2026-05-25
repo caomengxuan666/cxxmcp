@@ -109,7 +109,11 @@ if(TARGET mcp_client AND TARGET mcp_server)
         transport/test_http_transport.cpp
     )
 
-    target_link_libraries(mcp_http_transport_tests PRIVATE mcp_client mcp_server)
+    target_link_libraries(mcp_http_transport_tests PRIVATE
+        mcp_client
+        mcp_server
+        cpp_httplib
+    )
 
     add_test(NAME http_transport COMMAND mcp_http_transport_tests)
 
@@ -117,7 +121,11 @@ if(TARGET mcp_client AND TARGET mcp_server)
         interop/test_rmcp_conformance.cpp
     )
 
-    target_link_libraries(mcp_rmcp_conformance_tests PRIVATE mcp_client mcp_server)
+    target_link_libraries(mcp_rmcp_conformance_tests PRIVATE
+        mcp_client
+        mcp_server
+        cpp_httplib
+    )
     target_compile_definitions(mcp_rmcp_conformance_tests PRIVATE
         MCP_TEST_SOURCE_DIR="${PROJECT_SOURCE_DIR}"
     )
@@ -221,7 +229,10 @@ if(TARGET mcp_app)
         app/test_client_discovery.cpp
     )
 
-    target_link_libraries(mcp_client_discovery_tests PRIVATE mcp_app)
+    target_link_libraries(mcp_client_discovery_tests PRIVATE
+        mcp_app
+        cpp_httplib
+    )
     if(TARGET mcp_test_stdio_child)
         target_compile_definitions(mcp_client_discovery_tests PRIVATE
             MCP_TEST_CHILD_EXE="$<TARGET_FILE:mcp_test_stdio_child>"
@@ -253,7 +264,10 @@ if(TARGET mcp_gateway AND TARGET mcp_test_stdio_child)
         app/test_gateway.cpp
     )
 
-    target_link_libraries(mcp_gateway_tests PRIVATE mcp_gateway)
+    target_link_libraries(mcp_gateway_tests PRIVATE
+        mcp_gateway
+        cpp_httplib
+    )
     target_compile_definitions(mcp_gateway_tests PRIVATE
         MCP_TEST_CHILD_EXE="$<TARGET_FILE:mcp_test_stdio_child>"
     )
@@ -267,7 +281,10 @@ if(TARGET mcp_cli AND TARGET mcp_cli_app AND TARGET mcp_test_stdio_child)
         cli/test_cli.cpp
     )
 
-    target_link_libraries(mcp_cli_tests PRIVATE mcp_cli)
+    target_link_libraries(mcp_cli_tests PRIVATE
+        mcp_cli
+        cpp_httplib
+    )
     target_compile_definitions(mcp_cli_tests PRIVATE
         MCP_TEST_CLI_EXE="$<TARGET_FILE:mcp_cli_app>"
         MCP_TEST_CHILD_EXE="$<TARGET_FILE:mcp_test_stdio_child>"

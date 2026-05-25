@@ -147,11 +147,11 @@ target_include_directories(jsonrpcpp INTERFACE
 
 cxxmcp_require_sdk_cxx(jsonrpcpp)
 
+# Internal implementation dependency for HTTP transports and tests. It is not
+# installed or exported as part of the public SDK package contract.
 add_library(cpp_httplib INTERFACE)
 target_include_directories(cpp_httplib INTERFACE
     $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/third_party/httplib>
-    $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>
-    $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}/cxxmcp/third_party/httplib>
 )
 
 cxxmcp_require_sdk_cxx(cpp_httplib)
@@ -185,8 +185,11 @@ if(MCP_ENABLE_CLIENT)
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/sdk/client/include>
         $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>
     )
+    target_include_directories(mcp_client PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/third_party/httplib
+    )
     target_link_libraries(mcp_client
-        PUBLIC mcp_core mcp_protocol cpp_httplib
+        PUBLIC mcp_core mcp_protocol
         PRIVATE Threads::Threads
     )
     cxxmcp_require_sdk_cxx(mcp_client)
@@ -206,7 +209,10 @@ if(MCP_ENABLE_SERVER)
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/sdk/server/include>
         $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>
     )
-    target_link_libraries(mcp_server PUBLIC mcp_core mcp_protocol cpp_httplib)
+    target_include_directories(mcp_server PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/third_party/httplib
+    )
+    target_link_libraries(mcp_server PUBLIC mcp_core mcp_protocol)
     cxxmcp_require_sdk_cxx(mcp_server)
 endif()
 
@@ -444,7 +450,7 @@ if(CXXMCP_BUILD_DOCS)
     )
 endif()
 
-set(CXXMCP_INSTALL_TARGETS mcp_core jsonrpcpp cpp_httplib)
+set(CXXMCP_INSTALL_TARGETS mcp_core jsonrpcpp)
 if(TARGET mcp_protocol)
     list(APPEND CXXMCP_INSTALL_TARGETS mcp_protocol)
 endif()
@@ -520,10 +526,6 @@ install(FILES
 install(FILES
     third_party/jsonrpcpp/jsonrpcpp.hpp
     DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/cxxmcp/third_party/jsonrpcpp
-)
-install(FILES
-    third_party/httplib/httplib.h
-    DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/cxxmcp/third_party/httplib
 )
 install(FILES
     third_party/nlohmann/json.hpp

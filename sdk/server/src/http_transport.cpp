@@ -302,6 +302,10 @@ HttpTransport::HttpTransport(HttpTransportOptions options)
   }
 }
 
+void HttpTransport::HttpServerDeleter::operator()(void* server) const noexcept {
+  delete static_cast<httplib::Server*>(server);
+}
+
 HttpTransport::~HttpTransport() = default;
 
 core::Result<core::Unit> HttpTransport::start(
@@ -323,14 +327,16 @@ core::Result<core::Unit> HttpTransport::start(
     stopped_ = false;
     sessions_.clear();
     default_session_id_.clear();
-    server_ = std::make_unique<httplib::Server>();
+    server_.reset(new httplib::Server());
   }
 
-  server_->Post(options_.path, [this, handler = std::move(handler),
-                                notification_handler =
-                                    std::move(notification_handler)](
-                                   const httplib::Request& request,
-                                   httplib::Response& response) mutable {
+  auto* http_server = static_cast<httplib::Server*>(server_.get());
+
+  http_server->Post(options_.path, [this, handler = std::move(handler),
+                                    notification_handler =
+                                        std::move(notification_handler)](
+                                       const httplib::Request& request,
+                                       httplib::Response& response) mutable {
     const auto origin =
         validate_origin_header(request, options_.allowed_origins);
     if (!origin) {
@@ -545,8 +551,8 @@ core::Result<core::Unit> HttpTransport::start(
     write_response(response, *rpc_response);
   });
 
-  server_->Get(options_.path, [this](const httplib::Request& request,
-                                     httplib::Response& response) {
+  http_server->Get(options_.path, [this](const httplib::Request& request,
+                                         httplib::Response& response) {
     const auto origin =
         validate_origin_header(request, options_.allowed_origins);
     if (!origin) {
@@ -741,8 +747,8 @@ core::Result<core::Unit> HttpTransport::start(
         });
   });
 
-  server_->Delete(options_.path, [this](const httplib::Request& request,
-                                        httplib::Response& response) {
+  http_server->Delete(options_.path, [this](const httplib::Request& request,
+                                            httplib::Response& response) {
     const auto origin =
         validate_origin_header(request, options_.allowed_origins);
     if (!origin) {
@@ -795,7 +801,7 @@ core::Result<core::Unit> HttpTransport::start(
   });
 
   const auto listening =
-      server_->listen(options_.listen_host, options_.listen_port);
+      http_server->listen(options_.listen_host, options_.listen_port);
   if (!listening) {
     return std::unexpected(make_transport_error(
         static_cast<int>(protocol::ErrorCode::InternalError),
@@ -956,7 +962,7 @@ void HttpTransport::stop() noexcept {
     }
     sessions_.clear();
     default_session_id_.clear();
-    server_to_stop = server_.get();
+    server_to_stop = static_cast<httplib::Server*>(server_.get());
   }
   notification_cv_.notify_all();
   if (server_to_stop) {
