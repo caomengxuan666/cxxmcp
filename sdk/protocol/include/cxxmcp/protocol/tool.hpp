@@ -41,6 +41,103 @@ struct ContentBlock {
   Json annotations = Json::object();
   /// Optional `_meta` extension object preserved on the wire.
   std::optional<Json> meta;
+
+  /// @brief Creates a text content block.
+  static ContentBlock text_content(std::string value) {
+    ContentBlock block;
+    block.type = "text";
+    block.text = std::move(value);
+    return block;
+  }
+
+  /// @brief Creates an image content block with base64 data.
+  static ContentBlock image(std::string base64_data, std::string mime_type) {
+    ContentBlock block;
+    block.type = "image";
+    block.data = std::move(base64_data);
+    block.mime_type = std::move(mime_type);
+    return block;
+  }
+
+  /// @brief Creates an audio content block with base64 data.
+  static ContentBlock audio(std::string base64_data, std::string mime_type) {
+    ContentBlock block;
+    block.type = "audio";
+    block.data = std::move(base64_data);
+    block.mime_type = std::move(mime_type);
+    return block;
+  }
+
+  /// @brief Creates an embedded resource content block.
+  static ContentBlock embedded_resource(ResourceContents value) {
+    ContentBlock block;
+    block.type = "resource";
+    block.resource = std::move(value);
+    return block;
+  }
+
+  /// @brief Creates a resource link content block.
+  static ContentBlock resource_link_content(Resource value) {
+    ContentBlock block;
+    block.type = "resource_link";
+    block.resource_link = std::move(value);
+    return block;
+  }
+
+  /// @brief Returns true when this block is a text block.
+  bool is_text() const noexcept { return type == "text"; }
+
+  /// @brief Returns true when this block is an image block.
+  bool is_image() const noexcept { return type == "image"; }
+
+  /// @brief Returns true when this block is an audio block.
+  bool is_audio() const noexcept { return type == "audio"; }
+
+  /// @brief Returns true when this block embeds resource contents.
+  bool is_embedded_resource() const noexcept { return type == "resource"; }
+
+  /// @brief Returns true when this block links to a resource descriptor.
+  bool is_resource_link() const noexcept { return type == "resource_link"; }
+
+  /// @brief Returns the text payload when this is a text block.
+  std::optional<std::string_view> as_text() const noexcept {
+    if (!is_text()) {
+      return std::nullopt;
+    }
+    return std::string_view(text);
+  }
+
+  /// @brief Returns base64 image data when this is an image block.
+  std::optional<std::string_view> as_image_data() const {
+    if (!is_image() || !data.is_string()) {
+      return std::nullopt;
+    }
+    return std::string_view(data.get_ref<const std::string&>());
+  }
+
+  /// @brief Returns base64 audio data when this is an audio block.
+  std::optional<std::string_view> as_audio_data() const {
+    if (!is_audio() || !data.is_string()) {
+      return std::nullopt;
+    }
+    return std::string_view(data.get_ref<const std::string&>());
+  }
+
+  /// @brief Returns embedded resource contents when present.
+  const ResourceContents* as_embedded_resource() const noexcept {
+    if (!is_embedded_resource() || !resource.has_value()) {
+      return nullptr;
+    }
+    return &*resource;
+  }
+
+  /// @brief Returns the linked resource descriptor when present.
+  const Resource* as_resource_link() const noexcept {
+    if (!is_resource_link() || !resource_link.has_value()) {
+      return nullptr;
+    }
+    return &*resource_link;
+  }
 };
 
 /// @brief Metadata describing a callable MCP tool.

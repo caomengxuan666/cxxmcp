@@ -233,7 +233,8 @@ Gap:
 
 Action:
 
-- add remaining content convenience builders and typed accessors
+- add remaining content convenience builders and typed accessors outside the
+  core `ContentBlock` helpers where higher-level APIs need them
 - finish annotations support where it is still represented as raw JSON
 - add `_meta` support at the proper model/request/notification levels
 - add tool output schema and tool execution/task support

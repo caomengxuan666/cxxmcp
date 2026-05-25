@@ -230,44 +230,41 @@ void test_tool_protocol_round_trips() {
 
 void test_content_block_variants_round_trip() {
   const std::vector<mcp::protocol::ContentBlock> blocks{
-      mcp::protocol::ContentBlock{
-          .type = "text",
-          .text = "hello",
-          .annotations = Json{{"audience", Json::array({"user"})}},
-          .meta = Json{{"trace", "text-1"}},
-      },
-      mcp::protocol::ContentBlock{
-          .type = "image",
-          .data = "base64-image",
-          .mime_type = "image/png",
-      },
-      mcp::protocol::ContentBlock{
-          .type = "audio",
-          .data = "base64-audio",
-          .mime_type = "audio/wav",
-      },
-      mcp::protocol::ContentBlock{
-          .type = "resource",
-          .resource =
-              mcp::protocol::ResourceContents{
-                  .uri = "file:///tmp/readme.txt",
-                  .mime_type = "text/plain",
-                  .text = std::string("hello resource"),
-              },
-      },
-      mcp::protocol::ContentBlock{
-          .type = "resource_link",
-          .resource_link =
-              mcp::protocol::Resource{
-                  .title = "Readme",
-                  .uri = "file:///tmp/readme.txt",
-                  .name = "readme.txt",
-                  .description = "Project readme",
-                  .mime_type = "text/plain",
-                  .size = std::int64_t{42},
-              },
-      },
+      [] {
+        auto block = mcp::protocol::ContentBlock::text_content("hello");
+        block.annotations = Json{{"audience", Json::array({"user"})}};
+        block.meta = Json{{"trace", "text-1"}};
+        return block;
+      }(),
+      mcp::protocol::ContentBlock::image("base64-image", "image/png"),
+      mcp::protocol::ContentBlock::audio("base64-audio", "audio/wav"),
+      mcp::protocol::ContentBlock::embedded_resource(
+          mcp::protocol::ResourceContents{
+              .uri = "file:///tmp/readme.txt",
+              .mime_type = "text/plain",
+              .text = std::string("hello resource"),
+          }),
+      mcp::protocol::ContentBlock::resource_link_content(
+          mcp::protocol::Resource{
+              .title = "Readme",
+              .uri = "file:///tmp/readme.txt",
+              .name = "readme.txt",
+              .description = "Project readme",
+              .mime_type = "text/plain",
+              .size = std::int64_t{42},
+          }),
   };
+
+  require(blocks.at(0).as_text().value() == "hello",
+          "text content accessor mismatch");
+  require(blocks.at(1).as_image_data().value() == "base64-image",
+          "image content accessor mismatch");
+  require(blocks.at(2).as_audio_data().value() == "base64-audio",
+          "audio content accessor mismatch");
+  require(blocks.at(3).as_embedded_resource()->text.value() == "hello resource",
+          "embedded resource accessor mismatch");
+  require(blocks.at(4).as_resource_link()->name == "readme.txt",
+          "resource link accessor mismatch");
 
   const auto text_json = mcp::protocol::content_block_to_json(blocks.at(0));
   require(text_json.at("text") == "hello", "text content mismatch");
