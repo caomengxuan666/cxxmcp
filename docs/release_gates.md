@@ -50,6 +50,13 @@ matrix is:
 - MSVC static runtime and dynamic runtime modes when Windows artifacts are
   advertised
 
+The `.github/workflows/release-gates.yml` workflow is the canonical public
+evidence producer for this matrix. It runs the `release-blocking` CTest label
+set on Linux/GCC, Linux/Clang, macOS/AppleClang, Windows/MSVC Ninja with static
+runtime, and Windows/MSVC Visual Studio with dynamic runtime. The same workflow
+also builds the Doxygen HTML artifact that must be attached to release
+candidates when API docs are advertised.
+
 ## Public API Review
 
 Before a release, review public header diffs under:

@@ -32,9 +32,9 @@ turning the SDK surface into a gateway/runtime product.
 Remaining non-P1/P2 proof gates before claiming fact-standard status:
 
 - Multi-compiler / multi-generator installed-package evidence has to be
-  produced, not only documented.
-- Public generated API docs and release artifacts have to be built and attached
-  to an actual release candidate.
+  produced by `.github/workflows/release-gates.yml`, not only documented.
+- Public generated API docs and release artifacts have to be built by the
+  release-gates workflow and attached to an actual release candidate.
 - README, examples, changelog, compatibility policy, and release artifacts have
   to be audited together after the next successful release-blocking matrix run.
 

@@ -1,0 +1,168 @@
+name: release-gates
+
+on:
+  workflow_dispatch:
+  pull_request:
+  push:
+    branches:
+      - rewrite-v2
+      - main
+
+jobs:
+  release-blocking:
+    name: ${{ matrix.name }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: linux-gcc-ninja
+            os: ubuntu-latest
+            generator: Ninja
+            build_type: Debug
+            cc: gcc
+            cxx: g++
+          - name: linux-clang-ninja
+            os: ubuntu-latest
+            generator: Ninja
+            build_type: Debug
+            cc: clang
+            cxx: clang++
+          - name: macos-appleclang-ninja
+            os: macos-latest
+            generator: Ninja
+            build_type: Debug
+          - name: windows-msvc-ninja-static-runtime
+            os: windows-latest
+            generator: Ninja
+            build_type: Debug
+            msvc_runtime: MultiThreaded$<$<CONFIG:Debug>:Debug>
+          - name: windows-msvc-vs-dynamic-runtime
+            os: windows-latest
+            generator: Visual Studio 17 2022
+            config: Debug
+            msvc_runtime: MultiThreaded$<$<CONFIG:Debug>:Debug>DLL
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Install Ninja
+        if: matrix.generator == 'Ninja'
+        shell: bash
+        run: |
+          if [[ "${RUNNER_OS}" == "Linux" ]]; then
+            sudo apt-get update
+            sudo apt-get install -y ninja-build
+          elif [[ "${RUNNER_OS}" == "macOS" ]]; then
+            brew install ninja
+          elif [[ "${RUNNER_OS}" == "Windows" ]]; then
+            choco install ninja --no-progress
+          fi
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Setup uv
+        uses: astral-sh/setup-uv@v5
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Checkout pinned RMCP reference
+        shell: bash
+        run: |
+          mkdir -p reference
+          git clone https://github.com/modelcontextprotocol/rust-sdk.git reference/rmcp
+          git -C reference/rmcp checkout c330fede90e4729c234f8e87fdbc5ea27a1dd10c
+
+      - name: Configure
+        shell: pwsh
+        env:
+          CC: ${{ matrix.cc }}
+          CXX: ${{ matrix.cxx }}
+        run: |
+          $cmakeArgs = @(
+            "-S", ".",
+            "-B", "build-release-gates",
+            "-G", "${{ matrix.generator }}",
+            "-DCXXMCP_BUILD_SDK=ON",
+            "-DCXXMCP_BUILD_CLIENT=ON",
+            "-DCXXMCP_BUILD_SERVER=ON",
+            "-DCXXMCP_BUILD_RUNTIME=ON",
+            "-DCXXMCP_BUILD_APP=ON",
+            "-DCXXMCP_BUILD_GATEWAY=ON",
+            "-DCXXMCP_BUILD_CLI=OFF",
+            "-DCXXMCP_BUILD_EXAMPLES=ON",
+            "-DCXXMCP_BUILD_TESTS=ON"
+          )
+          if ("${{ matrix.build_type }}") {
+            $cmakeArgs += "-DCMAKE_BUILD_TYPE=${{ matrix.build_type }}"
+          }
+          if ("${{ matrix.msvc_runtime }}") {
+            $cmakeArgs += "-DCXXMCP_MSVC_RUNTIME_LIBRARY=${{ matrix.msvc_runtime }}"
+          }
+          cmake @cmakeArgs
+
+      - name: Build
+        shell: pwsh
+        run: |
+          $buildArgs = @("--build", "build-release-gates", "--parallel")
+          if ("${{ matrix.config }}") {
+            $buildArgs += @("--config", "${{ matrix.config }}")
+          }
+          cmake @buildArgs
+
+      - name: Run release-blocking tests
+        shell: pwsh
+        run: |
+          $ctestArgs = @(
+            "--test-dir", "build-release-gates",
+            "-L", "release-blocking",
+            "--output-on-failure",
+            "--timeout", "300"
+          )
+          if ("${{ matrix.config }}") {
+            $ctestArgs += @("-C", "${{ matrix.config }}")
+          }
+          ctest @ctestArgs
+
+  docs-artifact:
+    name: doxygen-docs
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Install Doxygen
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y doxygen graphviz ninja-build
+
+      - name: Configure docs
+        run: >
+          cmake -S . -B build-docs -G Ninja
+          -DCMAKE_BUILD_TYPE=Release
+          -DCXXMCP_BUILD_DOCS=ON
+          -DCXXMCP_BUILD_TESTS=OFF
+
+      - name: Build docs
+        run: cmake --build build-docs --target docs
+
+      - name: Upload docs artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: cxxmcp-doxygen-html
+          path: docs/doxygen/html
