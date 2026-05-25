@@ -7,6 +7,7 @@
 /// contract.
 
 #include <deque>
+#include <exception>
 #include <memory>
 #include <optional>
 #include <string>
@@ -223,12 +224,22 @@ class ContractTransportAdapter final : public mcp::server::Transport {
       const protocol::JsonRpcRequest& request) {
     protocol::JsonRpcResponse response;
     if (request_handler_) {
-      auto handled = request_handler_(request, session_context());
-      if (!handled) {
+      try {
+        auto handled = request_handler_(request, session_context());
+        if (!handled) {
+          response = protocol::make_error_response(
+              request.id, error_object_from_core_error(handled.error()));
+        } else {
+          response = std::move(*handled);
+        }
+      } catch (const std::exception& ex) {
         response = protocol::make_error_response(
-            request.id, error_object_from_core_error(handled.error()));
-      } else {
-        response = std::move(*handled);
+            request.id,
+            error_object_from_core_error(errors::handler_failed(ex.what())));
+      } catch (...) {
+        response = protocol::make_error_response(
+            request.id,
+            error_object_from_core_error(errors::handler_unknown_exception()));
       }
     } else {
       response = protocol::make_error_response(
@@ -259,7 +270,13 @@ class ContractTransportAdapter final : public mcp::server::Transport {
     if (!notification_handler_) {
       return core::Unit{};
     }
-    return notification_handler_(notification, session_context());
+    try {
+      return notification_handler_(notification, session_context());
+    } catch (const std::exception& ex) {
+      return std::unexpected(errors::handler_failed(ex.what()));
+    } catch (...) {
+      return std::unexpected(errors::handler_unknown_exception());
+    }
   }
 
   SessionContext session_context() noexcept {

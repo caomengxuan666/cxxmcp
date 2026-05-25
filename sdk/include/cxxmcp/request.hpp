@@ -143,7 +143,7 @@ class RequestHandle {
     }
 
     if (!timeout_.has_value() && !cancellation_.has_value()) {
-      return response_.get();
+      return read_response_result();
     }
 
     const auto started_at = std::chrono::steady_clock::now();
@@ -167,7 +167,7 @@ class RequestHandle {
               ? std::min(std::chrono::milliseconds(10), *timeout_)
               : std::chrono::milliseconds(10);
       if (response_.wait_for(wait_slice) == std::future_status::ready) {
-        return response_.get();
+        return read_response_result();
       }
     }
   }
@@ -197,6 +197,16 @@ class RequestHandle {
     }
     std::lock_guard lock(control_->mutex);
     return control_->terminal_error;
+  }
+
+  core::Result<T> read_response_result() const noexcept {
+    try {
+      return response_.get();
+    } catch (const std::exception& ex) {
+      return std::unexpected(errors::request_worker_exception(ex.what()));
+    } catch (...) {
+      return std::unexpected(errors::request_worker_unknown_exception());
+    }
   }
 
   core::Result<T> fail_terminal(std::string reason, core::Error error) const {

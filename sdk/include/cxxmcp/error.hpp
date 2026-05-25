@@ -49,6 +49,11 @@ inline core::Error handler_failed(std::string detail = {}) {
               std::move(detail), "handler");
 }
 
+inline core::Error handler_unknown_exception() {
+  return make(protocol::ErrorCode::InternalError,
+              "handler threw an unknown exception", {}, "handler");
+}
+
 inline core::Error transport_failed(std::string detail = {}) {
   return make(protocol::ErrorCode::InternalError, "transport failed",
               std::move(detail), "transport");

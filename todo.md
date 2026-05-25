@@ -268,7 +268,7 @@ true:
   and process stdio.
 - [x] Map transport, parse, handler, timeout, and cancellation failures to stable
   error codes/messages.
-- [ ] Avoid leaking ad hoc exceptions or raw strings through public request
+- [x] Avoid leaking ad hoc exceptions or raw strings through public request
   APIs.
 
 ## P0: Protocol Version Policy

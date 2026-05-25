@@ -2,10 +2,12 @@
 
 #include "cxxmcp/server/server.hpp"
 
+#include <exception>
 #include <memory>
 #include <optional>
 #include <utility>
 
+#include "cxxmcp/error.hpp"
 #include "cxxmcp/protocol/logging.hpp"
 #include "cxxmcp/protocol/serialization.hpp"
 #include "cxxmcp/server/http_transport.hpp"
@@ -268,7 +270,8 @@ void Server::cancel_request(const protocol::RequestId& request_id) noexcept {
 }
 
 core::Result<protocol::JsonRpcResponse> Server::handle_request(
-    const protocol::JsonRpcRequest& request, const SessionContext& context) {
+    const protocol::JsonRpcRequest& request,
+    const SessionContext& context) try {
   const auto request_cancellation = begin_request_cancellation(request.id);
   const std::shared_ptr<void> request_cancellation_cleanup(
       nullptr, [this, request_id = request.id](void*) noexcept {
@@ -632,11 +635,17 @@ core::Result<protocol::JsonRpcResponse> Server::handle_request(
   return make_error_response(
       request, static_cast<int>(protocol::ErrorCode::MethodNotFound),
       "method not found", request.method);
+} catch (const std::exception& ex) {
+  const auto error = errors::handler_failed(ex.what());
+  return make_error_response(request, error.code, error.message, error.detail);
+} catch (...) {
+  const auto error = errors::handler_unknown_exception();
+  return make_error_response(request, error.code, error.message, error.detail);
 }
 
 core::Result<core::Unit> Server::handle_notification(
     const protocol::JsonRpcNotification& notification,
-    const SessionContext& context) {
+    const SessionContext& context) try {
   if (raw_notification_handler_) {
     const auto raw_result = raw_notification_handler_(notification, context);
     if (!raw_result) {
@@ -717,6 +726,10 @@ core::Result<core::Unit> Server::handle_notification(
   }
 
   return core::Unit{};
+} catch (const std::exception& ex) {
+  return std::unexpected(errors::handler_failed(ex.what()));
+} catch (...) {
+  return std::unexpected(errors::handler_unknown_exception());
 }
 
 core::Result<core::Unit> Server::broadcast_notification(

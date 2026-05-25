@@ -7,6 +7,7 @@
 /// contract.
 
 #include <deque>
+#include <exception>
 #include <memory>
 #include <optional>
 #include <string>
@@ -193,19 +194,35 @@ class ContractTransportAdapter final : public mcp::client::Transport {
     if (!notification_handler_) {
       return core::Unit{};
     }
-    return notification_handler_(notification);
+    try {
+      return notification_handler_(notification);
+    } catch (const std::exception& ex) {
+      return std::unexpected(errors::handler_failed(ex.what()));
+    } catch (...) {
+      return std::unexpected(errors::handler_unknown_exception());
+    }
   }
 
   core::Result<core::Unit> handle_request(
       const protocol::JsonRpcRequest& request) {
     protocol::JsonRpcResponse response;
     if (request_handler_) {
-      auto handled = request_handler_(request);
-      if (!handled) {
+      try {
+        auto handled = request_handler_(request);
+        if (!handled) {
+          response = protocol::make_error_response(
+              request.id, error_object_from_core_error(handled.error()));
+        } else {
+          response = std::move(*handled);
+        }
+      } catch (const std::exception& ex) {
         response = protocol::make_error_response(
-            request.id, error_object_from_core_error(handled.error()));
-      } else {
-        response = std::move(*handled);
+            request.id,
+            error_object_from_core_error(errors::handler_failed(ex.what())));
+      } catch (...) {
+        response = protocol::make_error_response(
+            request.id,
+            error_object_from_core_error(errors::handler_unknown_exception()));
       }
     } else {
       response = protocol::make_error_response(

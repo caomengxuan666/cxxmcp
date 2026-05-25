@@ -140,6 +140,7 @@ class RecordingClientContractTransport final
   }
 
   mcp::core::Result<std::optional<RxMessage>> receive() override {
+    ++receive_count;
     if (received.empty()) {
       return std::nullopt;
     }
@@ -155,6 +156,7 @@ class RecordingClientContractTransport final
 
   std::vector<TxMessage> sent;
   std::deque<RxMessage> received;
+  int receive_count = 0;
   bool stopped = false;
 };
 
@@ -171,6 +173,7 @@ class RecordingServerContractTransport final
   }
 
   mcp::core::Result<std::optional<RxMessage>> receive() override {
+    ++receive_count;
     return std::nullopt;
   }
 
@@ -180,6 +183,7 @@ class RecordingServerContractTransport final
   }
 
   std::vector<TxMessage> sent;
+  int receive_count = 0;
   bool stopped = false;
 };
 
@@ -392,6 +396,31 @@ void test_running_service_moved_from_is_inert() {
           "moved server service should stop transport");
 }
 
+void test_peer_serve_transport_observes_precancelled_token() {
+  mcp::CancellationSource cancellation;
+  cancellation.cancel();
+
+  auto client_transport = std::make_unique<RecordingClientTransport>();
+  mcp::ClientPeer client_peer(std::move(client_transport));
+  RecordingClientContractTransport client_contract_transport;
+  const auto client_served = client_peer.serve_transport(
+      client_contract_transport, cancellation.token());
+  require(client_served.has_value(),
+          "pre-cancelled client serve loop should succeed");
+  require(client_contract_transport.receive_count == 0,
+          "pre-cancelled client serve loop must not receive");
+
+  mcp::ServerPeer server_peer;
+  RecordingServerContractTransport server_contract_transport;
+  const auto server_served = server_peer.serve_transport(
+      server_contract_transport, mcp::server::SessionContext{},
+      cancellation.token());
+  require(server_served.has_value(),
+          "pre-cancelled server serve loop should succeed");
+  require(server_contract_transport.receive_count == 0,
+          "pre-cancelled server serve loop must not receive");
+}
+
 void test_request_handle_rejects_invalid_state() {
   mcp::RequestHandle<Json> default_handle;
   const auto default_result = default_handle.await_response();
@@ -409,6 +438,49 @@ void test_request_handle_rejects_invalid_state() {
           "empty request task should not produce a value");
   require(empty_task_result.error().message == "request task is not configured",
           "empty request task should report configuration error");
+}
+
+void test_public_dispatch_boundaries_translate_handler_exceptions() {
+  auto client_transport = std::make_unique<RecordingClientTransport>();
+  mcp::client::Client client(std::move(client_transport));
+  client.on_custom_request(
+      [](const mcp::protocol::JsonRpcRequest&) -> mcp::core::Result<Json> {
+        throw std::runtime_error("client boom");
+      });
+  const auto client_response = client.handle_request(
+      mcp::protocol::JsonRpcRequest{.method = "custom/client",
+                                    .params = Json::object(),
+                                    .id = std::int64_t{501}});
+  require(client_response.has_value(),
+          "client thrown handler should become an error response");
+  require(client_response->error.has_value(),
+          "client thrown handler response should contain error");
+  require(client_response->error->message == "handler failed",
+          "client thrown handler error message mismatch");
+  require(client_response->error->data.has_value() &&
+              *client_response->error->data == "client boom",
+          "client thrown handler error detail mismatch");
+
+  mcp::server::Server server;
+  server.set_custom_request_handler(
+      [](const mcp::protocol::JsonRpcRequest&,
+         const mcp::server::SessionContext&)
+          -> std::optional<mcp::protocol::JsonRpcResponse> {
+        throw std::runtime_error("server boom");
+      });
+  const auto server_response = server.handle_request(
+      mcp::protocol::JsonRpcRequest{.method = "custom/server",
+                                    .params = Json::object(),
+                                    .id = std::int64_t{502}});
+  require(server_response.has_value(),
+          "server thrown handler should become an error response");
+  require(server_response->error.has_value(),
+          "server thrown handler response should contain error");
+  require(server_response->error->message == "handler failed",
+          "server thrown handler error message mismatch");
+  require(server_response->error->data.has_value() &&
+              *server_response->error->data == "server boom",
+          "server thrown handler error detail mismatch");
 }
 
 void test_request_handle_latches_terminal_timeout() {
@@ -677,7 +749,9 @@ int main() {
   try {
     test_sdk_peer_and_service_surface();
     test_running_service_moved_from_is_inert();
+    test_peer_serve_transport_observes_precancelled_token();
     test_request_handle_rejects_invalid_state();
+    test_public_dispatch_boundaries_translate_handler_exceptions();
     test_request_handle_latches_terminal_timeout();
     test_request_handle_latches_terminal_cancellation();
     test_request_handle_cancellation_race_stress();

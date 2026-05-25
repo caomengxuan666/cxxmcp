@@ -42,6 +42,32 @@ inline protocol::ErrorObject peer_error_object_from_core_error(
   return errors::to_json_rpc_error(error);
 }
 
+template <class Transport, class Dispatch>
+inline core::Result<core::Unit> serve_transport_loop(
+    Transport& transport, CancellationToken cancellation, Dispatch dispatch) {
+  while (!cancellation.cancelled()) {
+    auto received = transport.receive();
+    if (!received) {
+      return std::unexpected(received.error());
+    }
+    if (!received->has_value()) {
+      return core::Unit{};
+    }
+
+    auto dispatched = dispatch(received->value());
+    if (!dispatched) {
+      return std::unexpected(dispatched.error());
+    }
+    if (dispatched->has_value()) {
+      auto sent = transport.send(std::move(dispatched->value()));
+      if (!sent) {
+        return std::unexpected(sent.error());
+      }
+    }
+  }
+  return core::Unit{};
+}
+
 }  // namespace detail
 
 /// @brief Role-specialized MCP peer facade.
@@ -476,26 +502,11 @@ class Peer<RoleClient> {
   core::Result<core::Unit> serve_transport(
       transport::ClientTransport& transport,
       CancellationToken cancellation = {}) {
-    while (!cancellation.cancelled()) {
-      auto received = transport.receive();
-      if (!received) {
-        return std::unexpected(received.error());
-      }
-      if (!received->has_value()) {
-        return core::Unit{};
-      }
-
-      auto dispatched = dispatch_message(received->value());
-      if (!dispatched) {
-        return std::unexpected(dispatched.error());
-      }
-      if (dispatched->has_value()) {
-        auto sent = transport.send(std::move(dispatched->value()));
-        if (!sent) {
-          return std::unexpected(sent.error());
-        }
-      }
-    }
+    return detail::serve_transport_loop(
+        transport, cancellation,
+        [this](const protocol::JsonRpcMessage& message) {
+          return dispatch_message(message);
+        });
   }
 
  private:
@@ -683,26 +694,11 @@ class Peer<RoleServer> {
       transport::ServerTransport& transport,
       const server::SessionContext& context = {},
       CancellationToken cancellation = {}) {
-    while (!cancellation.cancelled()) {
-      auto received = transport.receive();
-      if (!received) {
-        return std::unexpected(received.error());
-      }
-      if (!received->has_value()) {
-        return core::Unit{};
-      }
-
-      auto dispatched = dispatch_message(received->value(), context);
-      if (!dispatched) {
-        return std::unexpected(dispatched.error());
-      }
-      if (dispatched->has_value()) {
-        auto sent = transport.send(std::move(dispatched->value()));
-        if (!sent) {
-          return std::unexpected(sent.error());
-        }
-      }
-    }
+    return detail::serve_transport_loop(
+        transport, cancellation,
+        [this, &context](const protocol::JsonRpcMessage& message) {
+          return dispatch_message(message, context);
+        });
   }
 
  private:

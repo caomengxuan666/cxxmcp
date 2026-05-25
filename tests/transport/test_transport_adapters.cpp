@@ -600,6 +600,47 @@ void test_client_contract_transport_adapter_failure_paths() {
     require(handler_error->error->message == "client handler boom",
             "client contract handler error message mismatch");
   }
+
+  {
+    ScriptedClientContractTransport contract;
+    contract.push(mcp::protocol::JsonRpcRequest{
+        .method = "roots/list",
+        .params = Json::object(),
+        .id = std::string("server-throw"),
+    });
+    contract.push(mcp::protocol::JsonRpcResponse{
+        .id = mcp::protocol::RequestId{std::int64_t{14}},
+        .result = Json{{"ok", true}},
+    });
+
+    mcp::client::ContractTransportAdapter adapter(contract);
+    const auto started =
+        adapter.start([](const mcp::protocol::JsonRpcRequest&)
+                          -> mcp::core::Result<mcp::protocol::JsonRpcResponse> {
+          throw std::runtime_error("client handler threw");
+        });
+    require(started.has_value(),
+            "client contract throwing-handler adapter should start");
+
+    const auto response = adapter.send(mcp::protocol::JsonRpcRequest{
+        .method = "tools/list",
+        .params = Json::object(),
+        .id = std::int64_t{14},
+    });
+    require(response.has_value(),
+            "client contract throwing-handler flow should still respond");
+    const auto* handler_error =
+        std::get_if<mcp::protocol::JsonRpcResponse>(&contract.sent.back());
+    require(handler_error != nullptr,
+            "client contract throwing handler should send response");
+    require(handler_error->error.has_value(),
+            "client contract throwing handler error missing");
+    require(handler_error->error->message == "handler failed",
+            "client contract throwing handler message mismatch");
+    require(handler_error->error->data.has_value() &&
+                *handler_error->error->data == "client handler threw",
+            "client contract throwing handler detail mismatch");
+  }
 }
 
 void test_server_contract_transport_adapter_failure_paths() {
@@ -679,6 +720,36 @@ void test_server_contract_transport_adapter_failure_paths() {
             "server contract handler error response missing error");
     require(handler_error->error->message == "server handler boom",
             "server contract handler error message mismatch");
+  }
+
+  {
+    ScriptedServerContractTransport contract;
+    contract.push(mcp::protocol::JsonRpcRequest{
+        .method = std::string(mcp::protocol::InitializeMethod),
+        .params = Json{{"capabilities", Json::object()}},
+        .id = std::int64_t{15},
+    });
+
+    mcp::server::ContractTransportAdapter adapter(contract);
+    const auto started =
+        adapter.start([](const mcp::protocol::JsonRpcRequest&,
+                         const mcp::server::SessionContext&)
+                          -> mcp::core::Result<mcp::protocol::JsonRpcResponse> {
+          throw std::runtime_error("server handler threw");
+        });
+    require(started.has_value(),
+            "server contract throwing-handler start should drain stream");
+    const auto* handler_error =
+        std::get_if<mcp::protocol::JsonRpcResponse>(&contract.sent.back());
+    require(handler_error != nullptr,
+            "server contract throwing handler should send response");
+    require(handler_error->error.has_value(),
+            "server contract throwing handler error missing");
+    require(handler_error->error->message == "handler failed",
+            "server contract throwing handler message mismatch");
+    require(handler_error->error->data.has_value() &&
+                *handler_error->error->data == "server handler threw",
+            "server contract throwing handler detail mismatch");
   }
 }
 

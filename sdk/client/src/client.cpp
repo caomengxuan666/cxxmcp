@@ -3,6 +3,7 @@
 #include "cxxmcp/client/client.hpp"
 
 #include <cstdint>
+#include <exception>
 #include <optional>
 #include <string>
 #include <string_view>
@@ -12,6 +13,7 @@
 #include "cxxmcp/client/process_stdio_transport.hpp"
 #include "cxxmcp/client/session.hpp"
 #include "cxxmcp/client/stdio_transport.hpp"
+#include "cxxmcp/error.hpp"
 #include "cxxmcp/protocol/completion.hpp"
 #include "cxxmcp/protocol/elicitation.hpp"
 #include "cxxmcp/protocol/logging.hpp"
@@ -1061,7 +1063,7 @@ Client& Client::on_custom_notification(RawNotificationHandler handler) {
 }
 
 core::Result<core::Unit> Client::handle_notification(
-    const protocol::JsonRpcNotification& notification) {
+    const protocol::JsonRpcNotification& notification) try {
   if (notification.method == std::string(protocol::InitializedMethod) &&
       initialized_handler_) {
     initialized_handler_();
@@ -1155,10 +1157,14 @@ core::Result<core::Unit> Client::handle_notification(
     raw_notification_handler_(notification);
   }
   return core::Unit{};
+} catch (const std::exception& ex) {
+  return std::unexpected(errors::handler_failed(ex.what()));
+} catch (...) {
+  return std::unexpected(errors::handler_unknown_exception());
 }
 
 core::Result<protocol::JsonRpcResponse> Client::handle_request(
-    const protocol::JsonRpcRequest& request) {
+    const protocol::JsonRpcRequest& request) try {
   if (request.method == std::string(protocol::PingMethod)) {
     return protocol::make_response(request.id, protocol::Json::object());
   }
@@ -1240,6 +1246,12 @@ core::Result<protocol::JsonRpcResponse> Client::handle_request(
   return make_error_response(
       request, static_cast<int>(protocol::ErrorCode::MethodNotFound),
       "method not found", request.method);
+} catch (const std::exception& ex) {
+  const auto error = errors::handler_failed(ex.what());
+  return make_error_response(request, error.code, error.message, error.detail);
+} catch (...) {
+  const auto error = errors::handler_unknown_exception();
+  return make_error_response(request, error.code, error.message, error.detail);
 }
 
 core::Result<protocol::Json> Client::raw_request(
