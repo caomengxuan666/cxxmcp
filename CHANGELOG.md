@@ -35,4 +35,7 @@
   notification handlers onto Peer-owned state.
 - Routed `ServerPeer` ping request handling through the Peer boundary before
   falling back to the concrete server dispatcher.
+- Routed `ServerPeer` initialize request validation and response construction
+  through the Peer boundary before falling back to the concrete server
+  dispatcher.
 - Added a dedicated SDK umbrella test for `cxxmcp/sdk.hpp`.

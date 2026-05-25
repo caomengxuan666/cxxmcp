@@ -172,6 +172,45 @@ inline core::Result<protocol::Json> require_peer_initialize_payload(
   return payload;
 }
 
+inline core::Result<core::Unit> validate_peer_server_initialize_params(
+    const protocol::Json& params) {
+  if (!params.is_object()) {
+    return std::unexpected(errors::make(protocol::ErrorCode::InvalidParams,
+                                        "initialize params must be an object"));
+  }
+  if (!params.contains("protocolVersion") ||
+      !params.at("protocolVersion").is_string()) {
+    return std::unexpected(
+        errors::make(protocol::ErrorCode::InvalidParams,
+                     "initialize requires a string protocolVersion"));
+  }
+
+  const auto version = params.at("protocolVersion").get<std::string>();
+  if (!protocol::is_supported_protocol_version(version)) {
+    return std::unexpected(errors::make(protocol::ErrorCode::InvalidParams,
+                                        "unsupported MCP protocol version",
+                                        version));
+  }
+
+  return core::Unit{};
+}
+
+inline protocol::Json make_peer_server_initialize_result(
+    const server::ServerInfo& info,
+    const protocol::ServerCapabilities& capabilities) {
+  protocol::Json result = protocol::Json::object();
+  result["protocolVersion"] = std::string(protocol::McpProtocolVersion);
+  result["capabilities"] = protocol::server_capabilities_to_json(capabilities);
+  result["serverInfo"] = protocol::Json{
+      {"name", info.name},
+      {"version", info.version},
+  };
+  if (!info.instructions.empty()) {
+    result["instructions"] = info.instructions;
+  }
+  return result;
+}
+
 }  // namespace detail
 
 /// @brief Role-specialized MCP peer boundary.
@@ -1853,6 +1892,18 @@ class Peer<RoleServer> {
   core::Result<protocol::JsonRpcResponse> handle_request(
       const protocol::JsonRpcRequest& request,
       const server::SessionContext& context = {}) {
+    if (request.method == protocol::InitializeMethod) {
+      const auto valid =
+          detail::validate_peer_server_initialize_params(request.params);
+      if (!valid) {
+        return protocol::make_error_response(
+            request.id,
+            detail::peer_error_object_from_core_error(valid.error()));
+      }
+      return protocol::make_response(request.id,
+                                     detail::make_peer_server_initialize_result(
+                                         get_info(), capabilities()));
+    }
     if (request.method == protocol::PingMethod) {
       return protocol::make_response(request.id, protocol::Json::object());
     }

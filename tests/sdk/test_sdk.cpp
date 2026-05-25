@@ -284,7 +284,12 @@ class RecordingServerContractTransport final
 
   mcp::core::Result<std::optional<RxMessage>> receive() override {
     ++receive_count;
-    return std::nullopt;
+    if (received.empty()) {
+      return std::nullopt;
+    }
+    auto message = std::move(received.front());
+    received.pop_front();
+    return message;
   }
 
   mcp::core::Result<mcp::core::Unit> close() override {
@@ -293,6 +298,7 @@ class RecordingServerContractTransport final
   }
 
   std::vector<TxMessage> sent;
+  std::deque<RxMessage> received;
   int receive_count = 0;
   bool stopped = false;
 };
@@ -571,6 +577,89 @@ void test_peer_serve_transport_observes_precancelled_token() {
           "pre-cancelled server serve loop should succeed");
   require(server_contract_transport.receive_count == 0,
           "pre-cancelled server serve loop must not receive");
+}
+
+void test_server_peer_initialize_dispatches_on_peer_boundary() {
+  mcp::server::ServerOptions options;
+  options.server_name = "peer-init-server";
+  options.server_version = "9.8.7";
+  options.instructions = "peer-owned initialize";
+  options.capabilities =
+      mcp::protocol::server_capabilities().tools(true).logging().build();
+  mcp::ServerPeer peer(std::move(options));
+
+  RecordingServerContractTransport transport;
+  transport.received.push_back(mcp::protocol::JsonRpcRequest{
+      .method = std::string(mcp::protocol::InitializeMethod),
+      .params =
+          Json{
+              {"protocolVersion",
+               std::string(mcp::protocol::McpProtocolVersion)},
+              {"clientInfo",
+               Json{{"name", "sdk-test-client"}, {"version", "1"}}},
+              {"capabilities", Json::object()},
+          },
+      .id = mcp::protocol::RequestId{std::int64_t{1}},
+  });
+
+  const auto served = peer.serve_transport(transport);
+  require(served.has_value(),
+          "server peer initialize transport dispatch should succeed");
+  require(transport.sent.size() == 1,
+          "server peer initialize should send one response");
+  const auto* response =
+      std::get_if<mcp::protocol::JsonRpcResponse>(&transport.sent.front());
+  require(response != nullptr, "server peer initialize response missing");
+  require(response->result.has_value(),
+          "server peer initialize should return result");
+  require(response->result->at("protocolVersion") ==
+              std::string(mcp::protocol::McpProtocolVersion),
+          "server peer initialize protocol version mismatch");
+  require(response->result->at("serverInfo").at("name") == "peer-init-server",
+          "server peer initialize server name mismatch");
+  require(response->result->at("serverInfo").at("version") == "9.8.7",
+          "server peer initialize server version mismatch");
+  require(response->result->at("instructions") == "peer-owned initialize",
+          "server peer initialize instructions mismatch");
+  require(response->result->at("capabilities").contains("tools"),
+          "server peer initialize should advertise tools");
+  require(response->result->at("capabilities").contains("logging"),
+          "server peer initialize should advertise logging");
+
+  RecordingServerContractTransport rejected_transport;
+  rejected_transport.received.push_back(mcp::protocol::JsonRpcRequest{
+      .method = std::string(mcp::protocol::InitializeMethod),
+      .params =
+          Json{
+              {"protocolVersion", "1900-01-01"},
+              {"clientInfo",
+               Json{{"name", "sdk-test-client"}, {"version", "1"}}},
+              {"capabilities", Json::object()},
+          },
+      .id = mcp::protocol::RequestId{std::int64_t{2}},
+  });
+
+  const auto rejected_served = peer.serve_transport(rejected_transport);
+  require(rejected_served.has_value(),
+          "server peer rejected initialize dispatch should succeed");
+  require(rejected_transport.sent.size() == 1,
+          "server peer rejected initialize should send one response");
+  const auto* rejected_response = std::get_if<mcp::protocol::JsonRpcResponse>(
+      &rejected_transport.sent.front());
+  require(rejected_response != nullptr,
+          "server peer rejected initialize response missing");
+  require(rejected_response->error.has_value(),
+          "server peer rejected initialize should return error");
+  require(rejected_response->error->code ==
+              static_cast<int>(mcp::protocol::ErrorCode::InvalidParams),
+          "server peer rejected initialize error code mismatch");
+  require(
+      rejected_response->error->message == "unsupported MCP protocol version",
+      "server peer rejected initialize error message mismatch");
+  require(rejected_response->error->data.has_value(),
+          "server peer rejected initialize should include detail");
+  require(*rejected_response->error->data == Json("1900-01-01"),
+          "server peer rejected initialize detail mismatch");
 }
 
 void test_client_peer_native_raw_request_dispatches_interleaved_messages() {
@@ -993,6 +1082,7 @@ int main() {
     test_sdk_peer_and_service_surface();
     test_running_service_moved_from_is_inert();
     test_peer_serve_transport_observes_precancelled_token();
+    test_server_peer_initialize_dispatches_on_peer_boundary();
     test_client_peer_native_raw_request_dispatches_interleaved_messages();
     test_client_peer_native_raw_request_reports_transport_failures();
     test_request_handle_rejects_invalid_state();

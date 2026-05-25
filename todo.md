@@ -85,6 +85,9 @@ incrementally. Keep them concrete; do not replace them with broad claims.
         Peer-registered notification handlers.
   - [x] `ServerPeer` handles `ping` requests at the Peer boundary before
         falling back to concrete server request dispatch.
+  - [x] `ServerPeer` handles `initialize` request validation and result
+        construction at the Peer boundary before falling back to concrete server
+        request dispatch.
   - [x] `ClientPeer::client()` and `ServerPeer::server()` are retained as
         deprecated compatibility escape hatches, not canonical SDK entry
         points.
