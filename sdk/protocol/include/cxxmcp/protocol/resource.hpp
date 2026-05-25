@@ -34,6 +34,8 @@ struct Resource {
   std::string mime_type;
   /// Optional size hint in bytes when known.
   std::optional<std::int64_t> size;
+  /// Optional icon descriptors for client presentation.
+  std::vector<Icon> icons;
   /// Optional annotations for model or client presentation.
   Json annotations = Json::object();
   /// Optional `_meta` extension object preserved on the wire.
@@ -62,6 +64,8 @@ struct ResourceTemplate {
   std::string mime_type;
   /// Optional size hint in bytes when known.
   std::optional<std::int64_t> size;
+  /// Optional icon descriptors for client presentation.
+  std::vector<Icon> icons;
   /// Optional annotations for model or client presentation.
   Json annotations = Json::object();
   /// Optional `_meta` extension object preserved on the wire.
@@ -132,6 +136,12 @@ inline Json resource_to_json(const Resource& resource) {
   if (resource.size.has_value()) {
     json["size"] = *resource.size;
   }
+  if (!resource.icons.empty()) {
+    json["icons"] = Json::array();
+    for (const auto& icon : resource.icons) {
+      json["icons"].push_back(icon_to_json(icon));
+    }
+  }
   if (!resource.annotations.empty()) {
     json["annotations"] = resource.annotations;
   }
@@ -189,6 +199,19 @@ inline core::Result<Resource> resource_from_json(const Json& json) {
     }
     resource.size = json.at("size").get<std::int64_t>();
   }
+  if (json.contains("icons")) {
+    if (!json.at("icons").is_array()) {
+      return std::unexpected(
+          resource_json_error("resource icons must be an array"));
+    }
+    for (const auto& item : json.at("icons")) {
+      const auto icon = icon_from_json(item);
+      if (!icon.has_value()) {
+        return std::unexpected(resource_json_error("resource icon is invalid"));
+      }
+      resource.icons.push_back(*icon);
+    }
+  }
   if (json.contains("annotations")) {
     resource.annotations = json.at("annotations");
   }
@@ -215,6 +238,12 @@ inline Json resource_template_to_json(
   }
   if (resource_template.size.has_value()) {
     json["size"] = *resource_template.size;
+  }
+  if (!resource_template.icons.empty()) {
+    json["icons"] = Json::array();
+    for (const auto& icon : resource_template.icons) {
+      json["icons"].push_back(icon_to_json(icon));
+    }
   }
   if (!resource_template.annotations.empty()) {
     json["annotations"] = resource_template.annotations;
@@ -274,6 +303,20 @@ inline core::Result<ResourceTemplate> resource_template_from_json(
           resource_json_error("resource template size must be an integer"));
     }
     resource_template.size = json.at("size").get<std::int64_t>();
+  }
+  if (json.contains("icons")) {
+    if (!json.at("icons").is_array()) {
+      return std::unexpected(
+          resource_json_error("resource template icons must be an array"));
+    }
+    for (const auto& item : json.at("icons")) {
+      const auto icon = icon_from_json(item);
+      if (!icon.has_value()) {
+        return std::unexpected(
+            resource_json_error("resource template icon is invalid"));
+      }
+      resource_template.icons.push_back(*icon);
+    }
   }
   if (json.contains("annotations")) {
     resource_template.annotations = json.at("annotations");

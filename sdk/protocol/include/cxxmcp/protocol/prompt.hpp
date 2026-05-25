@@ -45,6 +45,8 @@ struct Prompt {
   std::string description;
   /// Prompt arguments accepted by this prompt.
   std::vector<PromptArgument> arguments;
+  /// Optional icon descriptors for client presentation.
+  std::vector<Icon> icons;
   /// Optional annotations for model or client presentation.
   Json annotations = Json::object();
   /// Optional `_meta` extension object preserved on the wire.
@@ -174,6 +176,12 @@ inline Json prompt_to_json(const Prompt& prompt) {
       json["arguments"].push_back(prompt_argument_to_json(argument));
     }
   }
+  if (!prompt.icons.empty()) {
+    json["icons"] = Json::array();
+    for (const auto& icon : prompt.icons) {
+      json["icons"].push_back(icon_to_json(icon));
+    }
+  }
   if (!prompt.annotations.empty()) {
     json["annotations"] = prompt.annotations;
   }
@@ -222,6 +230,19 @@ inline core::Result<Prompt> prompt_from_json(const Json& json) {
         return std::unexpected(argument.error());
       }
       prompt.arguments.push_back(*argument);
+    }
+  }
+  if (json.contains("icons")) {
+    if (!json.at("icons").is_array()) {
+      return std::unexpected(
+          prompt_json_error("prompt icons must be an array"));
+    }
+    for (const auto& item : json.at("icons")) {
+      const auto icon = icon_from_json(item);
+      if (!icon.has_value()) {
+        return std::unexpected(prompt_json_error("prompt icon is invalid"));
+      }
+      prompt.icons.push_back(*icon);
     }
   }
   if (json.contains("annotations")) {

@@ -210,7 +210,8 @@ Examples in RMCP:
 - content/resource/prompt/tool types support annotations
 - tools support `title`, `output_schema`, `annotations`, `execution`, `icons`, and `_meta`
 - resources support `title`, `size`, `icons`, and `_meta`
-- prompts and prompt arguments support `title`, icons, and `_meta`
+- prompts support `title`, `icons`, and `_meta`; prompt arguments support
+  `title` and `_meta`
 - capabilities include `experimental` and `extensions`
 - `_meta` and extensions are consistently modeled
 
@@ -218,8 +219,10 @@ The current C++ models are simpler:
 
 - `ContentBlock` supports text, image, audio, embedded resource, and resource
   link variants
-- `ToolDefinition` has name, description, input schema, and streaming flag
-- `Resource` and `Prompt` omit title, icons, annotations, and metadata
+- `ToolDefinition` has name, description, input schema, output schema,
+  streaming flag, icons, annotations, and metadata
+- `Resource`, `ResourceTemplate`, and `Prompt` include title, icons,
+  annotations, and metadata
 - capability storage uses explicit presence flags plus compact booleans for
   optional members, and client, server, and task capability serialization now
   use RMCP-style object presence
@@ -237,8 +240,7 @@ Action:
   core `ContentBlock` helpers where higher-level APIs need them
 - finish annotations support where it is still represented as raw JSON
 - add `_meta` support at the proper model/request/notification levels
-- add tool output schema and tool execution/task support
-- add resource/prompt title, icons, and metadata fields
+- add tool execution/task support
 - keep simple helper constructors for common text-only cases
 
 ### 5. Capabilities

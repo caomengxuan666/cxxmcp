@@ -154,6 +154,8 @@ struct ToolDefinition {
   Json output_schema = Json::object();
   /// Whether the tool may stream partial results outside a single response.
   bool streaming = false;
+  /// Optional icon descriptors for client presentation.
+  std::vector<Icon> icons;
   /// Optional annotations for model or client presentation.
   Json annotations = Json::object();
   /// Optional `_meta` extension object preserved on the wire.
@@ -326,6 +328,12 @@ inline Json tool_definition_to_json(const ToolDefinition& definition) {
     json["outputSchema"] = definition.output_schema;
   }
   json["streaming"] = definition.streaming;
+  if (!definition.icons.empty()) {
+    json["icons"] = Json::array();
+    for (const auto& icon : definition.icons) {
+      json["icons"].push_back(icon_to_json(icon));
+    }
+  }
   if (!definition.annotations.empty()) {
     json["annotations"] = definition.annotations;
   }
@@ -380,6 +388,21 @@ inline core::Result<ToolDefinition> tool_definition_from_json(
           tool_json_error("tool definition streaming must be a boolean"));
     }
     definition.streaming = json.at("streaming").get<bool>();
+  }
+
+  if (json.contains("icons")) {
+    if (!json.at("icons").is_array()) {
+      return std::unexpected(
+          tool_json_error("tool definition icons must be an array"));
+    }
+    for (const auto& item : json.at("icons")) {
+      const auto icon = icon_from_json(item);
+      if (!icon.has_value()) {
+        return std::unexpected(
+            tool_json_error("tool definition icon is invalid"));
+      }
+      definition.icons.push_back(*icon);
+    }
   }
 
   if (json.contains("annotations")) {

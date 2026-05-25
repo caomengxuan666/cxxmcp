@@ -183,6 +183,14 @@ void test_tool_protocol_round_trips() {
                   .input_schema = Json{{"type", "object"}},
                   .output_schema = Json{{"type", "object"}},
                   .streaming = true,
+                  .icons =
+                      {
+                          mcp::protocol::Icon::from_src(
+                              "https://example.com/tool.png")
+                              .with_mime_type("image/png")
+                              .with_sizes({"48x48"})
+                              .with_theme(mcp::protocol::IconTheme::Light),
+                      },
                   .annotations = Json{{"beta", true}},
                   .meta = Json{{"source", "unit-test"}},
               },
@@ -199,6 +207,18 @@ void test_tool_protocol_round_trips() {
   require(parsed_list->tools.front().streaming, "tool streaming mismatch");
   require(parsed_list->tools.front().output_schema.at("type") == "object",
           "tool output schema mismatch");
+  require(parsed_list->tools.front().icons.size() == 1,
+          "tool icon count mismatch");
+  require(parsed_list->tools.front().icons.front().src ==
+              "https://example.com/tool.png",
+          "tool icon src mismatch");
+  require(parsed_list->tools.front().icons.front().mime_type == "image/png",
+          "tool icon mime type mismatch");
+  require(parsed_list->tools.front().icons.front().sizes.front() == "48x48",
+          "tool icon size mismatch");
+  require(parsed_list->tools.front().icons.front().theme ==
+              mcp::protocol::IconTheme::Light,
+          "tool icon theme mismatch");
   require(parsed_list->tools.front().annotations.at("beta"),
           "tool annotations mismatch");
   require(parsed_list->tools.front().meta.has_value(), "tool meta mismatch");
@@ -637,6 +657,14 @@ void test_prompt_protocol_round_trips() {
                               .meta = Json{{"source", "unit-test"}},
                           },
                       },
+                  .icons =
+                      {
+                          mcp::protocol::Icon::from_src(
+                              "https://example.com/prompt.svg")
+                              .with_mime_type("image/svg+xml")
+                              .with_sizes({"any"})
+                              .with_theme(mcp::protocol::IconTheme::Dark),
+                      },
                   .annotations = Json{{"beta", true}},
                   .meta = Json{{"source", "unit-test"}},
               },
@@ -661,6 +689,14 @@ void test_prompt_protocol_round_trips() {
           "prompt argument annotations mismatch");
   require(parsed_list->prompts.front().arguments.front().meta.has_value(),
           "prompt argument meta missing");
+  require(parsed_list->prompts.front().icons.size() == 1,
+          "prompt icon count mismatch");
+  require(parsed_list->prompts.front().icons.front().src ==
+              "https://example.com/prompt.svg",
+          "prompt icon src mismatch");
+  require(parsed_list->prompts.front().icons.front().theme ==
+              mcp::protocol::IconTheme::Dark,
+          "prompt icon theme mismatch");
   require(parsed_list->prompts.front().annotations.at("beta"),
           "prompt annotations mismatch");
   require(parsed_list->prompts.front().meta.has_value(), "prompt meta missing");
@@ -730,6 +766,14 @@ void test_resource_protocol_round_trips() {
                   .description = "Readme",
                   .mime_type = "text/plain",
                   .size = std::int64_t{42},
+                  .icons =
+                      {
+                          mcp::protocol::Icon::from_src(
+                              "https://example.com/resource.png")
+                              .with_mime_type("image/png")
+                              .with_sizes({"32x32"})
+                              .with_theme(mcp::protocol::IconTheme::Light),
+                      },
                   .annotations = Json{{"beta", true}},
                   .meta = Json{{"source", "unit-test"}},
               },
@@ -748,6 +792,11 @@ void test_resource_protocol_round_trips() {
   require(parsed_list->resources.front().mime_type == "text/plain",
           "resource mime type mismatch");
   require(parsed_list->resources.front().size == 42, "resource size mismatch");
+  require(parsed_list->resources.front().icons.size() == 1,
+          "resource icon count mismatch");
+  require(parsed_list->resources.front().icons.front().src ==
+              "https://example.com/resource.png",
+          "resource icon src mismatch");
   require(parsed_list->resources.front().annotations.at("beta"),
           "resource annotations mismatch");
   require(parsed_list->resources.front().meta.has_value(),
@@ -797,6 +846,13 @@ void test_resource_protocol_round_trips() {
                   .name = "tmp file",
                   .description = "Templated tmp file",
                   .mime_type = "text/plain",
+                  .icons =
+                      {
+                          mcp::protocol::Icon::from_src(
+                              "https://example.com/template.png")
+                              .with_mime_type("image/png")
+                              .with_sizes({"16x16"}),
+                      },
               },
           },
       .next_cursor = std::string("cursor-3"),
@@ -812,6 +868,11 @@ void test_resource_protocol_round_trips() {
   require(parsed_templates->resource_templates.front().uri_template ==
               "file:///tmp/{name}.txt",
           "resource template uriTemplate mismatch");
+  require(parsed_templates->resource_templates.front().icons.size() == 1,
+          "resource template icon count mismatch");
+  require(parsed_templates->resource_templates.front().icons.front().src ==
+              "https://example.com/template.png",
+          "resource template icon src mismatch");
   require(mcp::protocol::resource_templates_list_result_to_json(
               *parsed_templates) == templates_json,
           "resources/templates/list round-trip mismatch");

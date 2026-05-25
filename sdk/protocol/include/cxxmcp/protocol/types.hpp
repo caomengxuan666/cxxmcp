@@ -14,7 +14,10 @@
 #include <nlohmann/json.hpp>
 #include <optional>
 #include <string>
+#include <string_view>
+#include <utility>
 #include <variant>
+#include <vector>
 
 namespace mcp::protocol {
 
@@ -113,6 +116,70 @@ struct JsonRpcNotification {
 using JsonRpcMessage =
     std::variant<JsonRpcRequest, JsonRpcResponse, JsonRpcNotification>;
 
+/// @brief Preferred icon variant for clients with light or dark surfaces.
+enum class IconTheme {
+  /// Icon intended for a light UI theme.
+  Light,
+  /// Icon intended for a dark UI theme.
+  Dark,
+};
+
+/// @brief Icon descriptor used by tools, resources, resource templates, and
+/// prompts.
+struct Icon {
+  /// Required icon source URI or data URI.
+  std::string src;
+  /// Optional MIME type such as `image/png` or `image/svg+xml`.
+  std::string mime_type;
+  /// Optional size hints such as `16x16`, `32x32`, or `any`.
+  std::vector<std::string> sizes;
+  /// Optional theme specialization.
+  std::optional<IconTheme> theme;
+
+  /// @brief Creates an icon with the required source field.
+  static Icon from_src(std::string value) {
+    Icon icon;
+    icon.src = std::move(value);
+    return icon;
+  }
+
+  /// @brief Sets the optional MIME type on an lvalue icon.
+  Icon& with_mime_type(std::string value) & {
+    mime_type = std::move(value);
+    return *this;
+  }
+
+  /// @brief Sets the optional MIME type while preserving fluent temporary use.
+  Icon&& with_mime_type(std::string value) && {
+    mime_type = std::move(value);
+    return std::move(*this);
+  }
+
+  /// @brief Sets optional size hints on an lvalue icon.
+  Icon& with_sizes(std::vector<std::string> values) & {
+    sizes = std::move(values);
+    return *this;
+  }
+
+  /// @brief Sets optional size hints while preserving fluent temporary use.
+  Icon&& with_sizes(std::vector<std::string> values) && {
+    sizes = std::move(values);
+    return std::move(*this);
+  }
+
+  /// @brief Sets the optional theme on an lvalue icon.
+  Icon& with_theme(IconTheme value) & {
+    theme = value;
+    return *this;
+  }
+
+  /// @brief Sets the optional theme while preserving fluent temporary use.
+  Icon&& with_theme(IconTheme value) && {
+    theme = value;
+    return std::move(*this);
+  }
+};
+
 /// @brief Identifier used to associate progress notifications with a request.
 using ProgressToken = std::variant<std::int64_t, std::string>;
 
@@ -155,6 +222,91 @@ inline std::optional<RequestId> request_id_from_json(const Json& json) {
     return json.get<std::string>();
   }
   return std::nullopt;
+}
+
+/// @brief Converts an icon theme enum to the lowercase wire value.
+inline std::string_view icon_theme_to_string(IconTheme theme) noexcept {
+  switch (theme) {
+    case IconTheme::Light:
+      return "light";
+    case IconTheme::Dark:
+      return "dark";
+  }
+  return "light";
+}
+
+/// @brief Parses a lowercase icon theme wire value.
+inline std::optional<IconTheme> icon_theme_from_string(
+    std::string_view value) noexcept {
+  if (value == "light") {
+    return IconTheme::Light;
+  }
+  if (value == "dark") {
+    return IconTheme::Dark;
+  }
+  return std::nullopt;
+}
+
+/// @brief Serializes a shared icon descriptor.
+inline Json icon_to_json(const Icon& icon) {
+  Json json = Json::object();
+  json["src"] = icon.src;
+  if (!icon.mime_type.empty()) {
+    json["mimeType"] = icon.mime_type;
+  }
+  if (!icon.sizes.empty()) {
+    json["sizes"] = icon.sizes;
+  }
+  if (icon.theme.has_value()) {
+    json["theme"] = icon_theme_to_string(*icon.theme);
+  }
+  return json;
+}
+
+/// @brief Parses a shared icon descriptor.
+/// @return Parsed icon, or nullopt when required fields or optional fields have
+/// invalid wire types.
+inline std::optional<Icon> icon_from_json(const Json& json) {
+  if (!json.is_object() || !json.contains("src") ||
+      !json.at("src").is_string()) {
+    return std::nullopt;
+  }
+
+  Icon icon;
+  icon.src = json.at("src").get<std::string>();
+
+  if (json.contains("mimeType")) {
+    if (!json.at("mimeType").is_string()) {
+      return std::nullopt;
+    }
+    icon.mime_type = json.at("mimeType").get<std::string>();
+  }
+
+  if (json.contains("sizes")) {
+    if (!json.at("sizes").is_array()) {
+      return std::nullopt;
+    }
+    for (const auto& item : json.at("sizes")) {
+      if (!item.is_string()) {
+        return std::nullopt;
+      }
+      icon.sizes.push_back(item.get<std::string>());
+    }
+  }
+
+  if (json.contains("theme")) {
+    if (!json.at("theme").is_string()) {
+      return std::nullopt;
+    }
+    const auto theme =
+        icon_theme_from_string(json.at("theme").get_ref<const std::string&>());
+    if (!theme.has_value()) {
+      return std::nullopt;
+    }
+    icon.theme = *theme;
+  }
+
+  return icon;
 }
 
 /// @brief Converts a progress token to the JSON scalar form used in metadata.
