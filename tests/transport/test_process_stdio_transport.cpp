@@ -664,6 +664,58 @@ void test_native_process_stdio_transport_diagnostics_timeout_cleanup() {
   require(closed.has_value(), "native process timeout close should succeed");
 }
 
+void test_native_process_stdio_transport_rejects_unknown_server_response_id() {
+  mcp::transport::ProcessStdioClientTransportOptions options;
+  options.command = MCP_TEST_CHILD_EXE;
+  mcp::transport::ProcessStdioClientTransport transport(std::move(options));
+
+  const auto sent = transport.send(mcp::protocol::JsonRpcResponse{
+      .id = mcp::protocol::RequestId{std::string("unknown-server-request")},
+      .result = mcp::protocol::Json::object(),
+  });
+  require(!sent.has_value(),
+          "native process should reject response without pending request");
+  require(sent.error().message ==
+              "process stdio client transport has no pending server request",
+          "native process unknown server response message mismatch");
+  require(sent.error().detail == "unknown-server-request",
+          "native process unknown server response detail mismatch");
+  require(sent.error().category == "transport",
+          "native process unknown server response category mismatch");
+
+  const auto closed = transport.close();
+  require(closed.has_value(),
+          "native process unknown server response close should succeed");
+}
+
+void test_native_process_stdio_transport_surfaces_malformed_child_output() {
+  mcp::transport::ProcessStdioClientTransportOptions options;
+  options.command = MCP_TEST_CHILD_EXE;
+  options.args = {"--malformed-output"};
+  options.request_timeout = std::chrono::milliseconds(500);
+  mcp::transport::ProcessStdioClientTransport transport(std::move(options));
+
+  auto sent = transport.send(mcp::protocol::JsonRpcRequest{
+      .method = std::string(mcp::protocol::InitializeMethod),
+      .params = mcp::protocol::Json::object(),
+      .id = std::int64_t{601},
+  });
+  require(sent.has_value(), "native malformed request should send");
+
+  auto received = transport.receive();
+  require(received.has_value(), "native malformed receive should complete");
+  require(received->has_value(), "native malformed response should be queued");
+  const auto* response =
+      std::get_if<mcp::protocol::JsonRpcResponse>(&received->value());
+  require(response != nullptr,
+          "native malformed output should produce response message");
+  require(response->error.has_value(),
+          "native malformed output should surface error response");
+
+  const auto closed = transport.close();
+  require(closed.has_value(), "native malformed close should succeed");
+}
+
 void test_native_process_stdio_transport_receives_server_request() {
   mcp::transport::ProcessStdioClientTransportOptions options;
   options.command = MCP_TEST_CHILD_EXE;
@@ -755,6 +807,10 @@ int main() {
        test_native_process_stdio_transport_exposes_client_contract},
       {"native process stdio transport diagnostics timeout cleanup",
        test_native_process_stdio_transport_diagnostics_timeout_cleanup},
+      {"native process stdio transport rejects unknown server response id",
+       test_native_process_stdio_transport_rejects_unknown_server_response_id},
+      {"native process stdio transport surfaces malformed child output",
+       test_native_process_stdio_transport_surfaces_malformed_child_output},
       {"native process stdio transport receives server request",
        test_native_process_stdio_transport_receives_server_request},
   };
