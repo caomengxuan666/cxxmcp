@@ -56,14 +56,19 @@ std::filesystem::path rust_stdio_child_executable() {
 std::unordered_map<std::string, std::string> rust_cargo_env() {
   const auto target_dir = std::filesystem::temp_directory_path() /
                           "mcp-rust-process-stdio-child-target";
-  return {
+  std::unordered_map<std::string, std::string> env = {
       {"CARGO_TARGET_DIR", target_dir.string()},
-      {"CARGO_HTTP_PROXY", ""},
-      {"CARGO_HTTPS_PROXY", ""},
-      {"HTTP_PROXY", ""},
-      {"HTTPS_PROXY", ""},
-      {"ALL_PROXY", ""},
   };
+
+  if (const char* proxy = std::getenv("CXXMCP_CARGO_PROXY");
+      proxy != nullptr && std::string_view(proxy).size() > 0) {
+    env["CARGO_HTTP_PROXY"] = proxy;
+    env["CARGO_HTTPS_PROXY"] = proxy;
+    env["HTTP_PROXY"] = proxy;
+    env["HTTPS_PROXY"] = proxy;
+    env["ALL_PROXY"] = proxy;
+  }
+  return env;
 }
 
 void set_process_env(std::string_view key, const std::string& value) {
@@ -84,8 +89,12 @@ void prepare_rust_stdio_child_build_env() {
 
 void build_rust_stdio_child() {
   prepare_rust_stdio_child_build_env();
-  const auto command = "cargo build --offline --manifest-path \"" +
-                       rust_stdio_child_manifest().string() + "\"";
+  std::string command = "cargo build ";
+  if (const char* offline = std::getenv("CXXMCP_RUST_FIXTURE_OFFLINE");
+      offline != nullptr && std::string_view(offline) == "1") {
+    command += "--offline ";
+  }
+  command += "--manifest-path \"" + rust_stdio_child_manifest().string() + "\"";
   require(std::system(command.c_str()) == 0,
           "rust process fixture build should succeed");
 }

@@ -76,7 +76,7 @@ incrementally. Keep them concrete; do not replace them with broad claims.
   - [ ] Python SDK client against cxxmcp server is not closed.
   - [x] Stdio interop without process ownership is covered by a role-generic
         client/server stream round-trip.
-  - [ ] Linux and macOS process-stdio jobs are still required to close the
+  - [x] Linux and macOS process-stdio jobs are declared to close the
         cross-platform matrix.
 
 ## Definition Of Done
@@ -226,8 +226,8 @@ true:
 - [x] Handle child exit before response.
 - [x] Handle malformed child output.
 - [x] Handle stderr without blocking stdout protocol flow.
-- [ ] Add Linux process-stdio tests.
-- [ ] Add macOS process-stdio tests.
+- [x] Add Linux process-stdio tests.
+- [x] Add macOS process-stdio tests.
 - [x] Keep Windows lifecycle tests.
 - [x] Test notification-only flows.
 - [x] Test server-to-client requests from a child process.

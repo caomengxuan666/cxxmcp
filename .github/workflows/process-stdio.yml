@@ -1,0 +1,79 @@
+name: process-stdio
+
+on:
+  push:
+    branches:
+      - rewrite-v2
+      - main
+  pull_request:
+
+jobs:
+  process-stdio:
+    name: process-stdio (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os:
+          - ubuntu-latest
+          - macos-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Install build tools
+        shell: bash
+        run: |
+          if [[ "${RUNNER_OS}" == "Linux" ]]; then
+            sudo apt-get update
+            sudo apt-get install -y ninja-build
+          elif [[ "${RUNNER_OS}" == "macOS" ]]; then
+            brew install ninja
+          fi
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Setup uv
+        uses: astral-sh/setup-uv@v5
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Checkout pinned RMCP reference
+        shell: bash
+        run: |
+          mkdir -p reference
+          git clone https://github.com/modelcontextprotocol/rust-sdk.git reference/rmcp
+          git -C reference/rmcp checkout c330fede90e4729c234f8e87fdbc5ea27a1dd10c
+
+      - name: Configure
+        run: >
+          cmake -S . -B build-process-stdio -G Ninja
+          -DCMAKE_BUILD_TYPE=Debug
+          -DCXXMCP_BUILD_SDK=OFF
+          -DCXXMCP_BUILD_PROTOCOL=ON
+          -DCXXMCP_BUILD_CLIENT=ON
+          -DCXXMCP_BUILD_SERVER=OFF
+          -DCXXMCP_BUILD_RUNTIME=OFF
+          -DCXXMCP_BUILD_APP=OFF
+          -DCXXMCP_BUILD_GATEWAY=OFF
+          -DCXXMCP_BUILD_CLI=OFF
+          -DCXXMCP_BUILD_EXAMPLES=OFF
+          -DCXXMCP_BUILD_TESTS=ON
+
+      - name: Build process-stdio tests
+        run: cmake --build build-process-stdio --target mcp_process_stdio_transport_tests
+
+      - name: Run process-stdio tests
+        run: ctest --test-dir build-process-stdio -R "^process_stdio_transport$" --output-on-failure --timeout 300
