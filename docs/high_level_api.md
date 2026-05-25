@@ -230,6 +230,8 @@ The transport family covers:
   `mcp::transport::Transport<Role>`
 - a client adapter that lets the existing `mcp::client::Client` consume a
   role-generic `mcp::transport::ClientTransport`
+- a server adapter that lets the existing `mcp::server::Server` consume a
+  role-generic `mcp::transport::ServerTransport`
 
 ## Rules
 

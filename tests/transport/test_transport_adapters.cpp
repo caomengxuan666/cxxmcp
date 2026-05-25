@@ -110,6 +110,37 @@ class ScriptedClientContractTransport final
   bool closed = false;
 };
 
+class ScriptedServerContractTransport final
+    : public mcp::transport::ServerTransport {
+ public:
+  std::string_view name() const noexcept override { return "scripted-server"; }
+
+  mcp::core::Result<mcp::core::Unit> send(TxMessage message) override {
+    sent.push_back(std::move(message));
+    return mcp::core::Unit{};
+  }
+
+  mcp::core::Result<std::optional<RxMessage>> receive() override {
+    if (received.empty()) {
+      return std::nullopt;
+    }
+    auto message = std::move(received.front());
+    received.pop_front();
+    return message;
+  }
+
+  mcp::core::Result<mcp::core::Unit> close() override {
+    closed = true;
+    return mcp::core::Unit{};
+  }
+
+  void push(RxMessage message) { received.push_back(std::move(message)); }
+
+  std::vector<TxMessage> sent;
+  std::deque<RxMessage> received;
+  bool closed = false;
+};
+
 void test_client_transport_adapter() {
   RecordingClientTransport legacy;
   mcp::client::TransportContractAdapter adapter(legacy);
@@ -257,6 +288,108 @@ void test_server_transport_adapter() {
   require(legacy.stopped, "server adapter should stop legacy transport");
 }
 
+void test_server_contract_transport_adapter_start() {
+  ScriptedServerContractTransport contract;
+  contract.push(mcp::protocol::JsonRpcRequest{
+      .method = std::string(mcp::protocol::InitializeMethod),
+      .params =
+          Json{{"capabilities", Json{{"roots", Json{{"listChanged", true}}}}}},
+      .id = std::int64_t{3},
+  });
+  contract.push(mcp::protocol::JsonRpcNotification{
+      .method = "notifications/initialized",
+      .params = Json::object(),
+  });
+
+  mcp::server::ContractTransportAdapter adapter(contract);
+  int request_count = 0;
+  int notification_count = 0;
+  const auto started = adapter.start(
+      [&](const mcp::protocol::JsonRpcRequest& request,
+          const mcp::server::SessionContext& context)
+          -> mcp::core::Result<mcp::protocol::JsonRpcResponse> {
+        ++request_count;
+        require(request.method == mcp::protocol::InitializeMethod,
+                "server contract request mismatch");
+        require(context.transport == &adapter,
+                "server contract context transport mismatch");
+        return mcp::protocol::make_response(request.id,
+                                            Json{{"tools", Json::array()}});
+      },
+      [&](const mcp::protocol::JsonRpcNotification& notification,
+          const mcp::server::SessionContext& context)
+          -> mcp::core::Result<mcp::core::Unit> {
+        ++notification_count;
+        require(notification.method == "notifications/initialized",
+                "server contract notification mismatch");
+        require(context.transport == &adapter,
+                "server contract notification context mismatch");
+        return mcp::core::Unit{};
+      });
+  require(started.has_value(), "server contract start failed");
+  require(request_count == 1, "server contract request count mismatch");
+  require(notification_count == 1,
+          "server contract notification count mismatch");
+  require(contract.sent.size() == 1,
+          "server contract start response count mismatch");
+  require(std::holds_alternative<mcp::protocol::JsonRpcResponse>(
+              contract.sent.front()),
+          "server contract start response mismatch");
+  const auto capabilities = adapter.client_capabilities();
+  require(capabilities.has_value(),
+          "server contract client capabilities missing");
+  require(capabilities->roots.enabled,
+          "server contract client roots capability missing");
+  require(capabilities->roots.list_changed,
+          "server contract client roots listChanged mismatch");
+}
+
+void test_server_contract_transport_adapter_outbound() {
+  ScriptedServerContractTransport contract;
+  contract.push(mcp::protocol::JsonRpcNotification{
+      .method = "notifications/progress",
+      .params = Json{{"progress", 1}},
+  });
+  contract.push(mcp::protocol::JsonRpcRequest{
+      .method = "ping",
+      .params = Json::object(),
+      .id = std::string("client-request"),
+  });
+  contract.push(mcp::protocol::JsonRpcResponse{
+      .id = mcp::protocol::RequestId{std::int64_t{9}},
+      .result = Json{{"roots", Json::array()}},
+  });
+
+  mcp::server::ContractTransportAdapter adapter(contract);
+  const auto response = adapter.send_request(mcp::protocol::JsonRpcRequest{
+      .method = "roots/list",
+      .params = Json::object(),
+      .id = std::int64_t{9},
+  });
+  require(response.has_value(), "server contract outbound request failed");
+  require(response->result->contains("roots"),
+          "server contract outbound response mismatch");
+  require(contract.sent.size() == 2,
+          "server contract outbound sent count mismatch");
+  require(std::holds_alternative<mcp::protocol::JsonRpcRequest>(
+              contract.sent.front()),
+          "server contract outbound request send mismatch");
+  require(std::holds_alternative<mcp::protocol::JsonRpcResponse>(
+              contract.sent.back()),
+          "server contract inbound response send mismatch");
+
+  const auto notification =
+      adapter.send_notification(mcp::protocol::JsonRpcNotification{
+          .method = "notifications/tools/list_changed",
+          .params = Json::object(),
+      });
+  require(notification.has_value(), "server contract notification send failed");
+  require(contract.sent.size() == 3,
+          "server contract notification send count mismatch");
+  adapter.stop();
+  require(contract.closed, "server contract adapter should close transport");
+}
+
 }  // namespace
 
 int main() {
@@ -264,6 +397,8 @@ int main() {
     test_client_transport_adapter();
     test_client_contract_transport_adapter();
     test_server_transport_adapter();
+    test_server_contract_transport_adapter_start();
+    test_server_contract_transport_adapter_outbound();
     std::cout << "transport adapter tests passed\n";
     return 0;
   } catch (const std::exception& ex) {
