@@ -243,7 +243,7 @@ int main() {
     require(sample->at("role") == "assistant",
             "client create_message role mismatch");
 
-    const auto health = client.raw_request(mcp::protocol::JsonRpcRequest{
+    const auto health = peer.raw_request(mcp::protocol::JsonRpcRequest{
         .method = "example/health",
         .params = mcp::protocol::Json::object(),
         .id = std::int64_t{9},
@@ -264,51 +264,51 @@ int main() {
     require(transport_ptr->notifications().size() == 4,
             "client notifications were not recorded");
 
-    require(client
-                .handle_notification(mcp::protocol::JsonRpcNotification{
+    require(peer
+                .dispatch_message(mcp::protocol::JsonRpcNotification{
                     .method = "notifications/message",
                     .params = mcp::protocol::Json{{"level", "info"},
                                                   {"data", "example log"}},
                 })
                 .has_value(),
             "client logging notification failed");
-    require(client
-                .handle_notification(mcp::protocol::JsonRpcNotification{
-                    .method = "notifications/tools/list_changed",
-                    .params = mcp::protocol::Json::object(),
-                })
-                .has_value(),
-            "client tools list notification failed");
-    require(client
-                .handle_notification(mcp::protocol::JsonRpcNotification{
+    require(
+        peer.dispatch_message(mcp::protocol::JsonRpcNotification{
+                                  .method = "notifications/tools/list_changed",
+                                  .params = mcp::protocol::Json::object(),
+                              })
+            .has_value(),
+        "client tools list notification failed");
+    require(peer
+                .dispatch_message(mcp::protocol::JsonRpcNotification{
                     .method = "notifications/prompts/list_changed",
                     .params = mcp::protocol::Json::object(),
                 })
                 .has_value(),
             "client prompts list notification failed");
-    require(client
-                .handle_notification(mcp::protocol::JsonRpcNotification{
+    require(peer
+                .dispatch_message(mcp::protocol::JsonRpcNotification{
                     .method = "notifications/resources/list_changed",
                     .params = mcp::protocol::Json::object(),
                 })
                 .has_value(),
             "client resources list notification failed");
     require(
-        client
-            .handle_notification(mcp::protocol::JsonRpcNotification{
+        peer
+            .dispatch_message(mcp::protocol::JsonRpcNotification{
                 .method = "notifications/resources/updated",
                 .params =
                     mcp::protocol::Json{{"uri", "file:///workspace/README.md"}},
             })
             .has_value(),
         "client resource updated notification failed");
-    require(client
-                .handle_notification(mcp::protocol::JsonRpcNotification{
-                    .method = "notifications/roots/list_changed",
-                    .params = mcp::protocol::Json::object(),
-                })
-                .has_value(),
-            "client roots list notification failed");
+    require(
+        peer.dispatch_message(mcp::protocol::JsonRpcNotification{
+                                  .method = "notifications/roots/list_changed",
+                                  .params = mcp::protocol::Json::object(),
+                              })
+            .has_value(),
+        "client roots list notification failed");
 
     require(logging_messages == 1, "client logging handler not called");
     require(tool_notifications == 1,

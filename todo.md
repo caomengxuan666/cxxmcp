@@ -72,6 +72,9 @@ incrementally. Keep them concrete; do not replace them with broad claims.
         of including compatibility transport-adapter implementation headers.
   - [x] Client service shutdown calls `ClientPeer::stop()` so native
         role-generic transports close through the Peer lifecycle boundary.
+  - [x] Canonical client loopback example routes raw requests and inbound
+        notification dispatch through `ClientPeer` instead of concrete
+        `client::Client`.
   - [x] Client and server contract transport adapters cover duplicate response
         ids as stable unexpected-response failures.
 - Request lifecycle:
