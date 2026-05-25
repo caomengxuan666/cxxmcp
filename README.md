@@ -118,31 +118,15 @@ cmake --install build-smoke --config Debug --prefix out/install/cxxmcp
 
 ## Quick Start
 
-### Minimal Stdio Server
+### Canonical Server Peer/Service
 
 ```cpp
-#include <string>
+#include <memory>
+#include <utility>
 
-#include <cxxmcp/server.hpp>
-
-int main() {
-    return mcp::server::App::builder()
-        .name("demo-server")
-        .version("1.0.0")
-        .instructions("Expose local tools over MCP.")
-        .stdio()
-        .tool<std::string, std::string>("echo", [](const std::string& text) {
-            return text;
-        })
-        .run();
-}
-```
-
-### RMCP-Style Server Peer
-
-```cpp
 #include <cxxmcp/peer.hpp>
 #include <cxxmcp/server.hpp>
+#include <cxxmcp/server/stdio_transport.hpp>
 #include <cxxmcp/service.hpp>
 
 int main() {
@@ -166,7 +150,10 @@ int main() {
         return 1;
     }
 
-    auto running = mcp::serve(mcp::ServerPeer(std::move(*server)));
+    mcp::ServerPeer peer(std::move(*server));
+    peer.add_transport(std::make_unique<mcp::server::StdioTransport>());
+
+    auto running = mcp::serve(std::move(peer));
     if (!running) {
         return 1;
     }
@@ -175,10 +162,13 @@ int main() {
 }
 ```
 
-### Streamable HTTP Client Peer
+### Canonical Client Peer/Service
 
 ```cpp
+#include <utility>
+
 #include <cxxmcp/peer.hpp>
+#include <cxxmcp/service.hpp>
 
 int main() {
     auto peer = mcp::Peer<mcp::RoleClient>::connect_streamable_http({
@@ -187,9 +177,39 @@ int main() {
         .path = "/mcp",
     });
 
-    peer.initialize();
-    peer.list_all_tools();
-    peer.call_tool("echo", mcp::protocol::Json{{"value", "hello"}});
+    auto running = mcp::serve(std::move(peer));
+    if (!running) {
+        return 1;
+    }
+
+    running->peer().initialize();
+    running->peer().list_all_tools();
+    running->peer().call_tool("echo", mcp::protocol::Json{{"value", "hello"}});
+    running->stop();
+}
+```
+
+### Compatibility App Builder
+
+The `server::App::builder()` path is a convenience wrapper for compact demos and
+legacy code. New SDK documentation and examples should use `Peer` and `Service`
+first.
+
+```cpp
+#include <string>
+
+#include <cxxmcp/server.hpp>
+
+int main() {
+    return mcp::server::App::builder()
+        .name("demo-server")
+        .version("1.0.0")
+        .instructions("Expose local tools over MCP.")
+        .stdio()
+        .tool<std::string, std::string>("echo", [](const std::string& text) {
+            return text;
+        })
+        .run();
 }
 ```
 
@@ -313,14 +333,11 @@ layers it needs.
 
 The examples preset builds representative SDK entry points:
 
-- `stdio_server`
-- `typed_stdio_server`
-- `server_peer`
-- `client_peer`
-- `client_loopback`
-- `process_stdio_client`
-- `gateway_runtime`
-- `task_async_client_server`
+- First-choice Peer/Service examples: `server_peer`, `client_peer`,
+  `process_stdio_client`
+- Compatibility and low-level examples: `stdio_server`, `typed_stdio_server`,
+  `client_loopback`, `task_async_client_server`
+- Optional runtime tooling example: `gateway_runtime`
 
 ## Quality Bar
 
@@ -337,6 +354,7 @@ Current standardization work is tracked in [Fact-standard TODO](todo.md).
 ## Documentation
 
 - [Fact-standard TODO](todo.md)
+- [Peer/Service migration guide](docs/sdk_peer_service_migration.md)
 - [Changelog](CHANGELOG.md)
 
 ## Project Status

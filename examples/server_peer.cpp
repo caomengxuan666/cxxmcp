@@ -1,17 +1,21 @@
 // Copyright (c) 2025 [caomengxuan666]
 
+#include <atomic>
+#include <chrono>
 #include <cstdint>
 #include <iostream>
 #include <memory>
 #include <stdexcept>
 #include <string>
 #include <string_view>
+#include <thread>
 #include <utility>
 #include <vector>
 
 #include "cxxmcp/peer.hpp"
 #include "cxxmcp/protocol/serialization.hpp"
 #include "cxxmcp/server.hpp"
+#include "cxxmcp/service.hpp"
 
 namespace {
 
@@ -23,6 +27,18 @@ void require(bool condition, std::string_view message) {
   }
 }
 
+template <class Predicate>
+bool wait_until(Predicate predicate, std::chrono::milliseconds timeout) {
+  const auto deadline = std::chrono::steady_clock::now() + timeout;
+  while (std::chrono::steady_clock::now() < deadline) {
+    if (predicate()) {
+      return true;
+    }
+    std::this_thread::sleep_for(std::chrono::milliseconds(1));
+  }
+  return predicate();
+}
+
 class LoopbackTransport final : public mcp::server::Transport {
  public:
   mcp::core::Result<mcp::core::Unit> start(
@@ -30,7 +46,7 @@ class LoopbackTransport final : public mcp::server::Transport {
       mcp::server::NotificationHandler notification_handler = {}) override {
     request_handler_ = std::move(handler);
     notification_handler_ = std::move(notification_handler);
-    started_ = true;
+    started_.store(true);
     return mcp::core::Unit{};
   }
 
@@ -62,7 +78,7 @@ class LoopbackTransport final : public mcp::server::Transport {
     return "server-peer-loopback";
   }
 
-  bool started() const noexcept { return started_; }
+  bool started() const noexcept { return started_.load(); }
 
   const std::vector<mcp::protocol::JsonRpcNotification>& notifications()
       const noexcept {
@@ -72,7 +88,7 @@ class LoopbackTransport final : public mcp::server::Transport {
  private:
   mcp::server::RequestHandler request_handler_;
   mcp::server::NotificationHandler notification_handler_;
-  bool started_ = false;
+  std::atomic_bool started_{false};
   std::vector<mcp::protocol::JsonRpcNotification> notifications_;
 };
 
@@ -115,8 +131,12 @@ int main() {
     auto* transport_ptr = transport.get();
     require(peer.add_transport(std::move(transport)).has_value(),
             "server peer add_transport failed");
-    require(peer.start().has_value(), "server peer start failed");
-    require(transport_ptr->started(), "server peer transport did not start");
+
+    auto running = mcp::serve(std::move(peer));
+    require(running.has_value(), "server peer service failed to start");
+    require(wait_until([&] { return transport_ptr->started(); },
+                       std::chrono::milliseconds(1000)),
+            "server peer transport did not start");
 
     const auto listed =
         transport_ptr->dispatch_request(mcp::protocol::JsonRpcRequest{
@@ -132,14 +152,14 @@ int main() {
     require(listed->result->at("tools").at(0).at("name") == "echo",
             "server peer tools/list name mismatch");
 
-    const auto called =
-        peer.call_tool("echo", Json{{"value", "hello"}}, "server-peer-example");
+    const auto called = running->peer().call_tool(
+        "echo", Json{{"value", "hello"}}, "server-peer-example");
     require(called.has_value(), "server peer call_tool failed");
     require(!called->content.empty(), "server peer call_tool content missing");
     require(called->content.front().text == "{\"value\":\"hello\"}",
             "server peer call_tool result mismatch");
 
-    require(peer.notify_roots_list_changed().has_value(),
+    require(running->peer().notify_roots_list_changed().has_value(),
             "server peer notify_roots_list_changed failed");
     require(transport_ptr->notifications().size() == 1,
             "server peer notification count mismatch");
@@ -147,7 +167,7 @@ int main() {
                 std::string(mcp::protocol::RootsListChangedNotificationMethod),
             "server peer notification method mismatch");
 
-    peer.stop();
+    require(running->stop().has_value(), "server peer service stop failed");
     std::cout << "server peer example passed\n";
     return 0;
   } catch (const std::exception& ex) {

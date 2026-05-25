@@ -115,31 +115,15 @@ cmake --install build-smoke --config Debug --prefix out/install/cxxmcp
 
 ## 快速开始
 
-### 最小 stdio server
+### 首选 Server Peer/Service
 
 ```cpp
-#include <string>
+#include <memory>
+#include <utility>
 
-#include <cxxmcp/server.hpp>
-
-int main() {
-    return mcp::server::App::builder()
-        .name("demo-server")
-        .version("1.0.0")
-        .instructions("Expose local tools over MCP.")
-        .stdio()
-        .tool<std::string, std::string>("echo", [](const std::string& text) {
-            return text;
-        })
-        .run();
-}
-```
-
-### RMCP 风格 Server Peer
-
-```cpp
 #include <cxxmcp/peer.hpp>
 #include <cxxmcp/server.hpp>
+#include <cxxmcp/server/stdio_transport.hpp>
 #include <cxxmcp/service.hpp>
 
 int main() {
@@ -163,7 +147,10 @@ int main() {
         return 1;
     }
 
-    auto running = mcp::serve(mcp::ServerPeer(std::move(*server)));
+    mcp::ServerPeer peer(std::move(*server));
+    peer.add_transport(std::make_unique<mcp::server::StdioTransport>());
+
+    auto running = mcp::serve(std::move(peer));
     if (!running) {
         return 1;
     }
@@ -172,10 +159,13 @@ int main() {
 }
 ```
 
-### Streamable HTTP Client Peer
+### 首选 Client Peer/Service
 
 ```cpp
+#include <utility>
+
 #include <cxxmcp/peer.hpp>
+#include <cxxmcp/service.hpp>
 
 int main() {
     auto peer = mcp::Peer<mcp::RoleClient>::connect_streamable_http({
@@ -184,9 +174,38 @@ int main() {
         .path = "/mcp",
     });
 
-    peer.initialize();
-    peer.list_all_tools();
-    peer.call_tool("echo", mcp::protocol::Json{{"value", "hello"}});
+    auto running = mcp::serve(std::move(peer));
+    if (!running) {
+        return 1;
+    }
+
+    running->peer().initialize();
+    running->peer().list_all_tools();
+    running->peer().call_tool("echo", mcp::protocol::Json{{"value", "hello"}});
+    running->stop();
+}
+```
+
+### 兼容 App Builder
+
+`server::App::builder()` 是用于紧凑 demo 和 legacy 代码的便利封装。新的 SDK
+文档和示例应优先展示 `Peer` 与 `Service`。
+
+```cpp
+#include <string>
+
+#include <cxxmcp/server.hpp>
+
+int main() {
+    return mcp::server::App::builder()
+        .name("demo-server")
+        .version("1.0.0")
+        .instructions("Expose local tools over MCP.")
+        .stdio()
+        .tool<std::string, std::string>("echo", [](const std::string& text) {
+            return text;
+        })
+        .run();
 }
 ```
 
@@ -297,14 +316,10 @@ protocol 层。
 
 `examples` preset 会构建代表性的 SDK 入口：
 
-- `stdio_server`
-- `typed_stdio_server`
-- `server_peer`
-- `client_peer`
-- `client_loopback`
-- `process_stdio_client`
-- `gateway_runtime`
-- `task_async_client_server`
+- 首选 Peer/Service 示例：`server_peer`、`client_peer`、`process_stdio_client`
+- 兼容和低层示例：`stdio_server`、`typed_stdio_server`、`client_loopback`、
+  `task_async_client_server`
+- 可选 runtime tooling 示例：`gateway_runtime`
 
 ## 质量门槛
 
@@ -321,6 +336,7 @@ protocol 层。
 ## 文档
 
 - [Fact-standard TODO](todo.md)
+- [Peer/Service 迁移指南](docs/sdk_peer_service_migration.md)
 - [更新日志](CHANGELOG.md)
 
 ## 项目状态

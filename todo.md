@@ -128,11 +128,11 @@ true:
 - [ ] Make service cancellation token propagation explicit and consistent.
 - [x] Define whether client-side services can actively drive receive loops for
   every built-in transport.
-- [ ] Add examples that use only `Peer` / `Service` as the first-choice public
+- [x] Add examples that use only `Peer` / `Service` as the first-choice public
   API.
-- [ ] Keep old concrete client/server examples only as compatibility or
+- [x] Keep old concrete client/server examples only as compatibility or
   low-level examples.
-- [ ] Add migration docs from concrete `Client` / `Server` usage to
+- [x] Add migration docs from concrete `Client` / `Server` usage to
   `Peer` / `Service`.
 
 ## P0: Stabilize Public API And Package Contract
@@ -605,7 +605,7 @@ true:
 ### Milestone 1: Stable SDK Shape
 
 - [ ] Freeze target names and include paths.
-- [ ] Make peer/service examples canonical.
+- [x] Make peer/service examples canonical.
 - [ ] Keep concrete client/server APIs as compatibility wrappers.
 - [ ] Add public header diff review.
 - [ ] Keep package-smoke release-blocking.
