@@ -3,7 +3,7 @@
 #pragma once
 
 /// @file
-/// @brief Service lifecycle facade for role-aware MCP peers.
+/// @brief Service lifecycle boundary for role-aware MCP peers.
 ///
 /// This header provides a small synchronous lifecycle layer that mirrors RMCP's
 /// service-oriented public shape without introducing an async runtime yet.

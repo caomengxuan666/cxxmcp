@@ -87,6 +87,8 @@ incrementally. Keep them concrete; do not replace them with broad claims.
   - [x] Changelog and Peer/Service migration docs describe the current Peer
         handler helpers, deprecated concrete accessors, and native peer routing
         direction.
+  - [x] README and public Peer/Service headers describe Peer/Service as SDK
+        boundaries instead of merely facades.
 - Request lifecycle:
   - [x] Client peer timeout emits `notifications/cancelled`.
   - [x] Server-side client peer timeout emits `notifications/cancelled`.

@@ -22,7 +22,7 @@ Read this in [Chinese](README_zh.md).
 - C++17 SDK with CMake package targets and install smoke coverage
 - Typed MCP protocol models with raw JSON-RPC escape hatches
 - Client and server libraries for embedded C++ applications
-- RMCP-style `Peer`, `Service`, and handler facades for SDK-first authoring
+- RMCP-style `Peer`, `Service`, and handler boundaries for SDK-first authoring
 - stdio, process stdio, Streamable HTTP, and legacy SSE-compatible transport
   paths
 - Typed tool, prompt, resource, completion, elicitation, sampling, task,
@@ -37,7 +37,7 @@ Read this in [Chinese](README_zh.md).
 | Protocol and JSON-RPC | Typed models, serialization helpers, initialize version validation, raw request/notification escape hatches |
 | Client SDK | HTTP, stdio, process-stdio, request handles, typed async helpers, roots, sampling, elicitation, tasks |
 | Server SDK | Registries, typed tool helpers, prompt/resource handlers, task-aware tool calls, notifications |
-| Peer/service facade | RMCP-like role-aware `Peer<Role>` and `Service<Role>` public shape |
+| Peer/service boundary | RMCP-like role-aware `Peer<Role>` and `Service<Role>` public shape |
 | Transports | stdio, process stdio, Streamable HTTP, legacy SSE compatibility paths |
 | Packaging | Exported CMake targets, install tree support, package-smoke fixture |
 | Runtime tools | Optional app, gateway, and CLI layers above the SDK |
@@ -228,8 +228,8 @@ int main() {
 | `cxxmcp::protocol` | MCP protocol models and JSON-RPC serialization |
 | `cxxmcp::transport` | Role-generic transport contracts and shared transport helpers |
 | `cxxmcp::handler` | Client/server handler interfaces and aggregates |
-| `cxxmcp::peer` | Role-aware client/server peer facade |
-| `cxxmcp::service` | Service lifecycle facade around peers |
+| `cxxmcp::peer` | Role-aware client/server execution boundary |
+| `cxxmcp::service` | Service lifecycle boundary around peers |
 | `cxxmcp::client` | Embeddable MCP client SDK |
 | `cxxmcp::server` | Embeddable MCP server SDK |
 | `cxxmcp::sdk` | Aggregate public SDK target |

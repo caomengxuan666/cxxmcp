@@ -3,7 +3,8 @@
 #pragma once
 
 /// @file
-/// @brief Role-aware peer facades for MCP client and server SDK users.
+/// @brief Role-aware peer execution boundaries for MCP client and server SDK
+/// users.
 ///
 /// Peer<RoleClient> and Peer<RoleServer> are the SDK-facing MCP execution
 /// boundary. They expose role-generic message dispatch loops so
@@ -173,11 +174,11 @@ inline core::Result<protocol::Json> require_peer_initialize_payload(
 
 }  // namespace detail
 
-/// @brief Role-specialized MCP peer facade.
+/// @brief Role-specialized MCP peer boundary.
 template <class Role>
 class Peer;
 
-/// @brief Client-side peer facade for talking to an MCP server.
+/// @brief Client-side peer boundary for talking to an MCP server.
 template <>
 class Peer<RoleClient> {
  public:
@@ -1225,7 +1226,7 @@ class Peer<RoleClient> {
   client::Client client_;
 };
 
-/// @brief Server-side peer facade for exposing MCP capabilities.
+/// @brief Server-side peer boundary for exposing MCP capabilities.
 template <>
 class Peer<RoleServer> {
  public:

@@ -20,7 +20,7 @@ English version: [README.md](README.md)
 - C++17 SDK，提供 CMake package targets，并有安装后消费的 smoke coverage
 - Typed MCP 协议模型，同时保留 raw JSON-RPC escape hatch
 - 可嵌入的 client / server SDK，适合真实 C++ 应用集成
-- RMCP 风格的 `Peer`、`Service` 和 handler facade
+- RMCP 风格的 `Peer`、`Service` 和 handler boundary
 - 支持 stdio、process stdio、Streamable HTTP，以及 legacy SSE 兼容路径
 - 覆盖 tool、prompt、resource、completion、elicitation、sampling、task、
   progress 和 cancellation 等主要 MCP surface
@@ -34,7 +34,7 @@ English version: [README.md](README.md)
 | Protocol / JSON-RPC | Typed models、序列化 helper、initialize version 校验、raw request/notification escape hatch |
 | Client SDK | HTTP、stdio、process stdio、request handles、typed async helpers、roots、sampling、elicitation、tasks |
 | Server SDK | Registry、typed tool helper、prompt/resource handler、task-aware tool call、notifications |
-| Peer/service facade | RMCP-like role-aware `Peer<Role>` 和 `Service<Role>` public shape |
+| Peer/service boundary | RMCP-like role-aware `Peer<Role>` 和 `Service<Role>` public shape |
 | Transports | stdio、process stdio、Streamable HTTP、legacy SSE 兼容路径 |
 | Packaging | 导出的 CMake targets、install tree 支持、package-smoke fixture |
 | Runtime tools | SDK 之上的可选 app、gateway、CLI 层 |
@@ -224,8 +224,8 @@ int main() {
 | `cxxmcp::protocol` | MCP 协议模型和 JSON-RPC 序列化 |
 | `cxxmcp::transport` | Role-generic transport contract 和共享 transport helper |
 | `cxxmcp::handler` | Client/server handler interface 与 aggregate |
-| `cxxmcp::peer` | Role-aware client/server peer facade |
-| `cxxmcp::service` | 围绕 peer 的 service lifecycle facade |
+| `cxxmcp::peer` | Role-aware client/server execution boundary |
+| `cxxmcp::service` | 围绕 peer 的 service lifecycle boundary |
 | `cxxmcp::client` | 可嵌入 MCP client SDK |
 | `cxxmcp::server` | 可嵌入 MCP server SDK |
 | `cxxmcp::sdk` | 聚合 public SDK target |
