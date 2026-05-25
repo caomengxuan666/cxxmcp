@@ -69,7 +69,8 @@ incrementally. Keep them concrete; do not replace them with broad claims.
   - [ ] RMCP client against cxxmcp process-stdio server is not closed.
   - [ ] TypeScript SDK client against cxxmcp server is not closed.
   - [ ] Python SDK client against cxxmcp server is not closed.
-  - [ ] Stdio interop without process ownership is not closed.
+  - [x] Stdio interop without process ownership is covered by a role-generic
+        client/server stream round-trip.
   - [ ] Linux and macOS process-stdio jobs are still required to close the
         cross-platform matrix.
 
@@ -289,7 +290,7 @@ true:
 - [x] Add unsupported method cases.
 - [x] Add unsupported protocol-version cases.
 - [x] Add Streamable HTTP session/resume/stale-session cases.
-- [ ] Add stdio interop cases.
+- [x] Add stdio interop cases.
 - [x] Add process-stdio interop cases.
 - [x] Test cxxmcp client against RMCP server.
 - [ ] Test RMCP client against cxxmcp server.
