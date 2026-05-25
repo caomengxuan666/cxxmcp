@@ -25,4 +25,6 @@
   in-flight request ids with stable transport errors.
 - Covered native process-stdio client mismatched response ids and duplicate
   in-flight request ids with stable transport errors.
+- Return HTTP 400 for malformed Streamable HTTP POST bodies and cover the
+  direct server transport path.
 - Added a dedicated SDK umbrella test for `cxxmcp/sdk.hpp`.

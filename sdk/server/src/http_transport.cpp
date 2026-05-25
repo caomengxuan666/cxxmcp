@@ -350,6 +350,7 @@ core::Result<core::Unit> HttpTransport::start(
 
     const auto message = protocol::parse_message(request.body);
     if (!message) {
+      response.status = 400;
       write_error(response, message.error().code, message.error().message);
       return;
     }

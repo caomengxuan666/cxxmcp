@@ -1487,6 +1487,69 @@ void test_server_http_transport_rejects_initialize_protocol_version_mismatch() {
   server_transport.transport().stop();
 }
 
+void test_server_http_transport_rejects_malformed_post_body() {
+  constexpr int kPort = 40186;
+  const std::string kPath = "/mcp";
+  std::atomic<bool> handler_called{false};
+
+  RunningServerTransportFixture server_transport(
+      std::make_unique<mcp::server::HttpTransport>(
+          mcp::server::HttpTransportOptions{
+              .listen_host = "127.0.0.1",
+              .listen_port = kPort,
+              .path = kPath,
+          }),
+      [&](const mcp::protocol::JsonRpcRequest& request,
+          const mcp::server::SessionContext&) {
+        handler_called.store(true);
+        if (request.method == mcp::protocol::InitializeMethod) {
+          return mcp::protocol::JsonRpcResponse{
+              .id = request.id,
+              .result =
+                  Json{
+                      {"protocolVersion",
+                       std::string(mcp::protocol::McpProtocolVersion)},
+                      {"capabilities", Json::object()},
+                      {"serverInfo",
+                       Json{{"name", "server-http-test"}, {"version", "1"}}},
+                  },
+          };
+        }
+        return mcp::protocol::make_error_response(
+            std::optional<mcp::protocol::RequestId>{request.id},
+            mcp::protocol::make_error(mcp::protocol::ErrorCode::MethodNotFound,
+                                      "unexpected request"));
+      });
+
+  require(!server_transport.start_error().has_value(),
+          "server transport should start");
+  require(wait_for_http_initialize(kPort, kPath),
+          "server transport should become reachable");
+  handler_called.store(false);
+
+  httplib::Client http_client("127.0.0.1", kPort);
+  const auto malformed =
+      http_client.Post(kPath,
+                       httplib::Headers{
+                           {"Accept", "application/json"},
+                           {"Content-Type", "application/json"},
+                       },
+                       "{not-json}", "application/json");
+  require(malformed != nullptr, "malformed post should return");
+  require(malformed->status == 400, "malformed post should be rejected");
+  const auto parsed = mcp::protocol::parse_response(malformed->body);
+  require(parsed.has_value(), "malformed post error response should parse");
+  require(parsed->error.has_value(),
+          "malformed post response should contain error");
+  require(parsed->error->code ==
+              static_cast<int>(mcp::protocol::ErrorCode::ParseError),
+          "malformed post error code mismatch");
+  require(!parsed->id.has_value(), "malformed post response id should be null");
+  require(!handler_called.load(), "malformed post should not reach handler");
+
+  server_transport.transport().stop();
+}
+
 void test_server_http_transport_emits_sse_retry_priming() {
   constexpr int kPort = 40179;
   const std::string kPath = "/mcp";
@@ -3145,6 +3208,8 @@ int main() {
        test_server_http_transport_rejects_stale_session_after_delete},
       {"server http transport rejects initialize protocol version mismatch",
        test_server_http_transport_rejects_initialize_protocol_version_mismatch},
+      {"server http transport rejects malformed post body",
+       test_server_http_transport_rejects_malformed_post_body},
       {"server http transport emits sse retry priming",
        test_server_http_transport_emits_sse_retry_priming},
       {"server http transport accepts client notification with 202",

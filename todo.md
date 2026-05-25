@@ -127,6 +127,8 @@ incrementally. Keep them concrete; do not replace them with broad claims.
         and duplicate in-flight request ids.
   - [x] Native process stdio client transport covers mismatched response ids
         and duplicate in-flight request ids.
+  - [x] Streamable HTTP server transport rejects malformed POST bodies with
+        HTTP 400 and a JSON-RPC parse error body.
 - Conformance matrix:
   - [x] In-tree Streamable HTTP matrix covers initialize, tools, prompts,
         resources/templates/subscribe, roots/list_changed, completion, logging,
