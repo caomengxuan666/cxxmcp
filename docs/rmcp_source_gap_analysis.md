@@ -219,8 +219,8 @@ The current C++ models are simpler:
 - `ContentBlock` is mostly text plus generic `data`
 - `ToolDefinition` has name, description, input schema, and streaming flag
 - `Resource` and `Prompt` omit title, icons, annotations, and metadata
-- capability storage still uses compact booleans in places, although task and
-  server initialize serialization now use RMCP-style object presence
+- capability storage still uses compact booleans in places, although client,
+  server, and task capability serialization now use RMCP-style object presence
 - `_meta` exists only as raw optional JSON in some JSON-RPC types
 
 Gap:
@@ -242,11 +242,11 @@ Action:
 
 RMCP capabilities use optional objects, extension maps, and explicit nested capability models.
 
-The current C++ capabilities now use object-presence semantics for task
-capabilities and server initialize capability families. They also preserve
-experimental / extension bags. Some older capability models still use compact
-boolean fields internally, so the remaining work is to audit each public wire
-shape and public configuration API against the pinned RMCP snapshot.
+The current C++ capabilities now use object-presence semantics for client,
+server, and task capability families. They also preserve experimental /
+extension bags. Some older capability models still use compact boolean fields
+internally, so the remaining work is to audit each public wire shape and public
+configuration API against the pinned RMCP snapshot.
 
 Covered by current tree:
 
@@ -254,13 +254,15 @@ Covered by current tree:
   methods as object members
 - task capability parsing accepts the object form and legacy boolean form
 - client and server initialize paths share the same task capability serializer
+- client initialize serialization omits inactive `roots`, `sampling`,
+  `elicitation`, and `tasks` families; supports sampling `tools` / `context`;
+  and supports form elicitation `schemaValidation`
 - server initialize serialization omits inactive capability families, omits
   false optional members, and serializes `logging` / `completions` as empty
   capability objects
 
 Action:
 
-- align client capability serialization with RMCP/spec shapes
 - consider optional-object capability storage so public configuration can
   express present-but-empty feature families where the spec allows them
 - add builder helpers to avoid verbose capability setup

@@ -75,7 +75,7 @@ protocol::ClientCapabilities default_client_capabilities(
   }
 
   return protocol::ClientCapabilities{
-      .roots = {.list_changed = true},
+      .roots = {.enabled = true, .list_changed = true},
       .sampling = {.enabled = true},
       .elicitation = {.form = true, .url = true},
   };

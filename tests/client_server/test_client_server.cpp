@@ -1577,6 +1577,25 @@ void test_client_session_initialize_and_mark_initialized() {
       "initialized notification method mismatch");
 }
 
+void test_client_initialize_with_empty_explicit_capabilities() {
+  auto transport = std::make_unique<RecordingTransport>();
+  auto* recording = transport.get();
+  mcp::client::Client client(std::move(transport));
+  client.set_capabilities(mcp::protocol::ClientCapabilities{});
+
+  const auto initialized = client.initialize("tester", "1");
+  require(initialized.has_value(),
+          "client initialize with empty capabilities failed");
+  require(recording->requests.size() == 1,
+          "empty capabilities initialize should send one request");
+
+  const auto& capabilities =
+      recording->requests.front().params.at("capabilities");
+  require(capabilities.is_object(), "client capabilities must be an object");
+  require(capabilities.empty(),
+          "explicit empty client capabilities should stay empty");
+}
+
 void test_client_initialize_with_explicit_task_capabilities() {
   auto transport = std::make_unique<RecordingTransport>();
   auto* recording = transport.get();
@@ -2489,6 +2508,8 @@ int main() {
        test_server_app_builder_registers_parity_surface},
       {"client session initialize and mark initialized",
        test_client_session_initialize_and_mark_initialized},
+      {"client initialize with empty explicit capabilities",
+       test_client_initialize_with_empty_explicit_capabilities},
       {"client initialize with explicit task capabilities",
        test_client_initialize_with_explicit_task_capabilities},
       {"client session discover prompts",

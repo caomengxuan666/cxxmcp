@@ -319,9 +319,14 @@ void test_task_protocol_round_trips() {
           "task notification meta mismatch");
 
   const mcp::protocol::ClientCapabilities client_capabilities{
-      .roots = {.list_changed = true},
-      .sampling = {.enabled = true},
-      .elicitation = {.form = true, .url = true},
+      .roots = {.enabled = true, .list_changed = true},
+      .sampling = {.enabled = true, .tools = true, .context = true},
+      .elicitation =
+          {
+              .form = true,
+              .form_schema_validation = true,
+              .url = true,
+          },
       .tasks =
           mcp::protocol::TaskCapabilities{
               .list = true,
@@ -335,6 +340,16 @@ void test_task_protocol_round_trips() {
   };
   const auto capabilities_json =
       mcp::protocol::client_capabilities_to_json(client_capabilities);
+  require(capabilities_json.at("roots").at("listChanged") == true,
+          "client roots listChanged capability mismatch");
+  require(capabilities_json.at("sampling").at("tools").is_object(),
+          "client sampling tools capability mismatch");
+  require(capabilities_json.at("sampling").at("context").is_object(),
+          "client sampling context capability mismatch");
+  require(
+      capabilities_json.at("elicitation").at("form").at("schemaValidation") ==
+          true,
+      "client elicitation schema validation capability mismatch");
   require(capabilities_json.contains("tasks"),
           "client capabilities should include tasks");
   require(capabilities_json.at("tasks").at("list").is_object(),
@@ -360,6 +375,20 @@ void test_task_protocol_round_trips() {
   const auto parsed_capabilities =
       mcp::protocol::client_capabilities_from_json(capabilities_json);
   require(parsed_capabilities.has_value(), "client capabilities should parse");
+  require(parsed_capabilities->roots.enabled,
+          "parsed client roots presence mismatch");
+  require(parsed_capabilities->roots.list_changed,
+          "parsed client roots listChanged mismatch");
+  require(parsed_capabilities->sampling.enabled,
+          "parsed client sampling presence mismatch");
+  require(parsed_capabilities->sampling.tools,
+          "parsed client sampling tools mismatch");
+  require(parsed_capabilities->sampling.context,
+          "parsed client sampling context mismatch");
+  require(parsed_capabilities->elicitation.form_schema_validation.has_value(),
+          "parsed client elicitation schema validation missing");
+  require(*parsed_capabilities->elicitation.form_schema_validation,
+          "parsed client elicitation schema validation mismatch");
   require(parsed_capabilities->tasks.has_value(),
           "parsed client capabilities tasks missing");
   require(parsed_capabilities->tasks->list,
@@ -400,6 +429,30 @@ void test_task_protocol_round_trips() {
           "legacy task sampling capability mismatch");
   require(legacy_capabilities->tasks->elicitation_create,
           "legacy task elicitation capability mismatch");
+}
+
+void test_client_capability_wire_shape() {
+  const auto empty_capabilities = mcp::protocol::client_capabilities_to_json(
+      mcp::protocol::ClientCapabilities{});
+  require(empty_capabilities.empty(),
+          "empty client capabilities should not advertise feature families");
+
+  mcp::protocol::ClientCapabilities capabilities;
+  capabilities.roots.enabled = true;
+  capabilities.sampling.enabled = true;
+  capabilities.elicitation.form = true;
+
+  const auto json = mcp::protocol::client_capabilities_to_json(capabilities);
+  require(json.at("roots").is_object(), "client roots must be an object");
+  require(!json.at("roots").contains("listChanged"),
+          "false client roots listChanged capability should be omitted");
+  require(json.at("sampling").is_object() && json.at("sampling").empty(),
+          "client sampling should use empty object presence by default");
+  require(json.at("elicitation").at("form").is_object() &&
+              json.at("elicitation").at("form").empty(),
+          "client form elicitation should use object presence by default");
+  require(!json.contains("tasks"),
+          "client tasks should be omitted when not advertised");
 }
 
 void test_server_capability_wire_shape() {
@@ -993,6 +1046,7 @@ int main() {
       {"response round trips", test_response_round_trips},
       {"tool protocol round trips", test_tool_protocol_round_trips},
       {"task protocol round trips", test_task_protocol_round_trips},
+      {"client capability wire shape", test_client_capability_wire_shape},
       {"server capability wire shape", test_server_capability_wire_shape},
       {"prompt protocol round trips", test_prompt_protocol_round_trips},
       {"resource protocol round trips", test_resource_protocol_round_trips},
