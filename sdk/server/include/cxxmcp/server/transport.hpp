@@ -38,7 +38,7 @@ struct SessionContext {
   /// Borrowed transport used to create a ClientPeer for outbound messages.
   Transport* transport = nullptr;
 
-  /// @brief Return a non-owning peer facade for the client on this session.
+  /// @brief Return a non-owning peer handle for the client on this session.
   /// @return A ClientPeer bound to transport, or an unavailable peer when no
   /// transport is associated with the context.
   ClientPeer client() const noexcept;

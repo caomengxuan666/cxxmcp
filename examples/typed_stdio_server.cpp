@@ -1,4 +1,7 @@
 // Copyright (c) 2025 [caomengxuan666]
+//
+// Compatibility example: demonstrates typed App builder registration. New SDK
+// server applications should prefer ServerPeer plus Service over App::run().
 
 #include <algorithm>
 #include <optional>

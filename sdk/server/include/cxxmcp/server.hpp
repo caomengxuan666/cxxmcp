@@ -6,7 +6,7 @@
 /// @brief Server-side high-level C++ API for MCP servers, transports,
 /// registries, and handlers.
 ///
-/// Include this header when a server application wants the full facade,
+/// Include this header when a server application wants the full server SDK,
 /// including auth, rate limiting, stdio and HTTP transports, registries, peer
 /// helpers, and the fluent server builder.
 

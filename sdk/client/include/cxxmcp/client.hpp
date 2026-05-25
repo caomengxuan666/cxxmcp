@@ -6,7 +6,7 @@
 /// @brief Client-side high-level C++ API for MCP connections, discovery, and
 /// tool calls.
 ///
-/// Include this header when an application wants the full client facade with
+/// Include this header when an application wants the full client SDK layer with
 /// the built-in HTTP, process stdio, in-process stdio, and session helpers.
 
 #include "cxxmcp/client/client.hpp"

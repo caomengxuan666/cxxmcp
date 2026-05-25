@@ -100,11 +100,11 @@ class TransportContractAdapter final : public transport::ClientTransport {
 /// @brief Adapts a transport::ClientTransport to the existing client::Transport
 /// API.
 ///
-/// This lets the established Client and ClientPeer facades run over the
-/// role-generic transport contract. Inbound notifications and requests received
-/// while waiting for the matching response are dispatched through handlers
-/// installed with start(). This compatibility adapter expects send() calls to
-/// be serialized by the caller.
+/// This lets the established Client compatibility API and ClientPeer run over
+/// the role-generic transport contract. Inbound notifications and requests
+/// received while waiting for the matching response are dispatched through
+/// handlers installed with start(). This compatibility adapter expects send()
+/// calls to be serialized by the caller.
 class ContractTransportAdapter final : public mcp::client::Transport {
  public:
   explicit ContractTransportAdapter(transport::ClientTransport& transport)

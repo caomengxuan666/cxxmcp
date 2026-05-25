@@ -174,11 +174,15 @@ jobs:
       - name: Build docs
         run: cmake --build build-docs --target docs
 
+      - name: Verify docs artifact
+        run: test -f docs/doxygen/html/index.html
+
       - name: Upload docs artifact
         uses: actions/upload-artifact@v4
         with:
           name: cxxmcp-doxygen-html
           path: docs/doxygen/html
+          if-no-files-found: error
 
   source-artifact:
     name: source-artifact
@@ -212,3 +216,45 @@ jobs:
         with:
           name: cxxmcp-source
           path: release-artifacts
+          if-no-files-found: error
+
+  release-evidence:
+    name: release-evidence
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Collect release evidence documents
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p release-evidence/docs release-evidence/examples
+          cp README.md README_zh.md CHANGELOG.md todo.md release-evidence/
+          cp \
+            docs/compatibility_policy.md \
+            docs/release_gates.md \
+            docs/release_candidate_checklist.md \
+            docs/sdk_peer_service_migration.md \
+            release-evidence/docs/
+          cp examples/*.cpp examples/CMakeLists.txt release-evidence/examples/
+          {
+            echo "commit=${GITHUB_SHA}"
+            echo "workflow=${GITHUB_WORKFLOW}"
+            echo "run_id=${GITHUB_RUN_ID}"
+            echo "run_attempt=${GITHUB_RUN_ATTEMPT}"
+            echo "mcp_protocol_snapshot=2025-11-25"
+            echo "rmcp_reference_commit=c330fede90e4729c234f8e87fdbc5ea27a1dd10c"
+            echo "typescript_sdk_reference=@modelcontextprotocol/sdk@1.29.0"
+            echo "python_sdk_reference=mcp==1.27.1"
+          } > release-evidence/MANIFEST.txt
+
+      - name: Upload release evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: cxxmcp-release-evidence
+          path: release-evidence
+          if-no-files-found: error

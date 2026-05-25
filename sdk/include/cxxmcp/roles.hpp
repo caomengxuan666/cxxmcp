@@ -3,7 +3,7 @@
 #pragma once
 
 /// @file
-/// @brief Role markers shared by peer, service, and transport SDK facades.
+/// @brief Role markers shared by peer, service, and transport SDK boundaries.
 
 namespace mcp {
 

@@ -23,15 +23,20 @@ Attach or link all artifacts from `.github/workflows/release-gates.yml`:
 - `cxxmcp-release-gates-windows-msvc-vs-dynamic-runtime`
 - `cxxmcp-doxygen-html`
 - `cxxmcp-source`
+- `cxxmcp-release-evidence`
 
 Each release-gate artifact must contain `CMakeCache.txt`, CTest JUnit XML, and
-CTest logs. The source artifact must contain `SHA256SUMS.txt`.
+CTest logs. The source artifact must contain `SHA256SUMS.txt`. The release
+evidence artifact must contain the README, README_zh, changelog,
+compatibility policy, Peer/Service migration guide, release gates, release
+candidate checklist, TODO, and example source files used for the canonical SDK
+path review.
 
 ## Gate Review
 
 - [ ] All release-blocking CTest labels passed on every advertised matrix leg.
 - [ ] `package_smoke` passed from installed output on every advertised matrix
-      leg.
+      leg, using the same generator and compiler family as that matrix leg.
 - [ ] Public header compile tests passed on every advertised matrix leg.
 - [ ] RMCP, TypeScript SDK, and Python SDK interoperability gates passed where
       those runtimes are advertised for the release.
@@ -52,9 +57,13 @@ CTest logs. The source artifact must contain `SHA256SUMS.txt`.
 - [ ] README and README_zh present `Peer` / `Service` before concrete
       `Client` / `Server` APIs.
 - [ ] Examples listed as first-choice SDK examples use `Peer` / `Service`.
+- [ ] Examples listed as compatibility, low-level, or runtime tooling examples
+      are labeled that way in their source comments or surrounding docs.
 - [ ] Changelog entries describe the same canonical Peer/Service path.
-- [ ] Compatibility policy, release gates, and package targets agree on the
-      supported compiler/generator/runtime matrix.
+- [ ] Compatibility policy, release gates, release evidence artifact, and
+      package targets agree on the supported compiler/generator/runtime matrix.
+- [ ] Generated API docs and release evidence present `Peer` / `Service` as the
+      canonical SDK path.
 - [ ] Optional runtime, gateway, CLI, app, adapters, and plugin SDK remain
       outside the core SDK contract.
 

@@ -3,7 +3,8 @@
 #pragma once
 
 /// @file
-/// @brief High-level server facade, builder, and convenience app API.
+/// @brief High-level server compatibility API, builder, and convenience app
+/// API.
 ///
 /// Server owns registries for MCP tools, prompts, resources, and resource
 /// templates. Request handlers return core::Result<T> to surface protocol
@@ -378,12 +379,14 @@ struct ServerInfo {
 struct ServerHandler;
 struct ServerHandlerInterface;
 
-/// @brief High-level MCP server facade.
+/// @brief High-level MCP server compatibility API.
 ///
 /// Server owns the configured transports and registries. Register tools,
 /// prompts, resources, and resource templates before start(), then use
 /// transports to serve JSON-RPC requests. Direct list/get/call/read methods are
-/// also available for tests, embedded use, and custom routing.
+/// also available for tests, embedded use, and custom routing. New
+/// applications should prefer ServerPeer and Service as their entry points;
+/// Server remains a stable embeddable layer and compatibility surface.
 class Server {
  public:
   /// @brief Constructs a server from explicit options.

@@ -46,6 +46,10 @@ Read this in [Chinese](README_zh.md).
 
 Installed-package usage should look like a normal CMake SDK:
 
+`Peer` and `Service` remain the application entry points. The `client` and
+`server` package targets provide the embeddable SDK layers behind those entry
+points, not a separate first-choice architecture.
+
 ```cmake
 find_package(cxxmcp CONFIG REQUIRED)
 
@@ -343,8 +347,10 @@ layers it needs.
 - Release review must include a public header diff, independent public-header
   compile tests, installed-tree `package_smoke`, and the conformance matrix
   available for that release.
-- Release-blocking tests, labels, and the supported compiler/generator/runtime
-  matrix are tracked in [Release gates](docs/release_gates.md).
+- The full compatibility policy is tracked in
+  [Compatibility policy](docs/compatibility_policy.md). Release-blocking tests,
+  labels, and the supported compiler/generator/runtime matrix are tracked in
+  [Release gates](docs/release_gates.md).
 
 ## Examples
 
@@ -371,6 +377,7 @@ Current standardization work is tracked in [Fact-standard TODO](todo.md).
 ## Documentation
 
 - [Fact-standard TODO](todo.md)
+- [Compatibility policy](docs/compatibility_policy.md)
 - [Release gates](docs/release_gates.md)
 - [Release candidate checklist](docs/release_candidate_checklist.md)
 - [Peer/Service migration guide](docs/sdk_peer_service_migration.md)
@@ -379,6 +386,8 @@ Current standardization work is tracked in [Fact-standard TODO](todo.md).
 ## Project Status
 
 `cxxmcp` is an MCP C++ SDK with an RMCP-like public architecture and strong
-standard-SDK potential. The current focus is tightening the service runtime,
-Streamable HTTP session semantics, cross-platform process stdio, broader
-conformance coverage, and package-manager routes.
+standard-SDK potential. The SDK-first shape, Peer/Service boundary, built-in
+transport behavior, and cross-SDK conformance gates are in strong release
+candidate shape. Do not claim fact-standard status until the release-gates
+matrix has produced auditable artifacts and the release candidate checklist has
+been completed for the exact release commit.

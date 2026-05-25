@@ -3,7 +3,8 @@
 #pragma once
 
 /// @file
-/// @brief Core client facade and transport interface for MCP clients.
+/// @brief Core client compatibility API and transport interface for MCP
+/// clients.
 ///
 /// The client API is synchronous at the call site: methods return
 /// core::Result<T> with either a protocol value or an error. Inbound requests
@@ -113,13 +114,15 @@ class Transport {
   virtual void stop() noexcept {}
 };
 
-/// @brief High-level MCP client facade.
+/// @brief High-level MCP client compatibility API.
 ///
 /// Client owns a Transport and exposes MCP operations such as initialize,
 /// discovery, tool invocation, prompt/resource access, roots, logging,
 /// sampling, elicitation, and task helpers. Methods return core::Result<T>;
 /// protocol and transport failures are reported through that result rather than
-/// by changing global state.
+/// by changing global state. New applications should prefer ClientPeer and
+/// Service as their entry points; Client remains a stable embeddable layer and
+/// compatibility surface.
 class Client {
  public:
   /// @brief Endpoint options for streamable HTTP and legacy SSE client
@@ -640,7 +643,7 @@ class Client {
       CreateElicitationRequestHandler handler);
 
   /// @brief Registers a handler for custom server requests not handled by the
-  /// facade.
+  /// built-in client dispatcher.
   Client& on_custom_request(CustomRequestHandler handler);
 
   /// @brief Compatibility alias for on_list_roots_request().

@@ -2,7 +2,7 @@
 
 ## 2.0.0
 
-- Reframed the public SDK around `peer` / `service` facades.
+- Reframed the public SDK around `Peer` / `Service` entry points.
 - Kept `client` / `server` as compatibility and convenience wrappers.
 - Added HTTP URI support and auth header support for client transport setup.
 - Added `ClientPeer` and `ServerPeer` examples.

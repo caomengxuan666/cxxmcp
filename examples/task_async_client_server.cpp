@@ -1,4 +1,8 @@
 // Copyright (c) 2025 [caomengxuan666]
+//
+// Compatibility example: keeps a concrete in-process loopback while exercising
+// task-aware calls. New SDK application examples should start from
+// Peer/Service and role-generic transports.
 
 #include <chrono>
 #include <cstdint>

@@ -139,7 +139,7 @@ int main() {
     mcp::server::ServerBuilder builder;
     builder.name("cxxmcp-example-server-peer")
         .version("1.0.0")
-        .instructions("Example server peer for the SDK facade.")
+        .instructions("Example server peer for the canonical SDK path.")
         .add_tool(
             mcp::protocol::ToolDefinition{
                 .name = "echo",

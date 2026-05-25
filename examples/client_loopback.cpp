@@ -1,4 +1,8 @@
 // Copyright (c) 2025 [caomengxuan666]
+//
+// Compatibility example: exercises concrete client/server loopback plumbing.
+// New SDK application examples should start from Peer/Service and role-generic
+// transports.
 
 #include <cstdint>
 #include <iostream>
@@ -58,7 +62,8 @@ int main() {
         mcp::server::App::builder()
             .name("cxxmcp-example-loopback-server")
             .version("1.0.0")
-            .instructions("Example server used by the client facade example.")
+            .instructions(
+                "Example server used by the client compatibility example.")
             .tool<mcp::protocol::Json, mcp::protocol::Json>(
                 "echo",
                 [](const mcp::protocol::Json& input) {

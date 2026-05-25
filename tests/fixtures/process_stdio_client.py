@@ -1,4 +1,5 @@
 import asyncio
+import importlib.metadata
 import sys
 
 from mcp import ClientSession, StdioServerParameters
@@ -8,6 +9,8 @@ from mcp.client.stdio import stdio_client
 async def main() -> None:
     if len(sys.argv) != 2:
         raise RuntimeError("usage: python process_stdio_client.py <server-executable>")
+
+    print(f"using mcp=={importlib.metadata.version('mcp')}")
 
     params = StdioServerParameters(command=sys.argv[1], args=[])
     async with stdio_client(params) as streams:

@@ -19,7 +19,9 @@ registered through `cxxmcp_mark_release_blocking()`.
 - `public_targets`: narrow SDK package targets remain consumable without
   linking runtime or gateway layers.
 - `package_smoke`: installed package output is consumed from a clean external
-  CMake project with `find_package(cxxmcp CONFIG REQUIRED)`.
+  CMake project with `find_package(cxxmcp CONFIG REQUIRED)`. The external
+  consumer configure must use the same release-matrix generator and compiler
+  family as the matrix leg producing the evidence.
 
 ## Protocol, Transport, And Interop Gates
 
@@ -63,15 +65,26 @@ link or attach those artifacts so package-smoke, public-header, transport,
 conformance, and interoperability results are auditable after the workflow run
 expires from the Actions UI.
 
+The release evidence manifest records the pinned reference versions used by the
+interop matrix:
+
+- RMCP reference commit: `c330fede90e4729c234f8e87fdbc5ea27a1dd10c`
+- TypeScript SDK reference: `@modelcontextprotocol/sdk@1.29.0`
+- Python SDK reference: `mcp==1.27.1`
+
 The same workflow uploads:
 
 - `cxxmcp-doxygen-html`: generated public API documentation.
 - `cxxmcp-source`: a source archive with recursive submodule contents and a
   `SHA256SUMS.txt` file.
+- `cxxmcp-release-evidence`: the README, Chinese README, changelog,
+  compatibility policy, Peer/Service migration guide, release gates, release
+  candidate checklist, TODO, and example source files used for the release
+  decision.
 
-Release candidates must attach the source and documentation artifacts, or
-replace them with equivalent versioned artifacts built from the same commit and
-with matching checksums recorded in the release notes.
+Release candidates must attach the source, documentation, and release evidence
+artifacts, or replace them with equivalent versioned artifacts built from the
+same commit and with matching checksums recorded in the release notes.
 
 Use [Release candidate checklist](release_candidate_checklist.md) to bind the
 workflow artifacts, public API review, compatibility policy, examples, README,

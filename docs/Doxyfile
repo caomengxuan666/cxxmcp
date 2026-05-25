@@ -1,23 +1,22 @@
 PROJECT_NAME           = "cxxmcp"
 PROJECT_NUMBER         = 2.0.0
-PROJECT_BRIEF          = "C++ MCP SDK and runtime"
+PROJECT_BRIEF          = "C++ MCP SDK"
 
 OUTPUT_DIRECTORY       = docs/doxygen
 HTML_OUTPUT            = html
 
 INPUT                  = README.md \
                          CHANGELOG.md \
+                         docs/compatibility_policy.md \
+                         docs/release_gates.md \
+                         docs/release_candidate_checklist.md \
                          todo.md \
                          sdk/include \
                          sdk/core/include \
                          sdk/protocol/include \
+                         sdk/transport/include \
                          sdk/client/include \
-                         sdk/server/include \
-                         runtime/include \
-                         runtime/observability/include \
-                         extensions/adapters/include \
-                         extensions/plugin-sdk/include \
-                         tools/cli/include
+                         sdk/server/include
 USE_MDFILE_AS_MAINPAGE = README.md
 RECURSIVE              = YES
 

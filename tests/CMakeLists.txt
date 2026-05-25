@@ -5,6 +5,11 @@ function(cxxmcp_mark_release_blocking test_name)
     endif()
 endfunction()
 
+set(CXXMCP_INTEROP_TYPESCRIPT_SDK_VERSION "1.29.0" CACHE STRING
+    "Pinned @modelcontextprotocol/sdk version used by interop tests")
+set(CXXMCP_INTEROP_PYTHON_MCP_VERSION "1.27.1" CACHE STRING
+    "Pinned Python mcp package version used by interop tests")
+
 if(TARGET mcp_protocol)
     add_executable(mcp_protocol_tests
         protocol/test_protocol.cpp
@@ -186,6 +191,10 @@ if(CXXMCP_BUILD_TESTS AND TARGET mcp_sdk AND TARGET mcp_protocol AND TARGET mcp_
         -DREPO_SOURCE_DIR=${PROJECT_SOURCE_DIR}
         -DBUILD_DIR=${PROJECT_BINARY_DIR}
         -DBUILD_CONFIG=$<CONFIG>
+        "-DPACKAGE_SMOKE_GENERATOR=${CMAKE_GENERATOR}"
+        "-DPACKAGE_SMOKE_GENERATOR_PLATFORM=${CMAKE_GENERATOR_PLATFORM}"
+        "-DPACKAGE_SMOKE_GENERATOR_TOOLSET=${CMAKE_GENERATOR_TOOLSET}"
+        "-DPACKAGE_SMOKE_CXX_COMPILER=${CMAKE_CXX_COMPILER}"
     )
     if(MSVC)
         set(package_smoke_msvc_runtime_library "")
@@ -241,11 +250,14 @@ if(TARGET mcp_client AND TARGET mcp_test_stdio_child)
             "${PROJECT_SOURCE_DIR}/tests/fixtures/process_stdio_client_node.mjs"
             "$<TARGET_FILE:mcp_test_stdio_child>"
     )
+    set_tests_properties(interop_typescript_client_process_stdio PROPERTIES
+        ENVIRONMENT
+            "CXXMCP_TYPESCRIPT_SDK_VERSION=${CXXMCP_INTEROP_TYPESCRIPT_SDK_VERSION}")
     cxxmcp_mark_release_blocking(
         interop_typescript_client_process_stdio interop process-stdio)
 
     add_test(NAME interop_python_client_process_stdio
-        COMMAND uv run --with mcp python
+        COMMAND uv run --with "mcp==${CXXMCP_INTEROP_PYTHON_MCP_VERSION}" python
             "${PROJECT_SOURCE_DIR}/tests/fixtures/process_stdio_client.py"
             "$<TARGET_FILE:mcp_test_stdio_child>"
     )

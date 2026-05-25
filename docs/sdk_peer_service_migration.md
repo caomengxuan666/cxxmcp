@@ -172,7 +172,7 @@ implementation detail during migration.
 - `client::Client` and `server::Server` are compatibility wrappers and
   implementation anchors. Prefer Peer methods; direct concrete accessors on
   peers are deprecated escape hatches.
-- `server::App::builder()` is a convenience facade for compact demos and
+- `server::App::builder()` is a convenience wrapper for compact demos and
   legacy-style stdio tools.
 - New docs should present `Peer` and `Service` first.
 - Low-level examples may still use concrete classes when they demonstrate

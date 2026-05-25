@@ -324,7 +324,8 @@ protocol 层。
   library 作为稳定发布物，必须先定义 ABI policy。
 - Release review 必须包含 public header diff、独立 public-header compile
   tests、安装树 `package_smoke`，以及该 release 可用的 conformance matrix。
-- Release-blocking tests、labels，以及支持的 compiler/generator/runtime
+- 完整兼容性策略记录在 [Compatibility policy](docs/compatibility_policy.md)。
+  Release-blocking tests、labels，以及支持的 compiler/generator/runtime
   matrix 记录在 [Release gates](docs/release_gates.md)。
 
 ## Examples
@@ -351,6 +352,7 @@ protocol 层。
 ## 文档
 
 - [Fact-standard TODO](todo.md)
+- [Compatibility policy](docs/compatibility_policy.md)
 - [Release gates](docs/release_gates.md)
 - [Release candidate checklist](docs/release_candidate_checklist.md)
 - [Peer/Service 迁移指南](docs/sdk_peer_service_migration.md)
@@ -359,6 +361,7 @@ protocol 层。
 ## 项目状态
 
 `cxxmcp` 已经是具备 RMCP-like public architecture 的 MCP C++ SDK，并且有很强
-的标准 SDK 潜力。当前重点是继续收紧 service runtime、Streamable HTTP session
-语义、跨平台 process stdio、更大的 conformance matrix，以及 package-manager
-发布路径。
+的标准 SDK 潜力。SDK-first 形态、Peer/Service boundary、内建 transport 行为
+和跨 SDK conformance gates 已经接近 release candidate 状态。在 release-gates
+matrix 为精确 release commit 产出可审计 artifacts，并且 release candidate
+checklist 完成之前，不声明 fact-standard 状态。

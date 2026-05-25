@@ -20,8 +20,8 @@
 #include "cxxmcp/server/transport.hpp"
 
 /// @file
-/// @brief Server-side facade for sending requests and notifications to a client
-/// peer.
+/// @brief Server-side handle for sending requests and notifications to a
+/// client peer.
 
 namespace mcp::server {
 
@@ -473,7 +473,7 @@ class ClientPeer {
   std::string session_id_;
 };
 
-/// @brief Create a ClientPeer facade from a session context.
+/// @brief Create a ClientPeer handle from a session context.
 /// @param context Session context whose transport pointer will be borrowed.
 /// @return A non-owning ClientPeer.
 inline ClientPeer client_peer(const SessionContext& context) noexcept {
