@@ -178,7 +178,7 @@ true:
   errors consistently.
 - [ ] Keep `cpp-httplib` hidden behind transport interfaces so it can be
   replaced later if load testing requires it.
-- [ ] Do not introduce a second HTTP stack until there is a measured need.
+- [x] Do not introduce a second HTTP stack until there is a measured need.
 
 ## P0: Streamable HTTP Production Grade
 
@@ -589,15 +589,15 @@ true:
 
 ## Non-Goals
 
-- [ ] Do not build a custom RPC dialect.
-- [ ] Do not add a second JSON stack.
-- [ ] Do not add a second HTTP stack just to look more async.
-- [ ] Do not make gateway policy part of public SDK headers.
+- [x] Do not build a custom RPC dialect.
+- [x] Do not add a second JSON stack.
+- [x] Do not add a second HTTP stack just to look more async.
+- [x] Do not make gateway policy part of public SDK headers.
 - [ ] Do not make task and elicitation mandatory if a milestone only requires
   core MCP parity.
 - [ ] Do not optimize for clever abstraction at the cost of source
   compatibility.
-- [ ] Do not let examples present runtime/gateway APIs as the canonical SDK
+- [x] Do not let examples present runtime/gateway APIs as the canonical SDK
   path.
 
 ## Suggested Milestones
