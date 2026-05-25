@@ -207,11 +207,11 @@ incrementally. Keep them concrete; do not replace them with broad claims.
 true:
 
 - [ ] The SDK-first public surface is stable across releases.
-- [ ] `Peer` / `Service` is the real execution core, not only a facade over
+- [x] `Peer` / `Service` is the real execution core, not only a facade over
   concrete `Client` / `Server` paths.
 - [ ] Core MCP capability parity is complete enough for most C++ consumers.
-- [ ] Transport behavior is explicit, cross-platform, and stress-tested.
-- [ ] Request lifecycle, timeout, cancellation, progress, and shutdown semantics
+- [x] Transport behavior is explicit, cross-platform, and stress-tested.
+- [x] Request lifecycle, timeout, cancellation, progress, and shutdown semantics
   are uniform from peer through transport and handler execution.
 - [x] Streamable HTTP has production-grade session, resume, stale-session,
   backpressure, and concurrent stream behavior.
