@@ -308,6 +308,11 @@ class Peer<RoleClient> {
     return client_.call_tool_async(name, arguments, std::move(options));
   }
 
+  RequestHandle<protocol::CreateTaskResult> call_tool_task_async(
+      const protocol::ToolCall& call, RequestOptions options = {}) {
+    return client_.call_tool_task_async(call, std::move(options));
+  }
+
   RequestHandle<protocol::PromptsGetResult> get_prompt_async(
       const protocol::PromptsGetParams& params, RequestOptions options = {}) {
     return client_.get_prompt_async(params, std::move(options));
@@ -329,6 +334,73 @@ class Peer<RoleClient> {
   RequestHandle<protocol::ResourcesReadResult> read_resource_async(
       std::string_view uri, RequestOptions options = {}) {
     return client_.read_resource_async(uri, std::move(options));
+  }
+
+  RequestHandle<protocol::CompleteResult> complete_async(
+      const protocol::CompleteParams& request, RequestOptions options = {}) {
+    return client_.complete_async(request, std::move(options));
+  }
+
+  RequestHandle<protocol::Json> complete_async(const protocol::Json& request,
+                                               RequestOptions options = {}) {
+    return client_.complete_async(request, std::move(options));
+  }
+
+  RequestHandle<protocol::CreateMessageResult> create_message_async(
+      const protocol::CreateMessageParams& request,
+      RequestOptions options = {}) {
+    return client_.create_message_async(request, std::move(options));
+  }
+
+  RequestHandle<protocol::Json> create_message_async(
+      const protocol::Json& request, RequestOptions options = {}) {
+    return client_.create_message_async(request, std::move(options));
+  }
+
+  RequestHandle<protocol::CreateElicitationResult> create_elicitation_async(
+      const protocol::CreateElicitationRequestParam& request,
+      RequestOptions options = {}) {
+    return client_.create_elicitation_async(request, std::move(options));
+  }
+
+  RequestHandle<protocol::Json> create_elicitation_async(
+      const protocol::Json& request, RequestOptions options = {}) {
+    return client_.create_elicitation_async(request, std::move(options));
+  }
+
+  RequestHandle<std::vector<protocol::Task>> list_tasks_async(
+      RequestOptions options = {}) {
+    return client_.list_tasks_async(std::move(options));
+  }
+
+  RequestHandle<protocol::Task> get_task_async(
+      const protocol::TaskGetParams& request, RequestOptions options = {}) {
+    return client_.get_task_async(request, std::move(options));
+  }
+
+  RequestHandle<protocol::Task> get_task_async(std::string_view task_id,
+                                               RequestOptions options = {}) {
+    return client_.get_task_async(task_id, std::move(options));
+  }
+
+  RequestHandle<protocol::Task> cancel_task_async(
+      const protocol::TaskCancelParams& request, RequestOptions options = {}) {
+    return client_.cancel_task_async(request, std::move(options));
+  }
+
+  RequestHandle<protocol::Task> cancel_task_async(std::string_view task_id,
+                                                  RequestOptions options = {}) {
+    return client_.cancel_task_async(task_id, std::move(options));
+  }
+
+  RequestHandle<protocol::Json> task_result_async(
+      const protocol::TaskResultParams& request, RequestOptions options = {}) {
+    return client_.task_result_async(request, std::move(options));
+  }
+
+  RequestHandle<protocol::Json> task_result_async(std::string_view task_id,
+                                                  RequestOptions options = {}) {
+    return client_.task_result_async(task_id, std::move(options));
   }
 
   core::Result<core::Unit> raw_notification(

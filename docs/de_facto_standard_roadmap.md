@@ -161,6 +161,7 @@ Covered by current tree:
 - request handle semantics
 - cancellation on timeout
 - explicit request options
+- typed async client / client-peer helpers for common MCP request families
 - consistent error mapping for transport and handler failures
 
 ### 5.4 Protocol modeling

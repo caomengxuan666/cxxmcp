@@ -1270,6 +1270,134 @@ RequestHandle<protocol::ResourcesReadResult> Client::read_resource_async(
                              std::move(options));
 }
 
+RequestHandle<protocol::CreateTaskResult> Client::call_tool_task_async(
+    const protocol::ToolCall& call, RequestOptions options) {
+  return request_async<protocol::CreateTaskResult>(
+      std::string(protocol::ToolsCallMethod), protocol::tool_call_to_json(call),
+      [](const protocol::Json& payload) {
+        return protocol::create_task_result_from_json(payload);
+      },
+      std::move(options));
+}
+
+RequestHandle<protocol::CompleteResult> Client::complete_async(
+    const protocol::CompleteParams& request, RequestOptions options) {
+  return request_async<protocol::CompleteResult>(
+      std::string(protocol::CompletionCompleteMethod),
+      protocol::complete_params_to_json(request),
+      [](const protocol::Json& payload) {
+        return protocol::complete_result_from_json(payload);
+      },
+      std::move(options));
+}
+
+RequestHandle<protocol::Json> Client::complete_async(
+    const protocol::Json& request, RequestOptions options) {
+  return request_async(std::string(protocol::CompletionCompleteMethod), request,
+                       std::move(options));
+}
+
+RequestHandle<protocol::CreateMessageResult> Client::create_message_async(
+    const protocol::CreateMessageParams& request, RequestOptions options) {
+  return request_async<protocol::CreateMessageResult>(
+      std::string(protocol::SamplingCreateMessageMethod),
+      protocol::create_message_params_to_json(request),
+      [](const protocol::Json& payload) {
+        return protocol::create_message_result_from_json(payload);
+      },
+      std::move(options));
+}
+
+RequestHandle<protocol::Json> Client::create_message_async(
+    const protocol::Json& request, RequestOptions options) {
+  return request_async(std::string(protocol::SamplingCreateMessageMethod),
+                       request, std::move(options));
+}
+
+RequestHandle<protocol::CreateElicitationResult>
+Client::create_elicitation_async(
+    const protocol::CreateElicitationRequestParam& request,
+    RequestOptions options) {
+  return request_async<protocol::CreateElicitationResult>(
+      std::string(protocol::ElicitationCreateMethod),
+      protocol::create_elicitation_request_param_to_json(request),
+      [](const protocol::Json& payload) {
+        return protocol::create_elicitation_result_from_json(payload);
+      },
+      std::move(options));
+}
+
+RequestHandle<protocol::Json> Client::create_elicitation_async(
+    const protocol::Json& request, RequestOptions options) {
+  return request_async(std::string(protocol::ElicitationCreateMethod), request,
+                       std::move(options));
+}
+
+RequestHandle<std::vector<protocol::Task>> Client::list_tasks_async(
+    RequestOptions options) {
+  return request_async<std::vector<protocol::Task>>(
+      std::string(protocol::TasksListMethod), protocol::Json::object(),
+      [](const protocol::Json& payload)
+          -> core::Result<std::vector<protocol::Task>> {
+        const auto result = protocol::task_list_result_from_json(payload);
+        if (!result) {
+          return std::unexpected(result.error());
+        }
+        return result->tasks;
+      },
+      std::move(options));
+}
+
+RequestHandle<protocol::Task> Client::get_task_async(
+    const protocol::TaskGetParams& request, RequestOptions options) {
+  return request_async<protocol::Task>(
+      std::string(protocol::TasksGetMethod),
+      protocol::task_get_params_to_json(request),
+      [](const protocol::Json& payload) {
+        return protocol::task_from_json(payload);
+      },
+      std::move(options));
+}
+
+RequestHandle<protocol::Task> Client::get_task_async(std::string_view task_id,
+                                                     RequestOptions options) {
+  return get_task_async(
+      protocol::TaskGetParams{.task_id = std::string(task_id)},
+      std::move(options));
+}
+
+RequestHandle<protocol::Task> Client::cancel_task_async(
+    const protocol::TaskCancelParams& request, RequestOptions options) {
+  return request_async<protocol::Task>(
+      std::string(protocol::TasksCancelMethod),
+      protocol::task_cancel_params_to_json(request),
+      [](const protocol::Json& payload) {
+        return protocol::task_from_json(payload);
+      },
+      std::move(options));
+}
+
+RequestHandle<protocol::Task> Client::cancel_task_async(
+    std::string_view task_id, RequestOptions options) {
+  return cancel_task_async(
+      protocol::TaskCancelParams{.task_id = std::string(task_id)},
+      std::move(options));
+}
+
+RequestHandle<protocol::Json> Client::task_result_async(
+    const protocol::TaskResultParams& request, RequestOptions options) {
+  return request_async(std::string(protocol::TasksResultMethod),
+                       protocol::task_result_params_to_json(request),
+                       std::move(options));
+}
+
+RequestHandle<protocol::Json> Client::task_result_async(
+    std::string_view task_id, RequestOptions options) {
+  return task_result_async(
+      protocol::TaskResultParams{.task_id = std::string(task_id)},
+      std::move(options));
+}
+
 core::Result<core::Unit> Client::raw_notification(
     const protocol::JsonRpcNotification& notification) {
   const auto started = ensure_transport_started();

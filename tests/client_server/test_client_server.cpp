@@ -223,7 +223,8 @@ class RecordingTransport final : public mcp::client::Transport {
           .id = request.id,
           .result =
               Json{{"role", "assistant"},
-                   {"content", Json{{"type", "text"}, {"text", "sample"}}}},
+                   {"content", Json{{"type", "text"}, {"text", "sample"}}},
+                   {"model", "test-model"}},
       };
     }
     if (request.method == "elicitation/create") {
@@ -904,7 +905,91 @@ void test_client_peer_typed_async_helpers() {
   require(resource->contents.front().text == "hello",
           "typed async read_resource result mismatch");
 
-  require(recording->requests.size() == 4,
+  const auto completed =
+      peer.complete_async(
+              mcp::protocol::CompleteParams{
+                  .ref =
+                      mcp::protocol::prompt_completion_reference("summarize"),
+                  .argument =
+                      mcp::protocol::CompletionArgument{
+                          .name = "text",
+                          .value = "he",
+                      },
+              },
+              options)
+          .await_response();
+  require(completed.has_value(), "typed async complete failed");
+  require(completed->completion.values.front() == "hello",
+          "typed async complete result mismatch");
+
+  const auto sampled = peer.create_message_async(
+                               mcp::protocol::CreateMessageParams{
+                                   .messages = {mcp::protocol::SamplingMessage{
+                                       .role = "user",
+                                       .content =
+                                           mcp::protocol::ContentBlock{
+                                               .type = "text",
+                                               .text = "hello",
+                                           },
+                                   }},
+                                   .max_tokens = 16,
+                               },
+                               options)
+                           .await_response();
+  require(sampled.has_value(), "typed async create_message failed");
+  require(sampled->content.text == "sample",
+          "typed async create_message result mismatch");
+
+  const auto schema = mcp::protocol::ElicitationSchema::Builder()
+                          .required_bool("accepted")
+                          .build();
+  require(schema.has_value(), "typed async elicitation schema failed");
+  const auto elicited = peer.create_elicitation_async(
+                                mcp::protocol::CreateElicitationRequestParam{
+                                    .message = "choose",
+                                    .requested_schema = *schema,
+                                },
+                                options)
+                            .await_response();
+  require(elicited.has_value(), "typed async create_elicitation failed");
+  require(elicited->action == mcp::protocol::ElicitationAction::Accept,
+          "typed async create_elicitation result mismatch");
+
+  const auto task_call =
+      peer.call_tool_task_async(
+              mcp::protocol::ToolCall{
+                  .name = "fake-tool",
+                  .arguments = Json{{"value", 9}},
+                  .task = mcp::protocol::TaskRequestParameters{.ttl = 60},
+              },
+              options)
+          .await_response();
+  require(task_call.has_value(), "typed async call_tool_task failed");
+  require(task_call->task.task_id == "task-created",
+          "typed async call_tool_task result mismatch");
+
+  const auto tasks = peer.list_tasks_async(options).await_response();
+  require(tasks.has_value(), "typed async list_tasks failed");
+  require(tasks->front().task_id == "task-1",
+          "typed async list_tasks result mismatch");
+
+  const auto task = peer.get_task_async("task-1", options).await_response();
+  require(task.has_value(), "typed async get_task failed");
+  require(task->task_id == "task-1", "typed async get_task result mismatch");
+
+  const auto cancelled =
+      peer.cancel_task_async("task-1", options).await_response();
+  require(cancelled.has_value(), "typed async cancel_task failed");
+  require(cancelled->status == mcp::protocol::TaskStatus::Cancelled,
+          "typed async cancel_task result mismatch");
+
+  const auto task_result =
+      peer.task_result_async("task-1", options).await_response();
+  require(task_result.has_value(), "typed async task_result failed");
+  require(task_result->at("value") == "task-complete",
+          "typed async task_result payload mismatch");
+
+  require(recording->requests.size() == 12,
           "typed async request count mismatch");
   require(recording->requests.at(0).method == "tools/list",
           "typed async list_tools method mismatch");
@@ -914,6 +999,22 @@ void test_client_peer_typed_async_helpers() {
           "typed async get_prompt method mismatch");
   require(recording->requests.at(3).method == "resources/read",
           "typed async read_resource method mismatch");
+  require(recording->requests.at(4).method == "completion/complete",
+          "typed async complete method mismatch");
+  require(recording->requests.at(5).method == "sampling/createMessage",
+          "typed async create_message method mismatch");
+  require(recording->requests.at(6).method == "elicitation/create",
+          "typed async create_elicitation method mismatch");
+  require(recording->requests.at(7).method == "tools/call",
+          "typed async call_tool_task method mismatch");
+  require(recording->requests.at(8).method == "tasks/list",
+          "typed async list_tasks method mismatch");
+  require(recording->requests.at(9).method == "tasks/get",
+          "typed async get_task method mismatch");
+  require(recording->requests.at(10).method == "tasks/cancel",
+          "typed async cancel_task method mismatch");
+  require(recording->requests.at(11).method == "tasks/result",
+          "typed async task_result method mismatch");
 }
 
 void test_server_client_peer_request_handle_times_out_and_cancels() {

@@ -406,13 +406,13 @@ The current C++ API now has request handles, timeout options, and cooperative
 cancellation tokens in the peer/client layer. Running services expose explicit
 `close()` and `wait()` lifecycle methods plus a shared cooperative cancellation
 token. Client and client-peer APIs now expose typed async helpers for common
-tool, prompt, and resource requests, while the older concrete server API is
-still mostly synchronous and direct.
+tool, prompt, resource, completion, sampling, elicitation, and task requests,
+while the older concrete server API is still mostly synchronous and direct.
 
 Gap:
 
-- timeout and cancellation behavior still needs broader coverage across every
-  typed peer request family
+- timeout and cancellation behavior still needs stress coverage across typed
+  peer request families and concrete transports
 - service lifecycle is synchronous and less featureful than RMCP's async
   running-service model
 
@@ -484,10 +484,11 @@ Current tree covers:
 
 - request handles
 - timeout options
+- cancellation tokens
+- typed async helpers for common client and client-peer request families
 
 Still to close:
 
-- add cancellation tokens
 - add shutdown/wait lifecycle
 
 ### Phase 4: Add Task Manager

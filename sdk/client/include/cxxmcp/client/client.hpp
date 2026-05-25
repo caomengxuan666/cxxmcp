@@ -484,6 +484,10 @@ class Client {
       const protocol::Json& arguments = protocol::Json::object(),
       RequestOptions options = {});
 
+  /// @brief Asynchronously starts a task-aware tool call.
+  RequestHandle<protocol::CreateTaskResult> call_tool_task_async(
+      const protocol::ToolCall& call, RequestOptions options = {});
+
   /// @brief Asynchronously gets a prompt and parses the typed response.
   RequestHandle<protocol::PromptsGetResult> get_prompt_async(
       const protocol::PromptsGetParams& params, RequestOptions options = {});
@@ -501,6 +505,60 @@ class Client {
   /// @brief Asynchronously reads a resource by URI.
   RequestHandle<protocol::ResourcesReadResult> read_resource_async(
       std::string_view uri, RequestOptions options = {});
+
+  /// @brief Asynchronously completes a prompt/resource argument.
+  RequestHandle<protocol::CompleteResult> complete_async(
+      const protocol::CompleteParams& request, RequestOptions options = {});
+
+  /// @brief Asynchronously sends a raw completion request.
+  RequestHandle<protocol::Json> complete_async(const protocol::Json& request,
+                                               RequestOptions options = {});
+
+  /// @brief Asynchronously creates a sampling message.
+  RequestHandle<protocol::CreateMessageResult> create_message_async(
+      const protocol::CreateMessageParams& request,
+      RequestOptions options = {});
+
+  /// @brief Asynchronously sends a raw sampling request.
+  RequestHandle<protocol::Json> create_message_async(
+      const protocol::Json& request, RequestOptions options = {});
+
+  /// @brief Asynchronously creates an elicitation request.
+  RequestHandle<protocol::CreateElicitationResult> create_elicitation_async(
+      const protocol::CreateElicitationRequestParam& request,
+      RequestOptions options = {});
+
+  /// @brief Asynchronously sends a raw elicitation request.
+  RequestHandle<protocol::Json> create_elicitation_async(
+      const protocol::Json& request, RequestOptions options = {});
+
+  /// @brief Asynchronously lists tasks and parses the typed response.
+  RequestHandle<std::vector<protocol::Task>> list_tasks_async(
+      RequestOptions options = {});
+
+  /// @brief Asynchronously gets a task using typed protocol parameters.
+  RequestHandle<protocol::Task> get_task_async(
+      const protocol::TaskGetParams& request, RequestOptions options = {});
+
+  /// @brief Asynchronously gets a task by identifier.
+  RequestHandle<protocol::Task> get_task_async(std::string_view task_id,
+                                               RequestOptions options = {});
+
+  /// @brief Asynchronously cancels a task using typed protocol parameters.
+  RequestHandle<protocol::Task> cancel_task_async(
+      const protocol::TaskCancelParams& request, RequestOptions options = {});
+
+  /// @brief Asynchronously cancels a task by identifier.
+  RequestHandle<protocol::Task> cancel_task_async(std::string_view task_id,
+                                                  RequestOptions options = {});
+
+  /// @brief Asynchronously gets a task result using typed protocol parameters.
+  RequestHandle<protocol::Json> task_result_async(
+      const protocol::TaskResultParams& request, RequestOptions options = {});
+
+  /// @brief Asynchronously gets a task result by identifier.
+  RequestHandle<protocol::Json> task_result_async(std::string_view task_id,
+                                                  RequestOptions options = {});
 
   /// @brief Sends a raw JSON-RPC notification.
   core::Result<core::Unit> notify(
