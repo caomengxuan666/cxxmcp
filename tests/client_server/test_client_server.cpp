@@ -1,5 +1,6 @@
 // Copyright (c) 2025 [caomengxuan666]
 
+#include <atomic>
 #include <chrono>
 #include <condition_variable>
 #include <cstdint>
@@ -1491,6 +1492,7 @@ void test_server_task_processor_failed_and_cancelled_tasks() {
       .worker_count = 1,
       .queue_size = 8,
   });
+  std::atomic_bool slow_observed_cancel{false};
   builder.add_tool(
       mcp::protocol::ToolDefinition{
           .name = "fail",
@@ -1513,9 +1515,15 @@ void test_server_task_processor_failed_and_cancelled_tasks() {
           .execution = mcp::protocol::ToolExecution{}.with_task_support(
               mcp::protocol::TaskSupport::Optional),
       },
-      [](const mcp::server::ToolContext&)
+      [&](const mcp::server::ToolContext& context)
           -> mcp::core::Result<mcp::protocol::ToolResult> {
-        std::this_thread::sleep_for(std::chrono::milliseconds(100));
+        for (int attempt = 0; attempt < 20; ++attempt) {
+          if (context.cancelled()) {
+            slow_observed_cancel = true;
+            break;
+          }
+          std::this_thread::sleep_for(std::chrono::milliseconds(10));
+        }
         mcp::protocol::ToolResult result;
         result.content.push_back(mcp::protocol::ContentBlock{
             .type = "text",
@@ -1558,7 +1566,8 @@ void test_server_task_processor_failed_and_cancelled_tasks() {
   require(cancelled.has_value(), "cancel task should succeed");
   require(cancelled->status == mcp::protocol::TaskStatus::Cancelled,
           "cancel task status mismatch");
-  std::this_thread::sleep_for(std::chrono::milliseconds(150));
+  wait_until([&] { return slow_observed_cancel.load(); },
+             "slow task should observe cancellation token");
   const auto after_cancel = client.get_task(slow->task.task_id);
   require(after_cancel.has_value(), "cancelled task should remain queryable");
   require(after_cancel->status == mcp::protocol::TaskStatus::Cancelled,

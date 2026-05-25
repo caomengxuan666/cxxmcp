@@ -78,6 +78,7 @@ class TaskOperationProcessor {
     protocol::Task task;
     std::chrono::steady_clock::time_point started_at;
     std::optional<std::chrono::seconds> timeout;
+    CancellationToken cancellation;
     std::optional<protocol::Json> result;
     std::optional<core::Error> failure;
   };

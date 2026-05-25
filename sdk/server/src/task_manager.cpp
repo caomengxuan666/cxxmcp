@@ -86,6 +86,7 @@ void TaskOperationProcessor::refresh_locked() {
       continue;
     }
     if (now - record.started_at >= *record.timeout) {
+      record.cancellation.cancel();
       record.task.status = protocol::TaskStatus::Failed;
       record.task.status_message = "Operation timed out";
       record.task.last_updated_at = timestamp;
@@ -170,19 +171,27 @@ TaskOperationProcessor::submit_tool_call(const ToolRegistry& tools,
   {
     std::lock_guard<std::mutex> lock(mutex_);
     task.task_id = make_task_id();
+    CancellationToken cancellation;
     tasks_.emplace(task.task_id,
                    TaskRecord{
                        .task = task,
                        .started_at = std::chrono::steady_clock::now(),
                        .timeout = timeout,
+                       .cancellation = cancellation,
                    });
     order_.push_back(task.task_id);
   }
 
   const auto task_id = task.task_id;
-  const auto queued = executor_.enqueue(
-      [this, &tools, call = std::move(call), context, task_id]() mutable {
-        auto result = tools.call(std::move(call), context);
+  const auto cancellation = [&]() {
+    std::lock_guard<std::mutex> lock(mutex_);
+    const auto* record = find_task_locked(task_id);
+    return record == nullptr ? CancellationToken{} : record->cancellation;
+  }();
+  const auto queued =
+      executor_.enqueue([this, &tools, call = std::move(call), context, task_id,
+                         cancellation]() mutable {
+        auto result = tools.call(std::move(call), context, cancellation);
         if (!result) {
           finish_task(std::move(task_id), std::unexpected(result.error()));
           return;
@@ -239,6 +248,7 @@ core::Result<protocol::Task> TaskOperationProcessor::cancel_task(
   if (is_terminal(record->task.status)) {
     return record->task;
   }
+  record->cancellation.cancel();
   record->task.status = protocol::TaskStatus::Cancelled;
   record->task.status_message = "Operation cancelled";
   record->task.last_updated_at = now_timestamp();

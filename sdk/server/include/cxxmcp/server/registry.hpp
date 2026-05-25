@@ -2,7 +2,9 @@
 
 #pragma once
 
+#include <atomic>
 #include <functional>
+#include <memory>
 #include <optional>
 #include <string>
 #include <string_view>
@@ -21,6 +23,22 @@
 
 namespace mcp::server {
 
+/// @brief Copyable cooperative cancellation token for server handlers.
+class CancellationToken {
+ public:
+  CancellationToken() : cancelled_(std::make_shared<std::atomic_bool>(false)) {}
+
+  /// @brief Returns true after the owning operation has been cancelled.
+  bool cancelled() const noexcept { return cancelled_->load(); }
+
+ private:
+  friend class TaskOperationProcessor;
+
+  void cancel() const noexcept { cancelled_->store(true); }
+
+  std::shared_ptr<std::atomic_bool> cancelled_;
+};
+
 /// @brief Invocation context passed to tool handlers.
 ///
 /// ToolContext copies the SessionContext metadata for the active request and
@@ -34,6 +52,11 @@ struct ToolContext : SessionContext {
   protocol::Json arguments = protocol::Json::object();
   /// Optional task request metadata supplied with the tool call.
   std::optional<protocol::TaskRequestParameters> task;
+  /// Cooperative cancellation token for task-aware executions.
+  CancellationToken cancellation;
+
+  /// @brief Convenience check for cancellation-aware handlers.
+  bool cancelled() const noexcept { return cancellation.cancelled(); }
 };
 
 /// @brief Invocation context passed to prompt handlers.
@@ -130,6 +153,12 @@ class ToolRegistry {
   /// the handler's own error.
   core::Result<protocol::ToolResult> call(
       protocol::ToolCall call, const SessionContext& session_context) const;
+
+  /// @brief Invoke a parsed protocol call with session metadata and
+  /// cooperative cancellation.
+  core::Result<protocol::ToolResult> call(protocol::ToolCall call,
+                                          const SessionContext& session_context,
+                                          CancellationToken cancellation) const;
 
   /// @brief Invoke a tool with only a session id.
   /// @param name Registered tool name.

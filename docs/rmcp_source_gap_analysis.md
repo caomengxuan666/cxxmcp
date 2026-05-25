@@ -306,14 +306,16 @@ Covered by current tree:
   `tasks/result`, and `tasks/cancel` when no custom task handler is installed
 - `tasks/result` returns the original `ToolResult` JSON for completed
   background tool calls
+- task-aware tool handlers receive a cooperative cancellation token through
+  `ToolContext`
 - client and gateway `tools/call` paths preserve task request metadata
 - task status notifications
 - runtime task management service
 
 Still to close:
 
-- hard cancellation of already running C++ handlers; current behavior is
-  cooperative and suppresses late results after cancellation
+- hard cancellation of already running C++ handlers; current behavior is a
+  cooperative token and late-result suppression
 - TTL-based result cleanup; current SDK processor retains terminal records with
   a bounded in-memory retention count
 - richer operation result transport abstractions beyond tool-call JSON payloads
@@ -455,12 +457,13 @@ Current tree covers:
 - task-aware `tools/call` creation and background execution
 - built-in `tasks/list`, `tasks/get`, `tasks/result`, and `tasks/cancel`
   handling
+- cooperative cancellation token for task-aware tool handlers
 - task status notifications
 
 Still to close:
 
 - TTL-based task result cleanup
-- hard cancellation or a public cancellation token for running handlers
+- hard cancellation for non-cooperative running handlers
 - richer operation result transport parity with RMCP
 
 ### Phase 5: Add Elicitation Helpers

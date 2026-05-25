@@ -119,6 +119,12 @@ core::Result<protocol::ToolResult> ToolRegistry::call(
 
 core::Result<protocol::ToolResult> ToolRegistry::call(
     protocol::ToolCall call, const SessionContext& session_context) const {
+  return this->call(std::move(call), session_context, CancellationToken{});
+}
+
+core::Result<protocol::ToolResult> ToolRegistry::call(
+    protocol::ToolCall call, const SessionContext& session_context,
+    CancellationToken cancellation) const {
   const auto it = tools_.find(call.name);
   if (it == tools_.end()) {
     return std::unexpected(core::Error{
@@ -139,6 +145,7 @@ core::Result<protocol::ToolResult> ToolRegistry::call(
   context.transport = session_context.transport;
   context.arguments = std::move(call.arguments);
   context.task = std::move(call.task);
+  context.cancellation = std::move(cancellation);
   const auto result = it->second.handler(context);
   if (!result) {
     return std::unexpected(result.error());
