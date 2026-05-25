@@ -2,12 +2,14 @@
 
 #include "cxxmcp/client/stdio_transport.hpp"
 
+#include <exception>
 #include <iostream>
 #include <string>
 #include <type_traits>
 #include <utility>
 #include <variant>
 
+#include "cxxmcp/error.hpp"
 #include "cxxmcp/protocol/serialization.hpp"
 
 namespace mcp::client {
@@ -112,7 +114,14 @@ core::Result<protocol::JsonRpcResponse> StdioTransport::send(
     if (const auto* notification =
             std::get_if<protocol::JsonRpcNotification>(&*message)) {
       if (notification_handler_) {
-        const auto handled = notification_handler_(*notification);
+        core::Result<core::Unit> handled;
+        try {
+          handled = notification_handler_(*notification);
+        } catch (const std::exception& ex) {
+          handled = std::unexpected(errors::handler_failed(ex.what()));
+        } catch (...) {
+          handled = std::unexpected(errors::handler_unknown_exception());
+        }
         if (!handled) {
           return std::unexpected(handled.error());
         }
@@ -129,7 +138,14 @@ core::Result<protocol::JsonRpcResponse> StdioTransport::send(
             incoming_request->method));
       }
 
-      auto handled = request_handler_(*incoming_request);
+      core::Result<protocol::JsonRpcResponse> handled;
+      try {
+        handled = request_handler_(*incoming_request);
+      } catch (const std::exception& ex) {
+        handled = std::unexpected(errors::handler_failed(ex.what()));
+      } catch (...) {
+        handled = std::unexpected(errors::handler_unknown_exception());
+      }
       if (!handled) {
         handled = protocol::make_error_response(
             std::optional<protocol::RequestId>{incoming_request->id},

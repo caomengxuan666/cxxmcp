@@ -2,12 +2,14 @@
 
 #include "cxxmcp/server/stdio_transport.hpp"
 
+#include <exception>
 #include <iostream>
 #include <optional>
 #include <string>
 #include <utility>
 #include <variant>
 
+#include "cxxmcp/error.hpp"
 #include "cxxmcp/protocol/serialization.hpp"
 
 namespace mcp::server {
@@ -124,7 +126,14 @@ core::Result<core::Unit> StdioTransport::start(
         context.session_id = "stdio";
         context.remote_address = "stdio";
         context.transport = this;
-        const auto handled = notification_handler(*notification, context);
+        core::Result<core::Unit> handled;
+        try {
+          handled = notification_handler(*notification, context);
+        } catch (const std::exception& ex) {
+          handled = std::unexpected(errors::handler_failed(ex.what()));
+        } catch (...) {
+          handled = std::unexpected(errors::handler_unknown_exception());
+        }
         if (!handled) {
           running_ = false;
           return std::unexpected(handled.error());
@@ -150,7 +159,14 @@ core::Result<core::Unit> StdioTransport::start(
     context.session_id = "stdio";
     context.remote_address = "stdio";
     context.transport = this;
-    auto response = handler(*request, context);
+    core::Result<protocol::JsonRpcResponse> response;
+    try {
+      response = handler(*request, context);
+    } catch (const std::exception& ex) {
+      response = std::unexpected(errors::handler_failed(ex.what()));
+    } catch (...) {
+      response = std::unexpected(errors::handler_unknown_exception());
+    }
     if (!response) {
       response = protocol::make_error_response(
           std::optional<protocol::RequestId>{request->id},

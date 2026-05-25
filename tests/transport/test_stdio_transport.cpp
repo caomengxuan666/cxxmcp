@@ -121,6 +121,106 @@ void test_client_writes_request_and_reads_response() {
           "client request id mismatch");
 }
 
+void test_client_rejects_unexpected_stdio_response_id() {
+  const auto response =
+      mcp::protocol::make_response(std::int64_t{8}, Json{{"ok", true}});
+  const auto response_text = mcp::protocol::serialize_response(response);
+  require(response_text.has_value(), "response should serialize");
+
+  std::istringstream input(*response_text + '\n');
+  std::ostringstream output;
+  mcp::client::StdioTransport transport(input, output);
+
+  const auto actual = transport.send(mcp::protocol::JsonRpcRequest{
+      .method = "ping",
+      .params = Json::object(),
+      .id = std::int64_t{7},
+  });
+
+  require(!actual.has_value(),
+          "client stdio should reject unexpected response id");
+  require(actual.error().message ==
+              "stdio transport received an unexpected response",
+          "client stdio unexpected response message mismatch");
+  require(actual.error().detail == "8",
+          "client stdio unexpected response detail mismatch");
+  require(actual.error().category == "transport",
+          "client stdio unexpected response category mismatch");
+}
+
+void test_client_reports_stdio_eof_before_response() {
+  std::istringstream input;
+  std::ostringstream output;
+  mcp::client::StdioTransport transport(input, output);
+
+  const auto actual = transport.send(mcp::protocol::JsonRpcRequest{
+      .method = "ping",
+      .params = Json::object(),
+      .id = std::int64_t{7},
+  });
+
+  require(!actual.has_value(),
+          "client stdio should fail when stream closes before response");
+  require(actual.error().message == "failed to read stdio response",
+          "client stdio EOF message mismatch");
+  require(actual.error().category == "transport",
+          "client stdio EOF category mismatch");
+}
+
+void test_client_writes_error_for_throwing_incoming_stdio_request_handler() {
+  const auto incoming_request_text =
+      serialize_request_line(mcp::protocol::JsonRpcRequest{
+          .method = "custom/throw",
+          .params = Json::object(),
+          .id = std::string("srv-throw"),
+      });
+  const auto outgoing_response_text = mcp::protocol::serialize_response(
+      mcp::protocol::make_response(std::int64_t{7}, Json{{"ok", true}}));
+  require(outgoing_response_text.has_value(),
+          "outgoing response should serialize");
+
+  std::istringstream input(incoming_request_text + *outgoing_response_text +
+                           '\n');
+  std::ostringstream output;
+  mcp::client::StdioTransport transport(input, output);
+
+  require(transport
+              .start([](const mcp::protocol::JsonRpcRequest&)
+                         -> mcp::core::Result<mcp::protocol::JsonRpcResponse> {
+                throw std::runtime_error("client stdio handler threw");
+              })
+              .has_value(),
+          "client stdio transport start failed");
+
+  const auto actual = transport.send(mcp::protocol::JsonRpcRequest{
+      .method = "ping",
+      .params = Json::object(),
+      .id = std::int64_t{7},
+  });
+  require(actual.has_value(),
+          "client stdio should keep waiting after handler error response");
+
+  const auto output_text = output.str();
+  const auto first_newline = output_text.find('\n');
+  require(first_newline != std::string::npos,
+          "client stdio output should contain request line");
+  const auto second_newline = output_text.find('\n', first_newline + 1);
+  require(second_newline != std::string::npos,
+          "client stdio output should contain handler error line");
+  const auto error_line =
+      output_text.substr(first_newline + 1, second_newline - first_newline - 1);
+  const auto parsed_error = mcp::protocol::parse_response(error_line);
+  require(parsed_error.has_value(),
+          "client stdio handler error response should parse");
+  require(parsed_error->error.has_value(),
+          "client stdio handler error response should contain error");
+  require(parsed_error->error->message == "handler failed",
+          "client stdio handler error message mismatch");
+  require(parsed_error->error->data.has_value() &&
+              *parsed_error->error->data == "client stdio handler threw",
+          "client stdio handler error detail mismatch");
+}
+
 void test_server_reads_request_and_writes_response() {
   const auto input_text = serialize_request_line(mcp::protocol::JsonRpcRequest{
       .method = "echo",
@@ -151,6 +251,75 @@ void test_server_reads_request_and_writes_response() {
           "server response should contain result");
   require(parsed_response->result->at("echoed").at("value") == 42,
           "server response payload mismatch");
+}
+
+void test_server_writes_error_for_unexpected_stdio_response() {
+  const auto response =
+      mcp::protocol::make_response(std::int64_t{10}, Json{{"ok", true}});
+  const auto response_text = mcp::protocol::serialize_response(response);
+  require(response_text.has_value(), "response should serialize");
+
+  std::istringstream input(*response_text + '\n');
+  std::ostringstream output;
+  mcp::server::StdioTransport transport(input, output);
+
+  bool called = false;
+  const auto started =
+      transport.start([&called](const mcp::protocol::JsonRpcRequest&,
+                                const mcp::server::SessionContext&) {
+        called = true;
+        return mcp::protocol::make_response(std::int64_t{1}, Json::object());
+      });
+
+  require(started.has_value(),
+          "server should keep running through unexpected response until EOF");
+  require(!called, "server handler should not run for response messages");
+  const auto parsed_response = mcp::protocol::parse_response(output.str());
+  require(parsed_response.has_value(),
+          "server unexpected response error should parse");
+  require(parsed_response->error.has_value(),
+          "server unexpected response should contain error");
+  require(parsed_response->error->code ==
+              static_cast<int>(mcp::protocol::ErrorCode::InvalidRequest),
+          "server unexpected response code mismatch");
+  require(parsed_response->error->message ==
+              "stdio transport expected a JSON-RPC request",
+          "server unexpected response message mismatch");
+  require(
+      parsed_response->id.has_value() &&
+          *parsed_response->id == mcp::protocol::RequestId{std::int64_t{10}},
+      "server unexpected response id mismatch");
+}
+
+void test_server_writes_error_for_throwing_stdio_request_handler() {
+  const auto input_text = serialize_request_line(mcp::protocol::JsonRpcRequest{
+      .method = "custom/throw",
+      .params = Json::object(),
+      .id = std::string("req-throw"),
+  });
+  std::istringstream input(input_text);
+  std::ostringstream output;
+  mcp::server::StdioTransport transport(input, output);
+
+  const auto started =
+      transport.start([](const mcp::protocol::JsonRpcRequest&,
+                         const mcp::server::SessionContext&)
+                          -> mcp::core::Result<mcp::protocol::JsonRpcResponse> {
+        throw std::runtime_error("server stdio handler threw");
+      });
+
+  require(started.has_value(),
+          "server should convert throwing handler to error response");
+  const auto parsed_response = mcp::protocol::parse_response(output.str());
+  require(parsed_response.has_value(),
+          "server handler error response should parse");
+  require(parsed_response->error.has_value(),
+          "server handler error response should contain error");
+  require(parsed_response->error->message == "handler failed",
+          "server handler error message mismatch");
+  require(parsed_response->error->data.has_value() &&
+              *parsed_response->error->data == "server stdio handler threw",
+          "server handler error detail mismatch");
 }
 
 void test_server_writes_parse_error_for_bad_json() {
@@ -314,8 +483,18 @@ int main() {
        test_client_writes_request_and_reads_response},
       {"client handles incoming request while waiting for response",
        test_client_handles_incoming_request_while_waiting_for_response},
+      {"client rejects unexpected stdio response id",
+       test_client_rejects_unexpected_stdio_response_id},
+      {"client reports stdio eof before response",
+       test_client_reports_stdio_eof_before_response},
+      {"client writes error for throwing incoming stdio request handler",
+       test_client_writes_error_for_throwing_incoming_stdio_request_handler},
       {"server reads request and writes response",
        test_server_reads_request_and_writes_response},
+      {"server writes error for unexpected stdio response",
+       test_server_writes_error_for_unexpected_stdio_response},
+      {"server writes error for throwing stdio request handler",
+       test_server_writes_error_for_throwing_stdio_request_handler},
       {"server writes parse error for bad json",
        test_server_writes_parse_error_for_bad_json},
       {"server handles notifications", test_server_handles_notifications},
