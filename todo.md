@@ -45,6 +45,8 @@ incrementally. Keep them concrete; do not replace them with broad claims.
   - [x] Canonical client Peer/Service docs and examples construct
         `ClientPeer` from `transport::ClientTransport` implementations instead
         of starting from concrete `client::Client` convenience APIs.
+  - [x] Client and server contract transport adapters cover duplicate response
+        ids as stable unexpected-response failures.
 - Request lifecycle:
   - [x] Client peer timeout emits `notifications/cancelled`.
   - [x] Server-side client peer timeout emits `notifications/cancelled`.

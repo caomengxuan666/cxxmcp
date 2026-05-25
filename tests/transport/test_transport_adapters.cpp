@@ -515,6 +515,38 @@ void test_client_contract_transport_adapter_failure_paths() {
   {
     ScriptedClientContractTransport contract;
     contract.push(mcp::protocol::JsonRpcResponse{
+        .id = mcp::protocol::RequestId{std::int64_t{21}},
+        .result = Json{{"ok", true}},
+    });
+    contract.push(mcp::protocol::JsonRpcResponse{
+        .id = mcp::protocol::RequestId{std::int64_t{21}},
+        .result = Json{{"duplicate", true}},
+    });
+
+    mcp::client::ContractTransportAdapter adapter(contract);
+    const auto first = adapter.send(mcp::protocol::JsonRpcRequest{
+        .method = "tools/list",
+        .params = Json::object(),
+        .id = std::int64_t{21},
+    });
+    require(first.has_value(),
+            "client contract duplicate-id first response should succeed");
+
+    const auto second = adapter.send(mcp::protocol::JsonRpcRequest{
+        .method = "tools/list",
+        .params = Json::object(),
+        .id = std::int64_t{22},
+    });
+    require(!second.has_value(),
+            "client contract duplicate response id should fail next request");
+    require(second.error().message ==
+                "client contract transport received unexpected response id",
+            "client contract duplicate response id message mismatch");
+  }
+
+  {
+    ScriptedClientContractTransport contract;
+    contract.push(mcp::protocol::JsonRpcResponse{
         .id = mcp::protocol::RequestId{std::int64_t{8}},
         .result = Json{{"ok", true}},
     });
@@ -644,6 +676,38 @@ void test_client_contract_transport_adapter_failure_paths() {
 }
 
 void test_server_contract_transport_adapter_failure_paths() {
+  {
+    ScriptedServerContractTransport contract;
+    contract.push(mcp::protocol::JsonRpcResponse{
+        .id = mcp::protocol::RequestId{std::int64_t{23}},
+        .result = Json{{"ok", true}},
+    });
+    contract.push(mcp::protocol::JsonRpcResponse{
+        .id = mcp::protocol::RequestId{std::int64_t{23}},
+        .result = Json{{"duplicate", true}},
+    });
+
+    mcp::server::ContractTransportAdapter adapter(contract);
+    const auto first = adapter.send_request(mcp::protocol::JsonRpcRequest{
+        .method = "roots/list",
+        .params = Json::object(),
+        .id = std::int64_t{23},
+    });
+    require(first.has_value(),
+            "server contract duplicate-id first response should succeed");
+
+    const auto second = adapter.send_request(mcp::protocol::JsonRpcRequest{
+        .method = "roots/list",
+        .params = Json::object(),
+        .id = std::int64_t{24},
+    });
+    require(!second.has_value(),
+            "server contract duplicate response id should fail next request");
+    require(second.error().message ==
+                "server contract transport received unexpected response id",
+            "server contract duplicate response id message mismatch");
+  }
+
   {
     ScriptedServerContractTransport contract;
     contract.push(mcp::protocol::JsonRpcResponse{
