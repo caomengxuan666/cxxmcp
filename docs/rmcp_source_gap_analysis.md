@@ -403,7 +403,8 @@ RMCP has a richer request lifecycle:
 - service shutdown waiting
 
 The current C++ API now has request handles and timeout options in the
-peer/client layer, while the older concrete client/server API is still mostly
+peer/client layer. Running services also expose explicit `close()` and `wait()`
+lifecycle methods, while the older concrete client/server API is still mostly
 synchronous and direct.
 
 Gap:
@@ -411,14 +412,15 @@ Gap:
 - no unified cancellation token
 - timeout and cancellation behavior still needs a consistently role-generic
   shape
-- service lifecycle is less explicit than RMCP's running-service model
+- service lifecycle is synchronous and less featureful than RMCP's async
+  running-service model
 
 Action:
 
 - keep request handles as the public async request path
 - make timeout options consistent across peer request families
 - send cancellation notifications when timed out
-- add service start/stop/wait lifecycle objects
+- deepen service lifecycle with cancellation tokens and real async wait handles
 
 ### 10. Macro and Schema Ergonomics
 

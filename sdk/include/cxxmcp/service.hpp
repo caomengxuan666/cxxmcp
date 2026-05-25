@@ -52,6 +52,16 @@ class RunningService<RoleClient> {
 
   bool running() const noexcept { return running_; }
 
+  /// @brief Explicitly closes the running service.
+  core::Result<core::Unit> close() noexcept { return stop(); }
+
+  /// @brief Waits for service shutdown.
+  ///
+  /// The current C++ service facade is synchronous, so there is no background
+  /// driver to join. The method is still part of the public lifecycle shape so
+  /// callers can write code against close/wait semantics.
+  core::Result<core::Unit> wait() noexcept { return core::Unit{}; }
+
   core::Result<core::Unit> stop() noexcept {
     if (running_) {
       peer_.client().stop();
@@ -94,6 +104,17 @@ class RunningService<RoleServer> {
   const ServerPeer& peer() const noexcept { return peer_; }
 
   bool running() const noexcept { return running_; }
+
+  /// @brief Explicitly closes the running service.
+  core::Result<core::Unit> close() noexcept { return stop(); }
+
+  /// @brief Waits for service shutdown.
+  ///
+  /// Server transports are started by serve(); once serve() returns, the
+  /// synchronous start path has already completed or failed. This wait hook
+  /// keeps the lifecycle facade aligned with peer/service SDKs that expose a
+  /// separate shutdown wait step.
+  core::Result<core::Unit> wait() noexcept { return core::Unit{}; }
 
   core::Result<core::Unit> stop() noexcept {
     if (running_) {

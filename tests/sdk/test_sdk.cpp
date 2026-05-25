@@ -199,7 +199,8 @@ void test_sdk_peer_and_service_surface() {
   require(call->content.front().text == "{\"value\":\"client\"}",
           "client tool call result mismatch");
 
-  require(running_client->stop().has_value(), "client service stop failed");
+  require(running_client->close().has_value(), "client service close failed");
+  require(running_client->wait().has_value(), "client service wait failed");
   require(transport_ptr->stopped, "client transport should stop");
 
   auto contract_transport =
@@ -253,7 +254,8 @@ void test_sdk_peer_and_service_surface() {
   auto running_server = mcp::serve(std::move(server_peer));
   require(running_server.has_value(), "server service should start");
   require(running_server->running(), "server service should report running");
-  require(running_server->stop().has_value(), "server service stop failed");
+  require(running_server->close().has_value(), "server service close failed");
+  require(running_server->wait().has_value(), "server service wait failed");
 
   mcp::ServerPeer contract_server_peer;
   auto server_contract_transport =
@@ -266,8 +268,10 @@ void test_sdk_peer_and_service_surface() {
   auto running_contract_server = mcp::serve(std::move(contract_server_peer));
   require(running_contract_server.has_value(),
           "server peer generic transport service should start");
-  require(running_contract_server->stop().has_value(),
-          "server peer generic transport service should stop");
+  require(running_contract_server->close().has_value(),
+          "server peer generic transport service should close");
+  require(running_contract_server->wait().has_value(),
+          "server peer generic transport service should wait");
   require(server_contract_transport_ptr->stopped,
           "server peer generic transport should close");
 }
