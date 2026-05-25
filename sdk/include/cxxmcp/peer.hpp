@@ -284,6 +284,53 @@ class Peer<RoleClient> {
                                  std::move(options));
   }
 
+  template <class T, class Parser>
+  RequestHandle<T> request_async(std::string method, protocol::Json params,
+                                 Parser parser, RequestOptions options = {}) {
+    return client_.request_async<T>(std::move(method), std::move(params),
+                                    std::move(parser), std::move(options));
+  }
+
+  RequestHandle<std::vector<protocol::ToolDefinition>> list_tools_async(
+      RequestOptions options = {}) {
+    return client_.list_tools_async(std::move(options));
+  }
+
+  RequestHandle<protocol::ToolResult> call_tool_async(
+      const protocol::ToolCall& call, RequestOptions options = {}) {
+    return client_.call_tool_async(call, std::move(options));
+  }
+
+  RequestHandle<protocol::ToolResult> call_tool_async(
+      std::string_view name,
+      const protocol::Json& arguments = protocol::Json::object(),
+      RequestOptions options = {}) {
+    return client_.call_tool_async(name, arguments, std::move(options));
+  }
+
+  RequestHandle<protocol::PromptsGetResult> get_prompt_async(
+      const protocol::PromptsGetParams& params, RequestOptions options = {}) {
+    return client_.get_prompt_async(params, std::move(options));
+  }
+
+  RequestHandle<protocol::PromptsGetResult> get_prompt_async(
+      std::string_view name,
+      const protocol::Json& arguments = protocol::Json::object(),
+      RequestOptions options = {}) {
+    return client_.get_prompt_async(name, arguments, std::move(options));
+  }
+
+  RequestHandle<protocol::ResourcesReadResult> read_resource_async(
+      const protocol::ResourcesReadParams& params,
+      RequestOptions options = {}) {
+    return client_.read_resource_async(params, std::move(options));
+  }
+
+  RequestHandle<protocol::ResourcesReadResult> read_resource_async(
+      std::string_view uri, RequestOptions options = {}) {
+    return client_.read_resource_async(uri, std::move(options));
+  }
+
   core::Result<core::Unit> raw_notification(
       const protocol::JsonRpcNotification& notification) {
     return client_.raw_notification(notification);

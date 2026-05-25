@@ -18,6 +18,7 @@
 #include <string>
 #include <string_view>
 #include <unordered_map>
+#include <utility>
 #include <vector>
 
 #include "cxxmcp/core/result.hpp"
@@ -437,6 +438,69 @@ class Client {
   RequestHandle<protocol::Json> request_async(
       std::string method, protocol::Json params = protocol::Json::object(),
       RequestOptions options = {});
+
+  /// @brief Sends a cancellable typed request and parses its result payload.
+  /// @tparam T Parsed result type.
+  /// @tparam Parser Callable returning core::Result<T> from a JSON result.
+  template <class T, class Parser>
+  RequestHandle<T> request_async(std::string method, protocol::Json params,
+                                 Parser parser, RequestOptions options = {}) {
+    protocol::JsonRpcRequest request{
+        .method = std::move(method),
+        .params = std::move(params),
+        .id = next_request_id_++,
+    };
+    if (options.meta.has_value()) {
+      request.meta = std::move(options.meta);
+    }
+
+    const auto request_id = request.id;
+    return RequestHandle<T>::spawn(
+        request_id, options.timeout, options.cancellation_token,
+        [this, request_id](std::string reason) mutable {
+          return notify_cancelled(std::move(request_id), std::move(reason));
+        },
+        [this, request = std::move(request),
+         parser = std::move(parser)]() mutable -> core::Result<T> {
+          auto payload = raw_request(request);
+          if (!payload) {
+            return std::unexpected(payload.error());
+          }
+          return parser(*payload);
+        });
+  }
+
+  /// @brief Asynchronously lists tools and parses the typed response.
+  RequestHandle<std::vector<protocol::ToolDefinition>> list_tools_async(
+      RequestOptions options = {});
+
+  /// @brief Asynchronously calls a tool and parses the typed response.
+  RequestHandle<protocol::ToolResult> call_tool_async(
+      const protocol::ToolCall& call, RequestOptions options = {});
+
+  /// @brief Asynchronously calls a tool by name.
+  RequestHandle<protocol::ToolResult> call_tool_async(
+      std::string_view name,
+      const protocol::Json& arguments = protocol::Json::object(),
+      RequestOptions options = {});
+
+  /// @brief Asynchronously gets a prompt and parses the typed response.
+  RequestHandle<protocol::PromptsGetResult> get_prompt_async(
+      const protocol::PromptsGetParams& params, RequestOptions options = {});
+
+  /// @brief Asynchronously gets a prompt by name.
+  RequestHandle<protocol::PromptsGetResult> get_prompt_async(
+      std::string_view name,
+      const protocol::Json& arguments = protocol::Json::object(),
+      RequestOptions options = {});
+
+  /// @brief Asynchronously reads a resource and parses the typed response.
+  RequestHandle<protocol::ResourcesReadResult> read_resource_async(
+      const protocol::ResourcesReadParams& params, RequestOptions options = {});
+
+  /// @brief Asynchronously reads a resource by URI.
+  RequestHandle<protocol::ResourcesReadResult> read_resource_async(
+      std::string_view uri, RequestOptions options = {});
 
   /// @brief Sends a raw JSON-RPC notification.
   core::Result<core::Unit> notify(

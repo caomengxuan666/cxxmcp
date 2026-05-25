@@ -1201,6 +1201,75 @@ RequestHandle<protocol::Json> Client::request_async(std::string method,
       });
 }
 
+RequestHandle<std::vector<protocol::ToolDefinition>> Client::list_tools_async(
+    RequestOptions options) {
+  return request_async<std::vector<protocol::ToolDefinition>>(
+      std::string(protocol::ToolsListMethod), protocol::Json::object(),
+      [](const protocol::Json& payload)
+          -> core::Result<std::vector<protocol::ToolDefinition>> {
+        const auto result = protocol::tools_list_result_from_json(payload);
+        if (!result) {
+          return std::unexpected(result.error());
+        }
+        return result->tools;
+      },
+      std::move(options));
+}
+
+RequestHandle<protocol::ToolResult> Client::call_tool_async(
+    const protocol::ToolCall& call, RequestOptions options) {
+  return request_async<protocol::ToolResult>(
+      std::string(protocol::ToolsCallMethod), protocol::tool_call_to_json(call),
+      [](const protocol::Json& payload) {
+        return protocol::tool_result_from_json(payload);
+      },
+      std::move(options));
+}
+
+RequestHandle<protocol::ToolResult> Client::call_tool_async(
+    std::string_view name, const protocol::Json& arguments,
+    RequestOptions options) {
+  return call_tool_async(
+      protocol::ToolCall{.name = std::string(name), .arguments = arguments},
+      std::move(options));
+}
+
+RequestHandle<protocol::PromptsGetResult> Client::get_prompt_async(
+    const protocol::PromptsGetParams& params, RequestOptions options) {
+  return request_async<protocol::PromptsGetResult>(
+      std::string(protocol::PromptsGetMethod),
+      protocol::prompts_get_params_to_json(params),
+      [](const protocol::Json& payload) {
+        return protocol::prompts_get_result_from_json(payload);
+      },
+      std::move(options));
+}
+
+RequestHandle<protocol::PromptsGetResult> Client::get_prompt_async(
+    std::string_view name, const protocol::Json& arguments,
+    RequestOptions options) {
+  return get_prompt_async(protocol::PromptsGetParams{.name = std::string(name),
+                                                     .arguments = arguments},
+                          std::move(options));
+}
+
+RequestHandle<protocol::ResourcesReadResult> Client::read_resource_async(
+    const protocol::ResourcesReadParams& params, RequestOptions options) {
+  return request_async<protocol::ResourcesReadResult>(
+      std::string(protocol::ResourcesReadMethod),
+      protocol::resources_read_params_to_json(params),
+      [](const protocol::Json& payload) {
+        return protocol::resources_read_result_from_json(payload);
+      },
+      std::move(options));
+}
+
+RequestHandle<protocol::ResourcesReadResult> Client::read_resource_async(
+    std::string_view uri, RequestOptions options) {
+  return read_resource_async(protocol::ResourcesReadParams{std::string(uri)},
+                             std::move(options));
+}
+
 core::Result<core::Unit> Client::raw_notification(
     const protocol::JsonRpcNotification& notification) {
   const auto started = ensure_transport_started();

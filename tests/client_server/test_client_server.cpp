@@ -870,6 +870,52 @@ void test_role_aware_peer_facades_forward_to_client_and_server() {
           "server peer notify_elicitation_complete failed");
 }
 
+void test_client_peer_typed_async_helpers() {
+  auto transport = std::make_unique<RecordingTransport>();
+  auto* recording = transport.get();
+  mcp::ClientPeer peer(std::move(transport));
+
+  mcp::RequestOptions options;
+  options.timeout = std::chrono::seconds(1);
+
+  const auto listed = peer.list_tools_async(options).await_response();
+  require(listed.has_value(), "typed async list_tools failed");
+  require(listed->front().name == "fake-tool",
+          "typed async list_tools result mismatch");
+
+  const auto called =
+      peer.call_tool_async("fake-tool", Json{{"value", 7}}, options)
+          .await_response();
+  require(called.has_value(), "typed async call_tool failed");
+  require(called->content.front().text == "called",
+          "typed async call_tool result mismatch");
+
+  const auto prompt =
+      peer.get_prompt_async("summarize", Json{{"text", "hello"}}, options)
+          .await_response();
+  require(prompt.has_value(), "typed async get_prompt failed");
+  require(prompt->messages.front().content.text == "Summarize hello",
+          "typed async get_prompt result mismatch");
+
+  const auto resource =
+      peer.read_resource_async("file:///tmp/readme.txt", options)
+          .await_response();
+  require(resource.has_value(), "typed async read_resource failed");
+  require(resource->contents.front().text == "hello",
+          "typed async read_resource result mismatch");
+
+  require(recording->requests.size() == 4,
+          "typed async request count mismatch");
+  require(recording->requests.at(0).method == "tools/list",
+          "typed async list_tools method mismatch");
+  require(recording->requests.at(1).method == "tools/call",
+          "typed async call_tool method mismatch");
+  require(recording->requests.at(2).method == "prompts/get",
+          "typed async get_prompt method mismatch");
+  require(recording->requests.at(3).method == "resources/read",
+          "typed async read_resource method mismatch");
+}
+
 void test_server_client_peer_request_handle_times_out_and_cancels() {
   BlockingRequestServerTransport transport;
   mcp::server::ClientPeer peer(&transport);
@@ -3123,6 +3169,7 @@ int main() {
       {"server direct facade round trip", test_server_direct_facade_round_trip},
       {"role-aware peer facades",
        test_role_aware_peer_facades_forward_to_client_and_server},
+      {"client peer typed async helpers", test_client_peer_typed_async_helpers},
       {"server client-peer request handle timeout",
        test_server_client_peer_request_handle_times_out_and_cancels},
       {"client peer request handle timeout",

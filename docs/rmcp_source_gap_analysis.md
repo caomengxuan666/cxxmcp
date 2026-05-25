@@ -405,8 +405,9 @@ RMCP has a richer request lifecycle:
 The current C++ API now has request handles, timeout options, and cooperative
 cancellation tokens in the peer/client layer. Running services expose explicit
 `close()` and `wait()` lifecycle methods plus a shared cooperative cancellation
-token, while the older concrete client/server API is still mostly synchronous
-and direct.
+token. Client and client-peer APIs now expose typed async helpers for common
+tool, prompt, and resource requests, while the older concrete server API is
+still mostly synchronous and direct.
 
 Gap:
 
