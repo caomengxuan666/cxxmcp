@@ -2890,6 +2890,97 @@ void test_native_streamable_http_server_transport_close_unblocks_receive() {
   require(received_end.load(), "native server receive should report end");
 }
 
+void test_native_streamable_http_server_transport_rejects_duplicate_client_request_id() {
+  constexpr int kPort = 40219;
+  const std::string kPath = "/native-server-duplicate-request";
+  mcp::transport::StreamableHttpServerTransport transport(
+      mcp::transport::StreamableHttpServerTransportOptions{
+          .listen_host = "127.0.0.1",
+          .listen_port = kPort,
+          .path = kPath,
+      });
+
+  const auto body = serialize_test_request(mcp::protocol::JsonRpcRequest{
+      .method = std::string(mcp::protocol::InitializeMethod),
+      .params =
+          Json{
+              {"protocolVersion",
+               std::string(mcp::protocol::McpProtocolVersion)},
+              {"capabilities", Json::object()},
+              {"clientInfo", Json{{"name", "native"}, {"version", "1"}}},
+          },
+      .id = std::int64_t{81},
+  });
+  const auto headers = httplib::Headers{
+      {"Accept", "application/json, text/event-stream"},
+      {"Content-Type", "application/json"},
+      {"Mcp-Method", std::string(mcp::protocol::InitializeMethod)},
+  };
+
+  std::optional<httplib::Result> first_post;
+  std::thread first_thread([&]() {
+    for (int attempt = 0; attempt < 100; ++attempt) {
+      httplib::Client client("127.0.0.1", kPort);
+      client.set_read_timeout(2, 0);
+      auto response = client.Post(kPath, headers, body, "application/json");
+      if (response) {
+        first_post = std::move(response);
+        return;
+      }
+      std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    }
+  });
+
+  auto received = transport.receive();
+  require(received.has_value(),
+          "native duplicate server receive should succeed");
+  require(received->has_value(),
+          "native duplicate server should receive first request");
+  const auto* first_request =
+      std::get_if<mcp::protocol::JsonRpcRequest>(&received->value());
+  require(first_request != nullptr,
+          "native duplicate server should receive request message");
+  require(first_request->id == mcp::protocol::RequestId{std::int64_t{81}},
+          "native duplicate server first request id mismatch");
+
+  httplib::Client duplicate_client("127.0.0.1", kPort);
+  duplicate_client.set_read_timeout(2, 0);
+  const auto duplicate_post =
+      duplicate_client.Post(kPath, headers, body, "application/json");
+  require(static_cast<bool>(duplicate_post),
+          "native duplicate server second post should return");
+  require(duplicate_post->status == 200,
+          "native duplicate server second post status mismatch");
+  const auto duplicate_response =
+      mcp::protocol::parse_response(duplicate_post->body);
+  require(duplicate_response.has_value(),
+          "native duplicate server error response should parse");
+  require(duplicate_response->error.has_value(),
+          "native duplicate server response should contain error");
+  require(duplicate_response->error->message == "duplicate client request id",
+          "native duplicate server error message mismatch");
+
+  const auto sent = transport.send(mcp::protocol::make_response(
+      first_request->id,
+      Json{
+          {"protocolVersion", std::string(mcp::protocol::McpProtocolVersion)},
+          {"capabilities", Json::object()},
+          {"serverInfo", Json{{"name", "native-server"}, {"version", "1"}}},
+      }));
+  require(sent.has_value(),
+          "native duplicate server first response should send");
+  if (first_thread.joinable()) {
+    first_thread.join();
+  }
+  require(first_post.has_value(),
+          "native duplicate server first post should complete");
+  require((*first_post)->status == 200,
+          "native duplicate server first post status mismatch");
+
+  const auto closed = transport.close();
+  require(closed.has_value(), "native duplicate server close should succeed");
+}
+
 }  // namespace
 
 int main() {
@@ -2961,6 +3052,9 @@ int main() {
        test_native_streamable_http_server_transport_rejects_unknown_client_response_id},
       {"native streamable http server transport close unblocks receive",
        test_native_streamable_http_server_transport_close_unblocks_receive},
+      {"native streamable http server transport rejects duplicate client "
+       "request id",
+       test_native_streamable_http_server_transport_rejects_duplicate_client_request_id},
   };
 
   std::size_t failures = 0;
