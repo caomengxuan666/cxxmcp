@@ -68,6 +68,8 @@ incrementally. Keep them concrete; do not replace them with broad claims.
         the Peer boundary for native role-generic transports.
   - [x] Client peer native `raw_request` has direct SDK regression coverage for
         unexpected response ids and closed transport before response.
+  - [x] Canonical `cxxmcp/peer.hpp` uses adapter factory declarations instead
+        of including compatibility transport-adapter implementation headers.
   - [x] Client and server contract transport adapters cover duplicate response
         ids as stable unexpected-response failures.
 - Request lifecycle:

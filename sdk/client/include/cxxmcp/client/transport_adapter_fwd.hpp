@@ -17,4 +17,7 @@ class Transport;
 std::unique_ptr<Transport> make_contract_transport_adapter(
     std::unique_ptr<transport::ClientTransport> transport);
 
+std::unique_ptr<Transport> make_contract_transport_adapter(
+    transport::ClientTransport& transport);
+
 }  // namespace mcp::client

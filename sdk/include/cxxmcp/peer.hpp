@@ -24,14 +24,12 @@
 #include "cxxmcp/cancellation.hpp"
 #include "cxxmcp/client/client.hpp"
 #include "cxxmcp/client/session.hpp"
-#include "cxxmcp/client/transport_adapter.hpp"
 #include "cxxmcp/client/transport_adapter_fwd.hpp"
 #include "cxxmcp/error.hpp"
 #include "cxxmcp/handler.hpp"
 #include "cxxmcp/roles.hpp"
 #include "cxxmcp/server/peer.hpp"
 #include "cxxmcp/server/server.hpp"
-#include "cxxmcp/server/transport_adapter.hpp"
 #include "cxxmcp/server/transport_adapter_fwd.hpp"
 #include "cxxmcp/transport/transport.hpp"
 
@@ -114,7 +112,7 @@ inline std::unique_ptr<client::Transport> make_peer_client_transport_adapter(
     return client::make_contract_transport_adapter(
         std::unique_ptr<transport::ClientTransport>{});
   }
-  return std::make_unique<client::ContractTransportAdapter>(*transport);
+  return client::make_contract_transport_adapter(*transport);
 }
 
 inline protocol::ClientCapabilities default_peer_client_capabilities(
@@ -1224,8 +1222,7 @@ class Peer<RoleServer> {
     }
     native_transports_.push_back(std::move(transport));
     native_context_transports_.push_back(
-        std::make_unique<server::ContractTransportAdapter>(
-            *native_transports_.back()));
+        server::make_contract_transport_adapter(*native_transports_.back()));
     const auto attached =
         server_->add_session_transport(*native_context_transports_.back());
     if (!attached) {
@@ -1371,8 +1368,7 @@ class Peer<RoleServer> {
  private:
   std::unique_ptr<server::Server> server_;
   std::vector<std::unique_ptr<transport::ServerTransport>> native_transports_;
-  std::vector<std::unique_ptr<server::ContractTransportAdapter>>
-      native_context_transports_;
+  std::vector<std::unique_ptr<server::Transport>> native_context_transports_;
 };
 
 using ClientPeer = Peer<RoleClient>;
