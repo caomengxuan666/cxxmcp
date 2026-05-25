@@ -59,6 +59,8 @@ incrementally. Keep them concrete; do not replace them with broad claims.
   - [x] Client peer synchronous completion, sampling, elicitation, and task
         helpers reuse Peer-level `raw_request` instead of directly forwarding
         to concrete `client::Client` helpers.
+  - [x] Client peer synchronous paginated `list_all_*` helpers collect pages via
+        Peer-level `raw_request` instead of concrete `client::Client` helpers.
   - [x] Client and server contract transport adapters cover duplicate response
         ids as stable unexpected-response failures.
 - Request lifecycle:

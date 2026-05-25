@@ -136,14 +136,104 @@ class RecordingClientContractTransport final
           .result = Json::object(),
       });
     } else if (request->method == std::string(mcp::protocol::ToolsListMethod)) {
+      const bool has_cursor =
+          request->params.is_object() && request->params.contains("cursor");
+      received.push_back(mcp::protocol::JsonRpcResponse{
+          .id = request->id,
+          .result = has_cursor
+                        ? Json{{"tools",
+                                Json::array({Json{
+                                    {"name", "native-next"},
+                                    {"description", "Native peer next page"},
+                                    {"inputSchema", Json{{"type", "object"}}},
+                                }})}}
+                        : Json{{"tools",
+                                Json::array({Json{
+                                    {"name", "native-echo"},
+                                    {"description", "Native peer echo"},
+                                    {"inputSchema", Json{{"type", "object"}}},
+                                }})},
+                               {"nextCursor", "page-2"}},
+      });
+    } else if (request->method ==
+               std::string(mcp::protocol::PromptsListMethod)) {
+      const bool has_cursor =
+          request->params.is_object() && request->params.contains("cursor");
       received.push_back(mcp::protocol::JsonRpcResponse{
           .id = request->id,
           .result =
-              Json{{"tools", Json::array({Json{
-                                 {"name", "native-echo"},
-                                 {"description", "Native peer echo"},
-                                 {"inputSchema", Json{{"type", "object"}}},
-                             }})}},
+              has_cursor
+                  ? Json{{"prompts",
+                          Json::array({Json{
+                              {"name", "native-prompt-next"},
+                              {"description", "Native peer prompt next page"},
+                          }})}}
+                  : Json{{"prompts", Json::array({Json{
+                                         {"name", "native-prompt"},
+                                         {"description", "Native peer prompt"},
+                                     }})},
+                         {"nextCursor", "page-2"}},
+      });
+    } else if (request->method ==
+               std::string(mcp::protocol::ResourcesListMethod)) {
+      const bool has_cursor =
+          request->params.is_object() && request->params.contains("cursor");
+      received.push_back(mcp::protocol::JsonRpcResponse{
+          .id = request->id,
+          .result =
+              has_cursor
+                  ? Json{{"resources", Json::array({Json{
+                                           {"uri", "file:///native-next.txt"},
+                                           {"name", "native-resource-next"},
+                                       }})}}
+                  : Json{{"resources", Json::array({Json{
+                                           {"uri", "file:///native.txt"},
+                                           {"name", "native-resource"},
+                                       }})},
+                         {"nextCursor", "page-2"}},
+      });
+    } else if (request->method ==
+               std::string(mcp::protocol::ResourcesTemplatesListMethod)) {
+      const bool has_cursor =
+          request->params.is_object() && request->params.contains("cursor");
+      received.push_back(mcp::protocol::JsonRpcResponse{
+          .id = request->id,
+          .result = has_cursor
+                        ? Json{{"resourceTemplates",
+                                Json::array({Json{
+                                    {"uriTemplate", "file:///{name}-next.txt"},
+                                    {"name", "native-template-next"},
+                                }})}}
+                        : Json{{"resourceTemplates",
+                                Json::array({Json{
+                                    {"uriTemplate", "file:///{name}.txt"},
+                                    {"name", "native-template"},
+                                }})},
+                               {"nextCursor", "page-2"}},
+      });
+    } else if (request->method == std::string(mcp::protocol::TasksListMethod)) {
+      const bool has_cursor =
+          request->params.is_object() && request->params.contains("cursor");
+      received.push_back(mcp::protocol::JsonRpcResponse{
+          .id = request->id,
+          .result = has_cursor
+                        ? Json{{"tasks",
+                                Json::array({Json{
+                                    {"taskId", "task-next"},
+                                    {"status", "completed"},
+                                    {"createdAt", "2025-01-01T00:00:00Z"},
+                                    {"lastUpdatedAt", "2025-01-01T00:00:01Z"},
+                                    {"ttl", nullptr},
+                                }})}}
+                        : Json{{"tasks",
+                                Json::array({Json{
+                                    {"taskId", "task-first"},
+                                    {"status", "working"},
+                                    {"createdAt", "2025-01-01T00:00:00Z"},
+                                    {"lastUpdatedAt", "2025-01-01T00:00:00Z"},
+                                    {"ttl", nullptr},
+                                }})},
+                               {"nextCursor", "page-2"}},
       });
     }
     return mcp::core::Unit{};
@@ -285,6 +375,30 @@ void test_sdk_peer_and_service_surface() {
   require(contract_tools.has_value() && contract_tools->size() == 1 &&
               contract_tools->front().name == "native-echo",
           "client peer generic transport list_tools failed");
+  const auto contract_all_tools = contract_client_peer.list_all_tools();
+  require(contract_all_tools.has_value() && contract_all_tools->size() == 2 &&
+              contract_all_tools->back().name == "native-next",
+          "client peer generic transport list_all_tools failed");
+  const auto contract_all_prompts = contract_client_peer.list_all_prompts();
+  require(contract_all_prompts.has_value() &&
+              contract_all_prompts->size() == 2 &&
+              contract_all_prompts->back().name == "native-prompt-next",
+          "client peer generic transport list_all_prompts failed");
+  const auto contract_all_resources = contract_client_peer.list_all_resources();
+  require(contract_all_resources.has_value() &&
+              contract_all_resources->size() == 2 &&
+              contract_all_resources->back().name == "native-resource-next",
+          "client peer generic transport list_all_resources failed");
+  const auto contract_all_templates =
+      contract_client_peer.list_all_resource_templates();
+  require(contract_all_templates.has_value() &&
+              contract_all_templates->size() == 2 &&
+              contract_all_templates->back().name == "native-template-next",
+          "client peer generic transport list_all_resource_templates failed");
+  const auto contract_all_tasks = contract_client_peer.list_all_tasks();
+  require(contract_all_tasks.has_value() && contract_all_tasks->size() == 2 &&
+              contract_all_tasks->back().task_id == "task-next",
+          "client peer generic transport list_all_tasks failed");
   contract_client_peer.client().stop();
   require(contract_transport_ptr->stopped,
           "client peer generic transport should close");

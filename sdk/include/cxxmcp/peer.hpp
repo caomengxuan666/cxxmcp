@@ -214,7 +214,15 @@ class Peer<RoleClient> {
   }
 
   core::Result<std::vector<protocol::ToolDefinition>> list_all_tools() {
-    return client_.list_all_tools();
+    return list_all_pages<protocol::ToolDefinition>(
+        std::string(protocol::ToolsListMethod),
+        [](const protocol::Json& payload) {
+          return protocol::tools_list_result_from_json(payload);
+        },
+        [](const protocol::ToolsListResult& page,
+           std::vector<protocol::ToolDefinition>& all) {
+          all.insert(all.end(), page.tools.begin(), page.tools.end());
+        });
   }
 
   core::Result<protocol::ToolResult> call_tool(const protocol::ToolCall& call) {
@@ -264,7 +272,15 @@ class Peer<RoleClient> {
   }
 
   core::Result<std::vector<protocol::Prompt>> list_all_prompts() {
-    return client_.list_all_prompts();
+    return list_all_pages<protocol::Prompt>(
+        std::string(protocol::PromptsListMethod),
+        [](const protocol::Json& payload) {
+          return protocol::prompts_list_result_from_json(payload);
+        },
+        [](const protocol::PromptsListResult& page,
+           std::vector<protocol::Prompt>& all) {
+          all.insert(all.end(), page.prompts.begin(), page.prompts.end());
+        });
   }
 
   core::Result<protocol::PromptsGetResult> get_prompt(
@@ -300,7 +316,15 @@ class Peer<RoleClient> {
   }
 
   core::Result<std::vector<protocol::Resource>> list_all_resources() {
-    return client_.list_all_resources();
+    return list_all_pages<protocol::Resource>(
+        std::string(protocol::ResourcesListMethod),
+        [](const protocol::Json& payload) {
+          return protocol::resources_list_result_from_json(payload);
+        },
+        [](const protocol::ResourcesListResult& page,
+           std::vector<protocol::Resource>& all) {
+          all.insert(all.end(), page.resources.begin(), page.resources.end());
+        });
   }
 
   core::Result<std::vector<protocol::ResourceTemplate>>
@@ -321,7 +345,16 @@ class Peer<RoleClient> {
 
   core::Result<std::vector<protocol::ResourceTemplate>>
   list_all_resource_templates() {
-    return client_.list_all_resource_templates();
+    return list_all_pages<protocol::ResourceTemplate>(
+        std::string(protocol::ResourcesTemplatesListMethod),
+        [](const protocol::Json& payload) {
+          return protocol::resource_templates_list_result_from_json(payload);
+        },
+        [](const protocol::ResourceTemplatesListResult& page,
+           std::vector<protocol::ResourceTemplate>& all) {
+          all.insert(all.end(), page.resource_templates.begin(),
+                     page.resource_templates.end());
+        });
   }
 
   core::Result<protocol::ResourcesReadResult> read_resource(
@@ -466,7 +499,15 @@ class Peer<RoleClient> {
   }
 
   core::Result<std::vector<protocol::Task>> list_all_tasks() {
-    return client_.list_all_tasks();
+    return list_all_pages<protocol::Task>(
+        std::string(protocol::TasksListMethod),
+        [](const protocol::Json& payload) {
+          return protocol::task_list_result_from_json(payload);
+        },
+        [](const protocol::TaskListResult& page,
+           std::vector<protocol::Task>& all) {
+          all.insert(all.end(), page.tasks.begin(), page.tasks.end());
+        });
   }
 
   core::Result<protocol::Task> get_task(std::string_view task_id) {
@@ -892,6 +933,35 @@ class Peer<RoleClient> {
                                             protocol::Json params) {
     return raw_request(protocol::make_request(
         std::move(method), next_peer_request_id(), std::move(params)));
+  }
+
+  static protocol::Json cursor_params(
+      const std::optional<std::string>& cursor) {
+    protocol::Json params = protocol::Json::object();
+    if (cursor.has_value()) {
+      params["cursor"] = *cursor;
+    }
+    return params;
+  }
+
+  template <class Item, class Parser, class Append>
+  core::Result<std::vector<Item>> list_all_pages(std::string method,
+                                                 Parser parser, Append append) {
+    std::vector<Item> all;
+    std::optional<std::string> cursor;
+    do {
+      auto payload = request_json(method, cursor_params(cursor));
+      if (!payload) {
+        return std::unexpected(payload.error());
+      }
+      auto page = parser(*payload);
+      if (!page) {
+        return std::unexpected(page.error());
+      }
+      append(*page, all);
+      cursor = page->next_cursor;
+    } while (cursor.has_value() && !cursor->empty());
+    return all;
   }
 
   core::Result<protocol::JsonRpcResponse> send_native_request(
