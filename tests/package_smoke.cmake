@@ -23,11 +23,19 @@ if(NOT install_result EQUAL 0)
     message(FATAL_ERROR "package smoke install failed: ${install_result}")
 endif()
 
+set(configure_command
+    "${CMAKE_COMMAND}"
+    -S "${REPO_SOURCE_DIR}/tests/fixtures/package_smoke"
+    -B "${consumer_build_dir}"
+    "-DCMAKE_PREFIX_PATH=${prefix_dir}"
+)
+if(DEFINED MSVC_RUNTIME_LIBRARY AND NOT MSVC_RUNTIME_LIBRARY STREQUAL "")
+    list(APPEND configure_command
+        "-DCMAKE_MSVC_RUNTIME_LIBRARY=${MSVC_RUNTIME_LIBRARY}")
+endif()
+
 execute_process(
-    COMMAND "${CMAKE_COMMAND}"
-        -S "${REPO_SOURCE_DIR}/tests/fixtures/package_smoke"
-        -B "${consumer_build_dir}"
-        "-DCMAKE_PREFIX_PATH=${prefix_dir}"
+    COMMAND ${configure_command}
     RESULT_VARIABLE configure_result
 )
 if(NOT configure_result EQUAL 0)

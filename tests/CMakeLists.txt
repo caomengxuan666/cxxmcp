@@ -95,11 +95,19 @@ if(TARGET mcp_client AND TARGET mcp_server)
 endif()
 
 if(CXXMCP_BUILD_TESTS AND CXXMCP_BUILD_SDK AND CXXMCP_BUILD_PROTOCOL AND CXXMCP_BUILD_SERVER)
-    add_test(NAME package_smoke COMMAND
-        "${CMAKE_COMMAND}"
+    set(package_smoke_args
         -DREPO_SOURCE_DIR=${PROJECT_SOURCE_DIR}
         -DBUILD_DIR=${PROJECT_BINARY_DIR}
         -DBUILD_CONFIG=$<CONFIG>
+    )
+    if(MSVC AND CXXMCP_MSVC_RUNTIME_LIBRARY)
+        list(APPEND package_smoke_args
+            "-DMSVC_RUNTIME_LIBRARY=${CXXMCP_MSVC_RUNTIME_LIBRARY}")
+    endif()
+
+    add_test(NAME package_smoke COMMAND
+        "${CMAKE_COMMAND}"
+        ${package_smoke_args}
         -P "${PROJECT_SOURCE_DIR}/tests/package_smoke.cmake"
     )
 endif()

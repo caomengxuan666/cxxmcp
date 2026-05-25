@@ -33,6 +33,21 @@ function(cxxmcp_require_cxx20 target_name)
     endif()
 endfunction()
 
+set(CXXMCP_MSVC_RUNTIME_LIBRARY "" CACHE STRING
+    "MSVC runtime library for cxxmcp compiled targets; empty keeps the toolchain default")
+set_property(CACHE CXXMCP_MSVC_RUNTIME_LIBRARY PROPERTY STRINGS
+    ""
+    "MultiThreaded"
+    "MultiThreadedDebug"
+    "MultiThreadedDLL"
+    "MultiThreadedDebugDLL"
+    "MultiThreaded$<$<CONFIG:Debug>:Debug>"
+    "MultiThreaded$<$<CONFIG:Debug>:Debug>DLL")
+
+if(MSVC AND CXXMCP_MSVC_RUNTIME_LIBRARY)
+    set(CMAKE_MSVC_RUNTIME_LIBRARY "${CXXMCP_MSVC_RUNTIME_LIBRARY}")
+endif()
+
 cxxmcp_build_option(CXXMCP_BUILD_SDK MCP_BUILD_SDK
     "Build the public SDK layer" ON)
 cxxmcp_build_option(CXXMCP_BUILD_PROTOCOL MCP_BUILD_PROTOCOL
@@ -94,11 +109,6 @@ endif()
 
 if(MCP_ENABLE_CLIENT OR MCP_ENABLE_SERVER OR MCP_ENABLE_APP OR MCP_ENABLE_GATEWAY OR MCP_ENABLE_CLI)
     set(MCP_ENABLE_PROTOCOL ON)
-endif()
-
-if(MSVC)
-    set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>" CACHE STRING
-        "Use the static MSVC runtime" FORCE)
 endif()
 
 add_library(mcp_core INTERFACE)
