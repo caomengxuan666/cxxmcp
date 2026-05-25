@@ -77,6 +77,9 @@ incrementally. Keep them concrete; do not replace them with broad claims.
         `client::Client`.
   - [x] `ClientPeer` exposes client-side handler registration helpers so
         canonical examples do not need `peer.client()` for normal callbacks.
+  - [x] `ClientPeer::client()` and `ServerPeer::server()` are retained as
+        deprecated compatibility escape hatches, not canonical SDK entry
+        points.
   - [x] Client and server contract transport adapters cover duplicate response
         ids as stable unexpected-response failures.
 - Request lifecycle:

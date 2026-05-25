@@ -25,6 +25,7 @@
 #include "cxxmcp/client/client.hpp"
 #include "cxxmcp/client/session.hpp"
 #include "cxxmcp/client/transport_adapter_fwd.hpp"
+#include "cxxmcp/config.hpp"
 #include "cxxmcp/error.hpp"
 #include "cxxmcp/handler.hpp"
 #include "cxxmcp/roles.hpp"
@@ -207,8 +208,12 @@ class Peer<RoleClient> {
     return Peer(client::Client::connect_stdio(std::move(endpoint)));
   }
 
+  CXXMCP_DEPRECATED(
+      "client() is a compatibility escape hatch; prefer ClientPeer methods")
   client::Client& client() noexcept { return client_; }
 
+  CXXMCP_DEPRECATED(
+      "client() is a compatibility escape hatch; prefer ClientPeer methods")
   const client::Client& client() const noexcept { return client_; }
 
   void stop() noexcept {
@@ -1240,8 +1245,12 @@ class Peer<RoleServer> {
     return Peer(std::move(*built));
   }
 
+  CXXMCP_DEPRECATED(
+      "server() is a compatibility escape hatch; prefer ServerPeer methods")
   server::Server& server() noexcept { return *server_; }
 
+  CXXMCP_DEPRECATED(
+      "server() is a compatibility escape hatch; prefer ServerPeer methods")
   const server::Server& server() const noexcept { return *server_; }
 
   server::ServerInfo get_info() const { return server_->get_info(); }
