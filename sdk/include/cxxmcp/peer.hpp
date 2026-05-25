@@ -1260,6 +1260,108 @@ class Peer<RoleServer> {
     return server_->capabilities();
   }
 
+  Peer& set_completion_handler(server::Server::JsonHandler handler) {
+    server_->set_completion_handler(std::move(handler));
+    return *this;
+  }
+
+  Peer& set_sampling_handler(server::Server::JsonHandler handler) {
+    server_->set_sampling_handler(std::move(handler));
+    return *this;
+  }
+
+  Peer& set_logging_handler(server::Server::LoggingHandler handler) {
+    server_->set_logging_handler(std::move(handler));
+    return *this;
+  }
+
+  Peer& set_raw_request_handler(server::Server::RawRequestHandler handler) {
+    server_->set_raw_request_handler(std::move(handler));
+    return *this;
+  }
+
+  Peer& set_raw_notification_handler(
+      server::Server::RawNotificationHandler handler) {
+    server_->set_raw_notification_handler(std::move(handler));
+    return *this;
+  }
+
+  Peer& set_custom_request_handler(server::Server::RawRequestHandler handler) {
+    server_->set_custom_request_handler(std::move(handler));
+    return *this;
+  }
+
+  Peer& set_custom_notification_handler(
+      server::Server::RawNotificationHandler handler) {
+    server_->set_custom_notification_handler(std::move(handler));
+    return *this;
+  }
+
+  Peer& set_task_list_handler(server::Server::TaskListHandler handler) {
+    server_->set_task_list_handler(std::move(handler));
+    return *this;
+  }
+
+  Peer& set_task_get_handler(server::Server::TaskGetHandler handler) {
+    server_->set_task_get_handler(std::move(handler));
+    return *this;
+  }
+
+  Peer& set_task_cancel_handler(server::Server::TaskCancelHandler handler) {
+    server_->set_task_cancel_handler(std::move(handler));
+    return *this;
+  }
+
+  Peer& set_task_result_handler(server::Server::TaskResultHandler handler) {
+    server_->set_task_result_handler(std::move(handler));
+    return *this;
+  }
+
+  Peer& set_progress_handler(server::Server::ProgressHandler handler) {
+    server_->set_progress_handler(std::move(handler));
+    return *this;
+  }
+
+  Peer& set_roots_list_changed_handler(
+      server::Server::RootsListChangedHandler handler) {
+    server_->set_roots_list_changed_handler(std::move(handler));
+    return *this;
+  }
+
+  Peer& set_tool_list_changed_handler(
+      server::Server::ListChangedHandler handler) {
+    server_->set_tool_list_changed_handler(std::move(handler));
+    return *this;
+  }
+
+  Peer& set_prompt_list_changed_handler(
+      server::Server::ListChangedHandler handler) {
+    server_->set_prompt_list_changed_handler(std::move(handler));
+    return *this;
+  }
+
+  Peer& set_resource_list_changed_handler(
+      server::Server::ListChangedHandler handler) {
+    server_->set_resource_list_changed_handler(std::move(handler));
+    return *this;
+  }
+
+  Peer& set_resource_updated_handler(
+      server::Server::ResourceUpdatedHandler handler) {
+    server_->set_resource_updated_handler(std::move(handler));
+    return *this;
+  }
+
+  Peer& set_handler(const server::ServerHandler& handler) {
+    server_->set_handler(handler);
+    return *this;
+  }
+
+  Peer& set_handler(const server::ServerHandlerInterface& handler) {
+    server_->set_handler(handler);
+    return *this;
+  }
+
   std::vector<protocol::ToolDefinition> list_tools() const {
     return server_->list_tools();
   }

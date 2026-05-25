@@ -12,6 +12,8 @@
   paths.
 - Added `ClientPeer` handler registration helpers so normal client callbacks no
   longer require accessing the underlying `client::Client`.
+- Added `ServerPeer` handler registration helpers so normal server callbacks no
+  longer require accessing the underlying `server::Server`.
 - Marked `ClientPeer::client()` and `ServerPeer::server()` as deprecated
   compatibility escape hatches.
 - Tightened process stdio response-id validation with stable transport errors.

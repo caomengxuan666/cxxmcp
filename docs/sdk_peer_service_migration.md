@@ -111,6 +111,17 @@ registries, and handlers. The migration target is the lifecycle and public
 control surface: application code should own `ServerPeer` and
 `RunningService<RoleServer>`, not a raw `server::Server` loop.
 
+When a server handler must be installed after peer construction, use the peer
+surface instead of reaching through to the concrete server:
+
+```cpp
+mcp::ServerPeer peer(std::move(*server));
+peer.set_logging_handler([](std::string_view level, std::string_view message) {
+  (void)level;
+  (void)message;
+});
+```
+
 ## Migrating Client Code
 
 Old direct client lifecycle:
