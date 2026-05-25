@@ -576,13 +576,9 @@ core::Result<std::vector<protocol::ToolDefinition>> Client::list_all_tools() {
 
 core::Result<protocol::ToolResult> Client::call_tool(
     const protocol::ToolCall& call) {
-  protocol::Json params = protocol::Json::object();
-  params["name"] = call.name;
-  params["arguments"] = call.arguments;
-
   const auto response = send_rpc_request(protocol::JsonRpcRequest{
-      .method = "tools/call",
-      .params = std::move(params),
+      .method = std::string(protocol::ToolsCallMethod),
+      .params = protocol::tool_call_to_json(call),
       .id = next_request_id_++,
   });
   if (!response) {

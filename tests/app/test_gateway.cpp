@@ -207,6 +207,7 @@ struct RecordedCall {
   std::string server_id;
   std::string tool_name;
   Json arguments = Json::object();
+  std::optional<mcp::protocol::TaskRequestParameters> task;
 };
 
 bool wait_for_http_gateway(int port, std::string_view path) {
@@ -400,6 +401,7 @@ void test_gateway_routes_call_to_upstream_tool_name() {
         recorded.server_id = std::string(server_id);
         recorded.tool_name = call.name;
         recorded.arguments = call.arguments;
+        recorded.task = call.task;
         return mcp::protocol::ToolResult{
             .content = {mcp::protocol::ContentBlock{
                 .type = "text",
@@ -411,14 +413,17 @@ void test_gateway_routes_call_to_upstream_tool_name() {
         };
       });
 
-  const auto result = gateway.call_tool("profile.dev", "filesystem.read_file",
-                                        Json{{"path", "README.md"}});
+  const auto result = gateway.call_tool(
+      "profile.dev", "filesystem.read_file", Json{{"path", "README.md"}},
+      mcp::protocol::TaskRequestParameters{.ttl = std::int64_t{45}});
   require(result.has_value(), "gateway call_tool should succeed");
   require(recorded.server_id == "server.filesystem",
           "gateway upstream server mismatch");
   require(recorded.tool_name == "read_file", "gateway upstream tool mismatch");
   require(recorded.arguments.at("path") == "README.md",
           "gateway upstream arguments mismatch");
+  require(recorded.task.has_value(), "gateway upstream task missing");
+  require(recorded.task->ttl == 45, "gateway upstream task ttl mismatch");
   require(result->content.front().text == "ok", "gateway result mismatch");
 }
 
@@ -643,6 +648,7 @@ void test_gateway_handler_routes_tools_call_request() {
         recorded.server_id = std::string(server_id);
         recorded.tool_name = call.name;
         recorded.arguments = call.arguments;
+        recorded.task = call.task;
         return mcp::protocol::ToolResult{
             .content = {mcp::protocol::ContentBlock{
                 .type = "text",
@@ -661,6 +667,7 @@ void test_gateway_handler_routes_tools_call_request() {
           Json{
               {"name", "filesystem.read_file"},
               {"arguments", Json{{"path", "README.md"}}},
+              {"task", Json{{"ttl", 90}}},
           },
       .id = std::string("call-1"),
   });
@@ -676,6 +683,8 @@ void test_gateway_handler_routes_tools_call_request() {
           "gateway handler tool route mismatch");
   require(recorded.arguments.at("path") == "README.md",
           "gateway handler args mismatch");
+  require(recorded.task.has_value(), "gateway handler task missing");
+  require(recorded.task->ttl == 90, "gateway handler task ttl mismatch");
 }
 
 void test_gateway_handler_rejects_invalid_tools_call_params() {
@@ -832,6 +841,7 @@ void test_http_gateway_exposes_profile_tools() {
         recorded.server_id = std::string(server_id);
         recorded.tool_name = call.name;
         recorded.arguments = call.arguments;
+        recorded.task = call.task;
         return mcp::protocol::ToolResult{
             .content = {mcp::protocol::ContentBlock{
                 .type = "text",

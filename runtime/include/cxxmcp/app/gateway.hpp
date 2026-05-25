@@ -120,9 +120,10 @@ class GatewayRoutingService final {
       protocol::Json arguments) const;
   core::Result<protocol::ResourcesReadResult> read_resource(
       std::string_view profile_id, std::string_view uri) const;
-  core::Result<protocol::ToolResult> call_tool(std::string_view profile_id,
-                                               std::string_view exposed_name,
-                                               protocol::Json arguments) const;
+  core::Result<protocol::ToolResult> call_tool(
+      std::string_view profile_id, std::string_view exposed_name,
+      protocol::Json arguments,
+      std::optional<protocol::TaskRequestParameters> task = std::nullopt) const;
 
  private:
   const ExposureProfileStore& profiles_;

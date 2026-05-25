@@ -383,7 +383,8 @@ GatewayRoutingService::list_resources(std::string_view profile_id) const {
 
 core::Result<protocol::ToolResult> GatewayRoutingService::call_tool(
     std::string_view profile_id, std::string_view exposed_name,
-    protocol::Json arguments) const {
+    protocol::Json arguments,
+    std::optional<protocol::TaskRequestParameters> task) const {
   if (!call_tool_) {
     return std::unexpected(
         make_gateway_error(protocol::ErrorCode::InternalError,
@@ -409,10 +410,10 @@ core::Result<protocol::ToolResult> GatewayRoutingService::call_tool(
           std::string(exposed_name)));
     }
 
-    return call_tool_(binding.server_id, protocol::ToolCall{
-                                             .name = binding.upstream_name,
-                                             .arguments = std::move(arguments),
-                                         });
+    return call_tool_(binding.server_id,
+                      protocol::ToolCall{.name = binding.upstream_name,
+                                         .arguments = std::move(arguments),
+                                         .task = std::move(task)});
   }
 
   return std::unexpected(make_gateway_error(protocol::ErrorCode::ToolNotFound,
@@ -610,31 +611,13 @@ core::Result<protocol::JsonRpcResponse> GatewayRequestHandler::handle(
   }
 
   if (request.method == "tools/call") {
-    if (!request.params.is_object()) {
-      return gateway_error_response(request,
-                                    protocol::ErrorCode::InvalidRequest,
-                                    "tools/call params must be an object");
-    }
-    if (!request.params.contains("name") ||
-        !request.params.at("name").is_string()) {
-      return gateway_error_response(request,
-                                    protocol::ErrorCode::InvalidRequest,
-                                    "tools/call requires a string name");
+    const auto call = protocol::tool_call_from_json(request.params);
+    if (!call) {
+      return gateway_error_response(request, call.error());
     }
 
-    protocol::Json arguments = protocol::Json::object();
-    if (request.params.contains("arguments")) {
-      if (!request.params.at("arguments").is_object()) {
-        return gateway_error_response(request,
-                                      protocol::ErrorCode::InvalidRequest,
-                                      "tools/call arguments must be an object");
-      }
-      arguments = request.params.at("arguments");
-    }
-
-    const auto result = routing_.call_tool(
-        profile_id_, request.params.at("name").get<std::string>(),
-        std::move(arguments));
+    const auto result = routing_.call_tool(profile_id_, call->name,
+                                           call->arguments, call->task);
     if (!result) {
       return gateway_error_response(request, result.error());
     }

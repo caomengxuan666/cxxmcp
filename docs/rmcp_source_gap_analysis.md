@@ -241,7 +241,6 @@ Action:
   core `ContentBlock` helpers where higher-level APIs need them
 - finish annotations support where it is still represented as raw JSON
 - add `_meta` support at the proper model/request/notification levels
-- enforce tool execution/task support in handler/runtime paths
 - keep simple helper constructors for common text-only cases
 
 ### 5. Capabilities
@@ -297,6 +296,9 @@ Covered by current tree:
 - task request and result models
 - task-capable client methods
 - task result handlers on the server side
+- tool-level `TaskSupport` / `ToolExecution` wire modeling and server-side
+  required/forbidden/optional invocation validation
+- client and gateway `tools/call` paths preserve task request metadata
 - task status notifications
 - runtime task management service
 
@@ -440,7 +442,6 @@ Still to close:
 - add task result retention
 - add task cancellation
 - add task status notifications
-- add tool-level task support validation
 
 ### Phase 5: Add Elicitation Helpers
 

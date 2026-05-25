@@ -3,6 +3,7 @@
 #pragma once
 
 #include <functional>
+#include <optional>
 #include <string>
 #include <string_view>
 #include <unordered_map>
@@ -31,6 +32,8 @@ struct ToolContext : SessionContext {
 
   /// JSON arguments supplied with the tool call.
   protocol::Json arguments = protocol::Json::object();
+  /// Optional task request metadata supplied with the tool call.
+  std::optional<protocol::TaskRequestParameters> task;
 };
 
 /// @brief Invocation context passed to prompt handlers.
@@ -99,6 +102,13 @@ class ToolRegistry {
   core::Result<protocol::ToolResult> call(std::string_view name,
                                           protocol::Json arguments) const;
 
+  /// @brief Invoke a tool from a parsed protocol call without session metadata.
+  /// @param call Parsed protocol call including arguments and optional task
+  /// request metadata.
+  /// @return Handler result, ToolNotFound, task-support validation failure, or
+  /// the handler's own error.
+  core::Result<protocol::ToolResult> call(protocol::ToolCall call) const;
+
   /// @brief Invoke a tool with full session metadata.
   /// @param name Registered tool name.
   /// @param arguments JSON arguments passed to the handler.
@@ -107,6 +117,15 @@ class ToolRegistry {
   core::Result<protocol::ToolResult> call(
       std::string_view name, protocol::Json arguments,
       const SessionContext& session_context) const;
+
+  /// @brief Invoke a parsed protocol call with full session metadata.
+  /// @param call Parsed protocol call including arguments and optional task
+  /// request metadata.
+  /// @param session_context Metadata copied into ToolContext.
+  /// @return Handler result, ToolNotFound, task-support validation failure, or
+  /// the handler's own error.
+  core::Result<protocol::ToolResult> call(
+      protocol::ToolCall call, const SessionContext& session_context) const;
 
   /// @brief Invoke a tool with only a session id.
   /// @param name Registered tool name.

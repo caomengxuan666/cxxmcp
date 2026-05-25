@@ -7,6 +7,39 @@
 
 namespace mcp::server {
 
+namespace {
+
+core::Result<core::Unit> validate_tool_task_support(
+    const protocol::ToolDefinition& definition,
+    const protocol::ToolCall& call) {
+  const bool task_requested = call.task.has_value();
+  switch (definition.task_support()) {
+    case protocol::TaskSupport::Forbidden:
+      if (task_requested) {
+        return std::unexpected(core::Error{
+            static_cast<int>(protocol::ErrorCode::InvalidRequest),
+            "tool does not support task-based invocation",
+            definition.name,
+        });
+      }
+      break;
+    case protocol::TaskSupport::Required:
+      if (!task_requested) {
+        return std::unexpected(core::Error{
+            static_cast<int>(protocol::ErrorCode::InvalidRequest),
+            "tool requires task-based invocation",
+            definition.name,
+        });
+      }
+      break;
+    case protocol::TaskSupport::Optional:
+      break;
+  }
+  return core::Unit{};
+}
+
+}  // namespace
+
 core::Result<core::Unit> ToolRegistry::add(protocol::ToolDefinition definition,
                                            ToolHandler handler) {
   if (definition.name.empty()) {
@@ -54,26 +87,46 @@ core::Result<protocol::ToolDefinition> ToolRegistry::get(
 
 core::Result<protocol::ToolResult> ToolRegistry::call(
     std::string_view name, protocol::Json arguments) const {
-  return call(name, std::move(arguments), SessionContext{});
+  return call(protocol::ToolCall{.name = std::string(name),
+                                 .arguments = std::move(arguments)});
+}
+
+core::Result<protocol::ToolResult> ToolRegistry::call(
+    protocol::ToolCall call) const {
+  return this->call(std::move(call), SessionContext{});
 }
 
 core::Result<protocol::ToolResult> ToolRegistry::call(
     std::string_view name, protocol::Json arguments,
     const SessionContext& session_context) const {
-  const auto it = tools_.find(std::string(name));
+  return this->call(protocol::ToolCall{.name = std::string(name),
+                                       .arguments = std::move(arguments)},
+                    session_context);
+}
+
+core::Result<protocol::ToolResult> ToolRegistry::call(
+    protocol::ToolCall call, const SessionContext& session_context) const {
+  const auto it = tools_.find(call.name);
   if (it == tools_.end()) {
     return std::unexpected(core::Error{
         static_cast<int>(protocol::ErrorCode::ToolNotFound),
         "tool not found",
-        std::string(name),
+        call.name,
     });
+  }
+
+  const auto task_support =
+      validate_tool_task_support(it->second.definition, call);
+  if (!task_support) {
+    return std::unexpected(task_support.error());
   }
 
   ToolContext context;
   context.session_id = session_context.session_id;
   context.remote_address = session_context.remote_address;
   context.transport = session_context.transport;
-  context.arguments = std::move(arguments);
+  context.arguments = std::move(call.arguments);
+  context.task = std::move(call.task);
   const auto result = it->second.handler(context);
   if (!result) {
     return std::unexpected(result.error());

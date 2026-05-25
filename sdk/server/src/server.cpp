@@ -345,33 +345,14 @@ core::Result<protocol::JsonRpcResponse> Server::handle_request(
                                    protocol::tool_definition_to_json(*tool));
   }
 
-  if (request.method == "tools/call") {
-    if (!request.params.is_object()) {
-      return make_error_response(
-          request, static_cast<int>(protocol::ErrorCode::InvalidRequest),
-          "tools/call params must be an object");
+  if (request.method == protocol::ToolsCallMethod) {
+    const auto call = protocol::tool_call_from_json(request.params);
+    if (!call) {
+      return make_error_response(request, call.error().code,
+                                 call.error().message, call.error().detail);
     }
 
-    if (!request.params.contains("name") ||
-        !request.params.at("name").is_string()) {
-      return make_error_response(
-          request, static_cast<int>(protocol::ErrorCode::InvalidRequest),
-          "tools/call requires a string name");
-    }
-
-    protocol::Json arguments = protocol::Json::object();
-    if (request.params.contains("arguments")) {
-      if (!request.params.at("arguments").is_object()) {
-        return make_error_response(
-            request, static_cast<int>(protocol::ErrorCode::InvalidRequest),
-            "tools/call arguments must be an object");
-      }
-      arguments = request.params.at("arguments");
-    }
-
-    const auto result =
-        tools_.call(request.params.at("name").get<std::string>(),
-                    std::move(arguments), context);
+    const auto result = tools_.call(*call, context);
     if (!result) {
       return protocol::make_error_response(
           std::optional<protocol::RequestId>{request.id},

@@ -105,6 +105,19 @@ class RecordingTransport final : public mcp::client::Transport {
               },
       };
     }
+    if (request.method == "tools/call") {
+      return mcp::protocol::JsonRpcResponse{
+          .id = request.id,
+          .result =
+              mcp::protocol::tool_result_to_json(mcp::protocol::ToolResult{
+                  .content = {mcp::protocol::ContentBlock{
+                      .type = "text",
+                      .text = "called",
+                      .data = Json::object(),
+                  }},
+              }),
+      };
+    }
     if (request.method == "resources/templates/list") {
       return mcp::protocol::JsonRpcResponse{
           .id = request.id,
@@ -1227,6 +1240,138 @@ void test_call_tool_round_trip() {
           "tool result content type mismatch");
   require(result->content.front().text == "{\"value\":42}",
           "tool result text mismatch");
+}
+
+void test_client_call_tool_serializes_task_request() {
+  auto transport = std::make_unique<RecordingTransport>();
+  auto* recording = transport.get();
+  mcp::client::Client client(std::move(transport));
+
+  const auto result = client.call_tool(mcp::protocol::ToolCall{
+      .name = "fake-tool",
+      .arguments = Json{{"value", 42}},
+      .task = mcp::protocol::TaskRequestParameters{.ttl = std::int64_t{60}},
+  });
+
+  require(result.has_value(), "task-aware call_tool should succeed");
+  require(recording->requests.size() == 1,
+          "task-aware call_tool should send one request");
+  require(recording->requests.front().method ==
+              std::string(mcp::protocol::ToolsCallMethod),
+          "task-aware call_tool method mismatch");
+  require(recording->requests.front().params.at("name") == "fake-tool",
+          "task-aware call_tool name mismatch");
+  require(recording->requests.front().params.at("arguments").at("value") == 42,
+          "task-aware call_tool arguments mismatch");
+  require(recording->requests.front().params.at("task").at("ttl") == 60,
+          "task-aware call_tool ttl mismatch");
+}
+
+void test_server_tool_task_support_validation() {
+  mcp::server::ServerOptions options;
+  options.capabilities.tools.enabled = true;
+  options.capabilities.tasks = mcp::protocol::TaskCapabilities{
+      .tools_call = true,
+  };
+  mcp::server::Server server(options);
+
+  int forbidden_calls = 0;
+  const auto forbidden_added = server.tools().add(
+      mcp::protocol::ToolDefinition{
+          .name = "forbidden",
+          .input_schema = Json::object(),
+      },
+      [&](const mcp::server::ToolContext& context) {
+        ++forbidden_calls;
+        require(!context.task.has_value(), "forbidden tool task mismatch");
+        return mcp::protocol::ToolResult{};
+      });
+  require(forbidden_added.has_value(), "failed to add forbidden tool");
+
+  int optional_calls = 0;
+  const auto optional_added = server.tools().add(
+      mcp::protocol::ToolDefinition{
+          .name = "optional",
+          .input_schema = Json::object(),
+          .execution = mcp::protocol::ToolExecution{}.with_task_support(
+              mcp::protocol::TaskSupport::Optional),
+      },
+      [&](const mcp::server::ToolContext& context) {
+        ++optional_calls;
+        require(context.task.has_value(), "optional tool task missing");
+        require(context.task->ttl == 30, "optional tool ttl mismatch");
+        return mcp::protocol::ToolResult{};
+      });
+  require(optional_added.has_value(), "failed to add optional tool");
+
+  int required_calls = 0;
+  const auto required_added = server.tools().add(
+      mcp::protocol::ToolDefinition{
+          .name = "required",
+          .input_schema = Json::object(),
+          .execution = mcp::protocol::ToolExecution{}.with_task_support(
+              mcp::protocol::TaskSupport::Required),
+      },
+      [&](const mcp::server::ToolContext& context) {
+        ++required_calls;
+        require(context.task.has_value(), "required tool task missing");
+        require(context.task->ttl == 90, "required tool ttl mismatch");
+        return mcp::protocol::ToolResult{};
+      });
+  require(required_added.has_value(), "failed to add required tool");
+
+  const auto forbidden_task = server.handle_request(
+      mcp::protocol::JsonRpcRequest{
+          .method = std::string(mcp::protocol::ToolsCallMethod),
+          .params = Json{{"name", "forbidden"},
+                         {"arguments", Json::object()},
+                         {"task", Json{{"ttl", 10}}}},
+          .id = std::int64_t{1},
+      },
+      mcp::server::SessionContext{.session_id = "session-1"});
+  require(forbidden_task.has_value(),
+          "forbidden task request should produce a response");
+  require(forbidden_task->error.has_value(),
+          "forbidden task request should fail");
+  require(forbidden_task->error->code ==
+              static_cast<int>(mcp::protocol::ErrorCode::InvalidRequest),
+          "forbidden task error code mismatch");
+  require(forbidden_calls == 0, "forbidden task should not call handler");
+
+  const auto required_without_task =
+      server.call_tool("required", Json::object(), "session-1");
+  require(!required_without_task.has_value(),
+          "required tool should reject non-task direct call");
+  require(required_without_task.error().message ==
+              "tool requires task-based invocation",
+          "required tool direct-call error mismatch");
+  require(required_calls == 0, "required non-task should not call handler");
+
+  const auto optional_task = server.handle_request(
+      mcp::protocol::JsonRpcRequest{
+          .method = std::string(mcp::protocol::ToolsCallMethod),
+          .params = Json{{"name", "optional"},
+                         {"arguments", Json::object()},
+                         {"task", Json{{"ttl", 30}}}},
+          .id = std::int64_t{2},
+      },
+      mcp::server::SessionContext{.session_id = "session-1"});
+  require(optional_task.has_value(), "optional task request failed");
+  require(optional_task->result.has_value(), "optional task result missing");
+  require(optional_calls == 1, "optional task should call handler once");
+
+  const auto required_task = server.handle_request(
+      mcp::protocol::JsonRpcRequest{
+          .method = std::string(mcp::protocol::ToolsCallMethod),
+          .params = Json{{"name", "required"},
+                         {"arguments", Json::object()},
+                         {"task", Json{{"ttl", 90}}}},
+          .id = std::int64_t{3},
+      },
+      mcp::server::SessionContext{.session_id = "session-1"});
+  require(required_task.has_value(), "required task request failed");
+  require(required_task->result.has_value(), "required task result missing");
+  require(required_calls == 1, "required task should call handler once");
 }
 
 void test_ping_raw_request() {
@@ -2499,6 +2644,10 @@ int main() {
       {"server notify facade broadcasts notifications",
        test_server_notify_facade_broadcasts_notifications},
       {"call tool round trip", test_call_tool_round_trip},
+      {"client call tool serializes task request",
+       test_client_call_tool_serializes_task_request},
+      {"server tool task support validation",
+       test_server_tool_task_support_validation},
       {"ping raw request", test_ping_raw_request},
       {"server info accessors and ping", test_server_info_accessors_and_ping},
       {"initialize handshake shape", test_initialize_handshake_shape},
