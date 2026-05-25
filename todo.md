@@ -138,7 +138,7 @@ true:
   server loop through `Peer<RoleServer>::serve_transport`.
 - [x] Pass the service cancellation token into native role-generic server
   receive loops and close the native transport on stop.
-- [ ] Make service cancellation token propagation explicit and consistent.
+- [x] Make service cancellation token propagation explicit and consistent.
 - [x] Define whether client-side services can actively drive receive loops for
   every built-in transport.
 - [x] Add examples that use only `Peer` / `Service` as the first-choice public
