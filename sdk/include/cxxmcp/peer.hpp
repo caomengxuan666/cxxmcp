@@ -22,6 +22,7 @@
 #include "cxxmcp/cancellation.hpp"
 #include "cxxmcp/client/client.hpp"
 #include "cxxmcp/client/session.hpp"
+#include "cxxmcp/client/transport_adapter.hpp"
 #include "cxxmcp/client/transport_adapter_fwd.hpp"
 #include "cxxmcp/error.hpp"
 #include "cxxmcp/handler.hpp"
@@ -81,6 +82,15 @@ inline void keep_first_service_error(std::optional<core::Error>& first_error,
   }
 }
 
+inline std::unique_ptr<client::Transport> make_peer_client_transport_adapter(
+    std::unique_ptr<transport::ClientTransport>& transport) {
+  if (!transport) {
+    return client::make_contract_transport_adapter(
+        std::unique_ptr<transport::ClientTransport>{});
+  }
+  return std::make_unique<client::ContractTransportAdapter>(*transport);
+}
+
 }  // namespace detail
 
 /// @brief Role-specialized MCP peer facade.
@@ -97,7 +107,8 @@ class Peer<RoleClient> {
 
   /// @brief Creates a client peer from an owned role-generic transport.
   explicit Peer(std::unique_ptr<transport::ClientTransport> transport)
-      : client_(client::make_contract_transport_adapter(std::move(transport))) {
+      : native_transport_(std::move(transport)),
+        client_(detail::make_peer_client_transport_adapter(native_transport_)) {
   }
 
   /// @brief Creates a client peer from an existing client implementation.
@@ -523,6 +534,7 @@ class Peer<RoleClient> {
   }
 
  private:
+  std::unique_ptr<transport::ClientTransport> native_transport_;
   client::Client client_;
 };
 

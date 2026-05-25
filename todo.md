@@ -45,6 +45,9 @@ incrementally. Keep them concrete; do not replace them with broad claims.
   - [x] Canonical client Peer/Service docs and examples construct
         `ClientPeer` from `transport::ClientTransport` implementations instead
         of starting from concrete `client::Client` convenience APIs.
+  - [x] `ClientPeer` owns role-generic client transports at the peer boundary;
+        the concrete client compatibility adapter borrows that transport
+        instead of owning it.
   - [x] Client and server contract transport adapters cover duplicate response
         ids as stable unexpected-response failures.
 - Request lifecycle:
