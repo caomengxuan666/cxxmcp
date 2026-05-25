@@ -139,6 +139,18 @@ inline Arg argument_from_json(const protocol::Json& arguments,
   }
 }
 
+template <class Result>
+inline void apply_default_output_schema(protocol::ToolDefinition& definition) {
+  if constexpr (!std::is_same_v<std::decay_t<Result>, protocol::ToolResult> &&
+                !std::is_same_v<std::decay_t<Result>, std::string> &&
+                !std::is_same_v<std::decay_t<Result>, const char*> &&
+                !std::is_same_v<std::decay_t<Result>, char*>) {
+    if (definition.output_schema.empty()) {
+      definition.output_schema = protocol::schema_for<Result>();
+    }
+  }
+}
+
 }  // namespace detail
 
 /// @brief Configuration used to construct a Server.
@@ -641,6 +653,89 @@ class ServerBuilder {
   Server::ResourceUpdatedHandler resource_updated_handler_;
 };
 
+/// @brief Typed tool registration produced by mcp::server::tool().
+template <class Args, class Result, class Handler>
+struct TypedToolRegistration {
+  protocol::ToolDefinition definition;
+  Handler handler;
+};
+
+/// @brief Fluent typed tool builder for low-boilerplate server authoring.
+template <class Args, class Result>
+class TypedToolBuilder {
+ public:
+  explicit TypedToolBuilder(std::string name) {
+    definition_ =
+        protocol::tool_definition(std::move(name)).input<Args>().build();
+    detail::apply_default_output_schema<Result>(definition_);
+  }
+
+  TypedToolBuilder& title(std::string value) {
+    definition_.title = std::move(value);
+    return *this;
+  }
+
+  TypedToolBuilder& description(std::string value) {
+    definition_.description = std::move(value);
+    return *this;
+  }
+
+  TypedToolBuilder& input_schema(protocol::Json schema) {
+    definition_.input_schema = std::move(schema);
+    return *this;
+  }
+
+  TypedToolBuilder& output_schema(protocol::Json schema) {
+    definition_.output_schema = std::move(schema);
+    return *this;
+  }
+
+  TypedToolBuilder& streaming(bool value = true) {
+    definition_.streaming = value;
+    return *this;
+  }
+
+  TypedToolBuilder& icon(protocol::Icon value) {
+    definition_.icons.push_back(std::move(value));
+    return *this;
+  }
+
+  TypedToolBuilder& task_support(protocol::TaskSupport value) {
+    if (!definition_.execution.has_value()) {
+      definition_.execution = protocol::ToolExecution{};
+    }
+    definition_.execution->task_support = value;
+    return *this;
+  }
+
+  TypedToolBuilder& annotations(protocol::Json value) {
+    definition_.annotations = std::move(value);
+    return *this;
+  }
+
+  TypedToolBuilder& meta(protocol::Json value) {
+    definition_.meta = std::move(value);
+    return *this;
+  }
+
+  template <class Handler>
+  TypedToolRegistration<Args, Result, Handler> handler(Handler value) {
+    return TypedToolRegistration<Args, Result, Handler>{
+        .definition = std::move(definition_),
+        .handler = std::move(value),
+    };
+  }
+
+ private:
+  protocol::ToolDefinition definition_;
+};
+
+/// @brief Starts a typed tool registration builder.
+template <class Args, class Result>
+inline TypedToolBuilder<Args, Result> tool(std::string name) {
+  return TypedToolBuilder<Args, Result>(std::move(name));
+}
+
 /// @brief Convenience entry point for compact server applications.
 ///
 /// App::builder() exposes a higher-level builder that can create common
@@ -694,6 +789,14 @@ class App {
     /// caught and converted to InvalidParams results when the tool is invoked.
     template <class Args, class Result, class Handler>
     Builder& tool(std::string name, Handler handler);
+
+    /// @brief Registers a typed callable using an explicit tool definition.
+    template <class Args, class Result, class Handler>
+    Builder& tool(protocol::ToolDefinition definition, Handler handler);
+
+    /// @brief Registers a typed tool registration built by mcp::server::tool().
+    template <class Args, class Result, class Handler>
+    Builder& tool(TypedToolRegistration<Args, Result, Handler> registration);
 
     /// @brief Registers a fully described tool and low-level handler.
     Builder& tool(protocol::ToolDefinition definition, ToolHandler handler);
@@ -767,9 +870,19 @@ class App {
 
 template <class Args, class Result, class Handler>
 App::Builder& App::Builder::tool(std::string name, Handler handler) {
-  protocol::ToolDefinition definition;
-  definition.name = std::move(name);
-  definition.input_schema = protocol::Json{{"type", "object"}};
+  auto definition =
+      protocol::tool_definition(std::move(name)).input<Args>().build();
+  detail::apply_default_output_schema<Result>(definition);
+  return tool<Args, Result>(std::move(definition), std::move(handler));
+}
+
+template <class Args, class Result, class Handler>
+App::Builder& App::Builder::tool(protocol::ToolDefinition definition,
+                                 Handler handler) {
+  if (definition.input_schema.empty()) {
+    definition.input_schema = protocol::schema_for<Args>();
+  }
+  detail::apply_default_output_schema<Result>(definition);
   return tool(
       std::move(definition),
       [handler = std::move(handler)](
@@ -793,6 +906,13 @@ App::Builder& App::Builder::tool(std::string name, Handler handler) {
           });
         }
       });
+}
+
+template <class Args, class Result, class Handler>
+App::Builder& App::Builder::tool(
+    TypedToolRegistration<Args, Result, Handler> registration) {
+  return tool<Args, Result>(std::move(registration.definition),
+                            std::move(registration.handler));
 }
 
 template <class Handler>

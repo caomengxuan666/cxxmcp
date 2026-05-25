@@ -413,13 +413,15 @@ The C++ project cannot copy Rust macros directly, but it can offer equivalent er
 Covered by current tree:
 
 - JSON Schema object builder and primitive schema helpers
+- `SchemaTraits<T>` / `schema_for<T>()` customization for typed helper APIs
 - fluent `ToolDefinition` builder for public server tool metadata
 - low-boilerplate `App::Builder` adapters for simple C++ callables
+- typed `mcp::server::tool<Args, Result>(...)` registration facade
 
 Action:
 
 - add optional `json-schema-validator`
-- add typed helper templates for tool registration
+- deepen typed helper templates for context/peer/cancellation injection
 - keep registry helpers as convenience wrappers over `ServerHandler`
 
 ## Recommended Roadmap

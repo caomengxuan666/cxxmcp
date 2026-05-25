@@ -3,6 +3,15 @@
 #include <cxxmcp/server.hpp>
 
 int main() {
-  mcp::server::Server server(mcp::server::ServerOptions{});
-  return server.list_tools().empty() ? 0 : 1;
+  auto built =
+      mcp::server::App::builder()
+          .tool(mcp::server::tool<mcp::protocol::Json, mcp::protocol::Json>(
+                    "echo")
+                    .handler(
+                        [](const mcp::protocol::Json& value) { return value; }))
+          .build();
+  if (!built) {
+    return 1;
+  }
+  return (*built)->list_tools().size() == 1 ? 0 : 1;
 }

@@ -52,6 +52,29 @@ int main() {
 }
 ```
 
+### Typed Tool
+
+```cpp
+struct SumArgs {
+    int a;
+    int b;
+};
+
+struct SumResult {
+    int sum;
+};
+
+// Provide from_json/to_json for your types and specialize SchemaTraits<T>
+// when you want field-level schemas.
+auto server = mcp::server::App::builder()
+    .tool(mcp::server::tool<SumArgs, SumResult>("sum")
+        .description("Add two integers")
+        .handler([](SumArgs args) {
+            return SumResult{.sum = args.a + args.b};
+        }))
+    .build();
+```
+
 ### Client Peer
 
 ```cpp

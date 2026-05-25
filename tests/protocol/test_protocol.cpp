@@ -293,6 +293,12 @@ void test_schema_and_tool_definition_builders() {
           "required schema entry mismatch");
   require(!input_schema.at("additionalProperties"),
           "additionalProperties mismatch");
+  require(mcp::protocol::schema_for<int>().at("type") == "integer",
+          "integer schema trait mismatch");
+  require(mcp::protocol::schema_for<double>().at("type") == "number",
+          "number schema trait mismatch");
+  require(mcp::protocol::schema_for<std::string>().at("type") == "string",
+          "string schema trait mismatch");
 
   const auto output_schema =
       mcp::protocol::object_schema()
@@ -329,6 +335,15 @@ void test_schema_and_tool_definition_builders() {
           "tool builder meta mismatch");
   require(mcp::protocol::tool_definition_to_json(*parsed) == tool_json,
           "tool built with builders should round trip");
+
+  const auto typed_tool = mcp::protocol::tool_definition("score")
+                              .input<Json>()
+                              .output<double>()
+                              .build();
+  require(typed_tool.input_schema.empty(),
+          "json input schema should be unconstrained");
+  require(typed_tool.output_schema.at("type") == "number",
+          "typed output schema mismatch");
 }
 
 void test_content_block_variants_round_trip() {

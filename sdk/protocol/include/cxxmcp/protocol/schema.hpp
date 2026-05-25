@@ -6,6 +6,7 @@
 /// @brief Small JSON Schema builders for MCP tool and elicitation metadata.
 
 #include <string>
+#include <type_traits>
 #include <utility>
 #include <vector>
 
@@ -36,6 +37,44 @@ class JsonSchema {
     return Json{{"type", "string"}, {"enum", std::move(values)}};
   }
 };
+
+/// @brief Type-to-schema customization point for typed SDK helpers.
+template <class T, class Enable = void>
+struct SchemaTraits {
+  static Json schema() { return JsonSchema::object(); }
+};
+
+template <>
+struct SchemaTraits<Json> {
+  static Json schema() { return JsonSchema::any(); }
+};
+
+template <>
+struct SchemaTraits<std::string> {
+  static Json schema() { return JsonSchema::string(); }
+};
+
+template <>
+struct SchemaTraits<bool> {
+  static Json schema() { return JsonSchema::boolean(); }
+};
+
+template <class T>
+struct SchemaTraits<
+    T, std::enable_if_t<std::is_integral_v<T> && !std::is_same_v<T, bool>>> {
+  static Json schema() { return JsonSchema::integer(); }
+};
+
+template <class T>
+struct SchemaTraits<T, std::enable_if_t<std::is_floating_point_v<T>>> {
+  static Json schema() { return JsonSchema::number(); }
+};
+
+/// @brief Returns the JSON Schema advertised for a C++ type.
+template <class T>
+inline Json schema_for() {
+  return SchemaTraits<std::decay_t<T>>::schema();
+}
 
 /// @brief Fluent object-schema builder for tool input and output schemas.
 class ObjectSchemaBuilder {

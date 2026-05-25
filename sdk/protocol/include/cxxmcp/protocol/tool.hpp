@@ -17,6 +17,7 @@
 
 #include "cxxmcp/core/result.hpp"
 #include "cxxmcp/protocol/resource.hpp"
+#include "cxxmcp/protocol/schema.hpp"
 #include "cxxmcp/protocol/task.hpp"
 #include "cxxmcp/protocol/types.hpp"
 
@@ -223,9 +224,19 @@ class ToolDefinitionBuilder {
     return *this;
   }
 
+  template <class T>
+  ToolDefinitionBuilder& input() {
+    return input_schema(schema_for<T>());
+  }
+
   ToolDefinitionBuilder& output_schema(Json schema) {
     definition_.output_schema = std::move(schema);
     return *this;
+  }
+
+  template <class T>
+  ToolDefinitionBuilder& output() {
+    return output_schema(schema_for<T>());
   }
 
   ToolDefinitionBuilder& streaming(bool value = true) {

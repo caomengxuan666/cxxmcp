@@ -24,6 +24,53 @@
 #include "cxxmcp/server.hpp"
 #include "cxxmcp/service.hpp"
 
+namespace typed_tool_fixture {
+
+struct SumArgs {
+  int a = 0;
+  int b = 0;
+};
+
+struct SumResult {
+  int sum = 0;
+};
+
+void from_json(const mcp::protocol::Json& json, SumArgs& args) {
+  args.a = json.at("a").get<int>();
+  args.b = json.at("b").get<int>();
+}
+
+void to_json(mcp::protocol::Json& json, const SumResult& result) {
+  json = mcp::protocol::Json{{"sum", result.sum}};
+}
+
+}  // namespace typed_tool_fixture
+
+namespace mcp::protocol {
+
+template <>
+struct SchemaTraits<typed_tool_fixture::SumArgs> {
+  static Json schema() {
+    return object_schema()
+        .required_property("a", JsonSchema::integer())
+        .required_property("b", JsonSchema::integer())
+        .additional_properties(false)
+        .build();
+  }
+};
+
+template <>
+struct SchemaTraits<typed_tool_fixture::SumResult> {
+  static Json schema() {
+    return object_schema()
+        .required_property("sum", JsonSchema::integer())
+        .additional_properties(false)
+        .build();
+  }
+};
+
+}  // namespace mcp::protocol
+
 namespace {
 
 using mcp::protocol::Json;
@@ -1993,6 +2040,51 @@ void test_server_app_builder_registers_parity_surface() {
   require(raw->result->at("ok"), "facade raw request mismatch");
 }
 
+void test_server_app_builder_registers_typed_tool() {
+  using typed_tool_fixture::SumArgs;
+  using typed_tool_fixture::SumResult;
+
+  auto built = mcp::server::App::builder()
+                   .tool(mcp::server::tool<SumArgs, SumResult>("sum")
+                             .description("Add two integers")
+                             .task_support(mcp::protocol::TaskSupport::Optional)
+                             .handler([](SumArgs args) {
+                               return SumResult{.sum = args.a + args.b};
+                             }))
+                   .build();
+  require(built.has_value(), "typed tool server should build");
+  auto& server = **built;
+
+  const auto listed = server.list_tools();
+  require(listed.size() == 1, "typed tool count mismatch");
+  require(listed.front().name == "sum", "typed tool name mismatch");
+  require(listed.front().description == "Add two integers",
+          "typed tool description mismatch");
+  require(listed.front().input_schema.at("properties").contains("a"),
+          "typed tool input schema missing a");
+  require(listed.front().input_schema.at("properties").contains("b"),
+          "typed tool input schema missing b");
+  require(listed.front().output_schema.at("properties").contains("sum"),
+          "typed tool output schema missing sum");
+  require(listed.front().task_support() == mcp::protocol::TaskSupport::Optional,
+          "typed tool task support mismatch");
+
+  const auto result =
+      server.call_tool("sum", Json{{"a", 2}, {"b", 3}}, "typed-tool-session");
+  require(result.has_value(), "typed tool call failed");
+  require(result->structured_content.has_value(),
+          "typed tool structured content missing");
+  require(result->structured_content->at("sum") == 5,
+          "typed tool structured content mismatch");
+
+  const auto invalid =
+      server.call_tool("sum", Json{{"a", 2}}, "typed-tool-session");
+  require(!invalid.has_value(), "typed tool invalid args should fail");
+  require(invalid.error().code ==
+              static_cast<int>(mcp::protocol::ErrorCode::InvalidParams),
+          "typed tool invalid args error code mismatch");
+}
+
 void test_client_session_initialize_and_mark_initialized() {
   auto transport = std::make_unique<RecordingTransport>();
   auto* recording = transport.get();
@@ -2988,6 +3080,8 @@ int main() {
        test_default_server_initialize_omits_inactive_capabilities},
       {"server app builder registers parity surface",
        test_server_app_builder_registers_parity_surface},
+      {"server app builder registers typed tool",
+       test_server_app_builder_registers_typed_tool},
       {"client session initialize and mark initialized",
        test_client_session_initialize_and_mark_initialized},
       {"client initialize with empty explicit capabilities",
