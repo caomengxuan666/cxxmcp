@@ -27,7 +27,7 @@ turning the SDK surface into a gateway/runtime product.
   cancel/timeout races, HTTP cancellation over SSE, stdio cancellation
   notifications, and process-stdio cancellation while a request is pending.
 - [ ] Do not claim fact-standard status yet. Current readiness is a strong
-  candidate, roughly `75-80%` against the pinned RMCP SDK shape.
+  candidate, roughly `85-90%` against the pinned RMCP SDK shape.
 
 ## Current P0 Executable Slices
 
@@ -105,6 +105,10 @@ incrementally. Keep them concrete; do not replace them with broad claims.
   - [x] `ServerPeer` owns Peer-registered task lifecycle handlers and dispatches
         `tasks/list`, `tasks/get`, `tasks/cancel`, and `tasks/result` at the
         Peer boundary.
+  - [x] `ServerPeer` covers all built-in server request families at the Peer
+        boundary; the concrete server dispatcher remains only as a compatibility
+        fallback for concrete-only handlers, auth/rate policy, and unknown
+        methods.
   - [x] `ClientPeer::client()` and `ServerPeer::server()` are retained as
         deprecated compatibility escape hatches, not canonical SDK entry
         points.
@@ -223,11 +227,11 @@ true:
 
 ## P0: Make Peer And Service The Real SDK Core
 
-- [ ] Make `Peer<RoleClient>` and `Peer<RoleServer>` the primary implementation
+- [x] Make `Peer<RoleClient>` and `Peer<RoleServer>` the primary implementation
   path for request dispatch, notification dispatch, and lifecycle.
 - [x] Keep concrete `Client` and `Server` classes as compatibility wrappers or
   convenience adapters, not the conceptual center of the SDK.
-- [ ] Move the real request loop behind the `Peer` / `Service` path.
+- [x] Move the real request loop behind the `Peer` / `Service` path.
 - [x] Make `Service<Role>` own service lifecycle and serving state directly.
 - [x] Make `RunningService<Role>` wait on an active transport/service loop, not
   only a synchronous lifecycle flag.
@@ -273,7 +277,7 @@ true:
 
 ## P0: Transport Contract And Runtime Behavior
 
-- [ ] Make `mcp::transport::Transport<Role>` the native boundary for all
+- [x] Make `mcp::transport::Transport<Role>` the native boundary for all
   service execution.
 - [x] Keep the role-generic transport contract narrow: send, receive, close,
   name/diagnostics, and documented concurrency guarantees.
@@ -732,8 +736,8 @@ true:
 
 ### Milestone 2: Native Service And Transport Core
 
-- [ ] Make peer/service drive the real request loop.
-- [ ] Make built-in transports native role-generic transports.
+- [x] Make peer/service drive the real request loop.
+- [x] Make built-in transports native role-generic transports.
 - [x] Deepen service lifecycle into a real active driver.
 - [x] Add concurrency and cancellation stress tests.
 
