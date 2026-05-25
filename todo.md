@@ -680,23 +680,23 @@ true:
 
 ### Milestone 1: Stable SDK Shape
 
-- [ ] Freeze target names and include paths.
+- [x] Freeze target names and include paths.
 - [x] Make peer/service examples canonical.
-- [ ] Keep concrete client/server APIs as compatibility wrappers.
-- [ ] Add public header diff review.
-- [ ] Keep package-smoke release-blocking.
+- [x] Keep concrete client/server APIs as compatibility wrappers.
+- [x] Add public header diff review.
+- [x] Keep package-smoke release-blocking.
 
 ### Milestone 2: Native Service And Transport Core
 
 - [ ] Make peer/service drive the real request loop.
 - [ ] Make built-in transports native role-generic transports.
-- [ ] Deepen service lifecycle into a real active driver.
-- [ ] Add concurrency and cancellation stress tests.
+- [x] Deepen service lifecycle into a real active driver.
+- [x] Add concurrency and cancellation stress tests.
 
 ### Milestone 3: Transport Production Readiness
 
-- [ ] Complete Streamable HTTP session/resume/backpressure semantics.
-- [ ] Complete POSIX process stdio.
+- [x] Complete Streamable HTTP session/resume/backpressure semantics.
+- [x] Complete POSIX process stdio.
 - [ ] Expand HTTP, stdio, and process-stdio failure-path tests.
 
 ### Milestone 4: Protocol And Capability Parity
