@@ -167,6 +167,28 @@ void test_client_reports_stdio_eof_before_response() {
           "client stdio EOF category mismatch");
 }
 
+void test_client_reports_stdio_parse_error_before_response() {
+  std::istringstream input("{not-json}\n");
+  std::ostringstream output;
+  mcp::client::StdioTransport transport(input, output);
+
+  require(transport.start({}).has_value(), "client stdio start failed");
+
+  const auto actual = transport.send(mcp::protocol::JsonRpcRequest{
+      .method = "ping",
+      .params = Json::object(),
+      .id = std::int64_t{7},
+  });
+
+  require(!actual.has_value(),
+          "client stdio should fail on malformed input before response");
+  require(actual.error().code ==
+              static_cast<int>(mcp::protocol::ErrorCode::ParseError),
+          "client stdio malformed input code mismatch");
+  require(actual.error().category == "protocol",
+          "client stdio malformed input category mismatch");
+}
+
 void test_client_writes_error_for_throwing_incoming_stdio_request_handler() {
   const auto incoming_request_text =
       serialize_request_line(mcp::protocol::JsonRpcRequest{
@@ -487,6 +509,8 @@ int main() {
        test_client_rejects_unexpected_stdio_response_id},
       {"client reports stdio eof before response",
        test_client_reports_stdio_eof_before_response},
+      {"client reports stdio parse error before response",
+       test_client_reports_stdio_parse_error_before_response},
       {"client writes error for throwing incoming stdio request handler",
        test_client_writes_error_for_throwing_incoming_stdio_request_handler},
       {"server reads request and writes response",

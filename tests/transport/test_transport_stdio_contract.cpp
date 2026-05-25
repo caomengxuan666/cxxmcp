@@ -88,6 +88,39 @@ void test_stdio_transport_reports_parse_errors_and_close() {
           "stdio send after close category mismatch");
 }
 
+void test_server_stdio_transport_reports_parse_errors_and_close() {
+  std::istringstream input("{not-json}\n");
+  std::ostringstream output;
+  mcp::transport::ServerStdioTransport transport(input, output);
+
+  const auto invalid = transport.receive();
+  require(!invalid.has_value(), "invalid server stdio input should fail");
+  require(invalid.error().code ==
+              static_cast<int>(mcp::protocol::ErrorCode::ParseError),
+          "invalid server stdio error code mismatch");
+  require(invalid.error().category == "protocol",
+          "invalid server stdio error category mismatch");
+
+  require(transport.close().has_value(), "server stdio close failed");
+  require(transport.diagnostics().at("closed") == true,
+          "server stdio diagnostics should report closed");
+  const auto after_close = transport.receive();
+  require(after_close.has_value(),
+          "server stdio receive after close should succeed");
+  require(!after_close->has_value(),
+          "server stdio receive after close should end");
+
+  const auto send_after_close = transport.send(mcp::protocol::JsonRpcRequest{
+      .method = "roots/list",
+      .params = mcp::protocol::Json::object(),
+      .id = std::int64_t{77},
+  });
+  require(!send_after_close.has_value(),
+          "server stdio send after close should fail");
+  require(send_after_close.error().category == "transport",
+          "server stdio send after close category mismatch");
+}
+
 void test_stdio_transport_interops_without_process_ownership() {
   std::istringstream client_input;
   std::ostringstream client_to_server;
@@ -198,6 +231,7 @@ int main() {
     test_stdio_transport_sends_messages();
     test_stdio_transport_receives_messages();
     test_stdio_transport_reports_parse_errors_and_close();
+    test_server_stdio_transport_reports_parse_errors_and_close();
     test_stdio_transport_interops_without_process_ownership();
     std::cout << "stdio contract transport tests passed\n";
     return 0;
