@@ -10,6 +10,7 @@ INPUT                  = README.md \
                          docs/compatibility_policy.md \
                          docs/release_gates.md \
                          docs/release_candidate_checklist.md \
+                         docs/release_notes_template.md \
                          todo.md \
                          sdk/include \
                          sdk/core/include \

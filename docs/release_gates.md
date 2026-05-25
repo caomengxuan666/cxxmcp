@@ -85,8 +85,8 @@ The same workflow uploads:
   `SHA256SUMS.txt` file.
 - `cxxmcp-release-evidence`: the README, Chinese README, changelog,
   compatibility policy, Peer/Service migration guide, release gates, release
-  candidate checklist, TODO, and example source files used for the release
-  decision.
+  candidate checklist, release notes template, TODO, and example source files
+  used for the release decision.
 
 Release candidates must attach the source, documentation, and release evidence
 artifacts, or replace them with equivalent versioned artifacts built from the
@@ -95,6 +95,8 @@ same commit and with matching checksums recorded in the release notes.
 Use [Release candidate checklist](release_candidate_checklist.md) to bind the
 workflow artifacts, public API review, compatibility policy, examples, README,
 and changelog into one auditable release decision.
+Use [Release notes template](release_notes_template.md) for the release notes
+that publish that decision.
 
 ## Public API Review
 

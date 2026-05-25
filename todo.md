@@ -36,10 +36,10 @@ Remaining non-P1/P2 proof gates before claiming fact-standard status:
 - Public generated API docs, source archives, checksums, and release artifacts
   have to be built by the release-gates workflow and attached to an actual
   release candidate.
-- README, examples, changelog, compatibility policy, CTest/JUnit evidence
-  artifacts, release artifacts, and the `cxxmcp-release-evidence` artifact have
-  to be audited together after the next successful release-blocking matrix run
-  using
+- README, examples, changelog, compatibility policy, release notes,
+  CTest/JUnit evidence artifacts, release artifacts, and the
+  `cxxmcp-release-evidence` artifact have to be audited together after the next
+  successful release-blocking matrix run using
   `docs/release_candidate_checklist.md`.
 
 ## Current P0 Executable Slices

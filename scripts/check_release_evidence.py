@@ -43,6 +43,7 @@ def check_source_tree(source: Path) -> None:
         "docs/compatibility_policy.md",
         "docs/release_gates.md",
         "docs/release_candidate_checklist.md",
+        "docs/release_notes_template.md",
         "docs/sdk_peer_service_migration.md",
         "docs/Doxyfile",
         ".github/workflows/release-gates.yml",
@@ -66,6 +67,11 @@ def check_source_tree(source: Path) -> None:
     require_contains(compatibility, "canonical SDK path")
     require_contains(compatibility, "compatibility or convenience APIs")
     require_contains(compatibility, "release evidence")
+
+    release_notes = source / "docs/release_notes_template.md"
+    require_contains(release_notes, "Canonical SDK Path")
+    require_contains(release_notes, "Required Artifacts")
+    require_contains(release_notes, "Checksums")
 
     doxygen = source / "docs/Doxyfile"
     require_contains(doxygen, 'PROJECT_BRIEF          = "C++ MCP SDK"')
@@ -118,6 +124,7 @@ def check_evidence_dir(evidence: Path) -> None:
         "docs/compatibility_policy.md",
         "docs/release_gates.md",
         "docs/release_candidate_checklist.md",
+        "docs/release_notes_template.md",
         "docs/sdk_peer_service_migration.md",
         "examples/CMakeLists.txt",
         "examples/server_peer.cpp",

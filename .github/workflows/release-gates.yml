@@ -243,6 +243,7 @@ jobs:
             docs/compatibility_policy.md \
             docs/release_gates.md \
             docs/release_candidate_checklist.md \
+            docs/release_notes_template.md \
             docs/sdk_peer_service_migration.md \
             release-evidence/docs/
           cp examples/*.cpp examples/CMakeLists.txt release-evidence/examples/

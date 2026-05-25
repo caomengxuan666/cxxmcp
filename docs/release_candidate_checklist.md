@@ -29,8 +29,8 @@ Each release-gate artifact must contain `CMakeCache.txt`, CTest JUnit XML, and
 CTest logs. The source artifact must contain `SHA256SUMS.txt`. The release
 evidence artifact must contain the README, README_zh, changelog,
 compatibility policy, Peer/Service migration guide, release gates, release
-candidate checklist, TODO, and example source files used for the canonical SDK
-path review.
+candidate checklist, release notes template, TODO, and example source files
+used for the canonical SDK path review.
 
 ## Gate Review
 
@@ -77,6 +77,8 @@ path review.
 - [ ] Include dependency/reference versions used by conformance tests.
 - [ ] Include checksums for published source artifacts.
 - [ ] Link generated API documentation.
+- [ ] Use [Release notes template](release_notes_template.md) so release notes,
+      artifacts, and compatibility policy stay aligned.
 
 Do not publish a stable release or claim fact-standard status while any required
 evidence artifact is missing or any release-blocking matrix leg is red.
