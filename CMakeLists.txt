@@ -217,6 +217,14 @@ if(TARGET mcp_sdk AND TARGET mcp_transport)
     target_link_libraries(mcp_sdk INTERFACE mcp_transport)
 endif()
 
+if(TARGET mcp_client AND TARGET mcp_transport)
+    target_link_libraries(mcp_client PUBLIC mcp_transport)
+endif()
+
+if(TARGET mcp_server AND TARGET mcp_transport)
+    target_link_libraries(mcp_server PUBLIC mcp_transport)
+endif()
+
 if(TARGET mcp_client AND TARGET mcp_server)
     add_library(mcp_peer INTERFACE)
     set_target_properties(mcp_peer PROPERTIES EXPORT_NAME peer)

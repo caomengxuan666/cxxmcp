@@ -39,6 +39,14 @@ if(TARGET mcp_client AND TARGET mcp_server)
 
     add_test(NAME stdio_transport COMMAND mcp_stdio_transport_tests)
 
+    add_executable(mcp_transport_adapter_tests
+        transport/test_transport_adapters.cpp
+    )
+
+    target_link_libraries(mcp_transport_adapter_tests PRIVATE mcp_client mcp_server)
+
+    add_test(NAME transport_adapters COMMAND mcp_transport_adapter_tests)
+
     add_executable(mcp_http_transport_tests
         transport/test_http_transport.cpp
     )

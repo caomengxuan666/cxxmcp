@@ -225,6 +225,8 @@ The transport family covers:
   need the shared transport contract
 - built-in concrete transports from `cxxmcp/client.hpp`, `cxxmcp/server.hpp`,
   or the component transport headers
+- compatibility adapters that wrap existing client/server transports as
+  `mcp::transport::Transport<Role>`
 
 ## Rules
 
