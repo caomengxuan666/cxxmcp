@@ -43,7 +43,7 @@ int main() {
         return 1;
     }
 
-    return running->peer().list_tools().has_value() ? 0 : 1;
+    return running->peer().list_tools().empty() ? 1 : 0;
 }
 ```
 
