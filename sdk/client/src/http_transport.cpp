@@ -144,8 +144,8 @@ core::Result<ResolvedEndpoint> resolve_endpoint(
   }
 
   std::string origin = is_ssl ? "https://" : "http://";
-  origin += httplib::detail::make_host_and_port_string(components.host, port,
-                                                       is_ssl);
+  origin +=
+      httplib::detail::make_host_and_port_string(components.host, port, is_ssl);
 
   return ResolvedEndpoint{std::move(origin), std::move(path)};
 }
@@ -393,8 +393,7 @@ struct HttpTransport::Impl {
                                 bool include_protocol_version = true) const {
     auto headers = to_headers(options.headers);
     if (options.auth_header.has_value()) {
-      headers.emplace("Authorization",
-                      "Bearer " + *options.auth_header);
+      headers.emplace("Authorization", "Bearer " + *options.auth_header);
     }
     if (json_body) {
       headers.emplace("Content-Type", "application/json");
@@ -443,16 +442,15 @@ struct HttpTransport::Impl {
       if (!started || stream_started || session_id.empty()) {
         return core::Unit{};
       }
-      stream_client =
-          std::make_unique<httplib::Client>(origin);
+      stream_client = std::make_unique<httplib::Client>(origin);
       apply_timeout(*stream_client, options.timeout);
       auto headers = to_headers(options.headers);
       headers.emplace("Accept", "text/event-stream");
       headers.emplace("MCP-Protocol-Version",
                       std::string(protocol::McpProtocolVersion));
       headers.emplace(std::string(SessionHeader), session_id);
-      sse_client = std::make_unique<httplib::sse::SSEClient>(
-          *stream_client, path, headers);
+      sse_client = std::make_unique<httplib::sse::SSEClient>(*stream_client,
+                                                             path, headers);
       sse_client->set_reconnect_interval(250);
       sse_client->on_message([this](const httplib::sse::SSEMessage& message) {
         const auto handled = dispatch_event_payload(message.data, std::nullopt);

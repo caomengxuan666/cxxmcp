@@ -42,21 +42,22 @@ std::string TaskManagementService::make_task_id(std::size_t index) {
 
 std::vector<TaskManagementService::TaskRecord>::iterator
 TaskManagementService::find_task(std::string_view task_id) {
-  return std::find_if(tasks_.begin(), tasks_.end(), [&](const TaskRecord& task) {
-    return task.task.task_id == task_id;
-  });
+  return std::find_if(
+      tasks_.begin(), tasks_.end(),
+      [&](const TaskRecord& task) { return task.task.task_id == task_id; });
 }
 
 std::vector<TaskManagementService::TaskRecord>::const_iterator
 TaskManagementService::find_task(std::string_view task_id) const {
-  return std::find_if(tasks_.begin(), tasks_.end(), [&](const TaskRecord& task) {
-    return task.task.task_id == task_id;
-  });
+  return std::find_if(
+      tasks_.begin(), tasks_.end(),
+      [&](const TaskRecord& task) { return task.task.task_id == task_id; });
 }
 
 core::Result<protocol::Task> TaskManagementService::enqueue_task(
     std::function<core::Result<protocol::Json>()> job,
-    std::optional<std::int64_t> ttl, std::optional<std::int64_t> poll_interval) {
+    std::optional<std::int64_t> ttl,
+    std::optional<std::int64_t> poll_interval) {
   protocol::Task task;
   task.status = protocol::TaskStatus::Working;
   task.created_at = now_timestamp();
@@ -124,7 +125,8 @@ core::Result<protocol::Task> TaskManagementService::get_task(
   std::lock_guard<std::mutex> lock(mutex_);
   const auto it = find_task(task_id);
   if (it == tasks_.end()) {
-    return std::unexpected(make_task_error("task not found", std::string(task_id)));
+    return std::unexpected(
+        make_task_error("task not found", std::string(task_id)));
   }
   return it->task;
 }
@@ -134,7 +136,8 @@ core::Result<protocol::Json> TaskManagementService::get_task_result(
   std::lock_guard<std::mutex> lock(mutex_);
   const auto it = find_task(task_id);
   if (it == tasks_.end()) {
-    return std::unexpected(make_task_error("task not found", std::string(task_id)));
+    return std::unexpected(
+        make_task_error("task not found", std::string(task_id)));
   }
   if (it->result.has_value()) {
     return *it->result;
@@ -151,7 +154,8 @@ core::Result<protocol::Task> TaskManagementService::cancel_task(
   std::lock_guard<std::mutex> lock(mutex_);
   const auto it = find_task(task_id);
   if (it == tasks_.end()) {
-    return std::unexpected(make_task_error("task not found", std::string(task_id)));
+    return std::unexpected(
+        make_task_error("task not found", std::string(task_id)));
   }
   if (it->task.status == protocol::TaskStatus::Completed ||
       it->task.status == protocol::TaskStatus::Failed ||

@@ -1182,8 +1182,8 @@ core::Result<ParsedCommand> parse_cli11_command(
     return make_cli_error("unknown command", std::string(group));
   };
 
-  auto parse_servers_add_stdio =
-      [&](tcb::span<const std::string_view> tail) -> core::Result<ParsedCommand> {
+  auto parse_servers_add_stdio = [&](tcb::span<const std::string_view> tail)
+      -> core::Result<ParsedCommand> {
     ParsedCommand command{.kind = CommandKind::add_stdio_server};
     auto values = tail;
     while (!values.empty() && core::starts_with(values[0], "--")) {
@@ -1199,8 +1199,8 @@ core::Result<ParsedCommand> parse_cli11_command(
       }
       if (values[0] == "--cwd") {
         if (values.size() < 2) {
-          return std::unexpected(make_cli_error(
-              "invalid servers command", "missing value after --cwd"));
+          return std::unexpected(make_cli_error("invalid servers command",
+                                                "missing value after --cwd"));
         }
         command.options.push_back("cwd");
         command.options.push_back(values[1]);
@@ -1209,9 +1209,9 @@ core::Result<ParsedCommand> parse_cli11_command(
       }
       if (values[0] == "--env") {
         if (values.size() < 3) {
-          return std::unexpected(make_cli_error(
-              "invalid servers command",
-              "expected <name> <value> after --env"));
+          return std::unexpected(
+              make_cli_error("invalid servers command",
+                             "expected <name> <value> after --env"));
         }
         command.options.push_back("env");
         command.options.push_back(values[1]);
@@ -1223,8 +1223,8 @@ core::Result<ParsedCommand> parse_cli11_command(
           make_cli_error("invalid servers command", std::string(values[0])));
     }
     if (values.size() < 2) {
-      return std::unexpected(make_cli_error("invalid servers command",
-                                            "command is required"));
+      return std::unexpected(
+          make_cli_error("invalid servers command", "command is required"));
     }
     command.values.reserve(values.size());
     for (const auto value : values) {
@@ -1233,8 +1233,8 @@ core::Result<ParsedCommand> parse_cli11_command(
     return command;
   };
 
-  auto parse_servers_add_http =
-      [&](tcb::span<const std::string_view> tail) -> core::Result<ParsedCommand> {
+  auto parse_servers_add_http = [&](tcb::span<const std::string_view> tail)
+      -> core::Result<ParsedCommand> {
     ParsedCommand command{.kind = CommandKind::add_http_server};
     std::vector<std::string_view> headers;
     auto values = tail;
@@ -1254,8 +1254,9 @@ core::Result<ParsedCommand> parse_cli11_command(
             make_cli_error("invalid servers command", std::string(values[0])));
       }
       if (values.size() < 3) {
-        return std::unexpected(make_cli_error(
-            "invalid servers command", "expected <name> <value> after --header"));
+        return std::unexpected(
+            make_cli_error("invalid servers command",
+                           "expected <name> <value> after --header"));
       }
       headers.push_back(values[1]);
       headers.push_back(values[2]);
@@ -1272,8 +1273,8 @@ core::Result<ParsedCommand> parse_cli11_command(
     return command;
   };
 
-  auto parse_gateway_init_stdio =
-      [&](tcb::span<const std::string_view> tail) -> core::Result<ParsedCommand> {
+  auto parse_gateway_init_stdio = [&](tcb::span<const std::string_view> tail)
+      -> core::Result<ParsedCommand> {
     ParsedCommand command{.kind = CommandKind::init_stdio_gateway};
     auto store = [&](std::string_view value) -> std::string_view {
       command.storage.push_back(std::make_unique<std::string>(value));
@@ -1296,8 +1297,8 @@ core::Result<ParsedCommand> parse_cli11_command(
       }
       if (values[0] == "--path") {
         if (values.size() < 2) {
-          return std::unexpected(make_cli_error(
-              "invalid gateway command", "missing value after --path"));
+          return std::unexpected(make_cli_error("invalid gateway command",
+                                                "missing value after --path"));
         }
         stdio_path = store(values[1]);
         values = values.subspan(2);
@@ -1306,8 +1307,7 @@ core::Result<ParsedCommand> parse_cli11_command(
       if (values[0] == "--instructions") {
         if (values.size() < 2) {
           return std::unexpected(make_cli_error(
-              "invalid gateway command",
-              "missing value after --instructions"));
+              "invalid gateway command", "missing value after --instructions"));
         }
         command.options.push_back("instructions");
         command.options.push_back(values[1]);
@@ -1334,8 +1334,8 @@ core::Result<ParsedCommand> parse_cli11_command(
     return command;
   };
 
-  auto parse_gateway_init_http =
-      [&](tcb::span<const std::string_view> tail) -> core::Result<ParsedCommand> {
+  auto parse_gateway_init_http = [&](tcb::span<const std::string_view> tail)
+      -> core::Result<ParsedCommand> {
     ParsedCommand command{.kind = CommandKind::init_http_gateway};
     auto values = tail;
     bool http_trust = false;
@@ -1355,8 +1355,8 @@ core::Result<ParsedCommand> parse_cli11_command(
       }
       if (values[0] == "--path") {
         if (values.size() < 2) {
-          return std::unexpected(make_cli_error(
-              "invalid gateway command", "missing value after --path"));
+          return std::unexpected(make_cli_error("invalid gateway command",
+                                                "missing value after --path"));
         }
         http_path = values[1];
         values = values.subspan(2);
@@ -1365,8 +1365,7 @@ core::Result<ParsedCommand> parse_cli11_command(
       if (values[0] == "--instructions") {
         if (values.size() < 2) {
           return std::unexpected(make_cli_error(
-              "invalid gateway command",
-              "missing value after --instructions"));
+              "invalid gateway command", "missing value after --instructions"));
         }
         command.options.push_back("instructions");
         command.options.push_back(values[1]);
@@ -1378,8 +1377,9 @@ core::Result<ParsedCommand> parse_cli11_command(
             make_cli_error("invalid gateway command", std::string(values[0])));
       }
       if (values.size() < 3) {
-        return std::unexpected(make_cli_error(
-            "invalid gateway command", "expected <name> <value> after --header"));
+        return std::unexpected(
+            make_cli_error("invalid gateway command",
+                           "expected <name> <value> after --header"));
       }
       headers.push_back(values[1]);
       headers.push_back(values[2]);
@@ -1402,8 +1402,8 @@ core::Result<ParsedCommand> parse_cli11_command(
     return command;
   };
 
-  auto parse_gateway_client_config =
-      [&](tcb::span<const std::string_view> tail) -> core::Result<ParsedCommand> {
+  auto parse_gateway_client_config = [&](tcb::span<const std::string_view> tail)
+      -> core::Result<ParsedCommand> {
     ParsedCommand command{.kind = CommandKind::gateway_client_config};
     if (tail.empty() || tail.size() > 2) {
       return std::unexpected(make_cli_error("invalid gateway command"));
@@ -1416,7 +1416,8 @@ core::Result<ParsedCommand> parse_cli11_command(
   };
 
   auto parse_gateway_client_config_stdio =
-      [&](tcb::span<const std::string_view> tail) -> core::Result<ParsedCommand> {
+      [&](tcb::span<const std::string_view> tail)
+      -> core::Result<ParsedCommand> {
     ParsedCommand command{.kind = CommandKind::gateway_client_config_stdio};
     if (tail.empty() || tail.size() > 2) {
       return std::unexpected(make_cli_error("invalid gateway command"));
@@ -1428,8 +1429,8 @@ core::Result<ParsedCommand> parse_cli11_command(
     return command;
   };
 
-  auto parse_gateway_init =
-      [&](tcb::span<const std::string_view> tail) -> core::Result<ParsedCommand> {
+  auto parse_gateway_init = [&](tcb::span<const std::string_view> tail)
+      -> core::Result<ParsedCommand> {
     ParsedCommand command{.kind = CommandKind::init_gateway};
     auto values = tail;
     bool trust = false;
@@ -1449,8 +1450,7 @@ core::Result<ParsedCommand> parse_cli11_command(
       if (values[0] == "--instructions") {
         if (values.size() < 2) {
           return std::unexpected(make_cli_error(
-              "invalid gateway command",
-              "missing value after --instructions"));
+              "invalid gateway command", "missing value after --instructions"));
         }
         instructions = values[1];
         values = values.subspan(2);
@@ -1478,8 +1478,8 @@ core::Result<ParsedCommand> parse_cli11_command(
     return command;
   };
 
-  auto parse_gateway_init_all =
-      [&](tcb::span<const std::string_view> tail) -> core::Result<ParsedCommand> {
+  auto parse_gateway_init_all = [&](tcb::span<const std::string_view> tail)
+      -> core::Result<ParsedCommand> {
     ParsedCommand command{.kind = CommandKind::init_all_gateways};
     auto values = tail;
     bool trust = false;
@@ -1499,9 +1499,9 @@ core::Result<ParsedCommand> parse_cli11_command(
       }
       if (values[0] == "--profile-prefix") {
         if (values.size() < 2) {
-          return std::unexpected(make_cli_error(
-              "invalid gateway command",
-              "missing value after --profile-prefix"));
+          return std::unexpected(
+              make_cli_error("invalid gateway command",
+                             "missing value after --profile-prefix"));
         }
         profile_prefix = values[1];
         values = values.subspan(2);
@@ -1510,8 +1510,7 @@ core::Result<ParsedCommand> parse_cli11_command(
       if (values[0] == "--instructions") {
         if (values.size() < 2) {
           return std::unexpected(make_cli_error(
-              "invalid gateway command",
-              "missing value after --instructions"));
+              "invalid gateway command", "missing value after --instructions"));
         }
         instructions = values[1];
         values = values.subspan(2);
@@ -1541,8 +1540,8 @@ core::Result<ParsedCommand> parse_cli11_command(
     return command;
   };
 
-  auto parse_gateway_import_config =
-      [&](tcb::span<const std::string_view> tail) -> core::Result<ParsedCommand> {
+  auto parse_gateway_import_config = [&](tcb::span<const std::string_view> tail)
+      -> core::Result<ParsedCommand> {
     ParsedCommand command{.kind = CommandKind::import_gateway_config};
     auto values = tail;
     bool trust = false;
@@ -1562,9 +1561,9 @@ core::Result<ParsedCommand> parse_cli11_command(
       }
       if (values[0] == "--profile-prefix") {
         if (values.size() < 2) {
-          return std::unexpected(make_cli_error(
-              "invalid gateway command",
-              "missing value after --profile-prefix"));
+          return std::unexpected(
+              make_cli_error("invalid gateway command",
+                             "missing value after --profile-prefix"));
         }
         profile_prefix = values[1];
         values = values.subspan(2);
@@ -1573,8 +1572,7 @@ core::Result<ParsedCommand> parse_cli11_command(
       if (values[0] == "--instructions") {
         if (values.size() < 2) {
           return std::unexpected(make_cli_error(
-              "invalid gateway command",
-              "missing value after --instructions"));
+              "invalid gateway command", "missing value after --instructions"));
         }
         instructions = values[1];
         values = values.subspan(2);
@@ -1625,12 +1623,10 @@ core::Result<ParsedCommand> parse_cli11_command(
   if (args.size() >= 2 && args[0] == "gateway" && args[1] == "init-all") {
     return parse_gateway_init_all(args.subspan(2));
   }
-  if (args.size() >= 2 && args[0] == "gateway" &&
-      args[1] == "import-config") {
+  if (args.size() >= 2 && args[0] == "gateway" && args[1] == "import-config") {
     return parse_gateway_import_config(args.subspan(2));
   }
-  if (args.size() >= 2 && args[0] == "gateway" &&
-      args[1] == "client-config") {
+  if (args.size() >= 2 && args[0] == "gateway" && args[1] == "client-config") {
     return parse_gateway_client_config(args.subspan(2));
   }
   if (args.size() >= 2 && args[0] == "gateway" &&
@@ -1755,8 +1751,7 @@ core::Result<ParsedCommand> parse_cli11_command(
         append_option(cwd);
       }
       if (env_option->count() > 0) {
-        for (std::size_t index = 0; index + 1 < env_values.size();
-             index += 2) {
+        for (std::size_t index = 0; index + 1 < env_values.size(); index += 2) {
           append_option("env");
           append_option(env_values[index]);
           append_option(env_values[index + 1]);
@@ -2226,31 +2221,31 @@ core::Result<ParsedCommand> parse_cli11_command(
     init_stdio->add_option("host", stdio_host)->required();
     init_stdio->add_option("port", stdio_port)->required();
     init_stdio->add_option("command", stdio_command)->required();
-    init_stdio->callback(
-        [&, stdio_instructions_option, stdio_path_option, init_stdio]() {
-          parsed.kind = CommandKind::init_stdio_gateway;
-          command_selected = true;
-          append_value(stdio_discover ? "true" : "false");
-          append_value(stdio_trust ? "true" : "false");
-          if (stdio_path_option->count() > 0) {
-            append_value(stdio_path);
-          } else {
-            append_value(std::string_view{});
-          }
-          append_value(stdio_profile_id);
-          append_value(stdio_server_id);
-          append_value(stdio_host);
-          append_value(stdio_port);
-          append_value(stdio_command);
-          const auto stdio_extras = init_stdio->remaining_for_passthrough();
-          for (auto it = stdio_extras.rbegin(); it != stdio_extras.rend(); ++it) {
-            append_value(*it);
-          }
-          if (stdio_instructions_option->count() > 0) {
-            append_option("instructions");
-            append_option(stdio_instructions);
-          }
-        });
+    init_stdio->callback([&, stdio_instructions_option, stdio_path_option,
+                          init_stdio]() {
+      parsed.kind = CommandKind::init_stdio_gateway;
+      command_selected = true;
+      append_value(stdio_discover ? "true" : "false");
+      append_value(stdio_trust ? "true" : "false");
+      if (stdio_path_option->count() > 0) {
+        append_value(stdio_path);
+      } else {
+        append_value(std::string_view{});
+      }
+      append_value(stdio_profile_id);
+      append_value(stdio_server_id);
+      append_value(stdio_host);
+      append_value(stdio_port);
+      append_value(stdio_command);
+      const auto stdio_extras = init_stdio->remaining_for_passthrough();
+      for (auto it = stdio_extras.rbegin(); it != stdio_extras.rend(); ++it) {
+        append_value(*it);
+      }
+      if (stdio_instructions_option->count() > 0) {
+        append_option("instructions");
+        append_option(stdio_instructions);
+      }
+    });
 
     auto* init_http =
         add_leaf(*gateway, "init-http", CommandKind::init_http_gateway);
@@ -2949,8 +2944,8 @@ int add_stdio_server(app::ServerManagementService& management,
                      tcb::span<const std::string_view> options,
                      bool json_output, std::ostream& out, std::ostream& err) {
   if (values.size() < 2) {
-    write_service_error(err, make_cli_error("invalid servers command",
-                                            "command is required"));
+    write_service_error(
+        err, make_cli_error("invalid servers command", "command is required"));
     return 1;
   }
   app::StdioLaunchConfig stdio{

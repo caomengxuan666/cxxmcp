@@ -1,11 +1,11 @@
 // Copyright (c) 2025 [caomengxuan666]
 
-#include <chrono>
 #include <atomic>
-#include <functional>
+#include <chrono>
 #include <cstdint>
 #include <cstdlib>
 #include <filesystem>
+#include <functional>
 #include <iostream>
 #include <mutex>
 #include <optional>
@@ -68,9 +68,7 @@ std::string quote_path(const std::filesystem::path& path) {
   return "\"" + path.string() + "\"";
 }
 
-std::string quote_text(const std::string& value) {
-  return "\"" + value + "\"";
-}
+std::string quote_text(const std::string& value) { return "\"" + value + "\""; }
 
 bool run_command_with_timeout(const std::string& command,
                               std::chrono::milliseconds timeout) {
@@ -86,13 +84,12 @@ bool run_command_with_timeout(const std::string& command,
 
   PROCESS_INFORMATION process{};
   if (!CreateProcessW(nullptr, buffer.data(), nullptr, nullptr, FALSE,
-                      CREATE_NO_WINDOW, nullptr, nullptr, &startup,
-                      &process)) {
+                      CREATE_NO_WINDOW, nullptr, nullptr, &startup, &process)) {
     return false;
   }
 
-  const DWORD wait = WaitForSingleObject(
-      process.hProcess, static_cast<DWORD>(timeout.count()));
+  const DWORD wait = WaitForSingleObject(process.hProcess,
+                                         static_cast<DWORD>(timeout.count()));
   DWORD exit_code = 1;
   if (wait == WAIT_TIMEOUT) {
     TerminateProcess(process.hProcess, 1);
@@ -124,9 +121,9 @@ void build_conformance_client() {
   configure_cargo_proxy();
   set_process_env("CARGO_TARGET_DIR", conformance_target_dir().string());
 
-  const std::string command =
-      "cargo build --manifest-path " +
-      quote_path(conformance_manifest()) + " --bin conformance-client";
+  const std::string command = "cargo build --manifest-path " +
+                              quote_path(conformance_manifest()) +
+                              " --bin conformance-client";
   require(std::system(command.c_str()) == 0,
           "RMCP conformance client build should succeed");
 }
@@ -185,26 +182,28 @@ class RunningInteropServer {
         const auto tool_response = mcp::protocol::make_response(
             rpc_request->id,
             Json{
-                {"tools",
-                 Json::array({mcp::protocol::tool_definition_to_json(
-                     mcp::protocol::ToolDefinition{
-                         .name = "test_simple_text",
-                         .description = "Returns simple text content",
-                         .input_schema = Json{
-                             {"type", "object"},
-                             {"properties", Json::object()},
-                         },
-                         .streaming = false,
-                     })})},
+                {"tools", Json::array({mcp::protocol::tool_definition_to_json(
+                              mcp::protocol::ToolDefinition{
+                                  .name = "test_simple_text",
+                                  .description = "Returns simple text content",
+                                  .input_schema =
+                                      Json{
+                                          {"type", "object"},
+                                          {"properties", Json::object()},
+                                      },
+                                  .streaming = false,
+                              })})},
             });
-        const auto serialized = mcp::protocol::serialize_response(tool_response);
+        const auto serialized =
+            mcp::protocol::serialize_response(tool_response);
         require(serialized.has_value(), "tools/list response should serialize");
         response.set_content(*serialized, "application/json");
         return;
       }
 
       if (rpc_request->method == mcp::protocol::ToolsCallMethod) {
-        const auto tool_name = rpc_request->params.at("name").get<std::string>();
+        const auto tool_name =
+            rpc_request->params.at("name").get<std::string>();
         require(tool_name == "test_simple_text",
                 "interop server should receive the expected tool");
         mcp::protocol::ToolResult result;
@@ -215,7 +214,8 @@ class RunningInteropServer {
         });
         const auto call_response = mcp::protocol::make_response(
             rpc_request->id, mcp::protocol::tool_result_to_json(result));
-        const auto serialized = mcp::protocol::serialize_response(call_response);
+        const auto serialized =
+            mcp::protocol::serialize_response(call_response);
         require(serialized.has_value(), "tools/call response should serialize");
         response.set_content(*serialized, "application/json");
         return;
@@ -224,7 +224,8 @@ class RunningInteropServer {
       if (rpc_request->method == mcp::protocol::PingMethod) {
         const auto ping_response =
             mcp::protocol::make_response(rpc_request->id, Json::object());
-        const auto serialized = mcp::protocol::serialize_response(ping_response);
+        const auto serialized =
+            mcp::protocol::serialize_response(ping_response);
         require(serialized.has_value(), "ping response should serialize");
         response.set_content(*serialized, "application/json");
         return;
@@ -232,8 +233,8 @@ class RunningInteropServer {
 
       const auto error_response = mcp::protocol::make_error_response(
           rpc_request->id,
-          mcp::protocol::make_error(
-              mcp::protocol::ErrorCode::MethodNotFound, "unexpected method"));
+          mcp::protocol::make_error(mcp::protocol::ErrorCode::MethodNotFound,
+                                    "unexpected method"));
       const auto serialized = mcp::protocol::serialize_response(error_response);
       require(serialized.has_value(), "error response should serialize");
       response.status = 200;
@@ -304,10 +305,9 @@ void test_rmcp_conformance_client_tools_call() {
   const auto port = server.port();
 
   set_process_env("MCP_CONFORMANCE_SCENARIO", "tools_call");
-  const auto command = quote_path(conformance_client_executable()) +
-                       " " +
-                       quote_text("http://127.0.0.1:" + std::to_string(port) +
-                                  "/mcp");
+  const auto command =
+      quote_path(conformance_client_executable()) + " " +
+      quote_text("http://127.0.0.1:" + std::to_string(port) + "/mcp");
   require(run_command_with_timeout(command, std::chrono::seconds(60)),
           "RMCP conformance tools_call scenario should succeed");
 }

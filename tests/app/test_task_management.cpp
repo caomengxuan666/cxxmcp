@@ -23,9 +23,8 @@ void require(bool condition, std::string_view message) {
 void test_enqueue_task_completes_and_exposes_result() {
   mcp::app::TaskManagementService service;
 
-  const auto created = service.enqueue_task([]() -> mcp::core::Result<Json> {
-    return Json{{"value", 42}};
-  });
+  const auto created = service.enqueue_task(
+      []() -> mcp::core::Result<Json> { return Json{{"value", 42}}; });
   require(created.has_value(), "enqueue_task failed");
 
   for (int i = 0; i < 200; ++i) {
@@ -95,13 +94,13 @@ void test_enqueue_task_failure_cleans_up_record() {
       .queue_size = 0,
   });
 
-  const auto created = service.enqueue_task([]() -> mcp::core::Result<Json> {
-    return Json{{"value", 1}};
-  });
+  const auto created = service.enqueue_task(
+      []() -> mcp::core::Result<Json> { return Json{{"value", 1}}; });
   require(!created.has_value(), "enqueue_task should fail when queue is full");
 
   const auto tasks = service.list_tasks();
-  require(tasks.empty(), "failed enqueue should not leave behind a task record");
+  require(tasks.empty(),
+          "failed enqueue should not leave behind a task record");
 }
 
 }  // namespace

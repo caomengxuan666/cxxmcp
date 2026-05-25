@@ -634,18 +634,18 @@ void test_server_http_transport_emits_sse_retry_priming() {
       initialize_response->get_header_value("Mcp-Session-Id");
 
   std::string body;
-  const auto stream = http_client.Get(
-      kPath,
-      httplib::Headers{
-          {"Mcp-Session-Id", session_id},
-          {"Accept", "text/event-stream"},
-          {"MCP-Protocol-Version",
-           std::string(mcp::protocol::McpProtocolVersion)},
-      },
-      [&](const char* data, size_t len) {
-        body.append(data, len);
-        return body.find("retry: 3000") == std::string::npos;
-      });
+  const auto stream =
+      http_client.Get(kPath,
+                      httplib::Headers{
+                          {"Mcp-Session-Id", session_id},
+                          {"Accept", "text/event-stream"},
+                          {"MCP-Protocol-Version",
+                           std::string(mcp::protocol::McpProtocolVersion)},
+                      },
+                      [&](const char* data, size_t len) {
+                        body.append(data, len);
+                        return body.find("retry: 3000") == std::string::npos;
+                      });
   (void)stream;
 
   require(body.find("retry: 3000") != std::string::npos,
@@ -1095,17 +1095,17 @@ void test_client_http_transport_uses_uri_and_auth_header() {
 
     const auto parsed = mcp::protocol::parse_message(request.body);
     require(parsed.has_value(), "uri transport request should parse");
-    const auto* rpc_request = std::get_if<mcp::protocol::JsonRpcRequest>(&*parsed);
+    const auto* rpc_request =
+        std::get_if<mcp::protocol::JsonRpcRequest>(&*parsed);
     require(rpc_request != nullptr, "uri transport should send a request");
     require(rpc_request->method == mcp::protocol::PingMethod,
             "uri transport should send ping");
 
-    response.set_content(
-        serialize_test_response(mcp::protocol::JsonRpcResponse{
-            .id = rpc_request->id,
-            .result = Json::object(),
-        }),
-        "application/json");
+    response.set_content(serialize_test_response(mcp::protocol::JsonRpcResponse{
+                             .id = rpc_request->id,
+                             .result = Json::object(),
+                         }),
+                         "application/json");
     request_seen.store(true);
   });
 
@@ -1137,7 +1137,8 @@ void test_client_connect_streamable_http_accepts_uri_string() {
                                         httplib::Response& response) {
     const auto parsed = mcp::protocol::parse_message(request.body);
     require(parsed.has_value(), "uri client request should parse");
-    const auto* rpc_request = std::get_if<mcp::protocol::JsonRpcRequest>(&*parsed);
+    const auto* rpc_request =
+        std::get_if<mcp::protocol::JsonRpcRequest>(&*parsed);
     require(rpc_request != nullptr, "uri client should send a request");
     request_count.fetch_add(1);
 
@@ -1150,8 +1151,8 @@ void test_client_connect_streamable_http_accepts_uri_string() {
                       {"protocolVersion",
                        std::string(mcp::protocol::McpProtocolVersion)},
                       {"capabilities", Json::object()},
-                      {"serverInfo", Json{{"name", "uri-test"},
-                                          {"version", "1"}}},
+                      {"serverInfo",
+                       Json{{"name", "uri-test"}, {"version", "1"}}},
                   },
           }),
           "application/json");
@@ -1160,16 +1161,15 @@ void test_client_connect_streamable_http_accepts_uri_string() {
 
     require(rpc_request->method == mcp::protocol::PingMethod,
             "uri client should send ping");
-    response.set_content(
-        serialize_test_response(mcp::protocol::JsonRpcResponse{
-            .id = rpc_request->id,
-            .result = Json::object(),
-        }),
-        "application/json");
+    response.set_content(serialize_test_response(mcp::protocol::JsonRpcResponse{
+                             .id = rpc_request->id,
+                             .result = Json::object(),
+                         }),
+                         "application/json");
   });
 
-  const auto uri = "http://127.0.0.1:" + std::to_string(fixture.port()) +
-                   "/uri-mcp";
+  const auto uri =
+      "http://127.0.0.1:" + std::to_string(fixture.port()) + "/uri-mcp";
   auto client = mcp::client::Client::connect_streamable_http(uri);
   const auto pong = client.ping();
 
