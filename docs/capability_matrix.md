@@ -90,18 +90,20 @@ These are implementation adapters, not the product identity.
 | Layer | Required libraries |
 |---|---|
 | protocol | `nlohmann/json`, `jsonrpcpp`, standard library |
-| client | `cpp-httplib`, `nlohmann/json`, `spdlog` |
-| server | `cpp-httplib`, `OpenSSL`, `nlohmann/json`, `spdlog` |
+| client | `cpp-httplib`, `nlohmann/json`, standard library |
+| server | `cpp-httplib`, `nlohmann/json`, standard library |
 | extensions/plugin-sdk | `nlohmann/json`, standard library |
 | extensions/adapters | `nlohmann/json`, SDK core, plugin-sdk |
-| runtime | `nlohmann/json`, `spdlog`, standard library |
-| tools/cli | `CLI11`, `spdlog`, `runtime`, `client`, `server` |
+| runtime | `nlohmann/json`, standard library |
+| observability | `spdlog` |
+| tools/cli | `CLI11`, `runtime`, `client`, `server` |
 | gui | deferred; no active CMake target |
 
 ## Notes
-- `cpp-httplib` covers the HTTP, HTTPS, and SSE compatibility path we need without introducing Asio.
+- `cpp-httplib` covers the HTTP and SSE compatibility path we need without introducing Asio.
+- HTTPS/TLS support should be treated as an explicit future TLS-backend build variant, not a default SDK dependency.
 - `CLI11` is the right fit for a dense command surface with composable subcommands.
-- `spdlog` keeps logging consistent across CLI and runtime code.
+- `spdlog` stays isolated in the observability layer unless a higher layer opts into it.
 - GUI work is paused. When it returns, it should stay a thin shell over `runtime`.
 - The facade should stay modern and readable even if the internal build uses C++20 or newer.
 - The public SDK should still expose raw protocol and transport escape hatches, while `Peer` / `Service` remains the primary entry point.
