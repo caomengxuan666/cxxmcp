@@ -6,6 +6,7 @@
 #include <stdexcept>
 #include <string>
 #include <string_view>
+#include <utility>
 
 #include "cxxmcp/peer.hpp"
 #include "cxxmcp/protocol/serialization.hpp"
