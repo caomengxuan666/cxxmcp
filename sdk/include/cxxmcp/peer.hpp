@@ -282,10 +282,14 @@ class Peer<RoleClient> {
   }
 
   std::vector<protocol::Root> list_roots() const {
+    if (native_transport_) {
+      return roots_;
+    }
     return client_.list_roots();
   }
 
   Peer& set_roots(std::vector<protocol::Root> roots) {
+    roots_ = roots;
     client_.set_roots(std::move(roots));
     return *this;
   }
@@ -297,95 +301,237 @@ class Peer<RoleClient> {
   }
 
   Peer& on_initialized(client::Client::InitializedHandler handler) {
+    initialized_handler_ = handler;
     client_.on_initialized(std::move(handler));
     return *this;
   }
 
   Peer& on_cancelled(client::Client::CancelledHandler handler) {
+    cancelled_handler_ = handler;
     client_.on_cancelled(std::move(handler));
     return *this;
   }
 
   Peer& on_logging_message(client::Client::LoggingMessageHandler handler) {
+    logging_message_handler_ = handler;
     client_.on_logging_message(std::move(handler));
     return *this;
   }
 
   Peer& on_tool_list_changed(client::Client::ListChangedHandler handler) {
+    tool_list_changed_handler_ = handler;
     client_.on_tool_list_changed(std::move(handler));
     return *this;
   }
 
   Peer& on_prompt_list_changed(client::Client::ListChangedHandler handler) {
+    prompt_list_changed_handler_ = handler;
     client_.on_prompt_list_changed(std::move(handler));
     return *this;
   }
 
   Peer& on_resource_list_changed(client::Client::ListChangedHandler handler) {
+    resource_list_changed_handler_ = handler;
     client_.on_resource_list_changed(std::move(handler));
     return *this;
   }
 
   Peer& on_resource_updated(client::Client::ResourceUpdatedHandler handler) {
+    resource_updated_handler_ = handler;
     client_.on_resource_updated(std::move(handler));
     return *this;
   }
 
   Peer& on_progress(client::Client::ProgressHandler handler) {
+    progress_handler_ = handler;
     client_.on_progress(std::move(handler));
     return *this;
   }
 
   Peer& on_elicitation_complete(
       client::Client::ElicitationCompleteHandler handler) {
+    elicitation_complete_handler_ = handler;
     client_.on_elicitation_complete(std::move(handler));
     return *this;
   }
 
   Peer& on_task_status(client::Client::TaskStatusHandler handler) {
+    task_status_handler_ = handler;
     client_.on_task_status(std::move(handler));
     return *this;
   }
 
   Peer& on_roots_list_changed(client::Client::ListChangedHandler handler) {
+    roots_list_changed_handler_ = handler;
     client_.on_roots_list_changed(std::move(handler));
     return *this;
   }
 
   Peer& on_list_roots_request(client::Client::ListRootsRequestHandler handler) {
+    roots_list_request_handler_ = handler;
     client_.on_list_roots_request(std::move(handler));
     return *this;
   }
 
   Peer& on_create_message_request(
       client::Client::CreateMessageRequestHandler handler) {
+    sampling_request_handler_ = handler;
     client_.on_create_message_request(std::move(handler));
     return *this;
   }
 
   Peer& on_create_elicitation_request(
       client::Client::CreateElicitationRequestHandler handler) {
+    elicitation_request_handler_ = handler;
     client_.on_create_elicitation_request(std::move(handler));
     return *this;
   }
 
   Peer& on_custom_request(client::Client::CustomRequestHandler handler) {
+    custom_request_handler_ = handler;
     client_.on_custom_request(std::move(handler));
     return *this;
   }
 
   Peer& on_raw_notification(client::Client::RawNotificationHandler handler) {
+    raw_notification_handler_ = handler;
     client_.on_raw_notification(std::move(handler));
     return *this;
   }
 
   Peer& set_handler(const client::ClientHandler& handler) {
-    client_.set_handler(handler);
+    if (handler.on_initialized) {
+      on_initialized(handler.on_initialized);
+    }
+    if (handler.on_cancelled) {
+      on_cancelled(handler.on_cancelled);
+    }
+    if (handler.on_logging_message) {
+      on_logging_message(handler.on_logging_message);
+    }
+    if (handler.on_tool_list_changed) {
+      on_tool_list_changed(handler.on_tool_list_changed);
+    }
+    if (handler.on_prompt_list_changed) {
+      on_prompt_list_changed(handler.on_prompt_list_changed);
+    }
+    if (handler.on_resource_list_changed) {
+      on_resource_list_changed(handler.on_resource_list_changed);
+    }
+    if (handler.on_resource_updated) {
+      on_resource_updated(handler.on_resource_updated);
+    }
+    if (handler.on_progress) {
+      on_progress(handler.on_progress);
+    }
+    if (handler.on_elicitation_complete) {
+      on_elicitation_complete(handler.on_elicitation_complete);
+    }
+    if (handler.on_task_status) {
+      on_task_status(handler.on_task_status);
+    }
+    if (handler.on_roots_list_changed) {
+      on_roots_list_changed(handler.on_roots_list_changed);
+    }
+    if (handler.on_list_roots_request) {
+      on_list_roots_request(handler.on_list_roots_request);
+    }
+    if (handler.on_create_message_request) {
+      on_create_message_request(handler.on_create_message_request);
+    }
+    if (handler.on_create_elicitation_request) {
+      on_create_elicitation_request(handler.on_create_elicitation_request);
+    }
+    if (handler.on_custom_request) {
+      on_custom_request(handler.on_custom_request);
+    }
+    if (handler.on_roots_list_request) {
+      on_list_roots_request(handler.on_roots_list_request);
+    }
+    if (handler.on_sampling_request) {
+      on_create_message_request(handler.on_sampling_request);
+    }
+    if (handler.on_elicitation_request) {
+      on_create_elicitation_request(handler.on_elicitation_request);
+    }
+    if (handler.on_raw_notification) {
+      on_raw_notification(handler.on_raw_notification);
+    }
+    if (handler.on_custom_notification) {
+      on_raw_notification(handler.on_custom_notification);
+    }
     return *this;
   }
 
   Peer& set_handler(const client::ClientHandlerInterface& handler) {
-    client_.set_handler(handler);
+    on_initialized([&handler]() { handler.on_initialized(); });
+    on_cancelled([&handler](const protocol::RequestId& request_id,
+                            std::string_view reason) {
+      handler.on_cancelled(request_id, reason);
+    });
+    on_logging_message(
+        [&handler](std::string_view level, std::string_view message) {
+          handler.on_logging_message(level, message);
+        });
+    on_tool_list_changed([&handler]() { handler.on_tool_list_changed(); });
+    on_prompt_list_changed([&handler]() { handler.on_prompt_list_changed(); });
+    on_resource_list_changed(
+        [&handler]() { handler.on_resource_list_changed(); });
+    on_resource_updated([&handler](const std::string& uri) {
+      handler.on_resource_updated(uri);
+    });
+    on_progress([&handler](const protocol::ProgressNotificationParams& params) {
+      handler.on_progress(params);
+    });
+    on_elicitation_complete([&handler](std::string_view elicitation_id) {
+      handler.on_elicitation_complete(elicitation_id);
+    });
+    on_task_status([&handler](const protocol::Task& task) {
+      handler.on_task_status(task);
+    });
+    on_roots_list_changed([&handler]() { handler.on_roots_list_changed(); });
+    on_list_roots_request(
+        [&handler]() -> core::Result<protocol::RootsListResult> {
+          const auto response = handler.on_list_roots_request();
+          if (response.has_value()) {
+            return std::move(*response);
+          }
+          return std::unexpected(client::handler_method_not_found(
+              "client handler does not handle list_roots"));
+        });
+    on_create_message_request(
+        [&handler](const protocol::CreateMessageParams& params)
+            -> core::Result<protocol::CreateMessageResult> {
+          const auto response = handler.on_create_message_request(params);
+          if (response.has_value()) {
+            return std::move(*response);
+          }
+          return std::unexpected(client::handler_method_not_found(
+              "client handler does not handle create_message"));
+        });
+    on_create_elicitation_request(
+        [&handler](const protocol::CreateElicitationRequestParam& params)
+            -> core::Result<protocol::CreateElicitationResult> {
+          const auto response = handler.on_create_elicitation_request(params);
+          if (response.has_value()) {
+            return std::move(*response);
+          }
+          return std::unexpected(client::handler_method_not_found(
+              "client handler does not handle elicitation"));
+        });
+    on_custom_request([&handler](const protocol::JsonRpcRequest& request)
+                          -> core::Result<protocol::Json> {
+      const auto response = handler.on_custom_request(request);
+      if (response.has_value()) {
+        return std::move(*response);
+      }
+      return std::unexpected(client::handler_method_not_found(
+          "client handler does not handle custom request"));
+    });
+    on_raw_notification(
+        [&handler](const protocol::JsonRpcNotification& notification) {
+          handler.on_raw_notification(notification);
+        });
     return *this;
   }
 
@@ -1097,7 +1243,8 @@ class Peer<RoleClient> {
   core::Result<std::optional<protocol::JsonRpcMessage>> dispatch_message(
       const protocol::JsonRpcMessage& message) {
     if (const auto* request = std::get_if<protocol::JsonRpcRequest>(&message)) {
-      auto handled = client_.handle_request(*request);
+      auto handled = native_transport_ ? handle_native_request(*request)
+                                       : client_.handle_request(*request);
       if (!handled) {
         return protocol::JsonRpcMessage{protocol::make_error_response(
             request->id,
@@ -1108,7 +1255,9 @@ class Peer<RoleClient> {
 
     if (const auto* notification =
             std::get_if<protocol::JsonRpcNotification>(&message)) {
-      const auto handled = client_.handle_notification(*notification);
+      const auto handled = native_transport_
+                               ? handle_native_notification(*notification)
+                               : client_.handle_notification(*notification);
       if (!handled) {
         return std::unexpected(handled.error());
       }
@@ -1134,6 +1283,215 @@ class Peer<RoleClient> {
  private:
   std::int64_t next_peer_request_id() noexcept {
     return next_request_id_->fetch_add(1, std::memory_order_relaxed);
+  }
+
+  static protocol::JsonRpcResponse native_error_response(
+      const protocol::JsonRpcRequest& request, const core::Error& error) {
+    return protocol::make_error_response(
+        std::optional<protocol::RequestId>{request.id},
+        protocol::make_error(
+            error.code, error.message,
+            error.detail.empty()
+                ? std::nullopt
+                : std::optional<protocol::Json>{error.detail}));
+  }
+
+  static protocol::JsonRpcResponse native_error_response(
+      const protocol::JsonRpcRequest& request, protocol::ErrorCode code,
+      std::string message, std::string detail = {}) {
+    return protocol::make_error_response(
+        std::optional<protocol::RequestId>{request.id},
+        protocol::make_error(
+            code, std::move(message),
+            detail.empty() ? std::nullopt
+                           : std::optional<protocol::Json>{std::move(detail)}));
+  }
+
+  core::Result<core::Unit> handle_native_notification(
+      const protocol::JsonRpcNotification& notification) try {
+    if (notification.method == std::string(protocol::InitializedMethod) &&
+        initialized_handler_) {
+      initialized_handler_();
+    } else if (notification.method ==
+                   std::string(protocol::CancelledNotificationMethod) &&
+               cancelled_handler_) {
+      const auto params = protocol::cancelled_notification_params_from_json(
+          notification.params);
+      if (!params) {
+        return std::unexpected(
+            errors::make(protocol::ErrorCode::InvalidParams,
+                         "cancelled notification requires a requestId"));
+      }
+      cancelled_handler_(params->request_id, params->reason);
+    } else if (notification.method ==
+                   std::string(protocol::LoggingMessageNotificationMethod) &&
+               logging_message_handler_) {
+      std::string level;
+      std::string message;
+      if (notification.params.is_object()) {
+        if (notification.params.contains("level") &&
+            notification.params.at("level").is_string()) {
+          level = notification.params.at("level").get<std::string>();
+        }
+        if (notification.params.contains("data")) {
+          if (notification.params.at("data").is_string()) {
+            message = notification.params.at("data").get<std::string>();
+          } else {
+            message = notification.params.at("data").dump();
+          }
+        }
+      }
+      logging_message_handler_(level, message);
+    } else if (notification.method ==
+                   std::string(protocol::ToolsListChangedNotificationMethod) &&
+               tool_list_changed_handler_) {
+      tool_list_changed_handler_();
+    } else if (notification.method ==
+                   std::string(
+                       protocol::PromptsListChangedNotificationMethod) &&
+               prompt_list_changed_handler_) {
+      prompt_list_changed_handler_();
+    } else if (notification.method ==
+                   std::string(
+                       protocol::ResourcesListChangedNotificationMethod) &&
+               resource_list_changed_handler_) {
+      resource_list_changed_handler_();
+    } else if (notification.method ==
+                   std::string(protocol::ResourcesUpdatedNotificationMethod) &&
+               resource_updated_handler_) {
+      if (!notification.params.is_object() ||
+          !notification.params.contains("uri") ||
+          !notification.params.at("uri").is_string()) {
+        return std::unexpected(errors::make(
+            protocol::ErrorCode::InvalidParams,
+            "resource updated notification requires a string uri"));
+      }
+      resource_updated_handler_(
+          notification.params.at("uri").get<std::string>());
+    } else if (notification.method ==
+                   std::string(protocol::ProgressNotificationMethod) &&
+               progress_handler_) {
+      const auto params =
+          protocol::progress_notification_params_from_json(notification.params);
+      if (!params) {
+        return std::unexpected(
+            errors::make(protocol::ErrorCode::InvalidParams,
+                         "progress notification requires valid params"));
+      }
+      progress_handler_(*params);
+    } else if (notification.method ==
+                   std::string(
+                       protocol::ElicitationCompleteNotificationMethod) &&
+               elicitation_complete_handler_) {
+      const auto params =
+          protocol::elicitation_complete_notification_params_from_json(
+              notification.params);
+      if (!params) {
+        return std::unexpected(errors::make(
+            protocol::ErrorCode::InvalidParams,
+            "elicitation completion notification requires valid params"));
+      }
+      elicitation_complete_handler_(params->elicitation_id);
+    } else if (notification.method ==
+                   std::string(protocol::TasksStatusNotificationMethod) &&
+               task_status_handler_) {
+      const auto task = protocol::task_from_json(notification.params);
+      if (!task) {
+        return std::unexpected(
+            errors::make(protocol::ErrorCode::InvalidParams,
+                         "task status notification requires valid task data"));
+      }
+      task_status_handler_(*task);
+    } else if (notification.method ==
+                   std::string(protocol::RootsListChangedNotificationMethod) &&
+               roots_list_changed_handler_) {
+      roots_list_changed_handler_();
+    }
+
+    if (raw_notification_handler_) {
+      raw_notification_handler_(notification);
+    }
+    return core::Unit{};
+  } catch (const std::exception& ex) {
+    return std::unexpected(errors::handler_failed(ex.what()));
+  } catch (...) {
+    return std::unexpected(errors::handler_unknown_exception());
+  }
+
+  core::Result<protocol::JsonRpcResponse> handle_native_request(
+      const protocol::JsonRpcRequest& request) try {
+    if (request.method == std::string(protocol::PingMethod)) {
+      return protocol::make_response(request.id, protocol::Json::object());
+    }
+
+    if (request.method == std::string(protocol::RootsListMethod)) {
+      if (roots_list_request_handler_) {
+        const auto roots = roots_list_request_handler_();
+        if (!roots) {
+          return native_error_response(request, roots.error());
+        }
+        return protocol::make_response(
+            request.id, protocol::roots_list_result_to_json(*roots));
+      }
+
+      protocol::RootsListResult result;
+      result.roots = roots_;
+      return protocol::make_response(
+          request.id, protocol::roots_list_result_to_json(result));
+    }
+
+    if (request.method == std::string(protocol::SamplingCreateMessageMethod)) {
+      if (!sampling_request_handler_) {
+        return native_error_response(
+            request, protocol::ErrorCode::MethodNotFound,
+            "sampling request handler is not configured");
+      }
+      const auto params =
+          protocol::create_message_params_from_json(request.params);
+      if (!params) {
+        return native_error_response(request, params.error());
+      }
+      const auto result = sampling_request_handler_(*params);
+      if (!result) {
+        return native_error_response(request, result.error());
+      }
+      return protocol::make_response(
+          request.id, protocol::create_message_result_to_json(*result));
+    }
+
+    if (request.method == std::string(protocol::ElicitationCreateMethod)) {
+      if (!elicitation_request_handler_) {
+        return native_error_response(
+            request, protocol::ErrorCode::MethodNotFound,
+            "elicitation request handler is not configured");
+      }
+      const auto params =
+          protocol::create_elicitation_request_param_from_json(request.params);
+      if (!params) {
+        return native_error_response(request, params.error());
+      }
+      const auto result = elicitation_request_handler_(*params);
+      if (!result) {
+        return native_error_response(request, result.error());
+      }
+      return protocol::make_response(
+          request.id, protocol::create_elicitation_result_to_json(*result));
+    }
+
+    if (custom_request_handler_) {
+      const auto result = custom_request_handler_(request);
+      if (!result) {
+        return native_error_response(request, result.error());
+      }
+      return protocol::make_response(request.id, std::move(*result));
+    }
+
+    return native_error_response(request, protocol::ErrorCode::MethodNotFound,
+                                 "method not found", request.method);
+  } catch (const std::exception& ex) {
+    return native_error_response(request, errors::handler_failed(ex.what()));
+  } catch (...) {
+    return native_error_response(request, errors::handler_unknown_exception());
   }
 
   core::Result<protocol::Json> request_json(std::string method,
@@ -1223,6 +1581,23 @@ class Peer<RoleClient> {
   std::shared_ptr<std::atomic<std::int64_t>> next_request_id_ =
       std::make_shared<std::atomic<std::int64_t>>(1);
   std::optional<protocol::ClientCapabilities> client_capabilities_;
+  std::vector<protocol::Root> roots_;
+  client::Client::InitializedHandler initialized_handler_;
+  client::Client::CancelledHandler cancelled_handler_;
+  client::Client::LoggingMessageHandler logging_message_handler_;
+  client::Client::ListChangedHandler tool_list_changed_handler_;
+  client::Client::ListChangedHandler prompt_list_changed_handler_;
+  client::Client::ListChangedHandler resource_list_changed_handler_;
+  client::Client::ResourceUpdatedHandler resource_updated_handler_;
+  client::Client::ProgressHandler progress_handler_;
+  client::Client::ElicitationCompleteHandler elicitation_complete_handler_;
+  client::Client::TaskStatusHandler task_status_handler_;
+  client::Client::ListChangedHandler roots_list_changed_handler_;
+  client::Client::RootsListRequestHandler roots_list_request_handler_;
+  client::Client::SamplingRequestHandler sampling_request_handler_;
+  client::Client::ElicitationRequestHandler elicitation_request_handler_;
+  client::Client::CustomRequestHandler custom_request_handler_;
+  client::Client::RawNotificationHandler raw_notification_handler_;
   client::Client client_;
 };
 

@@ -77,6 +77,8 @@ incrementally. Keep them concrete; do not replace them with broad claims.
         `client::Client`.
   - [x] `ClientPeer` exposes client-side handler registration helpers so
         canonical examples do not need `peer.client()` for normal callbacks.
+  - [x] Native `ClientPeer` inbound request and notification dispatch uses
+        Peer-owned roots and handler state instead of concrete `client::Client`.
   - [x] `ServerPeer` exposes server-side handler registration helpers so normal
         callbacks do not need `peer.server()`.
   - [x] `ClientPeer::client()` and `ServerPeer::server()` are retained as

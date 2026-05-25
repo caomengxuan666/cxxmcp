@@ -29,4 +29,6 @@
   direct server transport path.
 - Documented why concrete stdio transports do not own duplicate in-flight
   request-id validation.
+- Moved native `ClientPeer` inbound request and notification dispatch onto
+  Peer-owned roots and handler state.
 - Added a dedicated SDK umbrella test for `cxxmcp/sdk.hpp`.
