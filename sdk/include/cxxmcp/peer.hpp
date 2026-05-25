@@ -1966,7 +1966,23 @@ class Peer<RoleServer> {
         return detail::peer_error_response(request, call.error());
       }
       if (call->task.has_value()) {
-        return server_->handle_request(request, context);
+        const auto valid = server_->tools().validate(*call);
+        if (!valid) {
+          return detail::peer_error_response(request, valid.error());
+        }
+        const auto task_manager = server_->task_manager();
+        if (!task_manager) {
+          return detail::peer_error_response(
+              request, errors::make(protocol::ErrorCode::MethodNotFound,
+                                    "task processor is not configured"));
+        }
+        const auto task =
+            task_manager->submit_tool_call(server_->tools(), *call, context);
+        if (!task) {
+          return detail::peer_error_response(request, task.error());
+        }
+        return protocol::make_response(
+            request.id, protocol::create_task_result_to_json(*task));
       }
 
       const auto request_cancellation =

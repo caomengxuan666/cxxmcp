@@ -827,6 +827,56 @@ void test_server_peer_tool_call_dispatches_on_peer_boundary() {
           "tool call should receive peer cancellation token");
 }
 
+void test_server_peer_task_aware_tool_call_dispatches_on_peer_boundary() {
+  auto server =
+      std::make_unique<mcp::server::Server>(mcp::server::ServerOptions{});
+  server->use_task_manager();
+  std::atomic<int> calls{0};
+  const auto added = server->tools().add(
+      mcp::protocol::ToolDefinition{
+          .name = "task-tool",
+          .description = "Task-aware tool",
+          .input_schema = Json{{"type", "object"}},
+          .execution = mcp::protocol::ToolExecution{}.with_task_support(
+              mcp::protocol::TaskSupport::Optional),
+      },
+      [&](const mcp::server::ToolContext& context) {
+        calls.fetch_add(1, std::memory_order_relaxed);
+        require(context.task.has_value(), "task-aware tool task missing");
+        require(context.task->ttl == 15, "task-aware tool ttl mismatch");
+        mcp::protocol::ToolResult result;
+        result.content.push_back(mcp::protocol::ContentBlock{
+            .type = "text",
+            .text = context.session_id,
+            .data = Json::object(),
+        });
+        return result;
+      });
+  require(added.has_value(), "task-aware tool add failed");
+  mcp::ServerPeer peer(std::move(server));
+
+  RecordingServerContractTransport transport;
+  transport.received.push_back(mcp::protocol::JsonRpcRequest{
+      .method = std::string(mcp::protocol::ToolsCallMethod),
+      .params = Json{{"name", "task-tool"},
+                     {"arguments", Json::object()},
+                     {"task", Json{{"ttl", 15}}}},
+      .id = mcp::protocol::RequestId{std::int64_t{51}},
+  });
+  const auto served = peer.serve_transport(
+      transport, mcp::server::SessionContext{.session_id = "task-session"});
+  require(served.has_value(),
+          "server peer task-aware tool call dispatch should succeed");
+  require(transport.sent.size() == 1,
+          "task-aware tool call should send one response");
+  const auto* response =
+      std::get_if<mcp::protocol::JsonRpcResponse>(&transport.sent.front());
+  require(response != nullptr, "task-aware tool response missing");
+  require(response->result.has_value(), "task-aware tool result missing");
+  require(response->result->contains("task"),
+          "task-aware tool call should create a task");
+}
+
 void test_server_peer_prompt_resource_dispatches_on_peer_boundary() {
   auto server =
       mcp::server::App::builder()
@@ -1552,6 +1602,7 @@ int main() {
     test_server_peer_initialize_dispatches_on_peer_boundary();
     test_server_peer_tool_discovery_dispatches_on_peer_boundary();
     test_server_peer_tool_call_dispatches_on_peer_boundary();
+    test_server_peer_task_aware_tool_call_dispatches_on_peer_boundary();
     test_server_peer_prompt_resource_dispatches_on_peer_boundary();
     test_server_peer_resource_subscriptions_use_native_transport_identity();
     test_server_peer_handler_requests_dispatch_on_peer_boundary();

@@ -93,6 +93,8 @@ incrementally. Keep them concrete; do not replace them with broad claims.
         raw-handler override.
   - [x] `ServerPeer` handles non-task `tools/call` requests at the Peer
         boundary with Peer-owned cancellation token propagation.
+  - [x] `ServerPeer` handles task-aware `tools/call` requests at the Peer
+        boundary by invoking the configured task manager directly.
   - [x] `ServerPeer` handles prompt and resource discovery/read requests at the
         Peer boundary while preserving full session context for handlers.
   - [x] `ServerPeer` handles resource subscribe/unsubscribe requests at the Peer
