@@ -228,6 +228,22 @@ if(TARGET mcp_client AND TARGET mcp_test_stdio_child)
 
     add_test(NAME process_stdio_transport COMMAND mcp_process_stdio_transport_tests)
     cxxmcp_mark_release_blocking(process_stdio_transport transport process-stdio)
+
+    add_test(NAME interop_typescript_client_process_stdio
+        COMMAND node
+            "${PROJECT_SOURCE_DIR}/tests/fixtures/process_stdio_client_node.mjs"
+            "$<TARGET_FILE:mcp_test_stdio_child>"
+    )
+    cxxmcp_mark_release_blocking(
+        interop_typescript_client_process_stdio interop process-stdio)
+
+    add_test(NAME interop_python_client_process_stdio
+        COMMAND uv run --with mcp python
+            "${PROJECT_SOURCE_DIR}/tests/fixtures/process_stdio_client.py"
+            "$<TARGET_FILE:mcp_test_stdio_child>"
+    )
+    cxxmcp_mark_release_blocking(
+        interop_python_client_process_stdio interop process-stdio)
 endif()
 
 if(TARGET mcp_app AND TARGET mcp_gateway)

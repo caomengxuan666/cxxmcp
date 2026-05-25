@@ -76,4 +76,7 @@ jobs:
         run: cmake --build build-process-stdio --target mcp_process_stdio_transport_tests
 
       - name: Run process-stdio tests
-        run: ctest --test-dir build-process-stdio -R "^process_stdio_transport$" --output-on-failure --timeout 300
+        run: >
+          ctest --test-dir build-process-stdio
+          -R "^(process_stdio_transport|interop_typescript_client_process_stdio|interop_python_client_process_stdio)$"
+          --output-on-failure --timeout 300

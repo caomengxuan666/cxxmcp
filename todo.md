@@ -72,8 +72,10 @@ incrementally. Keep them concrete; do not replace them with broad claims.
         fixture.
   - [x] cxxmcp process-stdio client runs against a Python SDK server fixture.
   - [ ] RMCP client against cxxmcp process-stdio server is not closed.
-  - [ ] TypeScript SDK client against cxxmcp server is not closed.
-  - [ ] Python SDK client against cxxmcp server is not closed.
+  - [x] TypeScript SDK client against cxxmcp process-stdio server is covered by
+        a release-blocking CTest fixture.
+  - [x] Python SDK client against cxxmcp process-stdio server is covered by a
+        release-blocking CTest fixture.
   - [x] Stdio interop without process ownership is covered by a role-generic
         client/server stream round-trip.
   - [x] Linux and macOS process-stdio jobs are declared to close the
@@ -309,9 +311,9 @@ true:
 - [x] Test cxxmcp client against RMCP server.
 - [ ] Test RMCP client against cxxmcp server.
 - [x] Test cxxmcp client against TypeScript SDK server.
-- [ ] Test TypeScript SDK client against cxxmcp server.
+- [x] Test TypeScript SDK client against cxxmcp server.
 - [x] Test cxxmcp client against Python SDK server.
-- [ ] Test Python SDK client against cxxmcp server.
+- [x] Test Python SDK client against cxxmcp server.
 - [ ] Make the interop matrix release-blocking.
 - [x] Label the existing RMCP conformance and process-stdio matrix tests as
   release-blocking CTest entries.
