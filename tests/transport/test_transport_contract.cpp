@@ -65,6 +65,8 @@ void test_role_generic_transport_contract() {
 
   QueueTransport transport;
   require(transport.name() == "queue", "transport name mismatch");
+  require(transport.diagnostics().is_object(),
+          "default diagnostics should be an object");
 
   const auto sent = transport.send(mcp::protocol::JsonRpcRequest{
       .method = "ping",

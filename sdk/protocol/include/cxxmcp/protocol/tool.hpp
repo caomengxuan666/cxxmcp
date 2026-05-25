@@ -288,6 +288,8 @@ struct ToolCall {
   Json arguments = Json::object();
   /// Optional task request parameters when asynchronous execution is desired.
   std::optional<TaskRequestParameters> task;
+  /// Optional `_meta` extension object preserved on the wire.
+  std::optional<Json> meta;
 };
 
 /// @brief Result object for `tools/list`.
@@ -296,6 +298,8 @@ struct ToolsListResult {
   std::vector<ToolDefinition> tools;
   /// Optional cursor for retrieving the next page.
   std::optional<std::string> next_cursor;
+  /// Optional `_meta` extension object preserved on the wire.
+  std::optional<Json> meta;
 };
 
 /// @brief Result object for `tools/call`.
@@ -306,6 +310,8 @@ struct ToolResult {
   std::optional<Json> structured_content;
   /// True when the tool call completed with a domain-level error result.
   bool is_error = false;
+  /// Optional `_meta` extension object preserved on the wire.
+  std::optional<Json> meta;
 };
 
 /// @brief Builds an InvalidRequest error for tool JSON validation failures.
@@ -616,6 +622,9 @@ inline Json tools_list_result_to_json(const ToolsListResult& result) {
   if (result.next_cursor.has_value()) {
     json["nextCursor"] = *result.next_cursor;
   }
+  if (result.meta.has_value()) {
+    json["_meta"] = *result.meta;
+  }
   return json;
 }
 
@@ -647,6 +656,13 @@ inline core::Result<ToolsListResult> tools_list_result_from_json(
     }
     result.next_cursor = json.at("nextCursor").get<std::string>();
   }
+  if (json.contains("_meta")) {
+    if (!json.at("_meta").is_object()) {
+      return std::unexpected(
+          tool_json_error("tools/list result _meta must be an object"));
+    }
+    result.meta = json.at("_meta");
+  }
   return result;
 }
 
@@ -659,6 +675,9 @@ inline Json tool_call_to_json(const ToolCall& call) {
   }
   if (call.task.has_value()) {
     json["task"] = task_request_parameters_to_json(*call.task);
+  }
+  if (call.meta.has_value()) {
+    json["_meta"] = *call.meta;
   }
   return json;
 }
@@ -691,6 +710,13 @@ inline core::Result<ToolCall> tool_call_from_json(const Json& json) {
     }
     call.task = *task;
   }
+  if (json.contains("_meta")) {
+    if (!json.at("_meta").is_object()) {
+      return std::unexpected(
+          tool_json_error("tools/call _meta must be an object"));
+    }
+    call.meta = json.at("_meta");
+  }
   return call;
 }
 
@@ -706,6 +732,9 @@ inline Json tool_result_to_json(const ToolResult& result) {
   }
   if (result.is_error) {
     json["isError"] = true;
+  }
+  if (result.meta.has_value()) {
+    json["_meta"] = *result.meta;
   }
   return json;
 }
@@ -742,6 +771,14 @@ inline core::Result<ToolResult> tool_result_from_json(const Json& json) {
           tool_json_error("tool result isError must be a boolean"));
     }
     result.is_error = json.at("isError").get<bool>();
+  }
+
+  if (json.contains("_meta")) {
+    if (!json.at("_meta").is_object()) {
+      return std::unexpected(
+          tool_json_error("tool result _meta must be an object"));
+    }
+    result.meta = json.at("_meta");
   }
 
   return result;

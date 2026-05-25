@@ -914,10 +914,8 @@ class TypedToolBuilder {
   template <class Handler>
   TypedToolRegistration<Args, Result, Handler> handler(Handler value) {
     detail::require_callable(value, "tool");
-    return TypedToolRegistration<Args, Result, Handler>{
-        .definition = std::move(definition_),
-        .handler = std::move(value),
-    };
+    return TypedToolRegistration<Args, Result, Handler>{std::move(definition_),
+                                                        std::move(value)};
   }
 
  private:

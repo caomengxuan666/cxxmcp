@@ -24,6 +24,13 @@ namespace mcp::protocol {
 /// @brief JSON value type used by all protocol DTOs.
 using Json = nlohmann::json;
 
+/// @brief Protocol `_meta` object used by request params, results, and
+/// notifications.
+///
+/// The SDK keeps metadata as JSON for forward compatibility, while helper
+/// functions below provide typed access to well-known MCP metadata members.
+using Meta = Json;
+
 /// @brief JSON-RPC request or response identifier.
 ///
 /// JSON-RPC permits string and integer ids. Notifications intentionally do not
@@ -328,6 +335,38 @@ inline std::optional<ProgressToken> progress_token_from_json(const Json& json) {
     return json.get<std::string>();
   }
   return std::nullopt;
+}
+
+/// @brief Returns true when a value is a valid protocol `_meta` object.
+inline bool meta_is_object(const Json& meta) noexcept {
+  return meta.is_object();
+}
+
+/// @brief Creates a metadata object carrying a progress token.
+inline Meta meta_with_progress_token(ProgressToken token) {
+  Meta meta = Meta::object();
+  meta["progressToken"] = progress_token_to_json(token);
+  return meta;
+}
+
+/// @brief Reads `progressToken` from a metadata object.
+///
+/// Invalid metadata shapes or invalid token values return nullopt.
+inline std::optional<ProgressToken> meta_progress_token(const Json& meta) {
+  if (!meta.is_object() || !meta.contains("progressToken")) {
+    return std::nullopt;
+  }
+  return progress_token_from_json(meta.at("progressToken"));
+}
+
+/// @brief Sets `progressToken` on an existing metadata object.
+/// @return False if `meta` is not an object.
+inline bool set_meta_progress_token(Json& meta, ProgressToken token) {
+  if (!meta.is_object()) {
+    return false;
+  }
+  meta["progressToken"] = progress_token_to_json(token);
+  return true;
 }
 
 /// @brief Serializes cancellation notification parameters.

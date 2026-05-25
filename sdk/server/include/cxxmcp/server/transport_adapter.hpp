@@ -36,7 +36,10 @@ inline core::Error adapter_error(std::string_view message) {
 ///
 /// Outbound request responses are queued for receive(). Inbound client
 /// messages still belong to the concrete transport's start() callback model and
-/// are not synthesized by this adapter.
+/// are not synthesized by this adapter. This compatibility adapter is not
+/// internally synchronized; callers must serialize send(), receive(), and
+/// close() access unless the wrapped transport and caller add their own
+/// synchronization.
 class TransportContractAdapter final : public transport::ServerTransport {
  public:
   explicit TransportContractAdapter(mcp::server::Transport& transport)
@@ -103,6 +106,7 @@ class TransportContractAdapter final : public transport::ServerTransport {
 /// requests and notifications through server handlers, and writes request
 /// responses back to the transport. send_request() and send_notification()
 /// provide the legacy server-side outbound API over the same message contract.
+/// send_request() calls must be serialized by the caller.
 class ContractTransportAdapter final : public mcp::server::Transport {
  public:
   explicit ContractTransportAdapter(transport::ServerTransport& transport)
@@ -261,11 +265,10 @@ class ContractTransportAdapter final : public mcp::server::Transport {
   }
 
   SessionContext session_context() noexcept {
-    return SessionContext{
-        .session_id = {},
-        .remote_address = std::string(name()),
-        .transport = this,
-    };
+    SessionContext context;
+    context.remote_address = std::string(name());
+    context.transport = this;
+    return context;
   }
 
   static protocol::ErrorObject error_object_from_core_error(
@@ -274,11 +277,11 @@ class ContractTransportAdapter final : public mcp::server::Transport {
     if (!error.detail.empty()) {
       data = error.detail;
     }
-    return protocol::ErrorObject{
-        .code = error.code,
-        .message = error.message,
-        .data = std::move(data),
-    };
+    protocol::ErrorObject object;
+    object.code = error.code;
+    object.message = error.message;
+    object.data = std::move(data);
+    return object;
   }
 
   std::unique_ptr<transport::ServerTransport> owned_;

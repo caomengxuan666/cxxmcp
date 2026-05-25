@@ -120,12 +120,11 @@ core::Result<core::Unit> StdioTransport::start(
     if (const auto* notification =
             std::get_if<protocol::JsonRpcNotification>(&*message)) {
       if (notification_handler) {
-        const auto handled =
-            notification_handler(*notification, SessionContext{
-                                                    .session_id = "stdio",
-                                                    .remote_address = "stdio",
-                                                    .transport = this,
-                                                });
+        SessionContext context;
+        context.session_id = "stdio";
+        context.remote_address = "stdio";
+        context.transport = this;
+        const auto handled = notification_handler(*notification, context);
         if (!handled) {
           running_ = false;
           return std::unexpected(handled.error());
@@ -147,11 +146,11 @@ core::Result<core::Unit> StdioTransport::start(
       continue;
     }
 
-    auto response = handler(*request, SessionContext{
-                                          .session_id = "stdio",
-                                          .remote_address = "stdio",
-                                          .transport = this,
-                                      });
+    SessionContext context;
+    context.session_id = "stdio";
+    context.remote_address = "stdio";
+    context.transport = this;
+    auto response = handler(*request, context);
     if (!response) {
       response = protocol::make_error_response(
           std::optional<protocol::RequestId>{request->id},

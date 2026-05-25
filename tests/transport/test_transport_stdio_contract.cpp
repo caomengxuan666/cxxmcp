@@ -21,6 +21,10 @@ void test_stdio_transport_sends_messages() {
   std::istringstream input;
   std::ostringstream output;
   mcp::transport::ClientStdioTransport transport(input, output);
+  const auto diagnostics = transport.diagnostics();
+  require(diagnostics.at("name") == "stdio", "stdio diagnostics name mismatch");
+  require(diagnostics.at("closed") == false,
+          "stdio diagnostics closed mismatch");
 
   const auto sent = transport.send(mcp::protocol::JsonRpcRequest{
       .method = "ping",
@@ -66,6 +70,8 @@ void test_stdio_transport_reports_parse_errors_and_close() {
           "invalid stdio error code mismatch");
 
   require(transport.close().has_value(), "stdio close failed");
+  require(transport.diagnostics().at("closed") == true,
+          "stdio diagnostics should report closed");
   const auto after_close = transport.receive();
   require(after_close.has_value(), "stdio receive after close should succeed");
   require(!after_close->has_value(), "stdio receive after close should end");

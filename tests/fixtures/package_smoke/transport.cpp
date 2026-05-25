@@ -33,17 +33,16 @@ class SmokeTransport final : public mcp::transport::ClientTransport {
 
 int main() {
   SmokeTransport transport;
-  const auto sent = transport.send(mcp::protocol::JsonRpcNotification{
-      .method = "notifications/initialized",
-  });
+  mcp::protocol::JsonRpcNotification notification;
+  notification.method = "notifications/initialized";
+  const auto sent = transport.send(notification);
   const auto closed = transport.close();
   std::istringstream input;
   std::ostringstream output;
   mcp::transport::ClientStdioTransport stdio_transport(input, output);
-  const auto stdio_sent =
-      stdio_transport.send(mcp::protocol::JsonRpcNotification{
-          .method = "notifications/initialized",
-      });
+  mcp::protocol::JsonRpcNotification stdio_notification;
+  stdio_notification.method = "notifications/initialized";
+  const auto stdio_sent = stdio_transport.send(stdio_notification);
   return sent.has_value() && closed.has_value() && transport.closed() &&
                  stdio_sent.has_value()
              ? 0

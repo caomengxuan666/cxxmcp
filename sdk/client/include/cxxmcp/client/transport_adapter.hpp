@@ -36,7 +36,10 @@ inline core::Error adapter_error(std::string_view message) {
 ///
 /// Request responses are queued for receive(). Inbound server-to-client
 /// requests and notifications still belong to the concrete transport's start()
-/// callback model and are not synthesized by this adapter.
+/// callback model and are not synthesized by this adapter. This compatibility
+/// adapter is not internally synchronized; callers must serialize send(),
+/// receive(), and close() access unless the wrapped transport and caller add
+/// their own synchronization.
 class TransportContractAdapter final : public transport::ClientTransport {
  public:
   explicit TransportContractAdapter(mcp::client::Transport& transport)
@@ -101,7 +104,8 @@ class TransportContractAdapter final : public transport::ClientTransport {
 /// This lets the established Client and ClientPeer facades run over the
 /// role-generic transport contract. Inbound notifications and requests received
 /// while waiting for the matching response are dispatched through handlers
-/// installed with start().
+/// installed with start(). This compatibility adapter expects send() calls to
+/// be serialized by the caller.
 class ContractTransportAdapter final : public mcp::client::Transport {
  public:
   explicit ContractTransportAdapter(transport::ClientTransport& transport)
@@ -225,11 +229,11 @@ class ContractTransportAdapter final : public mcp::client::Transport {
     if (!error.detail.empty()) {
       data = error.detail;
     }
-    return protocol::ErrorObject{
-        .code = error.code,
-        .message = error.message,
-        .data = std::move(data),
-    };
+    protocol::ErrorObject object;
+    object.code = error.code;
+    object.message = error.message;
+    object.data = std::move(data);
+    return object;
   }
 
   std::unique_ptr<transport::ClientTransport> owned_;

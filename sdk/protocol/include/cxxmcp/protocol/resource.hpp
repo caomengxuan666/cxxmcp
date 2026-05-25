@@ -48,6 +48,8 @@ struct ResourcesListResult {
   std::vector<Resource> resources;
   /// Optional cursor for retrieving the next page.
   std::optional<std::string> next_cursor;
+  /// Optional `_meta` extension object preserved on the wire.
+  std::optional<Json> meta;
 };
 
 /// @brief URI template advertised by `resources/templates/list`.
@@ -78,18 +80,24 @@ struct ResourceTemplatesListResult {
   std::vector<ResourceTemplate> resource_templates;
   /// Optional cursor for retrieving the next page.
   std::optional<std::string> next_cursor;
+  /// Optional `_meta` extension object preserved on the wire.
+  std::optional<Json> meta;
 };
 
 /// @brief Parameters for `resources/read`.
 struct ResourcesReadParams {
   /// URI of the resource to read.
   std::string uri;
+  /// Optional `_meta` extension object preserved on the wire.
+  std::optional<Json> meta;
 };
 
 /// @brief Parameters for `resources/subscribe`.
 struct ResourcesSubscribeParams {
   /// URI of the resource to subscribe to.
   std::string uri;
+  /// Optional `_meta` extension object preserved on the wire.
+  std::optional<Json> meta;
 };
 
 /// @brief Parameters for `resources/unsubscribe`.
@@ -105,12 +113,16 @@ struct ResourceContents {
   std::optional<std::string> text;
   /// Base64-encoded binary content when the resource is not text.
   std::optional<std::string> blob;
+  /// Optional `_meta` extension object preserved on the wire.
+  std::optional<Json> meta;
 };
 
 /// @brief Result object for `resources/read`.
 struct ResourcesReadResult {
   /// One or more content parts for the requested URI.
   std::vector<ResourceContents> contents;
+  /// Optional `_meta` extension object preserved on the wire.
+  std::optional<Json> meta;
 };
 
 /// @brief Builds an InvalidRequest error for resource JSON validation failures.
@@ -337,6 +349,9 @@ inline Json resources_list_result_to_json(const ResourcesListResult& result) {
   if (result.next_cursor.has_value()) {
     json["nextCursor"] = *result.next_cursor;
   }
+  if (result.meta.has_value()) {
+    json["_meta"] = *result.meta;
+  }
   return json;
 }
 
@@ -368,6 +383,13 @@ inline core::Result<ResourcesListResult> resources_list_result_from_json(
     }
     result.next_cursor = json.at("nextCursor").get<std::string>();
   }
+  if (json.contains("_meta")) {
+    if (!json.at("_meta").is_object()) {
+      return std::unexpected(
+          resource_json_error("resources/list result _meta must be an object"));
+    }
+    result.meta = json.at("_meta");
+  }
   return result;
 }
 
@@ -382,6 +404,9 @@ inline Json resource_templates_list_result_to_json(
   }
   if (result.next_cursor.has_value()) {
     json["nextCursor"] = *result.next_cursor;
+  }
+  if (result.meta.has_value()) {
+    json["_meta"] = *result.meta;
   }
   return json;
 }
@@ -415,12 +440,23 @@ resource_templates_list_result_from_json(const Json& json) {
     }
     result.next_cursor = json.at("nextCursor").get<std::string>();
   }
+  if (json.contains("_meta")) {
+    if (!json.at("_meta").is_object()) {
+      return std::unexpected(resource_json_error(
+          "resources/templates/list result _meta must be an object"));
+    }
+    result.meta = json.at("_meta");
+  }
   return result;
 }
 
 /// @brief Serializes `resources/read` params.
 inline Json resources_read_params_to_json(const ResourcesReadParams& params) {
-  return Json{{"uri", params.uri}};
+  Json json = Json{{"uri", params.uri}};
+  if (params.meta.has_value()) {
+    json["_meta"] = *params.meta;
+  }
+  return json;
 }
 
 /// @brief Parses `resources/read` params.
@@ -435,13 +471,26 @@ inline core::Result<ResourcesReadParams> resources_read_params_from_json(
     return std::unexpected(
         resource_json_error("resources/read params require a string uri"));
   }
-  return ResourcesReadParams{json.at("uri").get<std::string>()};
+  ResourcesReadParams params;
+  params.uri = json.at("uri").get<std::string>();
+  if (json.contains("_meta")) {
+    if (!json.at("_meta").is_object()) {
+      return std::unexpected(
+          resource_json_error("resources/read _meta must be an object"));
+    }
+    params.meta = json.at("_meta");
+  }
+  return params;
 }
 
 /// @brief Serializes `resources/subscribe` params.
 inline Json resources_subscribe_params_to_json(
     const ResourcesSubscribeParams& params) {
-  return Json{{"uri", params.uri}};
+  Json json = Json{{"uri", params.uri}};
+  if (params.meta.has_value()) {
+    json["_meta"] = *params.meta;
+  }
+  return json;
 }
 
 /// @brief Parses `resources/subscribe` params.
@@ -456,7 +505,16 @@ resources_subscribe_params_from_json(const Json& json) {
     return std::unexpected(
         resource_json_error("resources subscribe params require a string uri"));
   }
-  return ResourcesSubscribeParams{json.at("uri").get<std::string>()};
+  ResourcesSubscribeParams params;
+  params.uri = json.at("uri").get<std::string>();
+  if (json.contains("_meta")) {
+    if (!json.at("_meta").is_object()) {
+      return std::unexpected(
+          resource_json_error("resources subscribe _meta must be an object"));
+    }
+    params.meta = json.at("_meta");
+  }
+  return params;
 }
 
 /// @brief Serializes `resources/unsubscribe` params.
@@ -484,6 +542,9 @@ inline Json resource_contents_to_json(const ResourceContents& contents) {
   }
   if (contents.blob.has_value()) {
     json["blob"] = *contents.blob;
+  }
+  if (contents.meta.has_value()) {
+    json["_meta"] = *contents.meta;
   }
   return json;
 }
@@ -525,6 +586,13 @@ inline core::Result<ResourceContents> resource_contents_from_json(
     }
     contents.blob = json.at("blob").get<std::string>();
   }
+  if (json.contains("_meta")) {
+    if (!json.at("_meta").is_object()) {
+      return std::unexpected(
+          resource_json_error("resource contents _meta must be an object"));
+    }
+    contents.meta = json.at("_meta");
+  }
   if (!contents.text.has_value() && !contents.blob.has_value()) {
     return std::unexpected(
         resource_json_error("resource contents require text or blob"));
@@ -538,6 +606,9 @@ inline Json resources_read_result_to_json(const ResourcesReadResult& result) {
   json["contents"] = Json::array();
   for (const auto& contents : result.contents) {
     json["contents"].push_back(resource_contents_to_json(contents));
+  }
+  if (result.meta.has_value()) {
+    json["_meta"] = *result.meta;
   }
   return json;
 }
@@ -562,6 +633,13 @@ inline core::Result<ResourcesReadResult> resources_read_result_from_json(
       return std::unexpected(contents.error());
     }
     result.contents.push_back(*contents);
+  }
+  if (json.contains("_meta")) {
+    if (!json.at("_meta").is_object()) {
+      return std::unexpected(
+          resource_json_error("resources/read result _meta must be an object"));
+    }
+    result.meta = json.at("_meta");
   }
   return result;
 }

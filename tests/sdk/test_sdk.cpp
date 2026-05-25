@@ -1,13 +1,18 @@
 // Copyright (c) 2025 [caomengxuan666]
 
+#include <atomic>
+#include <chrono>
+#include <condition_variable>
 #include <deque>
 #include <functional>
 #include <iostream>
 #include <memory>
+#include <mutex>
 #include <optional>
 #include <stdexcept>
 #include <string>
 #include <string_view>
+#include <thread>
 #include <utility>
 #include <variant>
 #include <vector>
@@ -178,6 +183,42 @@ class RecordingServerContractTransport final
   bool stopped = false;
 };
 
+class BlockingServerContractTransport final
+    : public mcp::transport::ServerTransport {
+ public:
+  std::string_view name() const noexcept override {
+    return "blocking-server-contract";
+  }
+
+  mcp::core::Result<mcp::core::Unit> send(TxMessage message) override {
+    std::lock_guard lock(mutex_);
+    sent.push_back(std::move(message));
+    return mcp::core::Unit{};
+  }
+
+  mcp::core::Result<std::optional<RxMessage>> receive() override {
+    std::unique_lock lock(mutex_);
+    cv_.wait(lock, [&] { return stopped; });
+    return std::nullopt;
+  }
+
+  mcp::core::Result<mcp::core::Unit> close() override {
+    {
+      std::lock_guard lock(mutex_);
+      stopped = true;
+    }
+    cv_.notify_all();
+    return mcp::core::Unit{};
+  }
+
+  std::vector<TxMessage> sent;
+  bool stopped = false;
+
+ private:
+  std::mutex mutex_;
+  std::condition_variable cv_;
+};
+
 void test_sdk_peer_and_service_surface() {
   mcp::CancellationSource cancellation_source;
   const auto cancellation_token = cancellation_source.token();
@@ -266,6 +307,13 @@ void test_sdk_peer_and_service_surface() {
   require(server_call->content.front().text == "{\"value\":\"server\"}",
           "server tool call result mismatch");
 
+  auto server_service_transport =
+      std::make_unique<BlockingServerContractTransport>();
+  auto* server_service_transport_ptr = server_service_transport.get();
+  require(server_peer.add_transport(std::move(server_service_transport))
+              .has_value(),
+          "server peer service transport should be accepted");
+
   auto running_server = mcp::serve(std::move(server_peer));
   require(running_server.has_value(), "server service should start");
   require(running_server->running(), "server service should report running");
@@ -276,10 +324,12 @@ void test_sdk_peer_and_service_surface() {
   require(server_service_token.cancelled(),
           "server service token should cancel on close");
   require(running_server->wait().has_value(), "server service wait failed");
+  require(server_service_transport_ptr->stopped,
+          "server service transport should close");
 
   mcp::ServerPeer contract_server_peer;
   auto server_contract_transport =
-      std::make_unique<RecordingServerContractTransport>();
+      std::make_unique<BlockingServerContractTransport>();
   auto* server_contract_transport_ptr = server_contract_transport.get();
   require(
       contract_server_peer.add_transport(std::move(server_contract_transport))
@@ -294,6 +344,52 @@ void test_sdk_peer_and_service_surface() {
           "server peer generic transport service should wait");
   require(server_contract_transport_ptr->stopped,
           "server peer generic transport should close");
+}
+
+void test_running_service_moved_from_is_inert() {
+  auto client_transport = std::make_unique<RecordingClientTransport>();
+  auto* client_transport_ptr = client_transport.get();
+  auto running_client =
+      mcp::serve(mcp::ClientPeer(std::move(client_transport)));
+  require(running_client.has_value(), "client service should start");
+  auto moved_client = std::move(*running_client);
+  require(!running_client->running(),
+          "moved-from client service should report stopped");
+  require(running_client->stop().has_value(),
+          "moved-from client service stop should be a no-op");
+  require(running_client->wait().has_value(),
+          "moved-from client service wait should be a no-op");
+  require(!client_transport_ptr->stopped,
+          "moved-from client service should not stop moved peer");
+  require(moved_client.running(), "moved client service should remain running");
+  require(moved_client.close().has_value(),
+          "moved client service close should succeed");
+  require(client_transport_ptr->stopped,
+          "moved client service should stop transport");
+
+  mcp::server::ServerOptions options;
+  options.server_name = "moved-server";
+  options.server_version = "1";
+  auto server = std::make_unique<mcp::server::Server>(std::move(options));
+  mcp::ServerPeer server_peer(std::move(server));
+  auto server_transport = std::make_unique<BlockingServerContractTransport>();
+  auto* server_transport_ptr = server_transport.get();
+  require(server_peer.add_transport(std::move(server_transport)).has_value(),
+          "moved server service transport should be accepted");
+  auto running_server = mcp::serve(std::move(server_peer));
+  require(running_server.has_value(), "server service should start");
+  auto moved_server = std::move(*running_server);
+  require(!running_server->running(),
+          "moved-from server service should report stopped");
+  require(running_server->stop().has_value(),
+          "moved-from server service stop should be a no-op");
+  require(running_server->wait().has_value(),
+          "moved-from server service wait should be a no-op");
+  require(moved_server.running(), "moved server service should remain running");
+  require(moved_server.close().has_value(),
+          "moved server service close should succeed");
+  require(server_transport_ptr->stopped,
+          "moved server service should stop transport");
 }
 
 void test_request_handle_rejects_invalid_state() {
@@ -313,6 +409,201 @@ void test_request_handle_rejects_invalid_state() {
           "empty request task should not produce a value");
   require(empty_task_result.error().message == "request task is not configured",
           "empty request task should report configuration error");
+}
+
+void test_request_handle_latches_terminal_timeout() {
+  std::atomic<int> cancel_count{0};
+  auto handle = mcp::RequestHandle<Json>::spawn(
+      std::int64_t{42}, std::chrono::milliseconds(1), std::nullopt,
+      [&](std::string reason) -> mcp::core::Result<mcp::core::Unit> {
+        require(reason == "request timeout", "timeout cancel reason mismatch");
+        cancel_count.fetch_add(1);
+        return mcp::core::Unit{};
+      },
+      []() -> mcp::core::Result<Json> {
+        std::this_thread::sleep_for(std::chrono::milliseconds(50));
+        return Json{{"late", true}};
+      });
+
+  const auto first = handle.await_response();
+  require(!first.has_value(), "first await should time out");
+  require(first.error().message == "request timed out",
+          "first timeout message mismatch");
+
+  std::this_thread::sleep_for(std::chrono::milliseconds(75));
+  const auto second = handle.await_response();
+  require(!second.has_value(), "late response should remain timed out");
+  require(second.error().message == "request timed out",
+          "second timeout message mismatch");
+  require(cancel_count.load() == 1,
+          "timeout cancellation notification should be sent once");
+}
+
+void test_request_handle_latches_terminal_cancellation() {
+  mcp::CancellationSource cancellation;
+  std::atomic<int> cancel_count{0};
+  auto handle = mcp::RequestHandle<Json>::spawn(
+      std::int64_t{43}, std::nullopt, cancellation.token(),
+      [&](std::string reason) -> mcp::core::Result<mcp::core::Unit> {
+        require(reason == "request cancelled", "token cancel reason mismatch");
+        cancel_count.fetch_add(1);
+        return mcp::core::Unit{};
+      },
+      []() -> mcp::core::Result<Json> {
+        std::this_thread::sleep_for(std::chrono::milliseconds(50));
+        return Json{{"late", true}};
+      });
+
+  cancellation.cancel();
+  const auto first = handle.await_response();
+  require(!first.has_value(), "first await should cancel");
+  require(first.error().message == "request cancelled",
+          "first cancellation message mismatch");
+
+  std::this_thread::sleep_for(std::chrono::milliseconds(75));
+  const auto second = handle.await_response();
+  require(!second.has_value(), "late response should remain cancelled");
+  require(second.error().message == "request cancelled",
+          "second cancellation message mismatch");
+  require(cancel_count.load() == 1,
+          "token cancellation notification should be sent once");
+}
+
+void test_request_handle_cancellation_race_stress() {
+  constexpr int kRequestCount = 24;
+  std::atomic<int> ready_waiters{0};
+  std::atomic<bool> release_tasks{false};
+  std::atomic<int> cancel_count{0};
+  std::atomic<int> cancelled_results{0};
+  std::atomic<int> unexpected_results{0};
+  mcp::CancellationSource cancellation;
+
+  std::vector<mcp::RequestHandle<Json>> handles;
+  handles.reserve(kRequestCount);
+  for (int i = 0; i < kRequestCount; ++i) {
+    handles.push_back(mcp::RequestHandle<Json>::spawn(
+        std::int64_t{1000 + i}, std::chrono::milliseconds(1000),
+        cancellation.token(),
+        [&](std::string reason) -> mcp::core::Result<mcp::core::Unit> {
+          if (reason != "request cancelled") {
+            unexpected_results.fetch_add(1);
+          }
+          cancel_count.fetch_add(1);
+          return mcp::core::Unit{};
+        },
+        [&]() -> mcp::core::Result<Json> {
+          while (!release_tasks.load(std::memory_order_acquire)) {
+            std::this_thread::sleep_for(std::chrono::milliseconds(1));
+          }
+          return Json{{"late", true}};
+        }));
+  }
+
+  std::vector<std::thread> waiters;
+  waiters.reserve(handles.size());
+  for (const auto& handle : handles) {
+    waiters.emplace_back([&, handle]() {
+      ready_waiters.fetch_add(1, std::memory_order_acq_rel);
+      const auto result = handle.await_response();
+      if (!result.has_value() &&
+          result.error().message == "request cancelled") {
+        cancelled_results.fetch_add(1);
+      } else {
+        unexpected_results.fetch_add(1);
+      }
+    });
+  }
+
+  while (ready_waiters.load(std::memory_order_acquire) != kRequestCount) {
+    std::this_thread::yield();
+  }
+  cancellation.cancel();
+  for (auto& waiter : waiters) {
+    waiter.join();
+  }
+  release_tasks.store(true, std::memory_order_release);
+
+  require(cancelled_results.load() == kRequestCount,
+          "all cancellation race waiters should observe cancellation");
+  require(cancel_count.load() == kRequestCount,
+          "each raced cancellation request should notify exactly once");
+  require(unexpected_results.load() == 0,
+          "cancellation race should not produce unexpected results");
+
+  std::this_thread::sleep_for(std::chrono::milliseconds(20));
+  for (const auto& handle : handles) {
+    const auto repeated = handle.await_response();
+    require(!repeated.has_value(),
+            "late cancellation result should stay error");
+    require(repeated.error().message == "request cancelled",
+            "late cancellation result should stay cancelled");
+  }
+  require(cancel_count.load() == kRequestCount,
+          "late cancellation awaits should not send another notification");
+}
+
+void test_request_handle_timeout_race_stress() {
+  constexpr int kRequestCount = 24;
+  std::atomic<bool> release_tasks{false};
+  std::atomic<int> cancel_count{0};
+  std::atomic<int> timeout_results{0};
+  std::atomic<int> unexpected_results{0};
+
+  std::vector<mcp::RequestHandle<Json>> handles;
+  handles.reserve(kRequestCount);
+  for (int i = 0; i < kRequestCount; ++i) {
+    handles.push_back(mcp::RequestHandle<Json>::spawn(
+        std::int64_t{2000 + i}, std::chrono::milliseconds(2), std::nullopt,
+        [&](std::string reason) -> mcp::core::Result<mcp::core::Unit> {
+          if (reason != "request timeout") {
+            unexpected_results.fetch_add(1);
+          }
+          cancel_count.fetch_add(1);
+          return mcp::core::Unit{};
+        },
+        [&]() -> mcp::core::Result<Json> {
+          while (!release_tasks.load(std::memory_order_acquire)) {
+            std::this_thread::sleep_for(std::chrono::milliseconds(1));
+          }
+          return Json{{"late", true}};
+        }));
+  }
+
+  std::vector<std::thread> waiters;
+  waiters.reserve(handles.size());
+  for (const auto& handle : handles) {
+    waiters.emplace_back([&, handle]() {
+      const auto result = handle.await_response();
+      if (!result.has_value() &&
+          result.error().message == "request timed out") {
+        timeout_results.fetch_add(1);
+      } else {
+        unexpected_results.fetch_add(1);
+      }
+    });
+  }
+
+  for (auto& waiter : waiters) {
+    waiter.join();
+  }
+  release_tasks.store(true, std::memory_order_release);
+
+  require(timeout_results.load() == kRequestCount,
+          "all timeout race waiters should observe timeout");
+  require(cancel_count.load() == kRequestCount,
+          "each raced timeout request should notify exactly once");
+  require(unexpected_results.load() == 0,
+          "timeout race should not produce unexpected results");
+
+  std::this_thread::sleep_for(std::chrono::milliseconds(20));
+  for (const auto& handle : handles) {
+    const auto repeated = handle.await_response();
+    require(!repeated.has_value(), "late timeout result should stay error");
+    require(repeated.error().message == "request timed out",
+            "late timeout result should stay timed out");
+  }
+  require(cancel_count.load() == kRequestCount,
+          "late timeout awaits should not send another notification");
 }
 
 void test_app_builder_rejects_empty_std_function_handlers() {
@@ -361,7 +652,12 @@ void test_executor_rejects_empty_task() {
 int main() {
   try {
     test_sdk_peer_and_service_surface();
+    test_running_service_moved_from_is_inert();
     test_request_handle_rejects_invalid_state();
+    test_request_handle_latches_terminal_timeout();
+    test_request_handle_latches_terminal_cancellation();
+    test_request_handle_cancellation_race_stress();
+    test_request_handle_timeout_race_stress();
     test_app_builder_rejects_empty_std_function_handlers();
     test_executor_rejects_empty_task();
     std::cout << "sdk peer/service test passed\n";

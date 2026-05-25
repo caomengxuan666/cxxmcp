@@ -4,10 +4,17 @@
 
 #include <algorithm>
 #include <chrono>
+#include <condition_variable>
 #include <cstdint>
+#include <deque>
+#include <map>
+#include <mutex>
 #include <optional>
+#include <stdexcept>
 #include <string>
 #include <string_view>
+#include <system_error>
+#include <thread>
 #include <type_traits>
 #include <unordered_map>
 #include <utility>
@@ -15,6 +22,7 @@
 #include <vector>
 
 #include "cxxmcp/protocol/serialization.hpp"
+#include "cxxmcp/transport/http_transport.hpp"
 #include "httplib.h"
 
 namespace mcp::server {
@@ -24,6 +32,7 @@ constexpr std::string_view SessionHeader = "Mcp-Session-Id";
 constexpr std::string_view ProtocolVersionHeader = "MCP-Protocol-Version";
 constexpr std::string_view MethodHeader = "Mcp-Method";
 constexpr std::string_view NameHeader = "Mcp-Name";
+constexpr std::string_view LastEventIdHeader = "Last-Event-ID";
 constexpr int HeaderMismatchCode = -32001;
 
 core::Error make_transport_error(int code, std::string message,
@@ -78,6 +87,32 @@ std::string sse_priming_event(std::chrono::milliseconds retry) {
   event.append(std::to_string(retry.count()));
   event.append("\n\n");
   return event;
+}
+
+core::Result<std::optional<std::uint64_t>> parse_last_event_id_header(
+    const httplib::Request& request) {
+  if (!request.has_header(std::string(LastEventIdHeader))) {
+    return std::optional<std::uint64_t>{};
+  }
+
+  const auto value = request.get_header_value(std::string(LastEventIdHeader));
+  if (value.empty()) {
+    return std::optional<std::uint64_t>{};
+  }
+  if (!std::all_of(value.begin(), value.end(),
+                   [](char ch) { return ch >= '0' && ch <= '9'; })) {
+    return std::unexpected(make_transport_error(
+        HeaderMismatchCode,
+        "http transport Last-Event-ID header must be numeric", value));
+  }
+
+  try {
+    return static_cast<std::uint64_t>(std::stoull(value));
+  } catch (const std::out_of_range&) {
+    return std::unexpected(make_transport_error(
+        HeaderMismatchCode,
+        "http transport Last-Event-ID header is out of range", value));
+  }
 }
 
 std::optional<std::string> header_name_from_request(
@@ -286,6 +321,8 @@ core::Result<core::Unit> HttpTransport::start(
   {
     std::lock_guard lock(mutex_);
     stopped_ = false;
+    sessions_.clear();
+    default_session_id_.clear();
     server_ = std::make_unique<httplib::Server>();
   }
 
@@ -314,14 +351,20 @@ core::Result<core::Unit> HttpTransport::start(
         rpc_request != nullptr &&
         rpc_request->method == protocol::InitializeMethod;
     if (!initialize_request) {
-      std::string active_session_id;
+      std::string expected_session_id;
       {
         std::lock_guard lock(mutex_);
-        active_session_id = session_id_;
+        if (request.has_header(std::string(SessionHeader))) {
+          const auto header =
+              request.get_header_value(std::string(SessionHeader));
+          if (find_session_locked(header) != nullptr) {
+            expected_session_id = header;
+          }
+        }
       }
 
       const auto session_header =
-          validate_session_header(request, active_session_id);
+          validate_session_header(request, expected_session_id);
       if (!session_header) {
         response.status = 404;
         write_error(response, session_header.error().code,
@@ -340,12 +383,9 @@ core::Result<core::Unit> HttpTransport::start(
 
     if (const auto* notification =
             std::get_if<protocol::JsonRpcNotification>(&*message)) {
-      const auto header_check =
-          validate_post_headers(request, protocol::JsonRpcRequest{
-                                             .method = notification->method,
-                                             .params = notification->params,
-                                             .id = std::int64_t{0},
-                                         });
+      const auto header_check = validate_post_headers(
+          request, protocol::make_request(notification->method, std::int64_t{0},
+                                          notification->params));
       if (!header_check) {
         response.status = 400;
         write_error(response, header_check.error().code,
@@ -356,14 +396,16 @@ core::Result<core::Unit> HttpTransport::start(
         std::string active_session_id;
         {
           std::lock_guard lock(mutex_);
-          active_session_id = session_id_;
+          active_session_id =
+              request.has_header(std::string(SessionHeader))
+                  ? request.get_header_value(std::string(SessionHeader))
+                  : default_session_id_;
         }
-        const auto handled = notification_handler(
-            *notification, SessionContext{
-                               .session_id = active_session_id,
-                               .remote_address = request.remote_addr,
-                               .transport = this,
-                           });
+        SessionContext context;
+        context.session_id = active_session_id;
+        context.remote_address = request.remote_addr;
+        context.transport = this;
+        const auto handled = notification_handler(*notification, context);
         if (!handled) {
           write_error(response, handled.error().code, handled.error().message);
           return;
@@ -385,15 +427,21 @@ core::Result<core::Unit> HttpTransport::start(
       std::shared_ptr<PendingRequest> pending;
       {
         std::lock_guard lock(mutex_);
-        const auto it =
-            pending_requests_.find(request_id_to_string(*rpc_response->id));
-        if (it != pending_requests_.end()) {
-          pending = it->second;
-          pending_requests_.erase(it);
+        const auto session_id =
+            request.get_header_value(std::string(SessionHeader));
+        auto* session = find_session_locked(session_id);
+        if (session != nullptr) {
+          const auto it = session->pending_requests.find(
+              request_id_to_string(*rpc_response->id));
+          if (it != session->pending_requests.end()) {
+            pending = it->second;
+            session->pending_requests.erase(it);
+          }
         }
       }
 
       if (!pending) {
+        response.status = 400;
         write_error(response,
                     static_cast<int>(protocol::ErrorCode::InvalidRequest),
                     "http transport received an unexpected response",
@@ -442,21 +490,23 @@ core::Result<core::Unit> HttpTransport::start(
     bool initialize_session = false;
     {
       std::lock_guard lock(mutex_);
-      if (initialize_request && session_id_.empty()) {
+      if (initialize_request) {
         session_context_id =
             "mcp-session-" + std::to_string(next_session_id_++);
         initialize_session = true;
       } else {
-        session_context_id = session_id_;
+        session_context_id =
+            request.has_header(std::string(SessionHeader))
+                ? request.get_header_value(std::string(SessionHeader))
+                : default_session_id_;
       }
     }
 
-    auto rpc_response =
-        handler(*rpc_request, SessionContext{
-                                  .session_id = session_context_id,
-                                  .remote_address = request.remote_addr,
-                                  .transport = this,
-                              });
+    SessionContext context;
+    context.session_id = session_context_id;
+    context.remote_address = request.remote_addr;
+    context.transport = this;
+    auto rpc_response = handler(*rpc_request, context);
     if (!rpc_response) {
       rpc_response = protocol::make_error_response(
           std::optional<protocol::RequestId>{rpc_request->id},
@@ -471,22 +521,24 @@ core::Result<core::Unit> HttpTransport::start(
     if (rpc_request->method == protocol::InitializeMethod) {
       if (!rpc_response->error.has_value()) {
         std::lock_guard guard(mutex_);
+        auto& session = sessions_[session_context_id];
+        session.session_id = session_context_id;
         if (rpc_request->params.is_object() &&
             rpc_request->params.contains("capabilities")) {
-          client_capabilities_ = protocol::client_capabilities_from_json(
+          session.client_capabilities = protocol::client_capabilities_from_json(
               rpc_request->params.at("capabilities"));
         } else {
-          client_capabilities_.reset();
+          session.client_capabilities.reset();
         }
-        if (initialize_session || session_id_.empty()) {
-          session_id_ = session_context_id;
+        if (initialize_session || default_session_id_.empty()) {
+          default_session_id_ = session_context_id;
         }
-        response.set_header(std::string(SessionHeader), session_id_);
+        response.set_header(std::string(SessionHeader), session_context_id);
       }
     } else {
       std::lock_guard guard(mutex_);
-      if (!session_id_.empty()) {
-        response.set_header(std::string(SessionHeader), session_id_);
+      if (!session_context_id.empty()) {
+        response.set_header(std::string(SessionHeader), session_context_id);
       }
     }
 
@@ -514,14 +566,12 @@ core::Result<core::Unit> HttpTransport::start(
 
     const auto stream_session_id =
         request.get_header_value(std::string(SessionHeader));
-    std::string active_session_id;
     {
       std::lock_guard lock(mutex_);
-      active_session_id = session_id_;
-    }
-    if (active_session_id.empty() || stream_session_id != active_session_id) {
-      response.status = 404;
-      return;
+      if (find_session_locked(stream_session_id) == nullptr) {
+        response.status = 404;
+        return;
+      }
     }
 
     const auto protocol_version = validate_protocol_version_header(request);
@@ -532,12 +582,94 @@ core::Result<core::Unit> HttpTransport::start(
       return;
     }
 
+    const auto last_event_id = parse_last_event_id_header(request);
+    if (!last_event_id) {
+      response.status = 400;
+      write_error(response, last_event_id.error().code,
+                  last_event_id.error().message, std::nullopt);
+      return;
+    }
+
+    std::vector<QueuedEvent> replay_events;
+    {
+      std::lock_guard lock(mutex_);
+      auto* session = find_session_locked(stream_session_id);
+      if (session == nullptr) {
+        response.status = 404;
+        return;
+      }
+      if (session->active_sse_streams > 0 && !last_event_id->has_value()) {
+        response.status = 409;
+        write_error(response, HeaderMismatchCode,
+                    "http transport session already has an active SSE stream",
+                    std::nullopt);
+        return;
+      }
+      if (last_event_id->has_value()) {
+        const auto last_seen_event_id = **last_event_id;
+        const auto last_assigned_event_id =
+            session->next_notification_event_id - 1;
+        if (last_seen_event_id > last_assigned_event_id) {
+          response.status = 409;
+          write_error(response, HeaderMismatchCode,
+                      "http transport Last-Event-ID is ahead of session state",
+                      std::nullopt);
+          return;
+        }
+        if (last_seen_event_id < last_assigned_event_id) {
+          if (session->replay_notifications.empty()) {
+            response.status = 409;
+            write_error(response, HeaderMismatchCode,
+                        "http transport Last-Event-ID is outside replay window",
+                        std::nullopt);
+            return;
+          }
+          const auto oldest_event_id =
+              session->replay_notifications.front().event_id;
+          if (!oldest_event_id.has_value() ||
+              last_seen_event_id < (*oldest_event_id - 1)) {
+            response.status = 409;
+            write_error(response, HeaderMismatchCode,
+                        "http transport Last-Event-ID is outside replay window",
+                        std::nullopt);
+            return;
+          }
+        }
+        for (const auto& event : session->replay_notifications) {
+          if (event.event_id.has_value() &&
+              *event.event_id > last_seen_event_id) {
+            replay_events.push_back(event);
+          }
+        }
+      }
+      session->active_sse_streams += 1;
+    }
+
     response.set_chunked_content_provider(
-        "text/event-stream", [this, &request, stream_session_id](
-                                 std::size_t, httplib::DataSink& sink) {
+        "text/event-stream",
+        [this, &request, stream_session_id,
+         replay_events = std::move(replay_events),
+         replay_index = std::size_t{0},
+         stream_closed = false](std::size_t, httplib::DataSink& sink) mutable {
+          const auto close_stream = [&]() {
+            if (!stream_closed) {
+              close_sse_stream(stream_session_id);
+              stream_closed = true;
+            }
+          };
+          const auto close_stream_locked = [&]() {
+            if (!stream_closed) {
+              auto* session = find_session_locked(stream_session_id);
+              if (session != nullptr && session->active_sse_streams > 0) {
+                session->active_sse_streams -= 1;
+              }
+              stream_closed = true;
+            }
+          };
           if (options_.sse_retry.has_value()) {
             const auto priming = sse_priming_event(*options_.sse_retry);
             if (!sink.write(priming.data(), priming.size())) {
+              close_stream();
               sink.done();
               return false;
             }
@@ -547,40 +679,63 @@ core::Result<core::Unit> HttpTransport::start(
             std::unique_lock lock(mutex_);
             if (stopped_ || request.is_connection_closed() ||
                 !sink.is_writable()) {
-              if (request.is_connection_closed()) {
-                abort_pending_requests("http event stream closed");
-              }
+              close_stream_locked();
               sink.done();
               return false;
+            }
+
+            if (replay_index < replay_events.size()) {
+              auto event = replay_events[replay_index++];
+              auto serialized_event =
+                  message_to_sse_event(event.event_id, event.payload);
+              lock.unlock();
+              const bool written =
+                  sink.write(serialized_event.data(), serialized_event.size());
+              if (!written) {
+                close_stream();
+              }
+              return written;
             }
 
             notification_cv_.wait_for(
                 lock, std::chrono::milliseconds(100),
-                [this, &sink, &request, stream_session_id]() {
-                  return stopped_ || !pending_notifications_.empty() ||
-                         !sink.is_writable() ||
-                         request.is_connection_closed() ||
-                         session_id_.empty() ||
-                         session_id_ != stream_session_id;
+                [this, &sink, &request, stream_session_id, &replay_events,
+                 &replay_index]() {
+                  const auto* session = find_session_locked(stream_session_id);
+                  return stopped_ || replay_index < replay_events.size() ||
+                         session == nullptr ||
+                         !session->pending_notifications.empty() ||
+                         !sink.is_writable() || request.is_connection_closed();
                 });
 
             if (stopped_ || request.is_connection_closed() ||
                 !sink.is_writable()) {
-              if (request.is_connection_closed()) {
-                abort_pending_requests("http event stream closed");
-              }
+              close_stream_locked();
               sink.done();
               return false;
             }
 
-            if (!pending_notifications_.empty()) {
-              auto event = std::move(pending_notifications_.front());
-              pending_notifications_.pop_front();
+            auto* session = find_session_locked(stream_session_id);
+            if (session == nullptr) {
+              close_stream_locked();
+              sink.done();
+              return false;
+            }
+
+            if (!session->pending_notifications.empty()) {
+              auto event = std::move(session->pending_notifications.front());
+              session->pending_notifications.pop_front();
+              session->pending_notification_bytes -= event.payload.size();
+              remember_replay_event_locked(*session, event);
               auto serialized_event =
                   message_to_sse_event(event.event_id, event.payload);
               lock.unlock();
-              return sink.write(serialized_event.data(),
-                                serialized_event.size());
+              const bool written =
+                  sink.write(serialized_event.data(), serialized_event.size());
+              if (!written) {
+                close_stream();
+              }
+              return written;
             }
           }
         });
@@ -607,14 +762,12 @@ core::Result<core::Unit> HttpTransport::start(
 
     const auto stream_session_id =
         request.get_header_value(std::string(SessionHeader));
-    std::string active_session_id;
     {
       std::lock_guard lock(mutex_);
-      active_session_id = session_id_;
-    }
-    if (active_session_id.empty() || stream_session_id != active_session_id) {
-      response.status = 404;
-      return;
+      if (find_session_locked(stream_session_id) == nullptr) {
+        response.status = 404;
+        return;
+      }
     }
 
     const auto protocol_version = validate_protocol_version_header(request);
@@ -627,11 +780,15 @@ core::Result<core::Unit> HttpTransport::start(
 
     {
       std::lock_guard lock(mutex_);
-      abort_pending_requests("http session terminated");
-      pending_notifications_.clear();
-      next_notification_event_id_ = 1;
-      client_capabilities_.reset();
-      session_id_.clear();
+      auto* session = find_session_locked(stream_session_id);
+      if (session != nullptr) {
+        abort_pending_requests_locked(*session, "http session terminated");
+        sessions_.erase(stream_session_id);
+      }
+      if (default_session_id_ == stream_session_id) {
+        default_session_id_ =
+            sessions_.empty() ? std::string{} : sessions_.begin()->first;
+      }
       notification_cv_.notify_all();
     }
     response.status = 204;
@@ -651,6 +808,20 @@ core::Result<core::Unit> HttpTransport::start(
 
 core::Result<core::Unit> HttpTransport::send_notification(
     const protocol::JsonRpcNotification& notification) {
+  std::string session_id;
+  {
+    std::lock_guard lock(mutex_);
+    const auto* session = select_default_session_locked();
+    if (session != nullptr) {
+      session_id = session->session_id;
+    }
+  }
+  return send_notification_to_session(session_id, notification);
+}
+
+core::Result<core::Unit> HttpTransport::send_notification_to_session(
+    std::string_view session_id,
+    const protocol::JsonRpcNotification& notification) {
   const auto serialized = protocol::serialize_notification(notification);
   if (!serialized) {
     return std::unexpected(make_transport_error(
@@ -664,18 +835,39 @@ core::Result<core::Unit> HttpTransport::send_notification(
         static_cast<int>(protocol::ErrorCode::InternalError),
         "http transport is stopped"));
   }
+  auto* session = find_session_locked(session_id);
+  if (session == nullptr) {
+    return std::unexpected(make_transport_error(
+        static_cast<int>(protocol::ErrorCode::InvalidRequest),
+        "http transport has no active session"));
+  }
 
-  QueuedEvent event{
-      .event_id = next_notification_event_id_++,
-      .payload = *serialized,
-  };
-  pending_notifications_.push_back(std::move(event));
+  QueuedEvent event;
+  event.payload = *serialized;
+  const auto enqueued =
+      enqueue_outbound_event_locked(*session, std::move(event));
+  if (!enqueued) {
+    return enqueued;
+  }
   notification_cv_.notify_all();
   return core::Unit{};
 }
 
 core::Result<protocol::JsonRpcResponse> HttpTransport::send_request(
     const protocol::JsonRpcRequest& request) {
+  std::string session_id;
+  {
+    std::lock_guard lock(mutex_);
+    const auto* session = select_default_session_locked();
+    if (session != nullptr) {
+      session_id = session->session_id;
+    }
+  }
+  return send_request_to_session(session_id, request);
+}
+
+core::Result<protocol::JsonRpcResponse> HttpTransport::send_request_to_session(
+    std::string_view session_id, const protocol::JsonRpcRequest& request) {
   const auto serialized = protocol::serialize_request(request);
   if (!serialized) {
     return std::unexpected(serialized.error());
@@ -690,16 +882,27 @@ core::Result<protocol::JsonRpcResponse> HttpTransport::send_request(
           static_cast<int>(protocol::ErrorCode::InternalError),
           "http transport is stopped"));
     }
-    if (session_id_.empty()) {
+    auto* session = find_session_locked(session_id);
+    if (session == nullptr) {
       return std::unexpected(make_transport_error(
           static_cast<int>(protocol::ErrorCode::InvalidRequest),
           "http transport has no active session"));
     }
-    pending_requests_[request_key] = pending;
-    pending_notifications_.push_back(QueuedEvent{
-        .event_id = std::nullopt,
-        .payload = *serialized,
-    });
+    if (session->pending_requests.find(request_key) !=
+        session->pending_requests.end()) {
+      return std::unexpected(make_transport_error(
+          static_cast<int>(protocol::ErrorCode::InvalidRequest),
+          "http transport already has a pending request with this id"));
+    }
+    session->pending_requests[request_key] = pending;
+    QueuedEvent event;
+    event.payload = *serialized;
+    const auto enqueued =
+        enqueue_outbound_event_locked(*session, std::move(event));
+    if (!enqueued) {
+      session->pending_requests.erase(request_key);
+      return std::unexpected(enqueued.error());
+    }
   }
 
   notification_cv_.notify_all();
@@ -721,7 +924,22 @@ core::Result<protocol::JsonRpcResponse> HttpTransport::send_request(
 std::optional<protocol::ClientCapabilities> HttpTransport::client_capabilities()
     const {
   std::lock_guard lock(mutex_);
-  return client_capabilities_;
+  const SessionState* session = nullptr;
+  if (!default_session_id_.empty()) {
+    session = find_session_locked(default_session_id_);
+  }
+  if (session == nullptr && !sessions_.empty()) {
+    session = &sessions_.begin()->second;
+  }
+  return session == nullptr ? std::nullopt : session->client_capabilities;
+}
+
+std::optional<protocol::ClientCapabilities>
+HttpTransport::client_capabilities_for_session(
+    std::string_view session_id) const {
+  std::lock_guard lock(mutex_);
+  const auto* session = find_session_locked(session_id);
+  return session == nullptr ? std::nullopt : session->client_capabilities;
 }
 
 void HttpTransport::stop() noexcept {
@@ -732,9 +950,12 @@ void HttpTransport::stop() noexcept {
       return;
     }
     stopped_ = true;
-    abort_pending_requests("http transport is stopped");
-    pending_notifications_.clear();
-    next_notification_event_id_ = 1;
+    for (auto& [_, session] : sessions_) {
+      abort_pending_requests_locked(session, "http transport is stopped");
+      clear_outbound_events_locked(session);
+    }
+    sessions_.clear();
+    default_session_id_.clear();
     server_to_stop = server_.get();
   }
   notification_cv_.notify_all();
@@ -743,10 +964,89 @@ void HttpTransport::stop() noexcept {
   }
 }
 
-void HttpTransport::abort_pending_requests(std::string message) {
+void HttpTransport::clear_outbound_events_locked(SessionState& session) {
+  session.pending_notifications.clear();
+  session.pending_notification_bytes = 0;
+  session.replay_notifications.clear();
+  session.next_notification_event_id = 1;
+}
+
+core::Result<core::Unit> HttpTransport::enqueue_outbound_event_locked(
+    SessionState& session, QueuedEvent event) {
+  if (options_.max_pending_sse_events > 0 &&
+      session.pending_notifications.size() >= options_.max_pending_sse_events) {
+    return std::unexpected(
+        make_transport_error(static_cast<int>(protocol::ErrorCode::RateLimited),
+                             "http transport outbound SSE queue is full"));
+  }
+  if (options_.max_pending_sse_bytes > 0) {
+    const auto max_bytes = options_.max_pending_sse_bytes;
+    if (session.pending_notification_bytes >= max_bytes ||
+        event.payload.size() > max_bytes - session.pending_notification_bytes) {
+      return std::unexpected(make_transport_error(
+          static_cast<int>(protocol::ErrorCode::RateLimited),
+          "http transport outbound SSE byte queue is full"));
+    }
+  }
+
+  if (!event.event_id.has_value()) {
+    event.event_id = session.next_notification_event_id++;
+  }
+  session.pending_notification_bytes += event.payload.size();
+  session.pending_notifications.push_back(std::move(event));
+  return core::Unit{};
+}
+
+void HttpTransport::remember_replay_event_locked(SessionState& session,
+                                                 const QueuedEvent& event) {
+  if (!event.event_id.has_value() || options_.max_sse_replay_events == 0) {
+    return;
+  }
+
+  session.replay_notifications.push_back(event);
+  while (session.replay_notifications.size() > options_.max_sse_replay_events) {
+    session.replay_notifications.pop_front();
+  }
+}
+
+HttpTransport::SessionState* HttpTransport::find_session_locked(
+    std::string_view session_id) {
+  const auto it = sessions_.find(std::string(session_id));
+  return it == sessions_.end() ? nullptr : &it->second;
+}
+
+const HttpTransport::SessionState* HttpTransport::find_session_locked(
+    std::string_view session_id) const {
+  const auto it = sessions_.find(std::string(session_id));
+  return it == sessions_.end() ? nullptr : &it->second;
+}
+
+HttpTransport::SessionState* HttpTransport::select_default_session_locked() {
+  if (!default_session_id_.empty()) {
+    auto* session = find_session_locked(default_session_id_);
+    if (session != nullptr) {
+      return session;
+    }
+  }
+  if (sessions_.empty()) {
+    return nullptr;
+  }
+  return &sessions_.begin()->second;
+}
+
+void HttpTransport::close_sse_stream(std::string_view session_id) noexcept {
+  std::lock_guard lock(mutex_);
+  auto* session = find_session_locked(session_id);
+  if (session != nullptr && session->active_sse_streams > 0) {
+    session->active_sse_streams -= 1;
+  }
+}
+
+void HttpTransport::abort_pending_requests_locked(SessionState& session,
+                                                  std::string message) {
   std::unordered_map<std::string, std::shared_ptr<PendingRequest>>
       pending_requests;
-  pending_requests.swap(pending_requests_);
+  pending_requests.swap(session.pending_requests);
   const auto error_message = std::move(message);
 
   for (auto& [_, pending] : pending_requests) {
@@ -764,3 +1064,361 @@ void HttpTransport::abort_pending_requests(std::string message) {
 std::string_view HttpTransport::name() const noexcept { return "http"; }
 
 }  // namespace mcp::server
+
+namespace mcp::transport {
+namespace {
+
+core::Error make_native_server_http_error(protocol::ErrorCode code,
+                                          std::string message,
+                                          std::string detail = {}) {
+  return core::Error{
+      static_cast<int>(code),
+      std::move(message),
+      std::move(detail),
+  };
+}
+
+server::HttpTransportOptions to_legacy_options(
+    StreamableHttpServerTransportOptions options) {
+  server::HttpTransportOptions legacy;
+  legacy.listen_host = std::move(options.listen_host);
+  legacy.listen_port = options.listen_port;
+  legacy.path = std::move(options.path);
+  legacy.sse_retry = options.sse_retry;
+  legacy.allowed_origins = std::move(options.allowed_origins);
+  legacy.max_pending_sse_events = options.max_pending_sse_events;
+  legacy.max_pending_sse_bytes = options.max_pending_sse_bytes;
+  legacy.max_sse_replay_events = options.max_sse_replay_events;
+  return legacy;
+}
+
+std::string request_id_to_string_for_native_server_http(
+    const protocol::RequestId& request_id) {
+  return std::visit(
+      [](const auto& value) -> std::string {
+        using Value = std::decay_t<decltype(value)>;
+        if constexpr (std::is_same_v<Value, std::string>) {
+          return value;
+        } else {
+          return std::to_string(value);
+        }
+      },
+      request_id);
+}
+
+}  // namespace
+
+class StreamableHttpServerTransport::Impl {
+ public:
+  explicit Impl(StreamableHttpServerTransportOptions options)
+      : transport_(to_legacy_options(std::move(options))) {}
+
+  ~Impl() { (void)close(); }
+
+  protocol::Json diagnostics() const {
+    std::lock_guard<std::mutex> lock(mutex_);
+    return protocol::Json{
+        {"name", "streamable-http-server"},
+        {"closed", closed_},
+        {"started", started_},
+        {"queued", inbound_.size()},
+        {"pendingClientRequests", pending_client_requests_.size()},
+        {"requestWorkers", request_threads_.size()},
+    };
+  }
+
+  core::Result<core::Unit> send(protocol::JsonRpcMessage message) {
+    const auto started = ensure_started();
+    if (!started) {
+      return std::unexpected(started.error());
+    }
+
+    if (auto* response = std::get_if<protocol::JsonRpcResponse>(&message)) {
+      if (!response->id.has_value()) {
+        return std::unexpected(
+            make_native_server_http_error(protocol::ErrorCode::InvalidRequest,
+                                          "streamable http server transport "
+                                          "cannot send response without id"));
+      }
+      return complete_client_request(std::move(*response));
+    }
+
+    if (auto* notification =
+            std::get_if<protocol::JsonRpcNotification>(&message)) {
+      return transport_.send_notification(*notification);
+    }
+
+    auto* request = std::get_if<protocol::JsonRpcRequest>(&message);
+    if (request == nullptr) {
+      return std::unexpected(make_native_server_http_error(
+          protocol::ErrorCode::InvalidRequest,
+          "streamable http server transport cannot send unknown message"));
+    }
+    return start_request_thread(std::move(*request));
+  }
+
+  core::Result<std::optional<protocol::JsonRpcMessage>> receive() {
+    const auto started = ensure_started();
+    if (!started) {
+      return std::unexpected(started.error());
+    }
+
+    std::unique_lock<std::mutex> lock(mutex_);
+    receive_cv_.wait(lock, [this] {
+      return closed_ || startup_error_.has_value() || !inbound_.empty();
+    });
+    if (startup_error_.has_value()) {
+      return std::unexpected(*startup_error_);
+    }
+    if (inbound_.empty()) {
+      return std::nullopt;
+    }
+    auto message = std::move(inbound_.front());
+    inbound_.pop_front();
+    return message;
+  }
+
+  core::Result<core::Unit> close() {
+    std::map<protocol::RequestId, std::shared_ptr<PendingClientRequest>>
+        pending;
+    std::vector<std::thread> request_threads;
+    {
+      std::lock_guard<std::mutex> lock(mutex_);
+      if (closed_) {
+        return core::Unit{};
+      }
+      closed_ = true;
+      pending.swap(pending_client_requests_);
+      request_threads.swap(request_threads_);
+    }
+
+    for (auto& [_, request] : pending) {
+      {
+        std::lock_guard<std::mutex> request_lock(request->mutex);
+        request->response = protocol::make_error_response(
+            std::optional<protocol::RequestId>{request->id},
+            protocol::make_error(protocol::ErrorCode::InternalError,
+                                 "streamable http server transport closed"));
+      }
+      request->cv.notify_all();
+    }
+
+    receive_cv_.notify_all();
+    transport_.stop();
+    for (auto& thread : request_threads) {
+      if (thread.joinable() && thread.get_id() != std::this_thread::get_id()) {
+        thread.join();
+      }
+    }
+    if (server_thread_.joinable() &&
+        server_thread_.get_id() != std::this_thread::get_id()) {
+      server_thread_.join();
+    }
+    return core::Unit{};
+  }
+
+ private:
+  struct PendingClientRequest {
+    explicit PendingClientRequest(protocol::RequestId request_id)
+        : id(std::move(request_id)) {}
+
+    protocol::RequestId id;
+    std::mutex mutex;
+    std::condition_variable cv;
+    std::optional<protocol::JsonRpcResponse> response;
+  };
+
+  core::Result<core::Unit> ensure_started() {
+    std::lock_guard<std::mutex> lock(mutex_);
+    if (closed_) {
+      return std::unexpected(make_native_server_http_error(
+          protocol::ErrorCode::InvalidRequest,
+          "streamable http server transport is closed"));
+    }
+    if (started_) {
+      return core::Unit{};
+    }
+    started_ = true;
+    try {
+      server_thread_ = std::thread([this]() {
+        const auto started = transport_.start(
+            [this](const protocol::JsonRpcRequest& request,
+                   const server::SessionContext&) {
+              return handle_client_request(request);
+            },
+            [this](const protocol::JsonRpcNotification& notification,
+                   const server::SessionContext&) {
+              return handle_client_notification(notification);
+            });
+        if (!started) {
+          {
+            std::lock_guard<std::mutex> state_lock(mutex_);
+            startup_error_ = started.error();
+            closed_ = true;
+          }
+          receive_cv_.notify_all();
+        }
+      });
+    } catch (const std::system_error& ex) {
+      started_ = false;
+      return std::unexpected(make_native_server_http_error(
+          protocol::ErrorCode::InternalError,
+          "failed to start streamable http server worker", ex.what()));
+    }
+    return core::Unit{};
+  }
+
+  core::Result<core::Unit> start_request_thread(
+      protocol::JsonRpcRequest request) {
+    try {
+      std::lock_guard<std::mutex> lock(mutex_);
+      if (closed_) {
+        return std::unexpected(make_native_server_http_error(
+            protocol::ErrorCode::InvalidRequest,
+            "streamable http server transport is closed"));
+      }
+      request_threads_.emplace_back(
+          [this, request = std::move(request)]() mutable {
+            auto response = transport_.send_request(request);
+            if (response) {
+              enqueue(protocol::JsonRpcMessage{std::move(*response)});
+              return;
+            }
+            enqueue(protocol::JsonRpcMessage{protocol::make_error_response(
+                std::optional<protocol::RequestId>{request.id},
+                protocol::make_error(response.error().code,
+                                     response.error().message,
+                                     response.error().detail.empty()
+                                         ? std::nullopt
+                                         : std::optional<protocol::Json>{
+                                               response.error().detail}))});
+          });
+    } catch (const std::system_error& ex) {
+      return std::unexpected(make_native_server_http_error(
+          protocol::ErrorCode::InternalError,
+          "failed to start streamable http server request worker", ex.what()));
+    }
+    return core::Unit{};
+  }
+
+  core::Result<protocol::JsonRpcResponse> handle_client_request(
+      const protocol::JsonRpcRequest& request) {
+    auto pending = std::make_shared<PendingClientRequest>(request.id);
+    {
+      std::lock_guard<std::mutex> lock(mutex_);
+      if (closed_) {
+        return protocol::make_error_response(
+            std::optional<protocol::RequestId>{request.id},
+            protocol::make_error(protocol::ErrorCode::InternalError,
+                                 "streamable http server transport closed"));
+      }
+      const auto [_, inserted] =
+          pending_client_requests_.emplace(request.id, pending);
+      if (!inserted) {
+        return protocol::make_error_response(
+            std::optional<protocol::RequestId>{request.id},
+            protocol::make_error(protocol::ErrorCode::InvalidRequest,
+                                 "duplicate client request id"));
+      }
+      inbound_.push_back(protocol::JsonRpcMessage{request});
+    }
+
+    receive_cv_.notify_one();
+
+    std::unique_lock<std::mutex> pending_lock(pending->mutex);
+    pending->cv.wait(pending_lock,
+                     [&pending] { return pending->response.has_value(); });
+    return std::move(*pending->response);
+  }
+
+  core::Result<core::Unit> handle_client_notification(
+      const protocol::JsonRpcNotification& notification) {
+    {
+      std::lock_guard<std::mutex> lock(mutex_);
+      if (closed_) {
+        return core::Unit{};
+      }
+      inbound_.push_back(protocol::JsonRpcMessage{notification});
+    }
+    receive_cv_.notify_one();
+    return core::Unit{};
+  }
+
+  void enqueue(protocol::JsonRpcMessage message) {
+    {
+      std::lock_guard<std::mutex> lock(mutex_);
+      if (closed_) {
+        return;
+      }
+      inbound_.push_back(std::move(message));
+    }
+    receive_cv_.notify_one();
+  }
+
+  core::Result<core::Unit> complete_client_request(
+      protocol::JsonRpcResponse response) {
+    const auto id = *response.id;
+    std::shared_ptr<PendingClientRequest> pending;
+    {
+      std::lock_guard<std::mutex> lock(mutex_);
+      const auto it = pending_client_requests_.find(id);
+      if (it == pending_client_requests_.end()) {
+        return std::unexpected(make_native_server_http_error(
+            protocol::ErrorCode::InvalidRequest,
+            "streamable http server transport has no pending client request",
+            request_id_to_string_for_native_server_http(id)));
+      }
+      pending = it->second;
+      pending_client_requests_.erase(it);
+    }
+
+    {
+      std::lock_guard<std::mutex> pending_lock(pending->mutex);
+      pending->response = std::move(response);
+    }
+    pending->cv.notify_all();
+    return core::Unit{};
+  }
+
+  server::HttpTransport transport_;
+  mutable std::mutex mutex_;
+  std::condition_variable receive_cv_;
+  std::deque<protocol::JsonRpcMessage> inbound_;
+  std::map<protocol::RequestId, std::shared_ptr<PendingClientRequest>>
+      pending_client_requests_;
+  std::vector<std::thread> request_threads_;
+  std::thread server_thread_;
+  std::optional<core::Error> startup_error_;
+  bool started_ = false;
+  bool closed_ = false;
+};
+
+StreamableHttpServerTransport::StreamableHttpServerTransport(
+    StreamableHttpServerTransportOptions options)
+    : impl_(std::make_unique<Impl>(std::move(options))) {}
+
+StreamableHttpServerTransport::~StreamableHttpServerTransport() = default;
+
+std::string_view StreamableHttpServerTransport::name() const noexcept {
+  return "streamable-http-server";
+}
+
+protocol::Json StreamableHttpServerTransport::diagnostics() const {
+  return impl_->diagnostics();
+}
+
+core::Result<core::Unit> StreamableHttpServerTransport::send(
+    TxMessage message) {
+  return impl_->send(std::move(message));
+}
+
+core::Result<std::optional<StreamableHttpServerTransport::RxMessage>>
+StreamableHttpServerTransport::receive() {
+  return impl_->receive();
+}
+
+core::Result<core::Unit> StreamableHttpServerTransport::close() {
+  return impl_->close();
+}
+
+}  // namespace mcp::transport

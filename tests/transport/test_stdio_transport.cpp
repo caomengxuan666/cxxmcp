@@ -215,6 +215,77 @@ void test_server_handles_notifications() {
           "server should not write a response for notifications");
 }
 
+void test_server_handles_cancelled_notification() {
+  const auto notification = mcp::protocol::JsonRpcNotification{
+      .method = std::string(mcp::protocol::CancelledNotificationMethod),
+      .params = Json{{"requestId", 7}, {"reason", "request timeout"}},
+  };
+  const auto serialized = mcp::protocol::serialize_notification(notification);
+  require(serialized.has_value(), "cancelled notification should serialize");
+
+  std::istringstream input(*serialized + '\n');
+  std::ostringstream output;
+  mcp::server::StdioTransport transport(input, output);
+
+  bool notification_called = false;
+  const auto started = transport.start(
+      [](const mcp::protocol::JsonRpcRequest&,
+         const mcp::server::SessionContext&) {
+        return mcp::protocol::make_response(std::int64_t{1}, Json::object());
+      },
+      [&notification_called](const mcp::protocol::JsonRpcNotification& received,
+                             const mcp::server::SessionContext&) {
+        notification_called = true;
+        require(received.method == mcp::protocol::CancelledNotificationMethod,
+                "server cancellation notification method mismatch");
+        const auto cancelled =
+            mcp::protocol::cancelled_notification_params_from_json(
+                received.params);
+        require(cancelled.has_value(),
+                "server cancellation params should parse");
+        require(std::get<std::int64_t>(cancelled->request_id) == 7,
+                "server cancellation request id mismatch");
+        require(cancelled->reason == "request timeout",
+                "server cancellation reason mismatch");
+        return mcp::core::Unit{};
+      });
+
+  require(started.has_value(),
+          "server should complete after cancelled notification EOF");
+  require(notification_called,
+          "server cancellation notification handler should run");
+  require(output.str().empty(),
+          "server should not write a response for cancelled notifications");
+}
+
+void test_client_writes_cancelled_notification_to_stdio() {
+  std::istringstream input;
+  std::ostringstream output;
+  mcp::client::StdioTransport transport(input, output);
+
+  const auto sent =
+      transport.send_notification(mcp::protocol::JsonRpcNotification{
+          .method = std::string(mcp::protocol::CancelledNotificationMethod),
+          .params = Json{{"requestId", "req-1"}, {"reason", "user cancel"}},
+      });
+  require(sent.has_value(),
+          "client stdio cancellation notification should send");
+
+  const auto parsed = mcp::protocol::parse_notification(output.str());
+  require(parsed.has_value(),
+          "client stdio cancellation notification should parse");
+  require(parsed->method == mcp::protocol::CancelledNotificationMethod,
+          "client stdio cancellation notification method mismatch");
+  const auto cancelled =
+      mcp::protocol::cancelled_notification_params_from_json(parsed->params);
+  require(cancelled.has_value(),
+          "client stdio cancellation params should parse");
+  require(std::get<std::string>(cancelled->request_id) == "req-1",
+          "client stdio cancellation request id mismatch");
+  require(cancelled->reason == "user cancel",
+          "client stdio cancellation reason mismatch");
+}
+
 void test_server_writes_outbound_notification_to_stdio() {
   std::istringstream input;
   std::ostringstream output;
@@ -248,6 +319,10 @@ int main() {
       {"server writes parse error for bad json",
        test_server_writes_parse_error_for_bad_json},
       {"server handles notifications", test_server_handles_notifications},
+      {"server handles cancelled notification",
+       test_server_handles_cancelled_notification},
+      {"client writes cancelled notification to stdio",
+       test_client_writes_cancelled_notification_to_stdio},
       {"server writes outbound notification to stdio",
        test_server_writes_outbound_notification_to_stdio},
   };

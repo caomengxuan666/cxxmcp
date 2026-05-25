@@ -12,6 +12,40 @@ if(TARGET mcp_protocol)
     add_test(NAME protocol COMMAND mcp_protocol_tests)
 endif()
 
+add_test(NAME sdk_boundary COMMAND
+    "${CMAKE_COMMAND}"
+    "-DREPO_SOURCE_DIR=${PROJECT_SOURCE_DIR}"
+    -P "${PROJECT_SOURCE_DIR}/tests/sdk_boundary.cmake"
+)
+
+function(add_cxxmcp_public_header_compile_test test_name source_file package_target)
+    add_executable("mcp_public_header_${test_name}"
+        "sdk/public_headers/${source_file}"
+    )
+
+    target_link_libraries("mcp_public_header_${test_name}" PRIVATE
+        "${package_target}"
+    )
+
+    set_target_properties("mcp_public_header_${test_name}" PROPERTIES
+        CXXMCP_PUBLIC_HEADER_TEST TRUE
+    )
+
+    add_test(NAME "public_header_${test_name}"
+        COMMAND "mcp_public_header_${test_name}"
+    )
+endfunction()
+
+if(TARGET mcp_protocol)
+    add_cxxmcp_public_header_compile_test(
+        protocol protocol_header.cpp cxxmcp::protocol)
+endif()
+
+if(TARGET mcp_sdk)
+    add_cxxmcp_public_header_compile_test(
+        config config_header.cpp cxxmcp::sdk)
+endif()
+
 if(TARGET mcp_transport)
     add_executable(mcp_transport_contract_tests
         transport/test_transport_contract.cpp
@@ -28,9 +62,25 @@ if(TARGET mcp_transport)
     target_link_libraries(mcp_transport_stdio_contract_tests PRIVATE mcp_transport)
 
     add_test(NAME transport_stdio_contract COMMAND mcp_transport_stdio_contract_tests)
+
+    add_cxxmcp_public_header_compile_test(
+        transport transport_header.cpp cxxmcp::transport)
 endif()
 
 if(TARGET mcp_client AND TARGET mcp_server)
+    add_cxxmcp_public_header_compile_test(
+        client client_header.cpp cxxmcp::client)
+    add_cxxmcp_public_header_compile_test(
+        server server_header.cpp cxxmcp::server)
+    add_cxxmcp_public_header_compile_test(
+        peer peer_header.cpp cxxmcp::peer)
+    add_cxxmcp_public_header_compile_test(
+        handler handler_header.cpp cxxmcp::handler)
+    add_cxxmcp_public_header_compile_test(
+        service service_header.cpp cxxmcp::service)
+    add_cxxmcp_public_header_compile_test(
+        sdk sdk_header.cpp cxxmcp::sdk)
+
     add_executable(mcp_client_server_tests
         client_server/test_client_server.cpp
     )
@@ -226,3 +276,14 @@ if(TARGET mcp_cli AND TARGET mcp_cli_app AND TARGET mcp_test_stdio_child)
 
     add_test(NAME cli COMMAND mcp_cli_tests)
 endif()
+
+get_property(cxxmcp_test_targets DIRECTORY PROPERTY BUILDSYSTEM_TARGETS)
+foreach(cxxmcp_test_target IN LISTS cxxmcp_test_targets)
+    get_target_property(cxxmcp_public_header_test
+        "${cxxmcp_test_target}" CXXMCP_PUBLIC_HEADER_TEST)
+    if(cxxmcp_public_header_test)
+        cxxmcp_require_sdk_cxx("${cxxmcp_test_target}")
+    else()
+        cxxmcp_require_cxx20("${cxxmcp_test_target}")
+    endif()
+endforeach()

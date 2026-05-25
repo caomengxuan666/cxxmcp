@@ -5,14 +5,16 @@
 /// @file
 /// @brief Role-aware peer facades for MCP client and server SDK users.
 ///
-/// Peer<RoleClient> and Peer<RoleServer> are thin SDK-facing facades over the
-/// existing client and server implementations. They make the public surface
-/// read like a peer-oriented MCP SDK while keeping the current concrete classes
-/// as the implementation layer.
+/// Peer<RoleClient> and Peer<RoleServer> are SDK-facing facades over the
+/// existing client and server implementations. They expose a role-generic
+/// message dispatch loop so Transport<Role> can be the public service boundary
+/// while the concrete classes continue to provide protocol behavior.
 
 #include <memory>
+#include <optional>
 #include <string_view>
 #include <utility>
+#include <variant>
 
 #include "cxxmcp/client/client.hpp"
 #include "cxxmcp/client/session.hpp"
@@ -25,6 +27,31 @@
 #include "cxxmcp/transport/transport.hpp"
 
 namespace mcp {
+
+namespace detail {
+
+inline core::Error peer_dispatch_error(std::string_view message) {
+  return core::Error{
+      static_cast<int>(protocol::ErrorCode::InvalidRequest),
+      std::string(message),
+      {},
+  };
+}
+
+inline protocol::ErrorObject peer_error_object_from_core_error(
+    const core::Error& error) {
+  std::optional<protocol::Json> data;
+  if (!error.detail.empty()) {
+    data = error.detail;
+  }
+  protocol::ErrorObject object;
+  object.code = error.code;
+  object.message = error.message;
+  object.data = std::move(data);
+  return object;
+}
+
+}  // namespace detail
 
 /// @brief Role-specialized MCP peer facade.
 template <class Role>
@@ -423,6 +450,62 @@ class Peer<RoleClient> {
     return client_.raw_notification(notification);
   }
 
+  /// @brief Dispatches one inbound role-generic transport message.
+  ///
+  /// Requests produce a JSON-RPC response message, notifications produce no
+  /// outbound message, and standalone responses remain the responsibility of
+  /// request-handle correlation paths.
+  core::Result<std::optional<protocol::JsonRpcMessage>> dispatch_message(
+      const protocol::JsonRpcMessage& message) {
+    if (const auto* request = std::get_if<protocol::JsonRpcRequest>(&message)) {
+      auto handled = client_.handle_request(*request);
+      if (!handled) {
+        return protocol::JsonRpcMessage{protocol::make_error_response(
+            request->id,
+            detail::peer_error_object_from_core_error(handled.error()))};
+      }
+      return protocol::JsonRpcMessage{std::move(*handled)};
+    }
+
+    if (const auto* notification =
+            std::get_if<protocol::JsonRpcNotification>(&message)) {
+      const auto handled = client_.handle_notification(*notification);
+      if (!handled) {
+        return std::unexpected(handled.error());
+      }
+      return std::nullopt;
+    }
+
+    return std::unexpected(detail::peer_dispatch_error(
+        "client peer cannot dispatch an uncorrelated response"));
+  }
+
+  /// @brief Runs a sequential receive loop over a role-generic client
+  /// transport.
+  core::Result<core::Unit> serve_transport(
+      transport::ClientTransport& transport) {
+    while (true) {
+      auto received = transport.receive();
+      if (!received) {
+        return std::unexpected(received.error());
+      }
+      if (!received->has_value()) {
+        return core::Unit{};
+      }
+
+      auto dispatched = dispatch_message(received->value());
+      if (!dispatched) {
+        return std::unexpected(dispatched.error());
+      }
+      if (dispatched->has_value()) {
+        auto sent = transport.send(std::move(dispatched->value()));
+        if (!sent) {
+          return std::unexpected(sent.error());
+        }
+      }
+    }
+  }
+
  private:
   client::Client client_;
 };
@@ -570,6 +653,64 @@ class Peer<RoleServer> {
 
   core::Result<core::Unit> notify_task_status(const protocol::Task& task) {
     return server_->notify_task_status(task);
+  }
+
+  /// @brief Dispatches one inbound role-generic transport message.
+  ///
+  /// Requests produce a JSON-RPC response message, notifications produce no
+  /// outbound message, and standalone responses remain the responsibility of
+  /// request-handle correlation paths.
+  core::Result<std::optional<protocol::JsonRpcMessage>> dispatch_message(
+      const protocol::JsonRpcMessage& message,
+      const server::SessionContext& context = {}) {
+    if (const auto* request = std::get_if<protocol::JsonRpcRequest>(&message)) {
+      auto handled = server_->handle_request(*request, context);
+      if (!handled) {
+        return protocol::JsonRpcMessage{protocol::make_error_response(
+            request->id,
+            detail::peer_error_object_from_core_error(handled.error()))};
+      }
+      return protocol::JsonRpcMessage{std::move(*handled)};
+    }
+
+    if (const auto* notification =
+            std::get_if<protocol::JsonRpcNotification>(&message)) {
+      const auto handled = server_->handle_notification(*notification, context);
+      if (!handled) {
+        return std::unexpected(handled.error());
+      }
+      return std::nullopt;
+    }
+
+    return std::unexpected(detail::peer_dispatch_error(
+        "server peer cannot dispatch an uncorrelated response"));
+  }
+
+  /// @brief Runs a sequential receive loop over a role-generic server
+  /// transport.
+  core::Result<core::Unit> serve_transport(
+      transport::ServerTransport& transport,
+      const server::SessionContext& context = {}) {
+    while (true) {
+      auto received = transport.receive();
+      if (!received) {
+        return std::unexpected(received.error());
+      }
+      if (!received->has_value()) {
+        return core::Unit{};
+      }
+
+      auto dispatched = dispatch_message(received->value(), context);
+      if (!dispatched) {
+        return std::unexpected(dispatched.error());
+      }
+      if (dispatched->has_value()) {
+        auto sent = transport.send(std::move(dispatched->value()));
+        if (!sent) {
+          return std::unexpected(sent.error());
+        }
+      }
+    }
   }
 
  private:

@@ -22,12 +22,117 @@
 
 namespace mcp::protocol {
 
+/// @brief Tool selection mode for SEP-1577 sampling requests.
+enum class ToolChoiceMode {
+  /// Let the model decide whether to use tools.
+  Auto,
+  /// Require at least one tool use.
+  Required,
+  /// Do not allow tool use.
+  None,
+};
+
+/// @brief Tool selection behavior supplied to `sampling/createMessage`.
+struct ToolChoice {
+  /// Optional selection mode. Missing preserves an empty object if present.
+  std::optional<ToolChoiceMode> mode;
+
+  /// @brief Lets the model decide whether to use tools.
+  static ToolChoice auto_choice() { return ToolChoice{ToolChoiceMode::Auto}; }
+
+  /// @brief Requires the model to use a tool.
+  static ToolChoice required() { return ToolChoice{ToolChoiceMode::Required}; }
+
+  /// @brief Prevents model tool use.
+  static ToolChoice none() { return ToolChoice{ToolChoiceMode::None}; }
+};
+
+/// @brief Assistant-side tool call request embedded in sampling content.
+struct ToolUseContent {
+  /// Unique id for this requested tool call.
+  std::string id;
+  /// Tool name to invoke.
+  std::string name;
+  /// JSON object containing tool arguments.
+  Json input = Json::object();
+  /// Optional `_meta` extension object preserved on the wire.
+  std::optional<Json> meta;
+};
+
+/// @brief User-side result for a prior sampling tool call.
+struct ToolResultContent {
+  /// Id of the corresponding tool use.
+  std::string tool_use_id;
+  /// Tool-visible content blocks returned by the tool.
+  std::vector<ContentBlock> content;
+  /// Optional structured result object.
+  std::optional<Json> structured_content;
+  /// Optional error marker for failed tool execution.
+  std::optional<bool> is_error;
+  /// Optional `_meta` extension object preserved on the wire.
+  std::optional<Json> meta;
+};
+
+/// @brief One sampling message content item.
+///
+/// Text, image, and audio content reuse ContentBlock. SEP-1577 tool-use and
+/// tool-result items are modeled explicitly because their wire shape is not the
+/// same as ordinary tool-call results.
+struct SamplingMessageContent {
+  /// Ordinary content block for text, image, audio, or extension content.
+  ContentBlock content = ContentBlock::text_content("");
+  /// Assistant-only tool-use content.
+  std::optional<ToolUseContent> tool_use;
+  /// User-only tool-result content.
+  std::optional<ToolResultContent> tool_result;
+
+  /// @brief Creates a text sampling content item.
+  static SamplingMessageContent text(std::string value) {
+    SamplingMessageContent item;
+    item.content = ContentBlock::text_content(std::move(value));
+    return item;
+  }
+
+  /// @brief Wraps a regular content block.
+  static SamplingMessageContent from_content(ContentBlock value) {
+    SamplingMessageContent item;
+    item.content = std::move(value);
+    return item;
+  }
+
+  /// @brief Creates an assistant tool-use content item.
+  static SamplingMessageContent tool_use_content(ToolUseContent value) {
+    SamplingMessageContent item;
+    item.content.type = "tool_use";
+    item.tool_use = std::move(value);
+    return item;
+  }
+
+  /// @brief Creates a user tool-result content item.
+  static SamplingMessageContent tool_result_content(ToolResultContent value) {
+    SamplingMessageContent item;
+    item.content.type = "tool_result";
+    item.tool_result = std::move(value);
+    return item;
+  }
+
+  /// @brief Returns true when this item carries tool-use content.
+  bool is_tool_use() const noexcept { return tool_use.has_value(); }
+
+  /// @brief Returns true when this item carries tool-result content.
+  bool is_tool_result() const noexcept { return tool_result.has_value(); }
+};
+
 /// @brief Input message supplied to a sampling request.
 struct SamplingMessage {
   /// Message role understood by the sampling client.
   std::string role;
-  /// Message content block.
+  /// First or only message content block kept for simple callers.
   ContentBlock content;
+  /// Optional full content list. Empty means `content` is serialized.
+  std::vector<SamplingMessageContent> contents;
+  /// Optional `_meta` extension object preserved on the wire.
+  std::optional<Json> meta;
 };
 
 /// @brief Soft model name hint for sampling.
@@ -68,18 +173,28 @@ struct CreateMessageParams {
   Json metadata = Json::object();
   /// Optional task request parameters for asynchronous sampling.
   std::optional<TaskRequestParameters> task;
+  /// Optional `_meta` extension object preserved on the wire.
+  std::optional<Json> meta;
+  /// Optional tools available to the sampled model.
+  std::vector<ToolDefinition> tools;
+  /// Optional tool selection behavior.
+  std::optional<ToolChoice> tool_choice;
 };
 
 /// @brief Result object for `sampling/createMessage`.
 struct CreateMessageResult {
   /// Role assigned to the generated message.
   std::string role;
-  /// Generated content.
+  /// First or only generated content kept for simple callers.
   ContentBlock content;
+  /// Optional full generated content list. Empty means `content` is serialized.
+  std::vector<SamplingMessageContent> contents;
   /// Model identifier selected by the client.
   std::string model;
   /// Optional reason generation stopped.
   std::string stop_reason;
+  /// Optional `_meta` extension object preserved on the wire.
+  std::optional<Json> meta;
 };
 
 /// @brief Builds an InvalidRequest error for sampling JSON validation failures.
@@ -88,10 +203,245 @@ inline core::Error sampling_json_error(std::string message) {
       static_cast<int>(ErrorCode::InvalidRequest), std::move(message), {}};
 }
 
+/// @brief Converts a tool-choice mode to the lowercase wire value.
+inline std::string tool_choice_mode_to_string(ToolChoiceMode mode) {
+  switch (mode) {
+    case ToolChoiceMode::Auto:
+      return "auto";
+    case ToolChoiceMode::Required:
+      return "required";
+    case ToolChoiceMode::None:
+      return "none";
+  }
+  return "auto";
+}
+
+/// @brief Parses a tool-choice mode string.
+inline std::optional<ToolChoiceMode> tool_choice_mode_from_string(
+    const std::string& value) {
+  if (value == "auto") {
+    return ToolChoiceMode::Auto;
+  }
+  if (value == "required") {
+    return ToolChoiceMode::Required;
+  }
+  if (value == "none") {
+    return ToolChoiceMode::None;
+  }
+  return std::nullopt;
+}
+
+/// @brief Serializes tool-choice behavior.
+inline Json tool_choice_to_json(const ToolChoice& choice) {
+  Json json = Json::object();
+  if (choice.mode.has_value()) {
+    json["mode"] = tool_choice_mode_to_string(*choice.mode);
+  }
+  return json;
+}
+
+/// @brief Parses tool-choice behavior.
+inline core::Result<ToolChoice> tool_choice_from_json(const Json& json) {
+  if (!json.is_object()) {
+    return std::unexpected(sampling_json_error("toolChoice must be an object"));
+  }
+  ToolChoice choice;
+  if (json.contains("mode")) {
+    if (!json.at("mode").is_string()) {
+      return std::unexpected(
+          sampling_json_error("toolChoice mode must be a string"));
+    }
+    const auto mode =
+        tool_choice_mode_from_string(json.at("mode").get<std::string>());
+    if (!mode.has_value()) {
+      return std::unexpected(
+          sampling_json_error("toolChoice mode is not supported"));
+    }
+    choice.mode = *mode;
+  }
+  return choice;
+}
+
+/// @brief Serializes assistant-side sampling tool use content.
+inline Json tool_use_content_to_json(const ToolUseContent& content) {
+  Json json = Json::object();
+  json["type"] = "tool_use";
+  json["id"] = content.id;
+  json["name"] = content.name;
+  json["input"] = content.input;
+  if (content.meta.has_value()) {
+    json["_meta"] = *content.meta;
+  }
+  return json;
+}
+
+/// @brief Parses assistant-side sampling tool use content.
+inline core::Result<ToolUseContent> tool_use_content_from_json(
+    const Json& json) {
+  if (!json.is_object()) {
+    return std::unexpected(
+        sampling_json_error("tool_use content must be an object"));
+  }
+  if (!json.contains("id") || !json.at("id").is_string()) {
+    return std::unexpected(
+        sampling_json_error("tool_use content requires a string id"));
+  }
+  if (!json.contains("name") || !json.at("name").is_string()) {
+    return std::unexpected(
+        sampling_json_error("tool_use content requires a string name"));
+  }
+  if (!json.contains("input") || !json.at("input").is_object()) {
+    return std::unexpected(
+        sampling_json_error("tool_use content requires object input"));
+  }
+  ToolUseContent content;
+  content.id = json.at("id").get<std::string>();
+  content.name = json.at("name").get<std::string>();
+  content.input = json.at("input");
+  if (json.contains("_meta")) {
+    if (!json.at("_meta").is_object()) {
+      return std::unexpected(
+          sampling_json_error("tool_use content _meta must be an object"));
+    }
+    content.meta = json.at("_meta");
+  }
+  return content;
+}
+
+/// @brief Serializes user-side sampling tool result content.
+inline Json tool_result_content_to_json(const ToolResultContent& content) {
+  Json json = Json::object();
+  json["type"] = "tool_result";
+  json["toolUseId"] = content.tool_use_id;
+  if (!content.content.empty()) {
+    json["content"] = Json::array();
+    for (const auto& block : content.content) {
+      json["content"].push_back(content_block_to_json(block));
+    }
+  }
+  if (content.structured_content.has_value()) {
+    json["structuredContent"] = *content.structured_content;
+  }
+  if (content.is_error.has_value()) {
+    json["isError"] = *content.is_error;
+  }
+  if (content.meta.has_value()) {
+    json["_meta"] = *content.meta;
+  }
+  return json;
+}
+
+/// @brief Parses user-side sampling tool result content.
+inline core::Result<ToolResultContent> tool_result_content_from_json(
+    const Json& json) {
+  if (!json.is_object()) {
+    return std::unexpected(
+        sampling_json_error("tool_result content must be an object"));
+  }
+  if (!json.contains("toolUseId") || !json.at("toolUseId").is_string()) {
+    return std::unexpected(
+        sampling_json_error("tool_result content requires toolUseId"));
+  }
+  ToolResultContent content;
+  content.tool_use_id = json.at("toolUseId").get<std::string>();
+  if (json.contains("content")) {
+    if (!json.at("content").is_array()) {
+      return std::unexpected(
+          sampling_json_error("tool_result content must be an array"));
+    }
+    for (const auto& item : json.at("content")) {
+      const auto block = content_block_from_json(item);
+      if (!block) {
+        return std::unexpected(block.error());
+      }
+      content.content.push_back(*block);
+    }
+  }
+  if (json.contains("structuredContent")) {
+    if (!json.at("structuredContent").is_object()) {
+      return std::unexpected(sampling_json_error(
+          "tool_result structuredContent must be an object"));
+    }
+    content.structured_content = json.at("structuredContent");
+  }
+  if (json.contains("isError")) {
+    if (!json.at("isError").is_boolean()) {
+      return std::unexpected(
+          sampling_json_error("tool_result isError must be a boolean"));
+    }
+    content.is_error = json.at("isError").get<bool>();
+  }
+  if (json.contains("_meta")) {
+    if (!json.at("_meta").is_object()) {
+      return std::unexpected(
+          sampling_json_error("tool_result _meta must be an object"));
+    }
+    content.meta = json.at("_meta");
+  }
+  return content;
+}
+
+/// @brief Serializes one sampling message content item.
+inline Json sampling_message_content_to_json(
+    const SamplingMessageContent& content) {
+  if (content.tool_use.has_value()) {
+    return tool_use_content_to_json(*content.tool_use);
+  }
+  if (content.tool_result.has_value()) {
+    return tool_result_content_to_json(*content.tool_result);
+  }
+  return content_block_to_json(content.content);
+}
+
+/// @brief Parses one sampling message content item.
+inline core::Result<SamplingMessageContent> sampling_message_content_from_json(
+    const Json& json) {
+  if (json.is_object() && json.contains("type") &&
+      json.at("type").is_string()) {
+    const auto type = json.at("type").get<std::string>();
+    if (type == "tool_use") {
+      const auto tool_use = tool_use_content_from_json(json);
+      if (!tool_use) {
+        return std::unexpected(tool_use.error());
+      }
+      return SamplingMessageContent::tool_use_content(*tool_use);
+    }
+    if (type == "tool_result") {
+      const auto tool_result = tool_result_content_from_json(json);
+      if (!tool_result) {
+        return std::unexpected(tool_result.error());
+      }
+      return SamplingMessageContent::tool_result_content(*tool_result);
+    }
+  }
+
+  const auto block = content_block_from_json(json);
+  if (!block) {
+    return std::unexpected(block.error());
+  }
+  return SamplingMessageContent::from_content(*block);
+}
+
 /// @brief Serializes a sampling message.
 inline Json sampling_message_to_json(const SamplingMessage& message) {
-  return Json{{"role", message.role},
-              {"content", content_block_to_json(message.content)}};
+  Json json = Json{{"role", message.role}};
+  if (!message.contents.empty()) {
+    if (message.contents.size() == 1) {
+      json["content"] =
+          sampling_message_content_to_json(message.contents.front());
+    } else {
+      json["content"] = Json::array();
+      for (const auto& content : message.contents) {
+        json["content"].push_back(sampling_message_content_to_json(content));
+      }
+    }
+  } else {
+    json["content"] = content_block_to_json(message.content);
+  }
+  if (message.meta.has_value()) {
+    json["_meta"] = *message.meta;
+  }
+  return json;
 }
 
 /// @brief Parses a sampling message.
@@ -110,11 +460,34 @@ inline core::Result<SamplingMessage> sampling_message_from_json(
     return std::unexpected(
         sampling_json_error("sampling message requires content"));
   }
-  const auto content = content_block_from_json(json.at("content"));
-  if (!content) {
-    return std::unexpected(content.error());
+  SamplingMessage message;
+  message.role = json.at("role").get<std::string>();
+  if (json.at("content").is_array()) {
+    for (const auto& item : json.at("content")) {
+      const auto content = sampling_message_content_from_json(item);
+      if (!content) {
+        return std::unexpected(content.error());
+      }
+      message.contents.push_back(*content);
+    }
+  } else {
+    const auto content = sampling_message_content_from_json(json.at("content"));
+    if (!content) {
+      return std::unexpected(content.error());
+    }
+    message.contents.push_back(*content);
   }
-  return SamplingMessage{json.at("role").get<std::string>(), *content};
+  if (!message.contents.empty()) {
+    message.content = message.contents.front().content;
+  }
+  if (json.contains("_meta")) {
+    if (!json.at("_meta").is_object()) {
+      return std::unexpected(
+          sampling_json_error("sampling message _meta must be an object"));
+    }
+    message.meta = json.at("_meta");
+  }
+  return message;
 }
 
 /// @brief Serializes a model hint.
@@ -246,6 +619,18 @@ inline Json create_message_params_to_json(const CreateMessageParams& params) {
   if (params.task.has_value()) {
     json["task"] = task_request_parameters_to_json(*params.task);
   }
+  if (params.meta.has_value()) {
+    json["_meta"] = *params.meta;
+  }
+  if (!params.tools.empty()) {
+    json["tools"] = Json::array();
+    for (const auto& tool : params.tools) {
+      json["tools"].push_back(tool_definition_to_json(tool));
+    }
+  }
+  if (params.tool_choice.has_value()) {
+    json["toolChoice"] = tool_choice_to_json(*params.tool_choice);
+  }
   return json;
 }
 
@@ -332,6 +717,33 @@ inline core::Result<CreateMessageParams> create_message_params_from_json(
     }
     params.task = *task;
   }
+  if (json.contains("_meta")) {
+    if (!json.at("_meta").is_object()) {
+      return std::unexpected(sampling_json_error(
+          "sampling/createMessage _meta must be an object"));
+    }
+    params.meta = json.at("_meta");
+  }
+  if (json.contains("tools")) {
+    if (!json.at("tools").is_array()) {
+      return std::unexpected(
+          sampling_json_error("sampling tools must be an array"));
+    }
+    for (const auto& item : json.at("tools")) {
+      const auto tool = tool_definition_from_json(item);
+      if (!tool) {
+        return std::unexpected(tool.error());
+      }
+      params.tools.push_back(*tool);
+    }
+  }
+  if (json.contains("toolChoice")) {
+    const auto tool_choice = tool_choice_from_json(json.at("toolChoice"));
+    if (!tool_choice) {
+      return std::unexpected(tool_choice.error());
+    }
+    params.tool_choice = *tool_choice;
+  }
   return params;
 }
 
@@ -339,10 +751,25 @@ inline core::Result<CreateMessageParams> create_message_params_from_json(
 inline Json create_message_result_to_json(const CreateMessageResult& result) {
   Json json = Json::object();
   json["role"] = result.role;
-  json["content"] = content_block_to_json(result.content);
+  if (!result.contents.empty()) {
+    if (result.contents.size() == 1) {
+      json["content"] =
+          sampling_message_content_to_json(result.contents.front());
+    } else {
+      json["content"] = Json::array();
+      for (const auto& content : result.contents) {
+        json["content"].push_back(sampling_message_content_to_json(content));
+      }
+    }
+  } else {
+    json["content"] = content_block_to_json(result.content);
+  }
   json["model"] = result.model;
   if (!result.stop_reason.empty()) {
     json["stopReason"] = result.stop_reason;
+  }
+  if (result.meta.has_value()) {
+    json["_meta"] = *result.meta;
   }
   return json;
 }
@@ -367,14 +794,26 @@ inline core::Result<CreateMessageResult> create_message_result_from_json(
     return std::unexpected(sampling_json_error(
         "sampling/createMessage result requires a string model"));
   }
-  const auto content = content_block_from_json(json.at("content"));
-  if (!content) {
-    return std::unexpected(content.error());
-  }
-
   CreateMessageResult result;
   result.role = json.at("role").get<std::string>();
-  result.content = *content;
+  if (json.at("content").is_array()) {
+    for (const auto& item : json.at("content")) {
+      const auto content = sampling_message_content_from_json(item);
+      if (!content) {
+        return std::unexpected(content.error());
+      }
+      result.contents.push_back(*content);
+    }
+  } else {
+    const auto content = sampling_message_content_from_json(json.at("content"));
+    if (!content) {
+      return std::unexpected(content.error());
+    }
+    result.contents.push_back(*content);
+  }
+  if (!result.contents.empty()) {
+    result.content = result.contents.front().content;
+  }
   result.model = json.at("model").get<std::string>();
   if (json.contains("stopReason")) {
     if (!json.at("stopReason").is_string()) {
@@ -382,6 +821,13 @@ inline core::Result<CreateMessageResult> create_message_result_from_json(
           sampling_json_error("sampling stopReason must be a string"));
     }
     result.stop_reason = json.at("stopReason").get<std::string>();
+  }
+  if (json.contains("_meta")) {
+    if (!json.at("_meta").is_object()) {
+      return std::unexpected(sampling_json_error(
+          "sampling/createMessage result _meta must be an object"));
+    }
+    result.meta = json.at("_meta");
   }
   return result;
 }

@@ -10,6 +10,7 @@
 /// and notifications are delivered through registered callbacks, which may be
 /// invoked by the transport thread that received the message.
 
+#include <atomic>
 #include <chrono>
 #include <cstdint>
 #include <functional>
@@ -254,6 +255,10 @@ class Client {
   /// @brief Constructs a client from a custom transport.
   /// @param transport Transport instance to own. It must not be null.
   explicit Client(std::unique_ptr<Transport> transport);
+  Client(const Client&) = delete;
+  Client& operator=(const Client&) = delete;
+  Client(Client&& other) noexcept;
+  Client& operator=(Client&& other) noexcept;
 
   /// @brief Sends the MCP initialize request.
   /// @param client_name Name advertised to the server.
@@ -445,11 +450,10 @@ class Client {
   template <class T, class Parser>
   RequestHandle<T> request_async(std::string method, protocol::Json params,
                                  Parser parser, RequestOptions options = {}) {
-    protocol::JsonRpcRequest request{
-        .method = std::move(method),
-        .params = std::move(params),
-        .id = next_request_id_++,
-    };
+    protocol::JsonRpcRequest request;
+    request.method = std::move(method);
+    request.params = std::move(params);
+    request.id = next_request_id();
     if (options.meta.has_value()) {
       request.meta = std::move(options.meta);
     }
@@ -692,9 +696,12 @@ class Client {
   core::Result<protocol::JsonRpcResponse> send_rpc_request(
       protocol::JsonRpcRequest request);
   core::Result<core::Unit> ensure_transport_started();
+  std::int64_t next_request_id() noexcept {
+    return next_request_id_.fetch_add(1, std::memory_order_relaxed);
+  }
 
   std::unique_ptr<Transport> transport_;
-  std::int64_t next_request_id_ = 1;
+  std::atomic<std::int64_t> next_request_id_{1};
   bool transport_started_ = false;
   std::vector<protocol::Root> roots_;
   std::optional<protocol::Json> last_initialize_params_;

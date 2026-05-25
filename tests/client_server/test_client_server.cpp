@@ -12,6 +12,7 @@
 #include <string>
 #include <string_view>
 #include <thread>
+#include <unordered_set>
 #include <utility>
 #include <variant>
 #include <vector>
@@ -385,6 +386,29 @@ class RecordingTransport final : public mcp::client::Transport {
   bool stopped = false;
 };
 
+class ConcurrentRequestIdTransport final : public mcp::client::Transport {
+ public:
+  mcp::core::Result<mcp::protocol::JsonRpcResponse> send(
+      const mcp::protocol::JsonRpcRequest& request) override {
+    std::lock_guard<std::mutex> lock(mutex_);
+    requests.push_back(request);
+    return mcp::protocol::JsonRpcResponse{
+        .id = request.id,
+        .result = Json{{"ok", true}},
+    };
+  }
+
+  std::size_t request_count() const {
+    std::lock_guard<std::mutex> lock(mutex_);
+    return requests.size();
+  }
+
+  std::vector<mcp::protocol::JsonRpcRequest> requests;
+
+ private:
+  mutable std::mutex mutex_;
+};
+
 class RecordingServerTransport final : public mcp::server::Transport {
  public:
   mcp::core::Result<mcp::core::Unit> start(
@@ -404,6 +428,82 @@ class RecordingServerTransport final : public mcp::server::Transport {
   std::string_view name() const noexcept override { return "recording"; }
 
   std::vector<mcp::protocol::JsonRpcNotification> notifications;
+};
+
+class BlockingLifecycleServerTransport final : public mcp::server::Transport {
+ public:
+  mcp::core::Result<mcp::core::Unit> start(
+      mcp::server::RequestHandler,
+      mcp::server::NotificationHandler = {}) override {
+    std::unique_lock<std::mutex> lock(mutex_);
+    started_ = true;
+    cv_.notify_all();
+    cv_.wait(lock, [this] { return stopped_; });
+    return mcp::core::Unit{};
+  }
+
+  void stop() noexcept override {
+    {
+      std::lock_guard<std::mutex> lock(mutex_);
+      stopped_ = true;
+    }
+    cv_.notify_all();
+  }
+
+  mcp::core::Result<mcp::core::Unit> send_notification(
+      const mcp::protocol::JsonRpcNotification&) override {
+    return mcp::core::Unit{};
+  }
+
+  std::string_view name() const noexcept override { return "blocking"; }
+
+  void wait_until_started() {
+    std::unique_lock<std::mutex> lock(mutex_);
+    cv_.wait(lock, [this] { return started_; });
+  }
+
+  bool stopped() const {
+    std::lock_guard<std::mutex> lock(mutex_);
+    return stopped_;
+  }
+
+ private:
+  mutable std::mutex mutex_;
+  std::condition_variable cv_;
+  bool started_ = false;
+  bool stopped_ = false;
+};
+
+class QueuedRoleServerTransport final : public mcp::transport::ServerTransport {
+ public:
+  std::string_view name() const noexcept override { return "queued-role"; }
+
+  mcp::core::Result<mcp::core::Unit> send(TxMessage message) override {
+    sent.push_back(std::move(message));
+    return mcp::core::Unit{};
+  }
+
+  mcp::core::Result<std::optional<RxMessage>> receive() override {
+    if (next_inbound_ >= inbound.size()) {
+      return std::nullopt;
+    }
+    auto message = std::move(inbound.at(next_inbound_));
+    ++next_inbound_;
+    return message;
+  }
+
+  mcp::core::Result<mcp::core::Unit> close() override {
+    closed = true;
+    next_inbound_ = inbound.size();
+    return mcp::core::Unit{};
+  }
+
+  std::vector<RxMessage> inbound;
+  std::vector<TxMessage> sent;
+  bool closed = false;
+
+ private:
+  std::size_t next_inbound_ = 0;
 };
 
 class BlockingRequestServerTransport final : public mcp::server::Transport {
@@ -878,10 +978,16 @@ void test_client_peer_typed_async_helpers() {
   options.timeout = std::chrono::seconds(1);
   options.meta = Json{{"traceId", "typed-async"}};
 
-  const auto listed = peer.list_tools_async(options).await_response();
+  const auto listed_handle = peer.list_tools_async(options);
+  const auto listed = listed_handle.await_response();
   require(listed.has_value(), "typed async list_tools failed");
   require(listed->front().name == "fake-tool",
           "typed async list_tools result mismatch");
+  const auto listed_again = listed_handle.await_response();
+  require(listed_again.has_value(),
+          "typed async list_tools multi-await failed");
+  require(listed_again->front().name == "fake-tool",
+          "typed async list_tools multi-await result mismatch");
 
   const auto prompts = peer.list_prompts_async(options).await_response();
   require(prompts.has_value(), "typed async list_prompts failed");
@@ -1020,7 +1126,13 @@ void test_client_peer_typed_async_helpers() {
   require(task_result->at("value") == "task-complete",
           "typed async task_result payload mismatch");
 
-  require(recording->requests.size() == 15,
+  const auto raw_listed =
+      peer.request_async("tools/list", Json::object(), options)
+          .await_response();
+  require(raw_listed.has_value(), "raw async tools/list failed");
+  require(raw_listed->at("tools").is_array(), "raw async tools/list mismatch");
+
+  require(recording->requests.size() == 16,
           "typed async request count mismatch");
   require(recording->requests.at(0).method == "tools/list",
           "typed async list_tools method mismatch");
@@ -1052,6 +1164,8 @@ void test_client_peer_typed_async_helpers() {
           "typed async cancel_task method mismatch");
   require(recording->requests.at(14).method == "tasks/result",
           "typed async task_result method mismatch");
+  require(recording->requests.at(15).method == "tools/list",
+          "raw async request method mismatch");
   for (const auto& request : recording->requests) {
     require(request.meta.has_value(), "typed async request meta missing");
     require(request.meta->at("traceId") == "typed-async",
@@ -1088,6 +1202,38 @@ void test_server_client_peer_request_handle_times_out_and_cancels() {
           "cancelled request id mismatch");
 
   transport.release();
+  transport.wait_until_request_finished();
+}
+
+void test_server_client_peer_request_handle_explicit_cancel_notifies() {
+  BlockingRequestServerTransport transport;
+  mcp::server::ClientPeer peer(&transport);
+
+  auto handle = peer.request_async("tools/list");
+  transport.wait_until_request_started();
+
+  const auto cancel_result = handle.cancel("request cancelled");
+  require(cancel_result.has_value(),
+          "server request handle explicit cancel should notify");
+
+  transport.wait_until_notifications(1);
+  require(transport.notifications.front().method ==
+              mcp::protocol::CancelledNotificationMethod,
+          "server explicit cancellation notification mismatch");
+
+  const auto cancelled = mcp::protocol::cancelled_notification_params_from_json(
+      transport.notifications.front().params);
+  require(cancelled.has_value(),
+          "server explicit cancelled params should parse");
+  require(cancelled->reason == "request cancelled",
+          "server explicit cancelled reason mismatch");
+  require(std::get<std::int64_t>(cancelled->request_id) ==
+              std::get<std::int64_t>(handle.request_id()),
+          "server explicit cancelled request id mismatch");
+
+  transport.release();
+  const auto response = handle.await_response();
+  require(response.has_value(), "server request should still complete");
   transport.wait_until_request_finished();
 }
 
@@ -1163,6 +1309,181 @@ void test_client_peer_request_handle_observes_cancellation_token() {
   recording->wait_until_request_finished();
 }
 
+void test_client_peer_cancel_timeout_race_stress() {
+  for (int iteration = 0; iteration < 24; ++iteration) {
+    auto transport = std::make_unique<BlockingRequestClientTransport>();
+    auto* recording = transport.get();
+    mcp::Peer<mcp::RoleClient> peer(std::move(transport));
+
+    mcp::CancellationSource cancellation;
+    mcp::RequestOptions options;
+    options.timeout = std::chrono::milliseconds(2);
+    options.cancellation_token = cancellation.token();
+
+    auto handle = peer.request_async("tools/list", Json::object(), options);
+    recording->wait_until_request_started();
+
+    std::thread canceller([&cancellation, iteration]() {
+      if (iteration % 2 == 0) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+      }
+      cancellation.cancel();
+    });
+
+    const auto response = handle.await_response();
+    require(!response.has_value(),
+            "client cancel/timeout race should fail terminally");
+    require(response.error().message == "request cancelled" ||
+                response.error().message == "request timed out",
+            "client cancel/timeout race error mismatch");
+    if (canceller.joinable()) {
+      canceller.join();
+    }
+
+    recording->wait_until_notifications(1);
+    require(recording->notifications.size() == 1,
+            "client cancel/timeout race should send one cancellation");
+    require(recording->notifications.front().method ==
+                mcp::protocol::CancelledNotificationMethod,
+            "client cancel/timeout race notification mismatch");
+    const auto cancelled =
+        mcp::protocol::cancelled_notification_params_from_json(
+            recording->notifications.front().params);
+    require(cancelled.has_value(),
+            "client cancel/timeout race cancellation params should parse");
+    require(std::get<std::int64_t>(cancelled->request_id) ==
+                std::get<std::int64_t>(handle.request_id()),
+            "client cancel/timeout race request id mismatch");
+
+    recording->release();
+    recording->wait_until_request_finished();
+  }
+}
+
+void test_server_client_peer_cancel_timeout_race_stress() {
+  for (int iteration = 0; iteration < 24; ++iteration) {
+    BlockingRequestServerTransport transport;
+    mcp::server::ClientPeer peer(&transport);
+
+    mcp::CancellationSource cancellation;
+    mcp::RequestOptions options;
+    options.timeout = std::chrono::milliseconds(2);
+    options.cancellation_token = cancellation.token();
+
+    auto handle = peer.request_async("tools/list", Json::object(), options);
+    transport.wait_until_request_started();
+
+    std::thread canceller([&cancellation, iteration]() {
+      if (iteration % 2 != 0) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+      }
+      cancellation.cancel();
+    });
+
+    const auto response = handle.await_response();
+    require(!response.has_value(),
+            "server cancel/timeout race should fail terminally");
+    require(response.error().message == "request cancelled" ||
+                response.error().message == "request timed out",
+            "server cancel/timeout race error mismatch");
+    if (canceller.joinable()) {
+      canceller.join();
+    }
+
+    transport.wait_until_notifications(1);
+    require(transport.notifications.size() == 1,
+            "server cancel/timeout race should send one cancellation");
+    require(transport.notifications.front().method ==
+                mcp::protocol::CancelledNotificationMethod,
+            "server cancel/timeout race notification mismatch");
+    const auto cancelled =
+        mcp::protocol::cancelled_notification_params_from_json(
+            transport.notifications.front().params);
+    require(cancelled.has_value(),
+            "server cancel/timeout race cancellation params should parse");
+    require(std::get<std::int64_t>(cancelled->request_id) ==
+                std::get<std::int64_t>(handle.request_id()),
+            "server cancel/timeout race request id mismatch");
+
+    transport.release();
+    transport.wait_until_request_finished();
+  }
+}
+
+void test_client_request_ids_are_thread_safe_for_concurrent_async_requests() {
+  auto transport = std::make_unique<ConcurrentRequestIdTransport>();
+  auto* recording = transport.get();
+  mcp::Peer<mcp::RoleClient> peer(std::move(transport));
+
+  const auto warmup = peer.request_async("custom/warmup").await_response();
+  require(warmup.has_value(), "warmup request should succeed");
+
+  constexpr int kThreadCount = 8;
+  constexpr int kRequestsPerThread = 4;
+  constexpr int kRequestCount = kThreadCount * kRequestsPerThread;
+
+  std::atomic<int> ready_threads{0};
+  std::atomic_bool start{false};
+  std::mutex handles_mutex;
+  std::vector<mcp::RequestHandle<Json>> handles;
+  handles.reserve(kRequestCount);
+  std::vector<std::thread> threads;
+  threads.reserve(kThreadCount);
+
+  for (int thread_index = 0; thread_index < kThreadCount; ++thread_index) {
+    threads.emplace_back([&, thread_index]() {
+      std::vector<mcp::RequestHandle<Json>> local_handles;
+      local_handles.reserve(kRequestsPerThread);
+      ready_threads.fetch_add(1, std::memory_order_acq_rel);
+      while (!start.load(std::memory_order_acquire)) {
+        std::this_thread::yield();
+      }
+
+      for (int request_index = 0; request_index < kRequestsPerThread;
+           ++request_index) {
+        local_handles.push_back(peer.request_async(
+            "custom/concurrent",
+            Json{{"thread", thread_index}, {"request", request_index}}));
+      }
+
+      std::lock_guard<std::mutex> lock(handles_mutex);
+      for (auto& handle : local_handles) {
+        handles.push_back(std::move(handle));
+      }
+    });
+  }
+
+  wait_until(
+      [&]() {
+        return ready_threads.load(std::memory_order_acquire) == kThreadCount;
+      },
+      "concurrent request id workers did not start");
+  start.store(true, std::memory_order_release);
+
+  for (auto& thread : threads) {
+    thread.join();
+  }
+
+  require(handles.size() == static_cast<std::size_t>(kRequestCount),
+          "concurrent request handle count mismatch");
+  std::unordered_set<std::int64_t> ids;
+  ids.reserve(handles.size());
+  for (const auto& handle : handles) {
+    ids.insert(std::get<std::int64_t>(handle.request_id()));
+  }
+  require(ids.size() == handles.size(),
+          "concurrent request ids must be unique");
+
+  for (const auto& handle : handles) {
+    const auto response = handle.await_response();
+    require(response.has_value(), "concurrent async request failed");
+    require(response->at("ok") == true, "concurrent async response mismatch");
+  }
+  require(
+      recording->request_count() == static_cast<std::size_t>(kRequestCount + 1),
+      "concurrent transport request count mismatch");
+}
+
 void test_service_lifecycle_facades_start_and_stop() {
   auto transport = std::make_unique<RecordingTransport>();
   auto* recording = transport.get();
@@ -1193,8 +1514,13 @@ void test_service_lifecycle_facades_start_and_stop() {
   require(recording->stopped, "client service should stop transport");
 
   auto server = std::make_unique<mcp::server::Server>(make_server());
+  auto server_transport = std::make_unique<BlockingLifecycleServerTransport>();
+  auto* server_transport_ptr = server_transport.get();
+  require(server->add_transport(std::move(server_transport)).has_value(),
+          "server service transport add failed");
   auto running_server = mcp::serve(mcp::ServerPeer(std::move(server)));
   require(running_server.has_value(), "server service should start");
+  server_transport_ptr->wait_until_started();
   require(running_server->running(), "server service should report running");
   std::atomic_bool server_wait_returned = false;
   std::thread server_waiter([&] {
@@ -1214,6 +1540,60 @@ void test_service_lifecycle_facades_start_and_stop() {
   require(server_wait_returned.load(),
           "server service wait should return after stop");
   require(!running_server->running(), "server service should report stopped");
+  require(server_transport_ptr->stopped(),
+          "server service should stop transport");
+}
+
+void test_server_peer_serves_role_generic_transport_receive_loop() {
+  auto server = std::make_unique<mcp::server::Server>(make_server());
+  int raw_notifications = 0;
+  std::string notification_session;
+  server->set_raw_notification_handler(
+      [&](const mcp::protocol::JsonRpcNotification& notification,
+          const mcp::server::SessionContext& context)
+          -> mcp::core::Result<mcp::core::Unit> {
+        if (notification.method == "notifications/initialized") {
+          ++raw_notifications;
+          notification_session = context.session_id;
+        }
+        return mcp::core::Unit{};
+      });
+
+  mcp::ServerPeer peer(std::move(server));
+  QueuedRoleServerTransport transport;
+  transport.inbound.push_back(mcp::protocol::JsonRpcRequest{
+      .method = "tools/list",
+      .params = Json::object(),
+      .id = std::int64_t{700},
+  });
+  transport.inbound.push_back(mcp::protocol::JsonRpcNotification{
+      .method = "notifications/initialized",
+      .params = Json::object(),
+  });
+
+  const auto served =
+      peer.serve_transport(transport, mcp::server::SessionContext{
+                                          .session_id = "peer-session",
+                                          .remote_address = "role-generic-test",
+                                      });
+  require(served.has_value(), "server peer role transport loop failed");
+  require(transport.sent.size() == 1,
+          "server peer role transport should send one response");
+
+  const auto* response =
+      std::get_if<mcp::protocol::JsonRpcResponse>(&transport.sent.front());
+  require(response != nullptr,
+          "server peer role transport should send a response message");
+  require(response->id.has_value(), "server peer response id missing");
+  require(std::get<std::int64_t>(*response->id) == 700,
+          "server peer response id mismatch");
+  require(response->result.has_value(), "server peer response result missing");
+  require(response->result->at("tools").front().at("name") == "echo",
+          "server peer tools/list response mismatch");
+  require(raw_notifications == 1,
+          "server peer should dispatch transport notifications");
+  require(notification_session == "peer-session",
+          "server peer should pass transport session context");
 }
 
 void test_contract_handlers_override_client_and_server_requests() {
@@ -3042,9 +3422,9 @@ void test_client_completion_helpers_cover_prompt_and_resource_refs() {
   require(
       recording->requests.at(2).params.at("ref").at("type") == "ref/resource",
       "resource completion ref type mismatch");
-  require(recording->requests.at(2).params.at("ref").at("name") ==
+  require(recording->requests.at(2).params.at("ref").at("uri") ==
               "file:///tmp/{name}.txt",
-          "resource completion ref name mismatch");
+          "resource completion ref uri mismatch");
 }
 
 void test_client_peer_initialize_uses_explicit_capabilities_and_roots() {
@@ -3468,12 +3848,22 @@ int main() {
       {"client peer typed async helpers", test_client_peer_typed_async_helpers},
       {"server client-peer request handle timeout",
        test_server_client_peer_request_handle_times_out_and_cancels},
+      {"server client-peer request handle explicit cancel",
+       test_server_client_peer_request_handle_explicit_cancel_notifies},
       {"client peer request handle timeout",
        test_client_peer_request_handle_times_out_and_cancels},
       {"client peer request handle cancellation token",
        test_client_peer_request_handle_observes_cancellation_token},
+      {"client peer cancel timeout race stress",
+       test_client_peer_cancel_timeout_race_stress},
+      {"server client-peer cancel timeout race stress",
+       test_server_client_peer_cancel_timeout_race_stress},
+      {"client request ids are thread safe for concurrent async requests",
+       test_client_request_ids_are_thread_safe_for_concurrent_async_requests},
       {"service lifecycle facades",
        test_service_lifecycle_facades_start_and_stop},
+      {"server peer role-generic transport receive loop",
+       test_server_peer_serves_role_generic_transport_receive_loop},
       {"contract handlers override client and server requests",
        test_contract_handlers_override_client_and_server_requests},
       {"server notification facade round trip",
@@ -3545,18 +3935,18 @@ int main() {
   for (const auto& [name, test] : tests) {
     try {
       test();
-      std::cout << "[PASS] " << name << '\n';
+      std::cout << "[PASS] " << name << std::endl;
     } catch (const std::exception& ex) {
       ++failures;
-      std::cerr << "[FAIL] " << name << ": " << ex.what() << '\n';
+      std::cerr << "[FAIL] " << name << ": " << ex.what() << std::endl;
     }
   }
 
   if (failures != 0) {
-    std::cerr << failures << " test(s) failed\n";
+    std::cerr << failures << " test(s) failed" << std::endl;
     return 1;
   }
 
-  std::cout << tests.size() << " test(s) passed\n";
+  std::cout << tests.size() << " test(s) passed" << std::endl;
   return 0;
 }

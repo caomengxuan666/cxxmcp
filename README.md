@@ -1,43 +1,85 @@
 # cxxmcp
 
-`cxxmcp` is a C++ MCP SDK.
+[![C++17](https://img.shields.io/badge/C%2B%2B-17-00599C.svg)](https://isocpp.org/)
+[![CMake](https://img.shields.io/badge/build-CMake-064F8C.svg)](https://cmake.org/)
+[![MCP](https://img.shields.io/badge/protocol-Model%20Context%20Protocol-111827.svg)](https://modelcontextprotocol.io/)
+[![SDK](https://img.shields.io/badge/package-C%2B%2B%20SDK-0F766E.svg)](#using-as-a-library)
 
-The core package is intentionally narrow: `protocol`, `transport`, `handler`, and `peer` form the SDK shape, while `client` and `server` stay as embeddable compatibility wrappers and convenience entry points. Gateway and CLI code are optional runtime tools built on top of the SDK, not the main product surface.
-Optional extension layers are also first-class package targets: `cxxmcp::plugin_sdk` and `cxxmcp::adapters`.
+`cxxmcp` is a modern C++17 SDK and optional C++20 runtime toolkit for the
+[Model Context Protocol](https://modelcontextprotocol.io/). It is designed to
+be the practical default choice for C++ applications that need to expose or
+consume MCP servers.
 
-## Features
+The public SDK surface is intentionally narrow and package-friendly:
+`protocol`, `transport`, `handler`, `peer`, `service`, `client`, and `server`
+are the core library layers. Gateway, app, and CLI code are optional runtime
+tools built on top of the SDK.
 
-- Typed MCP protocol models and JSON-RPC serialization
-- Client SDK for HTTP, stdio, and process-based connections
-- Server SDK with typed tool, prompt, resource, and transport handlers
-- Streamable HTTP support, with legacy SSE compatibility where needed
-- Optional gateway and CLI tools for local runtime management
-- Raw JSON-RPC request and notification escape hatches
+Read this in [Chinese](README_zh.md).
 
-## Using as a Library
+## Why cxxmcp
+
+- C++17 SDK with CMake package targets and install smoke coverage
+- Typed MCP protocol models with raw JSON-RPC escape hatches
+- Client and server libraries for embedded C++ applications
+- RMCP-style `Peer`, `Service`, and handler facades for SDK-first authoring
+- stdio, process stdio, Streamable HTTP, and legacy SSE-compatible transport
+  paths
+- Typed tool, prompt, resource, completion, elicitation, sampling, task,
+  progress, and cancellation surfaces
+- Optional gateway and CLI runtime for local MCP server management
+- Local RMCP interoperability and package-smoke tests used as release gates
+
+## Capability Snapshot
+
+| Area | Status |
+|---|---|
+| Protocol and JSON-RPC | Typed models, serialization helpers, initialize version validation, raw request/notification escape hatches |
+| Client SDK | HTTP, stdio, process-stdio, request handles, typed async helpers, roots, sampling, elicitation, tasks |
+| Server SDK | Registries, typed tool helpers, prompt/resource handlers, task-aware tool calls, notifications |
+| Peer/service facade | RMCP-like role-aware `Peer<Role>` and `Service<Role>` public shape |
+| Transports | stdio, process stdio, Streamable HTTP, legacy SSE compatibility paths |
+| Packaging | Exported CMake targets, install tree support, package-smoke fixture |
+| Runtime tools | Optional app, gateway, and CLI layers above the SDK |
+
+## Using As A Library
 
 Installed-package usage should look like a normal CMake SDK:
 
 ```cmake
 find_package(cxxmcp CONFIG REQUIRED)
 
+add_executable(my_client main.cpp)
 target_link_libraries(my_client PRIVATE cxxmcp::client)
+
+add_executable(my_server server.cpp)
 target_link_libraries(my_server PRIVATE cxxmcp::server)
 ```
 
-Use `cxxmcp::sdk` only when you want the aggregate protocol/client/server SDK target.
+Use `cxxmcp::sdk` when one target should pull in the public protocol, client,
+and server SDK layers.
 
-Public headers use the `cxxmcp/` prefix. Common public headers include
-`cxxmcp/protocol.hpp`, `cxxmcp/request.hpp`, `cxxmcp/handler.hpp`,
-`cxxmcp/transport.hpp`, `cxxmcp/peer.hpp`, `cxxmcp/client.hpp`,
-`cxxmcp/server.hpp`, `cxxmcp/service.hpp`, and `cxxmcp/sdk.hpp`.
+Common public headers:
 
-## Build
+```cpp
+#include <cxxmcp/protocol.hpp>
+#include <cxxmcp/request.hpp>
+#include <cxxmcp/transport.hpp>
+#include <cxxmcp/handler.hpp>
+#include <cxxmcp/peer.hpp>
+#include <cxxmcp/service.hpp>
+#include <cxxmcp/client.hpp>
+#include <cxxmcp/server.hpp>
+#include <cxxmcp/sdk.hpp>
+```
+
+## Build From Source
 
 Requirements:
 
 - CMake 3.23+
-- A C++20 compiler
+- A C++17 compiler for SDK targets
+- A C++20 compiler when building optional runtime, CLI, examples, or tests
 
 Default SDK build:
 
@@ -46,18 +88,11 @@ cmake -S . -B build
 cmake --build build
 ```
 
-Build the client and server SDKs:
+Build client and server SDKs explicitly:
 
 ```powershell
 cmake -S . -B build-sdk -DCXXMCP_BUILD_CLIENT=ON -DCXXMCP_BUILD_SERVER=ON
 cmake --build build-sdk
-```
-
-Build the gateway and CLI:
-
-```powershell
-cmake -S . -B build-cli -DCXXMCP_BUILD_CLI=ON
-cmake --build build-cli
 ```
 
 Build examples:
@@ -67,29 +102,53 @@ cmake --preset examples
 cmake --build --preset examples
 ```
 
-That preset builds the stdio server, server peer, client peer, client loopback, process stdio client, and gateway runtime examples when their dependencies are enabled.
-
-Run tests:
+Build and run the full smoke test set:
 
 ```powershell
-cmake -S . -B build-tests -DCXXMCP_BUILD_SDK=ON -DCXXMCP_BUILD_CLIENT=ON -DCXXMCP_BUILD_SERVER=ON -DCXXMCP_BUILD_RUNTIME=ON -DCXXMCP_BUILD_TESTS=ON
-cmake --build build-tests
-ctest --test-dir build-tests --output-on-failure
+cmake -S . -B build-smoke -DCXXMCP_BUILD_SDK=ON -DCXXMCP_BUILD_CLIENT=ON -DCXXMCP_BUILD_SERVER=ON -DCXXMCP_BUILD_RUNTIME=ON -DCXXMCP_BUILD_TESTS=ON
+cmake --build build-smoke --config Debug
+ctest --test-dir build-smoke -C Debug --output-on-failure
+```
+
+Install to a local prefix:
+
+```powershell
+cmake --install build-smoke --config Debug --prefix out/install/cxxmcp
 ```
 
 ## Quick Start
 
-### Server Peer
+### Minimal Stdio Server
+
+```cpp
+#include <string>
+
+#include <cxxmcp/server.hpp>
+
+int main() {
+    return mcp::server::App::builder()
+        .name("demo-server")
+        .version("1.0.0")
+        .instructions("Expose local tools over MCP.")
+        .stdio()
+        .tool<std::string, std::string>("echo", [](const std::string& text) {
+            return text;
+        })
+        .run();
+}
+```
+
+### RMCP-Style Server Peer
 
 ```cpp
 #include <cxxmcp/peer.hpp>
 #include <cxxmcp/server.hpp>
+#include <cxxmcp/service.hpp>
 
 int main() {
     mcp::server::ServerBuilder builder;
     builder.name("demo-server")
         .version("1.0.0")
-        .instructions("Expose local tools over MCP.")
         .add_tool(
             mcp::protocol::ToolDefinition{
                 .name = "echo",
@@ -111,53 +170,12 @@ int main() {
     if (!running) {
         return 1;
     }
-    return 0;
+
+    return running->wait().has_value() ? 0 : 1;
 }
 ```
 
-### Client Peer
-
-```cpp
-#include <cxxmcp/peer.hpp>
-#include <cxxmcp/service.hpp>
-
-int main() {
-    auto peer = mcp::ClientPeer::connect_streamable_http({
-        .host = "127.0.0.1",
-        .port = 3000,
-        .path = "/mcp",
-    });
-
-    auto running = mcp::serve(std::move(peer));
-    if (!running) {
-        return 1;
-    }
-
-    return running->peer().initialize().has_value() ? 0 : 1;
-}
-```
-
-### Runtime Server
-
-This is the higher-level runtime builder example. It stays useful for product-style servers, but it is not the core peer/handler surface.
-
-```cpp
-#include <cxxmcp/server.hpp>
-
-int main() {
-    return mcp::server::App::builder()
-        .name("demo-server")
-        .version("1.0.0")
-        .instructions("Expose local tools over MCP.")
-        .stdio()
-        .tool<std::string, std::string>("echo", [](const std::string& text) {
-            return text;
-        })
-        .run();
-}
-```
-
-### Client
+### Streamable HTTP Client Peer
 
 ```cpp
 #include <cxxmcp/peer.hpp>
@@ -175,26 +193,78 @@ int main() {
 }
 ```
 
-## Documentation
+## Package Targets
 
-- [High-level API](docs/high_level_api.md)
-- [Release policy](docs/release_policy.md)
-- [Changelog](CHANGELOG.md)
-- [SDK guidance](docs/rmcp_like_sdk_guidance.md)
-- [De facto standard roadmap](docs/de_facto_standard_roadmap.md)
-- [Capability matrix](docs/capability_matrix.md)
-- [Transport strategy](docs/httplib_async_transport_strategy.md)
-- [Project layout notes](docs/recommended_project_layout.md)
+| Target | Purpose |
+|---|---|
+| `cxxmcp::protocol` | MCP protocol models and JSON-RPC serialization |
+| `cxxmcp::transport` | Role-generic transport contracts and shared transport helpers |
+| `cxxmcp::handler` | Client/server handler interfaces and aggregates |
+| `cxxmcp::peer` | Role-aware client/server peer facade |
+| `cxxmcp::service` | Service lifecycle facade around peers |
+| `cxxmcp::client` | Embeddable MCP client SDK |
+| `cxxmcp::server` | Embeddable MCP server SDK |
+| `cxxmcp::sdk` | Aggregate public SDK target |
+| `cxxmcp::runtime` | Optional runtime application layer |
+| `cxxmcp::gateway` | Optional local gateway layer |
+| `cxxmcp::cli` | Optional command-line tool |
+| `cxxmcp::plugin_sdk` | Optional plugin authoring surface |
+| `cxxmcp::adapters` | Optional adapter helpers |
 
-## Package Shape
+Runtime state, gateway profiles, policy, and CLI defaults are not part of the
+core SDK contract.
 
-The intended public split is:
+## Protocol Boundary
 
-- core SDK: `cxxmcp::protocol`, `cxxmcp::transport`, `cxxmcp::peer`, `cxxmcp::client`, `cxxmcp::server`, `cxxmcp::handler`, `cxxmcp::service`, `cxxmcp::sdk`
-- runtime tools: `cxxmcp::runtime`, `cxxmcp::gateway`, `cxxmcp::cli`
-- internal/reference: tests, examples, and local reference source used for compatibility checks
+cxxmcp follows the MCP JSON-RPC wire shape. It does not define a custom MCP
+dialect or alternate wire format. Normal application code should use typed
+helpers for tools, prompts, resources, completion, roots, sampling,
+elicitation, tasks, progress, and cancellation. Raw JSON-RPC request and
+notification APIs remain available for vendor-specific methods, forward
+compatibility, and conformance tests. Unusual runtime integrations should be
+implemented through compatibility adapters over the public transport contracts,
+not by extending the protocol.
 
-Public SDK headers are under `cxxmcp/`. Runtime state, gateway profiles, policy, and CLI defaults are not part of the core SDK contract.
+## Protocol Version Policy
+
+cxxmcp tracks published MCP protocol snapshots and does not mint custom
+versions. The SDK advertises and validates only versions listed by
+`protocol::supported_protocol_versions()`.
+
+When a new MCP snapshot is added, cxxmcp keeps the previous supported snapshot
+for at least one minor release so clients and servers can overlap during
+rollout. Dropping a snapshot is a breaking compatibility event and must be
+called out in release notes and the public compatibility checklist.
+
+Unsupported versions fail fast with a protocol or transport validation error;
+the SDK does not silently negotiate down to an unadvertised dialect. HTTP
+requests additionally require `MCP-Protocol-Version` after initialize, and
+initialize requests with mismatched header/body versions are rejected.
+
+## HTTP Transport Policy
+
+Streamable HTTP is the default HTTP path. The server transport currently runs in
+stateful mode: each successful `initialize` creates a distinct
+`Mcp-Session-Id`, and later POST, GET/SSE, and DELETE requests must send that
+session id plus `MCP-Protocol-Version`. Unknown or deleted sessions are treated
+as stale and rejected.
+
+Stateless server mode is not currently advertised by `server::HttpTransport`.
+Servers that need Streamable HTTP in this SDK should use the stateful session
+contract above. The client transport can still consume simple HTTP MCP
+endpoints that do not return `Mcp-Session-Id`; in that case it omits session
+headers and treats each POST response independently.
+
+Server-to-client requests, notifications, client capabilities, replay windows,
+and pending responses are tracked per session. `SessionContext::client()` binds
+the returned `ClientPeer` to the active session, so roots, sampling,
+elicitation, cancellation, and progress notifications are routed to the correct
+HTTP client. One live real-time SSE stream is accepted per session; reconnects
+with `Last-Event-ID` can replay retained events while an old stream is closing.
+
+Legacy SSE compatibility is compatibility-only. New code should use the
+Streamable HTTP POST/GET/DELETE behavior and treat raw SSE endpoints as an
+adapter concern, not a separate SDK protocol.
 
 ## CMake Options
 
@@ -213,4 +283,65 @@ Public SDK headers are under `cxxmcp/`. Runtime state, gateway profiles, policy,
 | `CXXMCP_BUILD_DOCS` | `OFF` | Build Doxygen API documentation |
 
 `CXXMCP_BUILD_SDK` enables the protocol, client, and server layers.
-`CXXMCP_BUILD_CLI` enables the gateway, runtime, server, client, and protocol layers it needs.
+`CXXMCP_BUILD_CLI` enables the gateway, runtime, server, client, and protocol
+layers it needs.
+
+## Compatibility Contract
+
+- Public SDK headers and package targets compile as C++17 by default. The
+  configurable `CXXMCP_SDK_CXX_STANDARD` cache value may be raised by a
+  downstream build, but public headers must not require it.
+- The release compiler matrix is Windows/MSVC, Linux/GCC, Linux/Clang, and
+  macOS/AppleClang. A release may only claim support for matrix entries that
+  passed the public-header, package-smoke, and conformance gates for that
+  release.
+- Public include paths stay under `cxxmcp/...`; public targets are
+  `cxxmcp::protocol`, `cxxmcp::transport`, `cxxmcp::handler`,
+  `cxxmcp::peer`, `cxxmcp::service`, `cxxmcp::client`, `cxxmcp::server`, and
+  `cxxmcp::sdk`.
+- Source compatibility follows semantic versioning. Public renames must add the
+  new name first, keep the old alias with `CXXMCP_DEPRECATED("message")`,
+  document the migration, and remove the alias only in the next major release.
+- ABI stability is explicitly out of scope while cxxmcp ships static libraries
+  by default. A shared-library ABI policy must be defined before treating shared
+  builds as stable release artifacts.
+- Release review must include a public header diff, independent public-header
+  compile tests, installed-tree `package_smoke`, and the conformance matrix
+  available for that release.
+
+## Examples
+
+The examples preset builds representative SDK entry points:
+
+- `stdio_server`
+- `typed_stdio_server`
+- `server_peer`
+- `client_peer`
+- `client_loopback`
+- `process_stdio_client`
+- `gateway_runtime`
+- `task_async_client_server`
+
+## Quality Bar
+
+The repository keeps SDK-grade checks close to the source tree:
+
+- protocol, client/server, transport, SDK, and public target tests
+- package-smoke fixture for installed CMake target consumption
+- local RMCP conformance coverage
+- examples build preset
+- formatting, cpplint, clang-tidy, and Doxygen scripts
+
+Current standardization work is tracked in [Fact-standard TODO](todo.md).
+
+## Documentation
+
+- [Fact-standard TODO](todo.md)
+- [Changelog](CHANGELOG.md)
+
+## Project Status
+
+`cxxmcp` is an MCP C++ SDK with an RMCP-like public architecture and strong
+standard-SDK potential. The current focus is tightening the service runtime,
+Streamable HTTP session semantics, cross-platform process stdio, broader
+conformance coverage, and package-manager routes.

@@ -15,11 +15,11 @@ namespace mcp::server {
 namespace {
 
 ServerInfo server_info_from_options(const ServerOptions& options) {
-  return ServerInfo{
-      .name = options.server_name,
-      .version = options.server_version,
-      .instructions = options.instructions,
-  };
+  ServerInfo info;
+  info.name = options.server_name;
+  info.version = options.server_version;
+  info.instructions = options.instructions;
+  return info;
 }
 
 protocol::Json server_info_to_json(const ServerOptions& options) {
@@ -221,11 +221,8 @@ core::Result<protocol::Json> Server::initialize() {
 
 core::Result<protocol::Json> Server::ping(const SessionContext& context) {
   const auto response = handle_request(
-      protocol::JsonRpcRequest{
-          .method = std::string(protocol::PingMethod),
-          .params = protocol::Json::object(),
-          .id = std::int64_t{0},
-      },
+      protocol::make_request(std::string(protocol::PingMethod), std::int64_t{0},
+                             protocol::Json::object()),
       context);
   if (!response) {
     return std::unexpected(response.error());
@@ -254,11 +251,11 @@ core::Result<protocol::JsonRpcResponse> Server::handle_request(
   }
 
   if (rate_limiter_) {
-    const auto decision = rate_limiter_->check(RateLimitRequest{
-        .subject = context.session_id,
-        .method = request.method,
-        .request_bytes = request.params.dump().size(),
-    });
+    RateLimitRequest rate_limit_request;
+    rate_limit_request.subject = context.session_id;
+    rate_limit_request.method = request.method;
+    rate_limit_request.request_bytes = request.params.dump().size();
+    const auto decision = rate_limiter_->check(rate_limit_request);
     if (!decision) {
       return make_error_response(
           request, static_cast<int>(protocol::ErrorCode::RateLimited),
@@ -465,11 +462,10 @@ core::Result<protocol::JsonRpcResponse> Server::handle_request(
   }
 
   if (request.method == "prompts/list") {
+    protocol::PromptsListResult result;
+    result.prompts = prompts_.list();
     return protocol::make_response(
-        request.id,
-        protocol::prompts_list_result_to_json(protocol::PromptsListResult{
-            .prompts = prompts_.list(),
-        }));
+        request.id, protocol::prompts_list_result_to_json(result));
   }
 
   if (request.method == "prompts/get") {
@@ -495,11 +491,10 @@ core::Result<protocol::JsonRpcResponse> Server::handle_request(
   }
 
   if (request.method == "resources/list") {
+    protocol::ResourcesListResult result;
+    result.resources = resources_.list();
     return protocol::make_response(
-        request.id,
-        protocol::resources_list_result_to_json(protocol::ResourcesListResult{
-            .resources = resources_.list(),
-        }));
+        request.id, protocol::resources_list_result_to_json(result));
   }
 
   if (request.method == "resources/read") {
@@ -526,11 +521,10 @@ core::Result<protocol::JsonRpcResponse> Server::handle_request(
   }
 
   if (request.method == "resources/templates/list") {
+    protocol::ResourceTemplatesListResult result;
+    result.resource_templates = resource_templates_.list();
     return protocol::make_response(
-        request.id, protocol::resource_templates_list_result_to_json(
-                        protocol::ResourceTemplatesListResult{
-                            .resource_templates = resource_templates_.list(),
-                        }));
+        request.id, protocol::resource_templates_list_result_to_json(result));
   }
 
   if (request.method == "resources/subscribe" ||
@@ -700,75 +694,64 @@ core::Result<core::Unit> Server::broadcast_notification(
 }
 
 core::Result<core::Unit> Server::notify_roots_list_changed() {
-  return broadcast_notification(protocol::JsonRpcNotification{
-      .method = std::string(protocol::RootsListChangedNotificationMethod),
-      .params = protocol::Json::object(),
-  });
+  return broadcast_notification(protocol::make_notification(
+      std::string(protocol::RootsListChangedNotificationMethod),
+      protocol::Json::object()));
 }
 
 core::Result<core::Unit> Server::notify_tool_list_changed() {
-  return broadcast_notification(protocol::JsonRpcNotification{
-      .method = std::string(protocol::ToolsListChangedNotificationMethod),
-      .params = protocol::Json::object(),
-  });
+  return broadcast_notification(protocol::make_notification(
+      std::string(protocol::ToolsListChangedNotificationMethod),
+      protocol::Json::object()));
 }
 
 core::Result<core::Unit> Server::notify_prompt_list_changed() {
-  return broadcast_notification(protocol::JsonRpcNotification{
-      .method = std::string(protocol::PromptsListChangedNotificationMethod),
-      .params = protocol::Json::object(),
-  });
+  return broadcast_notification(protocol::make_notification(
+      std::string(protocol::PromptsListChangedNotificationMethod),
+      protocol::Json::object()));
 }
 
 core::Result<core::Unit> Server::notify_resource_list_changed() {
-  return broadcast_notification(protocol::JsonRpcNotification{
-      .method = std::string(protocol::ResourcesListChangedNotificationMethod),
-      .params = protocol::Json::object(),
-  });
+  return broadcast_notification(protocol::make_notification(
+      std::string(protocol::ResourcesListChangedNotificationMethod),
+      protocol::Json::object()));
 }
 
 core::Result<core::Unit> Server::notify_resource_updated(std::string_view uri) {
   return notify_resource_subscribers(
-      uri,
-      protocol::JsonRpcNotification{
-          .method = std::string(protocol::ResourcesUpdatedNotificationMethod),
-          .params = protocol::Json{{"uri", std::string(uri)}},
-      });
+      uri, protocol::make_notification(
+               std::string(protocol::ResourcesUpdatedNotificationMethod),
+               protocol::Json{{"uri", std::string(uri)}}));
 }
 
 core::Result<core::Unit> Server::notify_progress(
     const protocol::ProgressNotificationParams& params) {
-  return broadcast_notification(protocol::JsonRpcNotification{
-      .method = std::string(protocol::ProgressNotificationMethod),
-      .params = protocol::progress_notification_params_to_json(params),
-  });
+  return broadcast_notification(protocol::make_notification(
+      std::string(protocol::ProgressNotificationMethod),
+      protocol::progress_notification_params_to_json(params)));
 }
 
 core::Result<core::Unit> Server::notify_logging_message(
     const protocol::LoggingMessageNotificationParams& params) {
-  return broadcast_notification(protocol::JsonRpcNotification{
-      .method = std::string(protocol::LoggingMessageNotificationMethod),
-      .params = protocol::logging_message_notification_params_to_json(params),
-  });
+  return broadcast_notification(protocol::make_notification(
+      std::string(protocol::LoggingMessageNotificationMethod),
+      protocol::logging_message_notification_params_to_json(params)));
 }
 
 core::Result<core::Unit> Server::notify_elicitation_complete(
     std::string elicitation_id) {
-  return broadcast_notification(protocol::JsonRpcNotification{
-      .method = std::string(protocol::ElicitationCompleteNotificationMethod),
-      .params = protocol::elicitation_complete_notification_params_to_json(
-          protocol::ElicitationCompleteNotificationParams{
-              .elicitation_id = std::move(elicitation_id),
-          }),
-  });
+  protocol::ElicitationCompleteNotificationParams params;
+  params.elicitation_id = std::move(elicitation_id);
+  return broadcast_notification(protocol::make_notification(
+      std::string(protocol::ElicitationCompleteNotificationMethod),
+      protocol::elicitation_complete_notification_params_to_json(params)));
 }
 
 core::Result<core::Unit> Server::notify_task_status(
     const protocol::Task& task) {
-  return broadcast_notification(protocol::JsonRpcNotification{
-      .method = std::string(protocol::TasksStatusNotificationMethod),
-      .params = protocol::task_to_json(task),
-  });
+  return broadcast_notification(protocol::make_notification(
+      std::string(protocol::TasksStatusNotificationMethod),
+      protocol::task_to_json(task)));
 }
 
 core::Result<core::Unit> Server::notify_resource_subscribers(
@@ -1222,11 +1205,11 @@ App::Builder& App::Builder::stdio() {
 App::Builder& App::Builder::streamable_http(std::string host,
                                             std::uint16_t port,
                                             std::string path) {
-  builder_.with_transport(std::make_unique<HttpTransport>(HttpTransportOptions{
-      .listen_host = std::move(host),
-      .listen_port = static_cast<int>(port),
-      .path = std::move(path),
-  }));
+  HttpTransportOptions options;
+  options.listen_host = std::move(host);
+  options.listen_port = static_cast<int>(port);
+  options.path = std::move(path);
+  builder_.with_transport(std::make_unique<HttpTransport>(std::move(options)));
   return *this;
 }
 

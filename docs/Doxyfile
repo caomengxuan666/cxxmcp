@@ -7,14 +7,7 @@ HTML_OUTPUT            = html
 
 INPUT                  = README.md \
                          CHANGELOG.md \
-                         docs/high_level_api.md \
-                         docs/release_policy.md \
-                         docs/rmcp_like_sdk_guidance.md \
-                         docs/rmcp_source_gap_analysis.md \
-                         docs/de_facto_standard_roadmap.md \
-                         docs/capability_matrix.md \
-                         docs/httplib_async_transport_strategy.md \
-                         docs/recommended_project_layout.md \
+                         todo.md \
                          sdk/include \
                          sdk/core/include \
                          sdk/protocol/include \

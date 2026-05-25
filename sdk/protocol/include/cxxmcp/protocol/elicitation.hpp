@@ -226,6 +226,8 @@ struct CreateElicitationRequestParam {
   std::optional<Json> request_state;
   /// Optional task request parameters for asynchronous elicitation.
   std::optional<TaskRequestParameters> task;
+  /// Optional `_meta` extension object preserved on the wire.
+  std::optional<Json> meta;
 };
 
 /// @brief Result object for `elicitation/create`.
@@ -234,12 +236,16 @@ struct CreateElicitationResult {
   ElicitationAction action = ElicitationAction::Cancel;
   /// Optional content object supplied when the action is Accept.
   std::optional<Json> content;
+  /// Optional `_meta` extension object preserved on the wire.
+  std::optional<Json> meta;
 };
 
 /// @brief Parameters for `notifications/elicitation/complete`.
 struct ElicitationCompleteNotificationParams {
   /// URL-mode elicitation id that has completed.
   std::string elicitation_id;
+  /// Optional `_meta` extension object preserved on the wire.
+  std::optional<Json> meta;
 };
 
 /// @brief Converts an elicitation action to its MCP string value.
@@ -499,6 +505,9 @@ inline Json create_elicitation_request_param_to_json(
   if (request.task.has_value()) {
     json["task"] = task_request_parameters_to_json(*request.task);
   }
+  if (request.meta.has_value()) {
+    json["_meta"] = *request.meta;
+  }
 
   if (request.mode == ElicitationMode::Url) {
     if (request.elicitation_id.has_value()) {
@@ -556,6 +565,13 @@ create_elicitation_request_param_from_json(const Json& json) {
     }
     request.task = *task;
   }
+  if (json.contains("_meta")) {
+    if (!json.at("_meta").is_object()) {
+      return std::unexpected(elicitation_json_error(
+          "elicitation request _meta must be an object"));
+    }
+    request.meta = json.at("_meta");
+  }
 
   if (mode == ElicitationMode::Url) {
     if (!json.contains("elicitationId") ||
@@ -594,6 +610,9 @@ inline Json create_elicitation_result_to_json(
   if (result.content.has_value()) {
     json["content"] = *result.content;
   }
+  if (result.meta.has_value()) {
+    json["_meta"] = *result.meta;
+  }
   return json;
 }
 
@@ -622,13 +641,24 @@ create_elicitation_result_from_json(const Json& json) {
   if (json.contains("content")) {
     result.content = json.at("content");
   }
+  if (json.contains("_meta")) {
+    if (!json.at("_meta").is_object()) {
+      return std::unexpected(
+          elicitation_json_error("elicitation result _meta must be an object"));
+    }
+    result.meta = json.at("_meta");
+  }
   return result;
 }
 
 /// @brief Serializes URL-mode completion notification params.
 inline Json elicitation_complete_notification_params_to_json(
     const ElicitationCompleteNotificationParams& params) {
-  return Json{{"elicitationId", params.elicitation_id}};
+  Json json = Json{{"elicitationId", params.elicitation_id}};
+  if (params.meta.has_value()) {
+    json["_meta"] = *params.meta;
+  }
+  return json;
 }
 
 /// @brief Parses URL-mode completion notification params.
@@ -644,9 +674,16 @@ elicitation_complete_notification_params_from_json(const Json& json) {
     return std::unexpected(elicitation_json_error(
         "elicitation complete notification requires elicitationId"));
   }
-  return ElicitationCompleteNotificationParams{
-      .elicitation_id = json.at("elicitationId").get<std::string>(),
-  };
+  ElicitationCompleteNotificationParams params;
+  params.elicitation_id = json.at("elicitationId").get<std::string>();
+  if (json.contains("_meta")) {
+    if (!json.at("_meta").is_object()) {
+      return std::unexpected(elicitation_json_error(
+          "elicitation complete notification _meta must be an object"));
+    }
+    params.meta = json.at("_meta");
+  }
+  return params;
 }
 
 /// @brief Validates a property name accepted by the schema builder.

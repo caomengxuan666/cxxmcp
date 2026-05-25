@@ -39,8 +39,9 @@ class ClientPeer {
  public:
   /// @brief Construct a peer from a borrowed transport pointer.
   /// @param transport Transport used for outbound messages; may be nullptr.
-  explicit ClientPeer(Transport* transport = nullptr) noexcept
-      : transport_(transport) {}
+  explicit ClientPeer(Transport* transport = nullptr,
+                      std::string session_id = {}) noexcept
+      : transport_(transport), session_id_(std::move(session_id)) {}
 
   /// @brief Report whether this peer has a transport to send through.
   bool available() const noexcept { return transport_ != nullptr; }
@@ -48,7 +49,7 @@ class ClientPeer {
   /// @brief Report whether the client advertised roots/listChanged support.
   bool supports_roots() const noexcept {
     const auto capabilities =
-        transport_ ? transport_->client_capabilities()
+        transport_ ? transport_->client_capabilities_for_session(session_id_)
                    : std::optional<protocol::ClientCapabilities>{};
     return capabilities.has_value() && capabilities->roots.list_changed;
   }
@@ -56,7 +57,7 @@ class ClientPeer {
   /// @brief Report whether the client advertised sampling support.
   bool supports_sampling_tools() const noexcept {
     const auto capabilities =
-        transport_ ? transport_->client_capabilities()
+        transport_ ? transport_->client_capabilities_for_session(session_id_)
                    : std::optional<protocol::ClientCapabilities>{};
     return capabilities.has_value() && capabilities->sampling.enabled;
   }
@@ -64,7 +65,7 @@ class ClientPeer {
   /// @brief Report whether the client advertised form elicitation support.
   bool supports_elicitation_form() const noexcept {
     const auto capabilities =
-        transport_ ? transport_->client_capabilities()
+        transport_ ? transport_->client_capabilities_for_session(session_id_)
                    : std::optional<protocol::ClientCapabilities>{};
     return capabilities.has_value() && capabilities->elicitation.form;
   }
@@ -72,7 +73,7 @@ class ClientPeer {
   /// @brief Report whether the client advertised URL elicitation support.
   bool supports_elicitation_url() const noexcept {
     const auto capabilities =
-        transport_ ? transport_->client_capabilities()
+        transport_ ? transport_->client_capabilities_for_session(session_id_)
                    : std::optional<protocol::ClientCapabilities>{};
     return capabilities.has_value() && capabilities->elicitation.url;
   }
@@ -86,20 +87,20 @@ class ClientPeer {
   core::Result<core::Unit> notify_cancelled(protocol::RequestId request_id,
                                             std::string reason = {}) const {
     if (!transport_) {
-      return std::unexpected(core::Error{
-          static_cast<int>(protocol::ErrorCode::InternalError),
-          "client peer is not available",
-          {},
-      });
+      return std::unexpected(
+          core::Error{static_cast<int>(protocol::ErrorCode::InternalError),
+                      "client peer is not available",
+                      {}});
     }
-    return transport_->send_notification(protocol::JsonRpcNotification{
-        .method = std::string(protocol::CancelledNotificationMethod),
-        .params = protocol::cancelled_notification_params_to_json(
-            protocol::CancelledNotificationParams{
-                .request_id = std::move(request_id),
-                .reason = std::move(reason),
-            }),
-    });
+    protocol::CancelledNotificationParams params;
+    params.request_id = std::move(request_id);
+    params.reason = std::move(reason);
+    protocol::JsonRpcNotification notification;
+    notification.method = std::string(protocol::CancelledNotificationMethod);
+    notification.params =
+        protocol::cancelled_notification_params_to_json(params);
+    return transport_->send_notification_to_session(session_id_,
+                                                    std::move(notification));
   }
 
   /// @brief Send a raw JSON-RPC request to the client and return a handle.
@@ -355,11 +356,10 @@ class ClientPeer {
   /// @return Parsed task, or a core::Error from transport, protocol, or
   /// parsing.
   core::Result<protocol::Task> get_task(std::string_view task_id) const {
-    auto payload =
-        request(std::string(protocol::TasksGetMethod),
-                protocol::task_get_params_to_json(protocol::TaskGetParams{
-                    .task_id = std::string(task_id),
-                }));
+    protocol::TaskGetParams params;
+    params.task_id = std::string(task_id);
+    auto payload = request(std::string(protocol::TasksGetMethod),
+                           protocol::task_get_params_to_json(params));
     if (!payload) {
       return std::unexpected(payload.error());
     }
@@ -374,11 +374,10 @@ class ClientPeer {
   /// @param task_id Client task identifier.
   /// @return Parsed task state returned by the client, or a core::Error.
   core::Result<protocol::Task> cancel_task(std::string_view task_id) const {
-    auto payload =
-        request(std::string(protocol::TasksCancelMethod),
-                protocol::task_cancel_params_to_json(protocol::TaskCancelParams{
-                    .task_id = std::string(task_id),
-                }));
+    protocol::TaskCancelParams params;
+    params.task_id = std::string(task_id);
+    auto payload = request(std::string(protocol::TasksCancelMethod),
+                           protocol::task_cancel_params_to_json(params));
     if (!payload) {
       return std::unexpected(payload.error());
     }
@@ -393,10 +392,10 @@ class ClientPeer {
   /// @param task_id Client task identifier.
   /// @return Raw JSON result payload, or a core::Error.
   core::Result<protocol::Json> task_result(std::string_view task_id) const {
+    protocol::TaskResultParams params;
+    params.task_id = std::string(task_id);
     return request(std::string(protocol::TasksResultMethod),
-                   protocol::task_get_params_to_json(protocol::TaskResultParams{
-                       .task_id = std::string(task_id),
-                   }));
+                   protocol::task_get_params_to_json(params));
   }
 
   /// @brief Notify the client that an elicitation flow has completed.
@@ -406,19 +405,20 @@ class ClientPeer {
   core::Result<core::Unit> notify_elicitation_complete(
       std::string elicitation_id) const {
     if (!transport_) {
-      return std::unexpected(core::Error{
-          static_cast<int>(protocol::ErrorCode::InternalError),
-          "client peer is not available",
-          {},
-      });
+      return std::unexpected(
+          core::Error{static_cast<int>(protocol::ErrorCode::InternalError),
+                      "client peer is not available",
+                      {}});
     }
-    return transport_->send_notification(protocol::JsonRpcNotification{
-        .method = std::string(protocol::ElicitationCompleteNotificationMethod),
-        .params = protocol::elicitation_complete_notification_params_to_json(
-            protocol::ElicitationCompleteNotificationParams{
-                .elicitation_id = std::move(elicitation_id),
-            }),
-    });
+    protocol::ElicitationCompleteNotificationParams params;
+    params.elicitation_id = std::move(elicitation_id);
+    protocol::JsonRpcNotification notification;
+    notification.method =
+        std::string(protocol::ElicitationCompleteNotificationMethod);
+    notification.params =
+        protocol::elicitation_complete_notification_params_to_json(params);
+    return transport_->send_notification_to_session(session_id_,
+                                                    std::move(notification));
   }
 
  private:
@@ -433,16 +433,16 @@ class ClientPeer {
       });
     }
 
-    protocol::JsonRpcRequest request{
-        .method = std::move(method),
-        .params = std::move(params),
-        .id = std::move(request_id),
-    };
+    protocol::JsonRpcRequest request;
+    request.method = std::move(method);
+    request.params = std::move(params);
+    request.id = std::move(request_id);
     if (options.meta.has_value()) {
       request.meta = std::move(options.meta);
     }
 
-    auto response = transport_->send_request(std::move(request));
+    auto response =
+        transport_->send_request_to_session(session_id_, std::move(request));
     if (!response) {
       return std::unexpected(response.error());
     }
@@ -470,17 +470,18 @@ class ClientPeer {
   }
 
   Transport* transport_;
+  std::string session_id_;
 };
 
 /// @brief Create a ClientPeer facade from a session context.
 /// @param context Session context whose transport pointer will be borrowed.
 /// @return A non-owning ClientPeer.
 inline ClientPeer client_peer(const SessionContext& context) noexcept {
-  return ClientPeer(context.transport);
+  return ClientPeer(context.transport, context.session_id);
 }
 
 inline ClientPeer SessionContext::client() const noexcept {
-  return ClientPeer(transport);
+  return ClientPeer(transport, session_id);
 }
 
 }  // namespace mcp::server
