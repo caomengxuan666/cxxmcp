@@ -15,6 +15,7 @@
 #include <variant>
 
 #include "cxxmcp/client/client.hpp"
+#include "cxxmcp/error.hpp"
 #include "cxxmcp/protocol/serialization.hpp"
 #include "cxxmcp/transport/transport.hpp"
 
@@ -23,11 +24,8 @@ namespace mcp::client {
 namespace detail {
 
 inline core::Error adapter_error(std::string_view message) {
-  return core::Error{
-      static_cast<int>(protocol::ErrorCode::InvalidRequest),
-      std::string(message),
-      {},
-  };
+  return errors::make(protocol::ErrorCode::InvalidRequest,
+                      std::string(message));
 }
 
 }  // namespace detail
@@ -225,15 +223,7 @@ class ContractTransportAdapter final : public mcp::client::Transport {
 
   static protocol::ErrorObject error_object_from_core_error(
       const core::Error& error) {
-    std::optional<protocol::Json> data;
-    if (!error.detail.empty()) {
-      data = error.detail;
-    }
-    protocol::ErrorObject object;
-    object.code = error.code;
-    object.message = error.message;
-    object.data = std::move(data);
-    return object;
+    return errors::to_json_rpc_error(error);
   }
 
   std::unique_ptr<transport::ClientTransport> owned_;

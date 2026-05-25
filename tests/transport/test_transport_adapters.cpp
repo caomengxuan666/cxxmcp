@@ -175,6 +175,12 @@ void test_client_transport_adapter() {
       .result = Json::object(),
   });
   require(!response_send.has_value(), "client adapter should reject responses");
+  require(response_send.error().code ==
+              static_cast<int>(mcp::protocol::ErrorCode::InvalidRequest),
+          "client adapter response error code mismatch");
+  require(response_send.error().message ==
+              "client transport adapter cannot send responses",
+          "client adapter response error message mismatch");
 
   require(adapter.close().has_value(), "client adapter close failed");
   require(legacy.stopped, "client adapter should stop legacy transport");
@@ -283,6 +289,12 @@ void test_server_transport_adapter() {
       .result = Json::object(),
   });
   require(!response_send.has_value(), "server adapter should reject responses");
+  require(response_send.error().code ==
+              static_cast<int>(mcp::protocol::ErrorCode::InvalidRequest),
+          "server adapter response error code mismatch");
+  require(response_send.error().message ==
+              "server transport adapter cannot send responses",
+          "server adapter response error message mismatch");
 
   require(adapter.close().has_value(), "server adapter close failed");
   require(legacy.stopped, "server adapter should stop legacy transport");
@@ -390,6 +402,92 @@ void test_server_contract_transport_adapter_outbound() {
   require(contract.closed, "server contract adapter should close transport");
 }
 
+void test_client_contract_transport_adapter_failure_paths() {
+  {
+    ScriptedClientContractTransport contract;
+    contract.push(mcp::protocol::JsonRpcResponse{
+        .id = mcp::protocol::RequestId{std::int64_t{8}},
+        .result = Json{{"ok", true}},
+    });
+
+    mcp::client::ContractTransportAdapter adapter(contract);
+    const auto response = adapter.send(mcp::protocol::JsonRpcRequest{
+        .method = "tools/list",
+        .params = Json::object(),
+        .id = std::int64_t{7},
+    });
+    require(!response.has_value(),
+            "client contract adapter should reject unexpected response ids");
+    require(response.error().code ==
+                static_cast<int>(mcp::protocol::ErrorCode::InvalidRequest),
+            "client unexpected response id code mismatch");
+    require(response.error().message ==
+                "client contract transport received unexpected response id",
+            "client unexpected response id message mismatch");
+  }
+
+  {
+    ScriptedClientContractTransport contract;
+    mcp::client::ContractTransportAdapter adapter(contract);
+    const auto response = adapter.send(mcp::protocol::JsonRpcRequest{
+        .method = "tools/list",
+        .params = Json::object(),
+        .id = std::int64_t{9},
+    });
+    require(!response.has_value(),
+            "client contract adapter should fail on closed stream");
+    require(response.error().code ==
+                static_cast<int>(mcp::protocol::ErrorCode::InvalidRequest),
+            "client closed stream code mismatch");
+    require(response.error().message ==
+                "client contract transport closed before response",
+            "client closed stream message mismatch");
+  }
+}
+
+void test_server_contract_transport_adapter_failure_paths() {
+  {
+    ScriptedServerContractTransport contract;
+    contract.push(mcp::protocol::JsonRpcResponse{
+        .id = mcp::protocol::RequestId{std::int64_t{10}},
+        .result = Json{{"ok", true}},
+    });
+
+    mcp::server::ContractTransportAdapter adapter(contract);
+    const auto response = adapter.send_request(mcp::protocol::JsonRpcRequest{
+        .method = "roots/list",
+        .params = Json::object(),
+        .id = std::int64_t{9},
+    });
+    require(!response.has_value(),
+            "server contract adapter should reject unexpected response ids");
+    require(response.error().code ==
+                static_cast<int>(mcp::protocol::ErrorCode::InvalidRequest),
+            "server unexpected response id code mismatch");
+    require(response.error().message ==
+                "server contract transport received unexpected response id",
+            "server unexpected response id message mismatch");
+  }
+
+  {
+    ScriptedServerContractTransport contract;
+    mcp::server::ContractTransportAdapter adapter(contract);
+    const auto response = adapter.send_request(mcp::protocol::JsonRpcRequest{
+        .method = "roots/list",
+        .params = Json::object(),
+        .id = std::int64_t{11},
+    });
+    require(!response.has_value(),
+            "server contract adapter should fail on closed stream");
+    require(response.error().code ==
+                static_cast<int>(mcp::protocol::ErrorCode::InvalidRequest),
+            "server closed stream code mismatch");
+    require(response.error().message ==
+                "server contract transport closed before response",
+            "server closed stream message mismatch");
+  }
+}
+
 }  // namespace
 
 int main() {
@@ -399,6 +497,8 @@ int main() {
     test_server_transport_adapter();
     test_server_contract_transport_adapter_start();
     test_server_contract_transport_adapter_outbound();
+    test_client_contract_transport_adapter_failure_paths();
+    test_server_contract_transport_adapter_failure_paths();
     std::cout << "transport adapter tests passed\n";
     return 0;
   } catch (const std::exception& ex) {
