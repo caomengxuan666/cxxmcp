@@ -100,9 +100,21 @@ if(CXXMCP_BUILD_TESTS AND TARGET mcp_sdk AND TARGET mcp_protocol AND TARGET mcp_
         -DBUILD_DIR=${PROJECT_BINARY_DIR}
         -DBUILD_CONFIG=$<CONFIG>
     )
-    if(MSVC AND CXXMCP_MSVC_RUNTIME_LIBRARY)
-        list(APPEND package_smoke_args
-            "-DMSVC_RUNTIME_LIBRARY=${CXXMCP_MSVC_RUNTIME_LIBRARY}")
+    if(MSVC)
+        set(package_smoke_msvc_runtime_library "")
+        if(CXXMCP_MSVC_RUNTIME_LIBRARY)
+            set(package_smoke_msvc_runtime_library
+                "${CXXMCP_MSVC_RUNTIME_LIBRARY}")
+        elseif(DEFINED CMAKE_MSVC_RUNTIME_LIBRARY AND
+               NOT CMAKE_MSVC_RUNTIME_LIBRARY STREQUAL "")
+            set(package_smoke_msvc_runtime_library
+                "${CMAKE_MSVC_RUNTIME_LIBRARY}")
+        endif()
+
+        if(package_smoke_msvc_runtime_library)
+            list(APPEND package_smoke_args
+                "-DMSVC_RUNTIME_LIBRARY=${package_smoke_msvc_runtime_library}")
+        endif()
     endif()
 
     add_test(NAME package_smoke COMMAND
