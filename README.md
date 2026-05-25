@@ -168,17 +168,22 @@ int main() {
 ### Canonical Client Peer/Service
 
 ```cpp
+#include <memory>
 #include <utility>
 
 #include <cxxmcp/peer.hpp>
 #include <cxxmcp/service.hpp>
+#include <cxxmcp/transport/http_transport.hpp>
 
 int main() {
-    auto peer = mcp::Peer<mcp::RoleClient>::connect_streamable_http({
-        .host = "127.0.0.1",
-        .port = 3000,
-        .path = "/mcp",
-    });
+    auto transport =
+        std::make_unique<mcp::transport::StreamableHttpClientTransport>(
+            mcp::transport::StreamableHttpClientTransportOptions{
+                .host = "127.0.0.1",
+                .port = 3000,
+                .path = "/mcp",
+            });
+    mcp::ClientPeer peer(std::move(transport));
 
     auto running = mcp::serve(std::move(peer));
     if (!running) {

@@ -42,6 +42,9 @@ incrementally. Keep them concrete; do not replace them with broad claims.
         through `Peer<RoleServer>::serve_transport`.
   - [x] Peer-owned role-generic server transports remain reachable for
         server-initiated notifications and resource subscription routing.
+  - [x] Canonical client Peer/Service docs and examples construct
+        `ClientPeer` from `transport::ClientTransport` implementations instead
+        of starting from concrete `client::Client` convenience APIs.
 - Request lifecycle:
   - [x] Client peer timeout emits `notifications/cancelled`.
   - [x] Server-side client peer timeout emits `notifications/cancelled`.
