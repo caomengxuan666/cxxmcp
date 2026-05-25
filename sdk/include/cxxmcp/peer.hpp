@@ -296,6 +296,21 @@ class Peer<RoleClient> {
     return client_.list_tools_async(std::move(options));
   }
 
+  RequestHandle<std::vector<protocol::Prompt>> list_prompts_async(
+      RequestOptions options = {}) {
+    return client_.list_prompts_async(std::move(options));
+  }
+
+  RequestHandle<std::vector<protocol::Resource>> list_resources_async(
+      RequestOptions options = {}) {
+    return client_.list_resources_async(std::move(options));
+  }
+
+  RequestHandle<std::vector<protocol::ResourceTemplate>>
+  list_resource_templates_async(RequestOptions options = {}) {
+    return client_.list_resource_templates_async(std::move(options));
+  }
+
   RequestHandle<protocol::ToolResult> call_tool_async(
       const protocol::ToolCall& call, RequestOptions options = {}) {
     return client_.call_tool_async(call, std::move(options));

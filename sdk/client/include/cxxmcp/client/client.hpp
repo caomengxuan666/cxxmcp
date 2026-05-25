@@ -474,6 +474,19 @@ class Client {
   RequestHandle<std::vector<protocol::ToolDefinition>> list_tools_async(
       RequestOptions options = {});
 
+  /// @brief Asynchronously lists prompts and parses the typed response.
+  RequestHandle<std::vector<protocol::Prompt>> list_prompts_async(
+      RequestOptions options = {});
+
+  /// @brief Asynchronously lists resources and parses the typed response.
+  RequestHandle<std::vector<protocol::Resource>> list_resources_async(
+      RequestOptions options = {});
+
+  /// @brief Asynchronously lists resource templates and parses the typed
+  /// response.
+  RequestHandle<std::vector<protocol::ResourceTemplate>>
+  list_resource_templates_async(RequestOptions options = {});
+
   /// @brief Asynchronously calls a tool and parses the typed response.
   RequestHandle<protocol::ToolResult> call_tool_async(
       const protocol::ToolCall& call, RequestOptions options = {});

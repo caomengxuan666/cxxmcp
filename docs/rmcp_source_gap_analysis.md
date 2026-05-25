@@ -406,8 +406,9 @@ The current C++ API now has request handles, timeout options, and cooperative
 cancellation tokens in the peer/client layer. Running services expose explicit
 `close()` and `wait()` lifecycle methods plus a shared cooperative cancellation
 token. Client and client-peer APIs now expose typed async helpers for common
-tool, prompt, resource, completion, sampling, elicitation, and task requests,
-while the older concrete server API is still mostly synchronous and direct.
+tool, prompt, resource, resource-template, completion, sampling, elicitation,
+and task requests, while the older concrete server API is still mostly
+synchronous and direct.
 
 Gap:
 

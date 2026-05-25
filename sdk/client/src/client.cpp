@@ -1216,6 +1216,53 @@ RequestHandle<std::vector<protocol::ToolDefinition>> Client::list_tools_async(
       std::move(options));
 }
 
+RequestHandle<std::vector<protocol::Prompt>> Client::list_prompts_async(
+    RequestOptions options) {
+  return request_async<std::vector<protocol::Prompt>>(
+      std::string(protocol::PromptsListMethod), protocol::Json::object(),
+      [](const protocol::Json& payload)
+          -> core::Result<std::vector<protocol::Prompt>> {
+        const auto result = protocol::prompts_list_result_from_json(payload);
+        if (!result) {
+          return std::unexpected(result.error());
+        }
+        return result->prompts;
+      },
+      std::move(options));
+}
+
+RequestHandle<std::vector<protocol::Resource>> Client::list_resources_async(
+    RequestOptions options) {
+  return request_async<std::vector<protocol::Resource>>(
+      std::string(protocol::ResourcesListMethod), protocol::Json::object(),
+      [](const protocol::Json& payload)
+          -> core::Result<std::vector<protocol::Resource>> {
+        const auto result = protocol::resources_list_result_from_json(payload);
+        if (!result) {
+          return std::unexpected(result.error());
+        }
+        return result->resources;
+      },
+      std::move(options));
+}
+
+RequestHandle<std::vector<protocol::ResourceTemplate>>
+Client::list_resource_templates_async(RequestOptions options) {
+  return request_async<std::vector<protocol::ResourceTemplate>>(
+      std::string(protocol::ResourcesTemplatesListMethod),
+      protocol::Json::object(),
+      [](const protocol::Json& payload)
+          -> core::Result<std::vector<protocol::ResourceTemplate>> {
+        const auto result =
+            protocol::resource_templates_list_result_from_json(payload);
+        if (!result) {
+          return std::unexpected(result.error());
+        }
+        return result->resource_templates;
+      },
+      std::move(options));
+}
+
 RequestHandle<protocol::ToolResult> Client::call_tool_async(
     const protocol::ToolCall& call, RequestOptions options) {
   return request_async<protocol::ToolResult>(

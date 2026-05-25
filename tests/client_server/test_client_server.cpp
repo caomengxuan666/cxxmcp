@@ -884,6 +884,22 @@ void test_client_peer_typed_async_helpers() {
   require(listed->front().name == "fake-tool",
           "typed async list_tools result mismatch");
 
+  const auto prompts = peer.list_prompts_async(options).await_response();
+  require(prompts.has_value(), "typed async list_prompts failed");
+  require(prompts->front().name == "summarize",
+          "typed async list_prompts result mismatch");
+
+  const auto resources = peer.list_resources_async(options).await_response();
+  require(resources.has_value(), "typed async list_resources failed");
+  require(resources->front().uri == "file:///tmp/readme.txt",
+          "typed async list_resources result mismatch");
+
+  const auto templates =
+      peer.list_resource_templates_async(options).await_response();
+  require(templates.has_value(), "typed async list_resource_templates failed");
+  require(templates->front().uri_template == "file:///tmp/{name}.txt",
+          "typed async list_resource_templates result mismatch");
+
   const auto called =
       peer.call_tool_async("fake-tool", Json{{"value", 7}}, options)
           .await_response();
@@ -989,31 +1005,37 @@ void test_client_peer_typed_async_helpers() {
   require(task_result->at("value") == "task-complete",
           "typed async task_result payload mismatch");
 
-  require(recording->requests.size() == 12,
+  require(recording->requests.size() == 15,
           "typed async request count mismatch");
   require(recording->requests.at(0).method == "tools/list",
           "typed async list_tools method mismatch");
-  require(recording->requests.at(1).method == "tools/call",
+  require(recording->requests.at(1).method == "prompts/list",
+          "typed async list_prompts method mismatch");
+  require(recording->requests.at(2).method == "resources/list",
+          "typed async list_resources method mismatch");
+  require(recording->requests.at(3).method == "resources/templates/list",
+          "typed async list_resource_templates method mismatch");
+  require(recording->requests.at(4).method == "tools/call",
           "typed async call_tool method mismatch");
-  require(recording->requests.at(2).method == "prompts/get",
+  require(recording->requests.at(5).method == "prompts/get",
           "typed async get_prompt method mismatch");
-  require(recording->requests.at(3).method == "resources/read",
+  require(recording->requests.at(6).method == "resources/read",
           "typed async read_resource method mismatch");
-  require(recording->requests.at(4).method == "completion/complete",
+  require(recording->requests.at(7).method == "completion/complete",
           "typed async complete method mismatch");
-  require(recording->requests.at(5).method == "sampling/createMessage",
+  require(recording->requests.at(8).method == "sampling/createMessage",
           "typed async create_message method mismatch");
-  require(recording->requests.at(6).method == "elicitation/create",
+  require(recording->requests.at(9).method == "elicitation/create",
           "typed async create_elicitation method mismatch");
-  require(recording->requests.at(7).method == "tools/call",
+  require(recording->requests.at(10).method == "tools/call",
           "typed async call_tool_task method mismatch");
-  require(recording->requests.at(8).method == "tasks/list",
+  require(recording->requests.at(11).method == "tasks/list",
           "typed async list_tasks method mismatch");
-  require(recording->requests.at(9).method == "tasks/get",
+  require(recording->requests.at(12).method == "tasks/get",
           "typed async get_task method mismatch");
-  require(recording->requests.at(10).method == "tasks/cancel",
+  require(recording->requests.at(13).method == "tasks/cancel",
           "typed async cancel_task method mismatch");
-  require(recording->requests.at(11).method == "tasks/result",
+  require(recording->requests.at(14).method == "tasks/result",
           "typed async task_result method mismatch");
 }
 
