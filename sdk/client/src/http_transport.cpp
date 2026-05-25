@@ -10,6 +10,7 @@
 #include <map>
 #include <mutex>
 #include <optional>
+#include <set>
 #include <string>
 #include <string_view>
 #include <system_error>
@@ -876,6 +877,8 @@ class StreamableHttpClientTransport::Impl {
 
   core::Result<core::Unit> start_request_thread(
       protocol::JsonRpcRequest request) {
+    const auto request_id = request.id;
+    bool registered = false;
     try {
       std::lock_guard<std::mutex> lock(mutex_);
       if (closed_) {
@@ -883,16 +886,25 @@ class StreamableHttpClientTransport::Impl {
             protocol::ErrorCode::InvalidRequest,
             "streamable http client transport is closed"));
       }
+      const auto [_, inserted] = in_flight_request_ids_.insert(request_id);
+      if (!inserted) {
+        return std::unexpected(make_native_http_error(
+            protocol::ErrorCode::InvalidRequest,
+            "duplicate streamable http request id",
+            request_id_to_string_for_native_http(request_id)));
+      }
+      registered = true;
       ++active_request_workers_;
       request_threads_.emplace_back(
-          [this, request = std::move(request)]() mutable {
+          [this, request_id, request = std::move(request)]() mutable {
             auto response = transport_.send(request);
             if (response) {
-              finish_request_worker(false, false);
+              finish_request_worker(request_id, false, false);
               enqueue(protocol::JsonRpcMessage{std::move(*response)});
               return;
             }
-            finish_request_worker(true, is_timeout_error(response.error()));
+            finish_request_worker(request_id, true,
+                                  is_timeout_error(response.error()));
             enqueue(protocol::JsonRpcMessage{protocol::make_error_response(
                 std::optional<protocol::RequestId>{request.id},
                 protocol::make_error(response.error().code,
@@ -903,7 +915,9 @@ class StreamableHttpClientTransport::Impl {
                                                response.error().detail}))});
           });
     } catch (const std::system_error& ex) {
-      finish_request_worker(true, false);
+      if (registered) {
+        forget_request_worker(request_id);
+      }
       return std::unexpected(make_native_http_error(
           protocol::ErrorCode::InternalError,
           "failed to start streamable http request worker", ex.what()));
@@ -969,8 +983,10 @@ class StreamableHttpClientTransport::Impl {
     return error.message.find("timed out") != std::string::npos;
   }
 
-  void finish_request_worker(bool failed, bool timed_out) {
+  void finish_request_worker(const protocol::RequestId& request_id, bool failed,
+                             bool timed_out) {
     std::lock_guard<std::mutex> lock(mutex_);
+    in_flight_request_ids_.erase(request_id);
     if (active_request_workers_ > 0) {
       --active_request_workers_;
     }
@@ -980,6 +996,14 @@ class StreamableHttpClientTransport::Impl {
     }
     if (timed_out) {
       ++timed_out_request_workers_;
+    }
+  }
+
+  void forget_request_worker(const protocol::RequestId& request_id) {
+    std::lock_guard<std::mutex> lock(mutex_);
+    in_flight_request_ids_.erase(request_id);
+    if (active_request_workers_ > 0) {
+      --active_request_workers_;
     }
   }
 
@@ -1014,6 +1038,7 @@ class StreamableHttpClientTransport::Impl {
   std::deque<protocol::JsonRpcMessage> inbound_;
   std::map<protocol::RequestId, std::shared_ptr<PendingServerRequest>>
       pending_server_requests_;
+  std::set<protocol::RequestId> in_flight_request_ids_;
   std::vector<std::thread> request_threads_;
   std::size_t active_request_workers_ = 0;
   std::size_t completed_request_workers_ = 0;

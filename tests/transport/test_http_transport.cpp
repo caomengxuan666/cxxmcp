@@ -2541,6 +2541,103 @@ void test_native_streamable_http_transport_rejects_unknown_server_response_id() 
           "native http unknown server response close should succeed");
 }
 
+void test_native_streamable_http_transport_surfaces_unexpected_response_id() {
+  HttpServerFixture fixture;
+
+  fixture.server().Post("/mcp", [](const httplib::Request&,
+                                   httplib::Response& response) {
+    response.set_content(serialize_test_response(mcp::protocol::JsonRpcResponse{
+                             .id = std::int64_t{999},
+                             .result = Json{{"ok", true}},
+                         }),
+                         "application/json");
+  });
+
+  mcp::transport::StreamableHttpClientTransport transport(
+      mcp::transport::StreamableHttpClientTransportOptions{
+          .host = "127.0.0.1",
+          .port = fixture.port(),
+          .path = "/mcp",
+          .timeout = std::chrono::milliseconds(2000),
+      });
+
+  auto sent = transport.send(mcp::protocol::JsonRpcRequest{
+      .method = std::string(mcp::protocol::PingMethod),
+      .params = Json::object(),
+      .id = std::int64_t{811},
+  });
+  require(sent.has_value(), "native http unexpected-id send should succeed");
+
+  auto received = transport.receive();
+  require(received.has_value(), "native http unexpected-id receive failed");
+  require(received->has_value(), "native http unexpected-id response missing");
+  const auto* response =
+      std::get_if<mcp::protocol::JsonRpcResponse>(&received->value());
+  require(response != nullptr,
+          "native http unexpected-id should receive response message");
+  require(response->id == mcp::protocol::RequestId{std::int64_t{811}},
+          "native http unexpected-id response id mismatch");
+  require(response->error.has_value(),
+          "native http unexpected-id should surface an error response");
+  require(response->error->message ==
+              "http transport received an unexpected response",
+          "native http unexpected-id error message mismatch");
+
+  const auto closed = transport.close();
+  require(closed.has_value(), "native http unexpected-id close should succeed");
+}
+
+void test_native_streamable_http_transport_rejects_duplicate_request_id() {
+  HttpServerFixture fixture;
+
+  fixture.server().Post("/mcp", [](const httplib::Request& request,
+                                   httplib::Response& response) {
+    const auto parsed = mcp::protocol::parse_message(request.body);
+    require(parsed.has_value(), "native duplicate request should parse");
+    const auto* rpc_request =
+        std::get_if<mcp::protocol::JsonRpcRequest>(&*parsed);
+    require(rpc_request != nullptr, "native duplicate should send request");
+    std::this_thread::sleep_for(std::chrono::milliseconds(250));
+    response.set_content(serialize_test_response(mcp::protocol::JsonRpcResponse{
+                             .id = rpc_request->id,
+                             .result = Json{{"ok", true}},
+                         }),
+                         "application/json");
+  });
+
+  mcp::transport::StreamableHttpClientTransport transport(
+      mcp::transport::StreamableHttpClientTransportOptions{
+          .host = "127.0.0.1",
+          .port = fixture.port(),
+          .path = "/mcp",
+          .timeout = std::chrono::milliseconds(2000),
+      });
+
+  auto sent = transport.send(mcp::protocol::JsonRpcRequest{
+      .method = std::string(mcp::protocol::PingMethod),
+      .params = Json::object(),
+      .id = std::int64_t{812},
+  });
+  require(sent.has_value(), "native http duplicate first send should succeed");
+
+  const auto duplicate = transport.send(mcp::protocol::JsonRpcRequest{
+      .method = std::string(mcp::protocol::PingMethod),
+      .params = Json::object(),
+      .id = std::int64_t{812},
+  });
+  require(!duplicate.has_value(),
+          "native http should reject duplicate in-flight request ids");
+  require(duplicate.error().message == "duplicate streamable http request id",
+          "native http duplicate request message mismatch");
+  require(duplicate.error().detail == "812",
+          "native http duplicate request detail mismatch");
+  require(duplicate.error().category == "transport",
+          "native http duplicate request category mismatch");
+
+  const auto closed = transport.close();
+  require(closed.has_value(), "native http duplicate close should succeed");
+}
+
 void test_native_streamable_http_transport_close_unblocks_receive() {
   mcp::transport::StreamableHttpClientTransport transport(
       mcp::transport::StreamableHttpClientTransportOptions{
@@ -3076,6 +3173,10 @@ int main() {
        test_native_streamable_http_transport_diagnostics_timeout_cleanup},
       {"native streamable http transport rejects unknown server response id",
        test_native_streamable_http_transport_rejects_unknown_server_response_id},
+      {"native streamable http transport surfaces unexpected response id",
+       test_native_streamable_http_transport_surfaces_unexpected_response_id},
+      {"native streamable http transport rejects duplicate request id",
+       test_native_streamable_http_transport_rejects_duplicate_request_id},
       {"native streamable http transport close unblocks receive",
        test_native_streamable_http_transport_close_unblocks_receive},
       {"native streamable http transport receives server request",
