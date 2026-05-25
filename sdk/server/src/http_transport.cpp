@@ -914,7 +914,25 @@ core::Result<protocol::JsonRpcResponse> HttpTransport::send_request_to_session(
   notification_cv_.notify_all();
 
   std::unique_lock lock(pending->mutex);
-  pending->cv.wait(lock, [&] { return pending->ready; });
+  if (options_.request_timeout.count() > 0) {
+    const bool ready = pending->cv.wait_for(lock, options_.request_timeout,
+                                            [&] { return pending->ready; });
+    if (!ready) {
+      lock.unlock();
+      {
+        std::lock_guard state_lock(mutex_);
+        auto* session = find_session_locked(session_id);
+        if (session != nullptr) {
+          session->pending_requests.erase(request_key);
+        }
+      }
+      return std::unexpected(make_transport_error(
+          static_cast<int>(protocol::ErrorCode::InternalError),
+          "http transport request timed out", request_key));
+    }
+  } else {
+    pending->cv.wait(lock, [&] { return pending->ready; });
+  }
   if (pending->error.has_value()) {
     return std::unexpected(*pending->error);
   }
@@ -1095,6 +1113,7 @@ server::HttpTransportOptions to_legacy_options(
   legacy.max_pending_sse_events = options.max_pending_sse_events;
   legacy.max_pending_sse_bytes = options.max_pending_sse_bytes;
   legacy.max_sse_replay_events = options.max_sse_replay_events;
+  legacy.request_timeout = options.request_timeout;
   return legacy;
 }
 

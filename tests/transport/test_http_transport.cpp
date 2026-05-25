@@ -2539,6 +2539,118 @@ void test_native_streamable_http_server_transport_exposes_server_contract() {
   require(closed.has_value(), "native server close should succeed");
 }
 
+void test_native_streamable_http_server_transport_diagnostics_timeout_cleanup() {
+  constexpr int kPort = 40213;
+  const std::string kPath = "/native-server-timeout";
+  mcp::transport::StreamableHttpServerTransport transport(
+      mcp::transport::StreamableHttpServerTransportOptions{
+          .listen_host = "127.0.0.1",
+          .listen_port = kPort,
+          .path = kPath,
+          .request_timeout = std::chrono::milliseconds(50),
+      });
+
+  std::optional<httplib::Result> posted_initialize;
+  std::thread post_thread([&]() {
+    const auto body = serialize_test_request(mcp::protocol::JsonRpcRequest{
+        .method = std::string(mcp::protocol::InitializeMethod),
+        .params =
+            Json{
+                {"protocolVersion",
+                 std::string(mcp::protocol::McpProtocolVersion)},
+                {"capabilities", Json::object()},
+                {"clientInfo", Json{{"name", "native"}, {"version", "1"}}},
+            },
+        .id = std::int64_t{71},
+    });
+    for (int attempt = 0; attempt < 100; ++attempt) {
+      httplib::Client client("127.0.0.1", kPort);
+      client.set_connection_timeout(0, 100000);
+      client.set_read_timeout(2, 0);
+      client.set_write_timeout(2, 0);
+      auto response = client.Post(
+          kPath,
+          httplib::Headers{
+              {"Accept", "application/json, text/event-stream"},
+              {"Content-Type", "application/json"},
+              {"Mcp-Method", std::string(mcp::protocol::InitializeMethod)},
+          },
+          body, "application/json");
+      if (response) {
+        posted_initialize = std::move(response);
+        return;
+      }
+      std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    }
+  });
+
+  auto received = transport.receive();
+  require(received.has_value(), "native timeout server receive should succeed");
+  require(received->has_value(),
+          "native timeout server should receive initialize");
+  const auto* initialize_request =
+      std::get_if<mcp::protocol::JsonRpcRequest>(&received->value());
+  require(initialize_request != nullptr,
+          "native timeout server should receive request message");
+
+  const auto initialized = transport.send(mcp::protocol::make_response(
+      initialize_request->id,
+      Json{
+          {"protocolVersion", std::string(mcp::protocol::McpProtocolVersion)},
+          {"capabilities", Json::object()},
+          {"serverInfo",
+           Json{{"name", "native-server-timeout"}, {"version", "1"}}},
+      }));
+  require(initialized.has_value(),
+          "native timeout server initialize response should send");
+
+  if (post_thread.joinable()) {
+    post_thread.join();
+  }
+  require(posted_initialize.has_value(),
+          "native timeout server initialize post should complete");
+  require((*posted_initialize)->status == 200,
+          "native timeout server initialize status mismatch");
+
+  const auto request_sent = transport.send(mcp::protocol::JsonRpcRequest{
+      .method = std::string(mcp::protocol::RootsListMethod),
+      .params = Json::object(),
+      .id = std::int64_t{72},
+  });
+  require(request_sent.has_value(),
+          "native timeout server request should be accepted");
+
+  received = transport.receive();
+  require(received.has_value(),
+          "native timeout server error receive should succeed");
+  require(received->has_value(),
+          "native timeout server error response should be queued");
+  const auto* timeout_response =
+      std::get_if<mcp::protocol::JsonRpcResponse>(&received->value());
+  require(timeout_response != nullptr,
+          "native timeout server should receive error response");
+  require(timeout_response->error.has_value(),
+          "native timeout server request should surface an error");
+  require(
+      timeout_response->error->message.find("timed out") != std::string::npos,
+      "native timeout server error should be a timeout");
+
+  const auto diagnostics = transport.diagnostics();
+  require(diagnostics.at("pendingClientRequests").get<std::size_t>() == 0,
+          "native timeout server should not leave pending client requests");
+  require(diagnostics.at("activeRequestWorkers").get<std::size_t>() == 0,
+          "native timeout server should not leave active request workers");
+  require(diagnostics.at("completedRequestWorkers").get<std::size_t>() >= 1,
+          "native timeout server completed worker count mismatch");
+  require(diagnostics.at("failedRequestWorkers").get<std::size_t>() >= 1,
+          "native timeout server failed worker count mismatch");
+  require(diagnostics.at("timedOutRequestWorkers").get<std::size_t>() >= 1,
+          "native timeout server timeout worker count mismatch");
+
+  const auto closed = transport.close();
+  require(closed.has_value(), "native timeout server close should succeed");
+}
+
 }  // namespace
 
 int main() {
@@ -2595,6 +2707,8 @@ int main() {
        test_native_streamable_http_transport_receives_server_request},
       {"native streamable http server transport exposes server contract",
        test_native_streamable_http_server_transport_exposes_server_contract},
+      {"native streamable http server transport diagnostics timeout cleanup",
+       test_native_streamable_http_server_transport_diagnostics_timeout_cleanup},
   };
 
   std::size_t failures = 0;

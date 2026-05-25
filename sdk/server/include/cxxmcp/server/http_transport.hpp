@@ -40,6 +40,9 @@ struct HttpTransportOptions {
   std::size_t max_pending_sse_bytes = 4 * 1024 * 1024;
   /// Number of delivered SSE events retained for Last-Event-ID replay.
   std::size_t max_sse_replay_events = 256;
+  /// Maximum time to wait for a client response to a server-to-client request.
+  /// Set to zero or a negative duration to wait indefinitely.
+  std::chrono::milliseconds request_timeout{30000};
 };
 
 /// @brief MCP streamable HTTP transport with session-aware SSE delivery.

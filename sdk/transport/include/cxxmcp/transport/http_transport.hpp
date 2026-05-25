@@ -98,6 +98,10 @@ struct StreamableHttpServerTransportOptions {
 
   /// Number of delivered SSE events retained for Last-Event-ID replay.
   std::size_t max_sse_replay_events = 256;
+
+  /// Maximum time to wait for a client response to a server-to-client request.
+  /// Set to zero or a negative duration to wait indefinitely.
+  std::chrono::milliseconds request_timeout{30000};
 };
 
 /// @brief Native transport-contract server for Streamable HTTP.

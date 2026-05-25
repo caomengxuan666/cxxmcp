@@ -55,9 +55,9 @@ incrementally. Keep them concrete; do not replace them with broad claims.
   - [x] Native process stdio and Streamable HTTP diagnostics expose active,
         completed, failed, and timed-out request worker counts for timeout
         cleanup tests.
-  - [ ] Transport-level timeout cleanup is still blocked until each transport
-        exposes observable pending-request cleanup or deterministic late
-        response accounting.
+  - [x] Transport-level timeout cleanup is covered by observable pending
+        cleanup or deterministic worker/late-response accounting across the
+        role-generic stdio, process stdio, and Streamable HTTP paths.
 - Conformance matrix:
   - [x] In-tree Streamable HTTP matrix covers initialize, tools, prompts,
         resources/templates/subscribe, roots/list_changed, completion, logging,
@@ -255,8 +255,9 @@ true:
 - [x] Preserve `_meta` / metadata through all typed async request helpers.
 - [x] Send `notifications/cancelled` on timeout where the protocol expects it.
 - [x] Propagate cancellation token state into handler execution where possible.
-- [ ] Ensure timeouts unblock or fail pending transport operations consistently.
-- [ ] Ensure timed-out requests clean up pending response state.
+- [x] Ensure timeouts unblock or fail pending transport operations
+  consistently.
+- [x] Ensure timed-out requests clean up pending response state.
 - [x] Ensure late responses after timeout are handled deterministically.
 - [x] Add stress tests for concurrent async requests.
 - [x] Add stress tests for cancellation races.
