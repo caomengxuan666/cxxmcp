@@ -185,7 +185,7 @@ true:
 
 - [ ] Make `Peer<RoleClient>` and `Peer<RoleServer>` the primary implementation
   path for request dispatch, notification dispatch, and lifecycle.
-- [ ] Keep concrete `Client` and `Server` classes as compatibility wrappers or
+- [x] Keep concrete `Client` and `Server` classes as compatibility wrappers or
   convenience adapters, not the conceptual center of the SDK.
 - [ ] Move the real request loop behind the `Peer` / `Service` path.
 - [x] Make `Service<Role>` own service lifecycle and serving state directly.
