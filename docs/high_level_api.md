@@ -1,11 +1,12 @@
 # High Level API Draft
 
-This is the target C++20-friendly facade on top of the current core.
+This is the high-level C++20-friendly facade on top of the current SDK core.
 The canonical public surface is `Peer` / `Service` plus the protocol layer.
-`client` and `server` remain compatibility and convenience wrappers. The
-public surface should match the official Rust SDK parity set from
-`docs/rmcp_api_inventory.md`, with `elicitation` treated as an optional
-feature-gated extension.
+`client` and `server` remain compatibility and convenience wrappers.
+
+The examples below are the copy-pasteable part of this document. The later
+interface sketch summarizes API families and naming only; exact signatures live
+in the public headers and generated Doxygen.
 
 ## Canonical SDK examples
 
@@ -106,7 +107,11 @@ int main() {
 }
 ```
 
-## Derived interface surface
+## Derived Interface Sketch
+
+This section is intentionally shape-level. Do not treat it as the authoritative
+signature reference; use the headers under `sdk/include/cxxmcp` for exact return
+types, overloads, and optional capability families.
 
 ### Peer / Service
 
