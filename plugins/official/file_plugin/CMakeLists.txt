@@ -1,1 +1,0 @@
-configure_plugin(file_plugin file_plugin.cpp)

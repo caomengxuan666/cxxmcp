@@ -1,0 +1,216 @@
+{
+  "version": 5,
+  "cmakeMinimumRequired": {
+    "major": 3,
+    "minor": 23,
+    "patch": 0
+  },
+  "configurePresets": [
+    {
+      "name": "base-ninja",
+      "hidden": true,
+      "generator": "Ninja",
+      "binaryDir": "${sourceDir}/out/build/${presetName}",
+      "cacheVariables": {
+        "CMAKE_EXPORT_COMPILE_COMMANDS": "ON",
+        "BUILD_SHARED_LIBS": "OFF"
+      }
+    },
+    {
+      "name": "base-ninja-debug",
+      "hidden": true,
+      "inherits": "base-ninja",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug",
+        "BUILD_TESTING": "OFF"
+      }
+    },
+    {
+      "name": "base-ninja-release",
+      "hidden": true,
+      "inherits": "base-ninja",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release",
+        "BUILD_TESTING": "OFF"
+      }
+    },
+    {
+      "name": "sdk",
+      "displayName": "SDK (Debug)",
+      "description": "Build the public SDK libraries and their direct dependencies.",
+      "inherits": "base-ninja-debug",
+      "cacheVariables": {
+        "CXXMCP_BUILD_SDK": "ON",
+        "CXXMCP_BUILD_CLIENT": "OFF",
+        "CXXMCP_BUILD_SERVER": "OFF",
+        "CXXMCP_BUILD_APP": "OFF",
+        "CXXMCP_BUILD_GATEWAY": "OFF",
+        "CXXMCP_BUILD_CLI": "OFF",
+        "CXXMCP_BUILD_EXAMPLES": "OFF",
+        "CXXMCP_BUILD_TESTS": "OFF"
+      }
+    },
+    {
+      "name": "sdk-release",
+      "displayName": "SDK (Release)",
+      "description": "Build the public SDK libraries and their direct dependencies in Release mode.",
+      "inherits": "base-ninja-release",
+      "cacheVariables": {
+        "CXXMCP_BUILD_SDK": "ON",
+        "CXXMCP_BUILD_CLIENT": "OFF",
+        "CXXMCP_BUILD_SERVER": "OFF",
+        "CXXMCP_BUILD_APP": "OFF",
+        "CXXMCP_BUILD_GATEWAY": "OFF",
+        "CXXMCP_BUILD_CLI": "OFF",
+        "CXXMCP_BUILD_EXAMPLES": "OFF",
+        "CXXMCP_BUILD_TESTS": "OFF"
+      }
+    },
+    {
+      "name": "cli",
+      "displayName": "CLI (Debug)",
+      "description": "Build the command-line application and the layers it pulls in.",
+      "inherits": "base-ninja-debug",
+      "cacheVariables": {
+        "CXXMCP_BUILD_SDK": "OFF",
+        "CXXMCP_BUILD_CLIENT": "OFF",
+        "CXXMCP_BUILD_SERVER": "OFF",
+        "CXXMCP_BUILD_RUNTIME": "ON",
+        "CXXMCP_BUILD_APP": "OFF",
+        "CXXMCP_BUILD_GATEWAY": "OFF",
+        "CXXMCP_BUILD_CLI": "ON",
+        "CXXMCP_BUILD_EXAMPLES": "OFF",
+        "CXXMCP_BUILD_TESTS": "OFF"
+      }
+    },
+    {
+      "name": "cli-release",
+      "displayName": "CLI (Release)",
+      "description": "Build the command-line application in Release mode.",
+      "inherits": "base-ninja-release",
+      "cacheVariables": {
+        "CXXMCP_BUILD_SDK": "OFF",
+        "CXXMCP_BUILD_CLIENT": "OFF",
+        "CXXMCP_BUILD_SERVER": "OFF",
+        "CXXMCP_BUILD_RUNTIME": "ON",
+        "CXXMCP_BUILD_APP": "OFF",
+        "CXXMCP_BUILD_GATEWAY": "OFF",
+        "CXXMCP_BUILD_CLI": "ON",
+        "CXXMCP_BUILD_EXAMPLES": "OFF",
+        "CXXMCP_BUILD_TESTS": "OFF"
+      }
+    },
+    {
+      "name": "examples",
+      "displayName": "Examples (Debug)",
+      "description": "Build the example executables in Debug mode.",
+      "inherits": "base-ninja-debug",
+      "cacheVariables": {
+        "CXXMCP_BUILD_SDK": "ON",
+        "CXXMCP_BUILD_CLIENT": "ON",
+        "CXXMCP_BUILD_SERVER": "ON",
+        "CXXMCP_BUILD_APP": "OFF",
+        "CXXMCP_BUILD_GATEWAY": "OFF",
+        "CXXMCP_BUILD_CLI": "OFF",
+        "CXXMCP_BUILD_EXAMPLES": "ON",
+        "CXXMCP_BUILD_TESTS": "OFF"
+      }
+    },
+    {
+      "name": "examples-release",
+      "displayName": "Examples (Release)",
+      "description": "Build the example executables in Release mode.",
+      "inherits": "base-ninja-release",
+      "cacheVariables": {
+        "CXXMCP_BUILD_SDK": "ON",
+        "CXXMCP_BUILD_CLIENT": "ON",
+        "CXXMCP_BUILD_SERVER": "ON",
+        "CXXMCP_BUILD_APP": "OFF",
+        "CXXMCP_BUILD_GATEWAY": "OFF",
+        "CXXMCP_BUILD_CLI": "OFF",
+        "CXXMCP_BUILD_EXAMPLES": "ON",
+        "CXXMCP_BUILD_TESTS": "OFF"
+      }
+    },
+    {
+      "name": "tests",
+      "displayName": "Tests (Debug)",
+      "description": "Build the full runtime stack with tests enabled.",
+      "inherits": "base-ninja-debug",
+      "cacheVariables": {
+        "CXXMCP_BUILD_SDK": "ON",
+        "CXXMCP_BUILD_CLIENT": "ON",
+        "CXXMCP_BUILD_SERVER": "ON",
+        "CXXMCP_BUILD_RUNTIME": "ON",
+        "CXXMCP_BUILD_CLI": "OFF",
+        "CXXMCP_BUILD_EXAMPLES": "OFF",
+        "CXXMCP_BUILD_TESTS": "ON"
+      }
+    },
+    {
+      "name": "tests-release",
+      "displayName": "Tests (Release)",
+      "description": "Build the full runtime stack with tests enabled in Release mode.",
+      "inherits": "base-ninja-release",
+      "cacheVariables": {
+        "CXXMCP_BUILD_SDK": "ON",
+        "CXXMCP_BUILD_CLIENT": "ON",
+        "CXXMCP_BUILD_SERVER": "ON",
+        "CXXMCP_BUILD_RUNTIME": "ON",
+        "CXXMCP_BUILD_CLI": "OFF",
+        "CXXMCP_BUILD_EXAMPLES": "OFF",
+        "CXXMCP_BUILD_TESTS": "ON"
+      }
+    }
+  ],
+  "buildPresets": [
+    {
+      "name": "sdk",
+      "configurePreset": "sdk"
+    },
+    {
+      "name": "sdk-release",
+      "configurePreset": "sdk-release"
+    },
+    {
+      "name": "cli",
+      "configurePreset": "cli"
+    },
+    {
+      "name": "cli-release",
+      "configurePreset": "cli-release"
+    },
+    {
+      "name": "examples",
+      "configurePreset": "examples"
+    },
+    {
+      "name": "examples-release",
+      "configurePreset": "examples-release"
+    },
+    {
+      "name": "tests",
+      "configurePreset": "tests"
+    },
+    {
+      "name": "tests-release",
+      "configurePreset": "tests-release"
+    }
+  ],
+  "testPresets": [
+    {
+      "name": "tests",
+      "configurePreset": "tests",
+      "output": {
+        "outputOnFailure": true
+      }
+    },
+    {
+      "name": "tests-release",
+      "configurePreset": "tests-release",
+      "output": {
+        "outputOnFailure": true
+      }
+    }
+  ]
+}

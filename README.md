@@ -1,382 +1,216 @@
-<div align="center">
-  <img src="docs/logo.png" alt="MCPServer.cpp Logo" width="200"/>
-  <h1>MCPServer.cpp</h1>
-  <p>A high-performance C++ implementation of the Model Communication Protocol server</p>
+# cxxmcp
 
-[![C++20](https://img.shields.io/badge/C++-20-blue.svg)](https://en.cppreference.com/w/cpp/20)
-[![License](https://img.shields.io/github/license/caomengxuan666/MCPServer.cpp)](LICENSE)
-[![Build Status](https://img.shields.io/github/actions/workflow/status/caomengxuan666/MCPServer.cpp/build.yml)](https://github.com/caomengxuan666/MCPServer.cpp/actions)
-</div>
+`cxxmcp` is a C++ MCP SDK.
 
-## Language Versions
-
-- [English (Default)](README.md)
-- [中文版](README_zh.md)
-
-## Table of Contents
-
-- [Introduction](#introduction)
-- [Features](#features)
-- [Architecture](#architecture)
-- [Getting Started](#getting-started)
-- [Building from Source](#building-from-source)
-- [Configuration](#configuration)
-- [Authentication](#authentication)
-- [HTTPS and Certificate Generation](#https-and-certificate-generation)
-- [Plugins](#plugins)
-- [API Reference](#api-reference)
-- [Docker Deployment](#docker-deployment)
-- [CI/CD Pipeline](#cicd-pipeline)
-- [Contributing](#contributing)
-- [License](#license)
-
-## Introduction
-
-MCPServer.cpp is a high-performance, cross-platform server implementation of the Model Communication Protocol (MCP) written in modern C++. It enables seamless communication between AI models and external tools, providing a standardized interface for extending model capabilities.
-
-The server implements the JSON-RPC 2.0 protocol over HTTP transport and supports both regular request-response and Server-Sent Events (SSE) streaming for real-time communication.
+The core package is intentionally narrow: `protocol`, `transport`, `handler`, and `peer` form the SDK shape, while `client` and `server` stay as embeddable compatibility wrappers and convenience entry points. Gateway and CLI code are optional runtime tools built on top of the SDK, not the main product surface.
+Optional extension layers are also first-class package targets: `cxxmcp::plugin_sdk` and `cxxmcp::adapters`.
 
 ## Features
 
-### MCP Primitives Support Matrix
+- Typed MCP protocol models and JSON-RPC serialization
+- Client SDK for HTTP, stdio, and process-based connections
+- Server SDK with typed tool, prompt, resource, and transport handlers
+- Streamable HTTP support, with legacy SSE compatibility where needed
+- Optional gateway and CLI tools for local runtime management
+- Raw JSON-RPC request and notification escape hatches
 
-| Primitive | Status | Notes |
-|-----------|--------|-------|
-| Tools | ✅ Full Support | Execute tools in isolated plugin environment |
-| Prompts | ✅ Basic Support | Prompt templates and management |
-| Resources | ✅ Basic Support | Expose data and content to LLMs |
-| Sampling | 🚧 Planned | LLM-based sampling operations |
-| Roots | 🚧 Planned | Filesystem access control |
+## Using as a Library
 
-### Core Features
+Installed-package usage should look like a normal CMake SDK:
 
-- Full implementation of the Model Communication Protocol (MCP)
-- JSON-RPC 2.0 over HTTP/HTTPS transport
-- Plugin system for extending functionality
-- Built-in tools (echo, file operations, HTTP requests, system commands)
-- Streaming responses with Server-Sent Events (SSE)
-- Comprehensive logging and error handling
-- 🚀 **High Performance**: Built with C++20 and optimized with mimalloc for superior performance
-- 🔌 **Plugin System**: Extensible architecture with dynamic plugin loading
-- 🌐 **HTTP Transport**: Full HTTP/1.1 support with SSE streaming capabilities
-- 📦 **JSON-RPC 2.0**: Complete implementation of the JSON-RPC 2.0 specification
-- 🛠️ **Built-in Tools**: Includes file operations, HTTP requests, and system commands
-- 🧠 **AI Model Ready**: Designed specifically for AI model integration
-- 🔄 **Asynchronous I/O**: Powered by ASIO for efficient concurrent handling
-- 📊 **Logging**: Comprehensive logging with spdlog
-- 📈 **Scalable**: Multi-threaded architecture for handling concurrent requests
-- 🌍 **Cross-platform**: Works on Windows, Linux, and macOS
-- 📁 **Resource Management**: Expose data and content to LLMs via Resources primitive
+```cmake
+find_package(cxxmcp CONFIG REQUIRED)
 
-## Architecture
-
-MCPServer.cpp uses a modular architecture with clear boundaries between components:
-
-```
-┌─────────────────────────────────────────────────────────────┐
-│                      MCPServer.cpp                            │
-├─────────────────────────────────────────────────────────────┤
-│                   Transport Layer                           │
-│  ┌─────────────┐  ┌─────────────┐  ┌─────────────────────┐  │
-│  │ HTTP Server │  │  Stdio I/O  │  │   Other Protocols   │  │
-│  └─────────────┘  └─────────────┘  └─────────────────────┘  │
-├─────────────────────────────────────────────────────────────┤
-│                    Protocol Layer                           │
-│              ┌──────────────────────┐                       │
-│              │    JSON-RPC 2.0      │                       │
-│              └──────────────────────┘                       │
-├─────────────────────────────────────────────────────────────┤
-│                   Business Logic Layer                      │
-│  ┌─────────────┐  ┌─────────────┐  ┌─────────────────────┐  │
-│  │ Tool Reg.   │  │  Plugins    │  │ Request Processing  │  │
-│  └─────────────┘  └─────────────┘  └─────────────────────┘  │
-├─────────────────────────────────────────────────────────────┤
-│                      Core Services                          │
-│  ┌─────────────┐  ┌─────────────┐  ┌─────────────────────┐  │
-│  │   Logger    │  │ Resources   │  │   Configuration   │  │
-│  └─────────────┘  └─────────────┘  └─────────────────────┘  │
-└─────────────────────────────────────────────────────────────┘
+target_link_libraries(my_client PRIVATE cxxmcp::client)
+target_link_libraries(my_server PRIVATE cxxmcp::server)
 ```
 
-### Core Components
+Use `cxxmcp::sdk` only when you want the aggregate protocol/client/server SDK target.
 
-1. **Transport Layer**: Handles communication over various protocols (HTTP, stdio, etc.)
-2. **Protocol Layer**: Implements JSON-RPC 2.0 message parsing and formatting
-3. **Business Logic Layer**: Manages tools, plugins, and request processing
-4. **Core Services**: Provides essential services like logging
+Public headers use the `cxxmcp/` prefix. Common public headers include
+`cxxmcp/protocol.hpp`, `cxxmcp/request.hpp`, `cxxmcp/handler.hpp`,
+`cxxmcp/transport.hpp`, `cxxmcp/peer.hpp`, `cxxmcp/client.hpp`,
+`cxxmcp/server.hpp`, `cxxmcp/service.hpp`, and `cxxmcp/sdk.hpp`.
 
-## Getting Started
+## Build
 
-### Prerequisites
+Requirements:
 
-- C++20 compatible compiler (MSVC, GCC 10+, Clang 12+)
-- CMake 3.23 or higher
-- Git
+- CMake 3.23+
+- A C++20 compiler
 
-### Quick Start
+Default SDK build:
 
-1. Clone the repository:
-   ```bash
-   git clone https://github.com/caomengxuan666/MCPServer.cpp.git
-   cd MCPServer.cpp
-   ```
-
-2. Build the project:
-   ```bash
-   mkdir build
-   cd build
-   cmake ..
-   cmake --build .
-   ```
-
-3. Run the server:
-   ```bash
-   ./bin/mcp-server++
-   ```
-
-The server will start on the default port and load the built-in plugins.
-
-## Building from Source
-
-### Windows
-
-```bash
-mkdir build
-cd build
-cmake ..
-cmake --build . --config Release
+```powershell
+cmake -S . -B build
+cmake --build build
 ```
 
-### Linux/macOS
+Build the client and server SDKs:
 
-```bash
-mkdir build
-cd build
-cmake ..
-make -j$(nproc)
+```powershell
+cmake -S . -B build-sdk -DCXXMCP_BUILD_CLIENT=ON -DCXXMCP_BUILD_SERVER=ON
+cmake --build build-sdk
 ```
 
-### Build Options
+Build the gateway and CLI:
 
-| Option | Description | Default |
-|--------|-------------|---------|
-| `BUILD_TESTS` | Build unit tests | ON |
-| `CMAKE_BUILD_TYPE` | Build type (Debug, Release, etc.) | Release |
-
-## Configuration
-
-See [Configuration](#configuration) section for details on how to configure the server.
-
-## Authentication
-
-MCPServer++ supports authentication mechanisms to secure your server from unauthorized access. See [AUTH.md](docs/AUTH.md) for detailed information on how to configure and use authentication.
-
-## HTTPS and Certificate Generation
-
-MCPServer++ supports secure communication over HTTPS. **By default, HTTPS is disabled for security reasons and must be manually enabled in the configuration file.**
-
-To enable HTTPS:
-1. Set `enable_https=1` in your config.ini
-2. Ensure you have valid SSL certificate files
-3. Configure the required SSL file paths
-
-There are two ways to generate SSL/TLS certificates for development and testing:
-
-1. Using the built-in [generate_cert](file:///D:/codespace/MCPServer%2B%2B/tools/generate_cert.cpp#L265-L411) tool (recommended)
-2. Using OpenSSL command line tools
-
-For detailed instructions on both methods, please refer to the [HTTPS and Certificate Generation](docs/HTTPS_AND_CERTIFICATES.md) documentation.
-
-## Plugins
-
-MCPServer.cpp supports a powerful plugin system that allows extending functionality without modifying the core server. Plugins are dynamic libraries that implement the MCP plugin interface.
-
-### Official Plugins
-
-- `file_plugin`: File system operations
-- `http_plugin`: HTTP client functionality
-- `safe_system_plugin`: Secure system command execution
-- `example_stream_plugin`: Streaming data example
-
-### Python Plugins
-
-MCPServer++ now supports Python plugins through a new Python SDK that makes plugin development more intuitive. Python plugins are compiled to dynamic libraries (DLL/SO) that wrap Python code using pybind11.
-
-#### Creating Python Plugins
-
-To create a new Python plugin, use the `plugin_ctl` tool:
-
-```bash
-./plugin_ctl create -p my_python_plugin
+```powershell
+cmake -S . -B build-cli -DCXXMCP_BUILD_CLI=ON
+cmake --build build-cli
 ```
 
-This will generate a Python plugin template that uses the new Python SDK with decorators and helper functions.
+Build examples:
 
-#### Python Plugin Features
-
-- Decorator-based tool definition with `@tool`
-- Automatic JSON handling
-- Streaming tool support
-- Parameter validation helpers
-- Easy integration with the MCP protocol
-
-For detailed information about Python plugin development, see [Python Plugins Documentation](docs/PYTHON_PLUGINS.md).
-
-### Plugin Development
-
-See [plugins/README.md](plugins/README.md) for detailed information on developing custom plugins.
-
-## API Reference
-
-The server implements the JSON-RPC 2.0 protocol over HTTP. All requests should be sent to the `/mcp` endpoint.
-
-### Resource Management
-
-MCPServer++ provides basic support for the MCP Resources primitive, which allows exposing data and content to LLMs. Resources can be accessed through the following JSON-RPC methods:
-
-- `resources/list`: List available resources
-- `resources/read`: Read the content of a specific resource
-- `resources/write`: Write content to a specific resource (if permitted)
-
-### Example Resource Request
-
-```
-{
-  "jsonrpc": "2.0",
-  "id": 2,
-  "method": "resources/read",
-  "params": {
-    "name": "example.txt"
-  }
-}
+```powershell
+cmake --preset examples
+cmake --build --preset examples
 ```
 
-### Example Resource Response
+That preset builds the stdio server, server peer, client peer, client loopback, process stdio client, and gateway runtime examples when their dependencies are enabled.
 
-```
-{
-  "jsonrpc": "2.0",
-  "id": 2,
-  "result": {
-    "content": "This is the content of the example resource.",
-    "contentType": "text/plain",
-    "lastModified": "2025-05-13T10:00:00Z"
-  }
-}
+Run tests:
+
+```powershell
+cmake -S . -B build-tests -DCXXMCP_BUILD_SDK=ON -DCXXMCP_BUILD_CLIENT=ON -DCXXMCP_BUILD_SERVER=ON -DCXXMCP_BUILD_RUNTIME=ON -DCXXMCP_BUILD_TESTS=ON
+cmake --build build-tests
+ctest --test-dir build-tests --output-on-failure
 ```
 
-### Example Tools Request (Existing)
+## Quick Start
 
-```
-{
-  "jsonrpc": "2.0",
-  "id": 1,
-  "method": "tools",
-  "params": {}
-}
-```
+### Server Peer
 
-### Example Tools Response (Existing)
+```cpp
+#include <cxxmcp/peer.hpp>
+#include <cxxmcp/server.hpp>
 
-```
-{
-  "jsonrpc": "2.0",
-  "id": 1,
-  "result": [
-    {
-      "name": "read_file",
-      "description": "Read a file",
-      "inputSchema": {
-        "type": "object",
-        "properties": {
-          "path": {
-            "type": "string",
-            "description": "Path to the file to read"
-          }
-        },
-        "required": ["path"]
-      }
+int main() {
+    mcp::server::ServerBuilder builder;
+    builder.name("demo-server")
+        .version("1.0.0")
+        .instructions("Expose local tools over MCP.")
+        .add_tool(
+            mcp::protocol::ToolDefinition{
+                .name = "echo",
+                .description = "Echo the incoming payload",
+                .input_schema = mcp::protocol::Json{{"type", "object"}},
+            },
+            [](const mcp::server::ToolContext& context) {
+                mcp::protocol::ToolResult result;
+                result.structured_content = context.arguments;
+                return result;
+            });
+
+    auto server = builder.build();
+    if (!server) {
+        return 1;
     }
-  ]
+
+    auto running = mcp::serve(mcp::ServerPeer(std::move(*server)));
+    if (!running) {
+        return 1;
+    }
+    return 0;
 }
 ```
 
-## Docker Deployment
+### Client Peer
 
-### Build and Run
-1. **Multi-stage build** (Image size optimized to 10-15MB)
-   ```bash
-   docker build -t mcp-server .
-   docker run -p 6666:6666 -v $(pwd)/plugins:/plugins -v $(pwd)/certs:/certs mcp-server
-   ```
+```cpp
+#include <cxxmcp/peer.hpp>
+#include <cxxmcp/service.hpp>
 
-2. **HTTPS Configuration** (Certificate directory mounting required)
-   ```bash
-   # Enable HTTPS by setting enable_https=1 in config.ini
-   # Certificate files must be placed in /certs directory inside container
-   docker run -p 6667:6667 -v $(pwd)/certs:/certs mcp-server
-   ```
+int main() {
+    auto peer = mcp::ClientPeer::connect_streamable_http({
+        .host = "127.0.0.1",
+        .port = 3000,
+        .path = "/mcp",
+    });
 
-### Plugin System
-- **Plugin Path Mapping**: Container plugin directory is `/plugins`, recommend mapping local directory via volume
-- **Plugin Loading**: Supports runtime hot-loading (ensure correct file permissions)
+    auto running = mcp::serve(std::move(peer));
+    if (!running) {
+        return 1;
+    }
 
-### Image Optimization
-- Based on minimal `gcr.io/distroless/cc-debian12` base image
-- Static linking + debug info stripping (LTO optimized)
-- Domestic users can configure mirror accelerators (see configuration examples)
-
-## Docker Hub
-
-Pre-built Docker images are available on Docker Hub: [https://hub.docker.com/r/mgzy/mcp-server](https://hub.docker.com/r/mgzy/mcp-server)
-
-You can pull and run the latest image directly:
-```bash
-docker pull mgzy/mcp-server
-docker run -p 6666:6666 -v $(pwd)/plugins:/plugins -v $(pwd)/certs:/certs mgzy/mcp-server
+    return running->peer().initialize().has_value() ? 0 : 1;
+}
 ```
 
-## CI/CD Pipeline
+### Runtime Server
 
-Our project uses GitHub Actions for continuous integration and deployment. The pipeline automatically builds and tests the server on multiple platforms:
+This is the higher-level runtime builder example. It stays useful for product-style servers, but it is not the core peer/handler surface.
 
-### Supported Platforms
+```cpp
+#include <cxxmcp/server.hpp>
 
-- **Ubuntu 22.04** (GitHub Actions latest LTS)
-- **Ubuntu 24.04** (GitHub Actions latest Ubuntu release)
-- **Windows Server 2022** (GitHub Actions latest Windows)
+int main() {
+    return mcp::server::App::builder()
+        .name("demo-server")
+        .version("1.0.0")
+        .instructions("Expose local tools over MCP.")
+        .stdio()
+        .tool<std::string, std::string>("echo", [](const std::string& text) {
+            return text;
+        })
+        .run();
+}
+```
 
-### Build Variants
+### Client
 
-We provide two build variants to suit different needs:
-1. **Full build**: Includes all libraries and development headers
-2. **Minimal build**: Contains only the executable and essential files (no development headers or libraries)
+```cpp
+#include <cxxmcp/peer.hpp>
 
-### Packaging Formats
+int main() {
+    auto peer = mcp::Peer<mcp::RoleClient>::connect_streamable_http({
+        .host = "127.0.0.1",
+        .port = 3000,
+        .path = "/mcp",
+    });
 
-The CI/CD pipeline generates packages in multiple formats:
-- **Windows**: ZIP, NSIS installer (EXE)
-- **Linux**: DEB, RPM, TAR.GZ, ZIP
+    peer.initialize();
+    peer.list_all_tools();
+    peer.call_tool("echo", mcp::protocol::Json{{"value", "hello"}});
+}
+```
 
-## Contributing
+## Documentation
 
-We welcome contributions from the community! Please see [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines on how to contribute to this project.
+- [High-level API](docs/high_level_api.md)
+- [Release policy](docs/release_policy.md)
+- [Changelog](CHANGELOG.md)
+- [SDK guidance](docs/rmcp_like_sdk_guidance.md)
+- [De facto standard roadmap](docs/de_facto_standard_roadmap.md)
+- [Capability matrix](docs/capability_matrix.md)
+- [Transport strategy](docs/httplib_async_transport_strategy.md)
+- [Project layout notes](docs/recommended_project_layout.md)
 
-### Development Setup
+## Package Shape
 
-1. Fork the repository
-2. Create a feature branch
-3. Make your changes
-4. Add tests if applicable
-5. Submit a pull request
+The intended public split is:
 
-## License
+- core SDK: `cxxmcp::protocol`, `cxxmcp::transport`, `cxxmcp::peer`, `cxxmcp::client`, `cxxmcp::server`, `cxxmcp::handler`, `cxxmcp::service`, `cxxmcp::sdk`
+- runtime tools: `cxxmcp::runtime`, `cxxmcp::gateway`, `cxxmcp::cli`
+- internal/reference: tests, examples, and local reference source used for compatibility checks
 
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+Public SDK headers are under `cxxmcp/`. Runtime state, gateway profiles, policy, and CLI defaults are not part of the core SDK contract.
 
----
+## CMake Options
 
-<div align="center">
-  <p>Built with ❤️ for the AI community</p>
-  <p><a href="https://github.com/caomengxuan666/MCPServer.cpp">GitHub</a> | <a href=https://github.com/caomengxuan666/MCPServer.cpp/issues>Issues</a></p>
-</div>
+| Option | Default | Description |
+|---|---:|---|
+| `CXXMCP_BUILD_SDK` | `ON` | Build the aggregate public SDK layer |
+| `CXXMCP_BUILD_PROTOCOL` | `ON` | Build the MCP protocol library |
+| `CXXMCP_BUILD_CLIENT` | `OFF` | Build the MCP client library |
+| `CXXMCP_BUILD_SERVER` | `OFF` | Build the MCP server library |
+| `CXXMCP_BUILD_RUNTIME` | `OFF` | Build the runtime application layer |
+| `CXXMCP_BUILD_APP` | `OFF` | Build the application service library |
+| `CXXMCP_BUILD_GATEWAY` | `OFF` | Build the gateway service library |
+| `CXXMCP_BUILD_CLI` | `OFF` | Build the command-line application |
+| `CXXMCP_BUILD_EXAMPLES` | `OFF` | Build example executables |
+| `CXXMCP_BUILD_TESTS` | `BUILD_TESTING` | Build tests for enabled layers |
+| `CXXMCP_BUILD_DOCS` | `OFF` | Build Doxygen API documentation |
+
+`CXXMCP_BUILD_SDK` enables the protocol, client, and server layers.
+`CXXMCP_BUILD_CLI` enables the gateway, runtime, server, client, and protocol layers it needs.
