@@ -122,14 +122,7 @@ class RecordingTransport final : public mcp::client::Transport {
     if (request.method == "initialize") {
       return mcp::protocol::JsonRpcResponse{
           .id = request.id,
-          .result =
-              Json{
-                  {"protocolVersion",
-                   std::string(mcp::protocol::McpProtocolVersion)},
-                  {"capabilities", Json::object()},
-                  {"serverInfo",
-                   Json{{"name", "FakeServer"}, {"version", "1"}}},
-              },
+          .result = initialize_result,
       };
     }
     if (request.method == "tools/list") {
@@ -384,6 +377,11 @@ class RecordingTransport final : public mcp::client::Transport {
 
   std::vector<mcp::protocol::JsonRpcRequest> requests;
   std::vector<mcp::protocol::JsonRpcNotification> notifications;
+  Json initialize_result = Json{
+      {"protocolVersion", std::string(mcp::protocol::McpProtocolVersion)},
+      {"capabilities", Json::object()},
+      {"serverInfo", Json{{"name", "FakeServer"}, {"version", "1"}}},
+  };
   bool stopped = false;
 };
 
@@ -2054,6 +2052,61 @@ void test_initialize_handshake_shape() {
           "server extension mismatch");
 }
 
+void test_server_initialize_rejects_invalid_protocol_versions() {
+  auto server = make_server();
+  const auto base_request = [] {
+    return mcp::protocol::JsonRpcRequest{
+        .method = std::string(mcp::protocol::InitializeMethod),
+        .params =
+            Json{
+                {"protocolVersion",
+                 std::string(mcp::protocol::McpProtocolVersion)},
+                {"capabilities", Json::object()},
+                {"clientInfo", Json{{"name", "tester"}, {"version", "1"}}},
+            },
+        .id = std::string("init-invalid"),
+    };
+  };
+
+  auto missing = base_request();
+  missing.params.erase("protocolVersion");
+  const auto missing_response =
+      server.handle_request(missing, mcp::server::SessionContext{});
+  require(missing_response.has_value(),
+          "missing initialize protocolVersion should produce response");
+  require(missing_response->error.has_value(),
+          "missing initialize protocolVersion should be rejected");
+  require(missing_response->error->code ==
+              static_cast<int>(mcp::protocol::ErrorCode::InvalidParams),
+          "missing initialize protocolVersion error code mismatch");
+
+  auto non_string = base_request();
+  non_string.params["protocolVersion"] = 42;
+  const auto non_string_response =
+      server.handle_request(non_string, mcp::server::SessionContext{});
+  require(non_string_response.has_value(),
+          "non-string initialize protocolVersion should produce response");
+  require(non_string_response->error.has_value(),
+          "non-string initialize protocolVersion should be rejected");
+  require(non_string_response->error->code ==
+              static_cast<int>(mcp::protocol::ErrorCode::InvalidParams),
+          "non-string initialize protocolVersion error code mismatch");
+
+  auto unsupported = base_request();
+  unsupported.params["protocolVersion"] = "2024-11-05";
+  const auto unsupported_response =
+      server.handle_request(unsupported, mcp::server::SessionContext{});
+  require(unsupported_response.has_value(),
+          "unsupported initialize protocolVersion should produce response");
+  require(unsupported_response->error.has_value(),
+          "unsupported initialize protocolVersion should be rejected");
+  require(unsupported_response->error->code ==
+              static_cast<int>(mcp::protocol::ErrorCode::InvalidParams),
+          "unsupported initialize protocolVersion error code mismatch");
+  require(unsupported_response->error->data.has_value(),
+          "unsupported initialize protocolVersion should include detail");
+}
+
 void test_default_server_initialize_omits_inactive_capabilities() {
   mcp::server::Server server(mcp::server::ServerOptions{});
 
@@ -2167,11 +2220,18 @@ void test_server_app_builder_registers_parity_surface() {
   const auto initialized = server.handle_request(
       mcp::protocol::JsonRpcRequest{
           .method = "initialize",
-          .params = Json::object(),
+          .params =
+              Json{
+                  {"protocolVersion",
+                   std::string(mcp::protocol::McpProtocolVersion)},
+                  {"capabilities", Json::object()},
+                  {"clientInfo", Json{{"name", "tester"}, {"version", "1"}}},
+              },
           .id = std::int64_t{1},
       },
       context);
   require(initialized.has_value(), "facade initialize failed");
+  require(initialized->result.has_value(), "facade initialize result missing");
   require(initialized->result->at("serverInfo").at("name") == "FacadeServer",
           "facade name mismatch");
   require(initialized->result->at("instructions") == "test instructions",
@@ -2534,6 +2594,39 @@ void test_client_initialize_with_explicit_task_capabilities() {
               .at("vendor/feature")
               .at("enabled"),
           "extensions capability mismatch");
+}
+
+void test_client_initialize_rejects_invalid_protocol_versions() {
+  auto missing_transport = std::make_unique<RecordingTransport>();
+  missing_transport->initialize_result.erase("protocolVersion");
+  mcp::client::Client missing_client(std::move(missing_transport));
+  const auto missing = missing_client.initialize("tester", "1");
+  require(!missing.has_value(),
+          "client should reject missing initialize protocolVersion");
+  require(missing.error().message ==
+              "initialize response requires a string protocolVersion",
+          "missing initialize protocolVersion client error mismatch");
+
+  auto non_string_transport = std::make_unique<RecordingTransport>();
+  non_string_transport->initialize_result["protocolVersion"] = 42;
+  mcp::client::Client non_string_client(std::move(non_string_transport));
+  const auto non_string = non_string_client.initialize("tester", "1");
+  require(!non_string.has_value(),
+          "client should reject non-string initialize protocolVersion");
+  require(non_string.error().message ==
+              "initialize response requires a string protocolVersion",
+          "non-string initialize protocolVersion client error mismatch");
+
+  auto unsupported_transport = std::make_unique<RecordingTransport>();
+  unsupported_transport->initialize_result["protocolVersion"] = "2024-11-05";
+  mcp::client::Client unsupported_client(std::move(unsupported_transport));
+  const auto unsupported = unsupported_client.initialize("tester", "1");
+  require(!unsupported.has_value(),
+          "client should reject unsupported initialize protocolVersion");
+  require(unsupported.error().message == "unsupported MCP protocol version",
+          "unsupported initialize protocolVersion client error mismatch");
+  require(unsupported.error().detail == "2024-11-05",
+          "unsupported initialize protocolVersion detail mismatch");
 }
 
 void test_client_session_discover_tools_uses_client_list_tools() {
@@ -3379,6 +3472,8 @@ int main() {
       {"ping raw request", test_ping_raw_request},
       {"server info accessors and ping", test_server_info_accessors_and_ping},
       {"initialize handshake shape", test_initialize_handshake_shape},
+      {"server initialize rejects invalid protocol versions",
+       test_server_initialize_rejects_invalid_protocol_versions},
       {"default server initialize omits inactive capabilities",
        test_default_server_initialize_omits_inactive_capabilities},
       {"server app builder registers parity surface",
@@ -3393,6 +3488,8 @@ int main() {
        test_client_initialize_with_empty_explicit_capabilities},
       {"client initialize with explicit task capabilities",
        test_client_initialize_with_explicit_task_capabilities},
+      {"client initialize rejects invalid protocol versions",
+       test_client_initialize_rejects_invalid_protocol_versions},
       {"client session discover prompts",
        test_client_session_discover_prompts_uses_client_list_prompts},
       {"client session discover resources",

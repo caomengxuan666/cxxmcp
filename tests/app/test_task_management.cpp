@@ -2,6 +2,7 @@
 
 #include <chrono>
 #include <condition_variable>
+#include <functional>
 #include <mutex>
 #include <stdexcept>
 #include <string>
@@ -103,11 +104,25 @@ void test_enqueue_task_failure_cleans_up_record() {
           "failed enqueue should not leave behind a task record");
 }
 
+void test_enqueue_task_rejects_empty_job() {
+  mcp::app::TaskManagementService service;
+
+  std::function<mcp::core::Result<Json>()> empty_job;
+  const auto created = service.enqueue_task(std::move(empty_job));
+  require(!created.has_value(), "empty task job should be rejected");
+  require(created.error().message == "task job must be callable",
+          "empty task job error mismatch");
+
+  const auto tasks = service.list_tasks();
+  require(tasks.empty(), "empty task job should not create a task record");
+}
+
 }  // namespace
 
 int main() {
   test_enqueue_task_completes_and_exposes_result();
   test_cancel_task_keeps_cancelled_status();
   test_enqueue_task_failure_cleans_up_record();
+  test_enqueue_task_rejects_empty_job();
   return 0;
 }

@@ -35,6 +35,13 @@ class BoundedExecutor {
 
   /// @brief Enqueue a task for background execution.
   core::Result<Unit> enqueue(std::function<void()> task) {
+    if (!task) {
+      return std::unexpected(Error{
+          1,
+          "executor task must be callable",
+          {},
+      });
+    }
     {
       std::lock_guard<std::mutex> lock(mutex_);
       if (stopping_) {

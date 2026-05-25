@@ -113,7 +113,7 @@ core::Result<core::Unit> validate_protocol_version_header(
   }
   const auto version_header =
       request.get_header_value(std::string(VersionHeader));
-  if (version_header != protocol::McpProtocolVersion) {
+  if (!protocol::is_supported_protocol_version(version_header)) {
     return std::unexpected(make_transport_error(
         HeaderMismatchCode,
         "http transport request MCP-Protocol-Version header mismatch",
@@ -198,6 +198,12 @@ core::Result<core::Unit> validate_initialize_protocol_header(
         HeaderMismatchCode,
         "http transport request MCP-Protocol-Version header mismatch",
         header_value));
+  }
+  if (!protocol::is_supported_protocol_version(body_value)) {
+    return std::unexpected(make_transport_error(
+        HeaderMismatchCode,
+        "http transport initialize request protocolVersion is unsupported",
+        body_value));
   }
 
   return core::Unit{};
@@ -702,6 +708,11 @@ core::Result<protocol::JsonRpcResponse> HttpTransport::send_request(
   pending->cv.wait(lock, [&] { return pending->ready; });
   if (pending->error.has_value()) {
     return std::unexpected(*pending->error);
+  }
+  if (!pending->response.has_value()) {
+    return std::unexpected(make_transport_error(
+        static_cast<int>(protocol::ErrorCode::InternalError),
+        "http transport response missing"));
   }
 
   return *pending->response;

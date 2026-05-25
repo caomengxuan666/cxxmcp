@@ -10,6 +10,7 @@
 /// envelopes; helper functions build, parse, and serialize those envelopes
 /// without changing feature-specific payload semantics.
 
+#include <array>
 #include <optional>
 #include <string>
 #include <string_view>
@@ -24,6 +25,20 @@ namespace mcp::protocol {
 inline constexpr std::string_view JsonRpcVersion = "2.0";
 /// @brief MCP protocol version advertised during initialization.
 inline constexpr std::string_view McpProtocolVersion = "2025-11-25";
+/// @brief Protocol versions accepted by this SDK during initialization.
+inline constexpr std::array<std::string_view, 1> McpSupportedProtocolVersions{
+    McpProtocolVersion};
+
+/// @brief Returns true when a peer protocol version is supported.
+inline constexpr bool is_supported_protocol_version(
+    std::string_view version) noexcept {
+  for (const auto supported : McpSupportedProtocolVersions) {
+    if (version == supported) {
+      return true;
+    }
+  }
+  return false;
+}
 
 /// @brief `initialize` request method for lifecycle negotiation.
 inline constexpr std::string_view InitializeMethod = "initialize";

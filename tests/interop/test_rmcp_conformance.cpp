@@ -71,24 +71,66 @@ std::string quote_path(const std::filesystem::path& path) {
 std::string quote_text(const std::string& value) { return "\"" + value + "\""; }
 
 bool run_command_with_timeout(const std::string& command,
-                              std::chrono::milliseconds timeout) {
+                              std::chrono::milliseconds timeout,
+                              std::string* output = nullptr) {
 #ifdef _WIN32
   std::wstring wide_command(command.begin(), command.end());
   std::vector<wchar_t> buffer(wide_command.begin(), wide_command.end());
   buffer.push_back(L'\0');
+
+  SECURITY_ATTRIBUTES security_attributes{};
+  security_attributes.nLength = sizeof(security_attributes);
+  security_attributes.bInheritHandle = TRUE;
+
+  HANDLE output_read = nullptr;
+  HANDLE output_write = nullptr;
+  if (output != nullptr) {
+    if (!CreatePipe(&output_read, &output_write, &security_attributes, 0)) {
+      return false;
+    }
+    SetHandleInformation(output_read, HANDLE_FLAG_INHERIT, 0);
+  }
 
   STARTUPINFOW startup{};
   startup.cb = sizeof(startup);
   startup.dwFlags = STARTF_USESHOWWINDOW | STARTF_USESTDHANDLES;
   startup.wShowWindow = SW_HIDE;
   startup.hStdInput = GetStdHandle(STD_INPUT_HANDLE);
-  startup.hStdOutput = GetStdHandle(STD_OUTPUT_HANDLE);
-  startup.hStdError = GetStdHandle(STD_ERROR_HANDLE);
+  startup.hStdOutput =
+      output_write != nullptr ? output_write : GetStdHandle(STD_OUTPUT_HANDLE);
+  startup.hStdError =
+      output_write != nullptr ? output_write : GetStdHandle(STD_ERROR_HANDLE);
+
+  std::thread reader;
+  if (output != nullptr) {
+    output->clear();
+    reader = std::thread([output, output_read]() {
+      char buffer[4096];
+      DWORD read = 0;
+      while (ReadFile(output_read, buffer, sizeof(buffer), &read, nullptr) &&
+             read > 0) {
+        output->append(buffer, buffer + read);
+      }
+    });
+  }
 
   PROCESS_INFORMATION process{};
   if (!CreateProcessW(nullptr, buffer.data(), nullptr, nullptr, TRUE,
                       CREATE_NO_WINDOW, nullptr, nullptr, &startup, &process)) {
+    if (output_write != nullptr) {
+      CloseHandle(output_write);
+    }
+    if (output_read != nullptr) {
+      CloseHandle(output_read);
+    }
+    if (reader.joinable()) {
+      reader.join();
+    }
     return false;
+  }
+
+  if (output_write != nullptr) {
+    CloseHandle(output_write);
   }
 
   const DWORD wait = WaitForSingleObject(process.hProcess,
@@ -101,8 +143,15 @@ bool run_command_with_timeout(const std::string& command,
   GetExitCodeProcess(process.hProcess, &exit_code);
   CloseHandle(process.hThread);
   CloseHandle(process.hProcess);
+  if (reader.joinable()) {
+    reader.join();
+  }
+  if (output_read != nullptr) {
+    CloseHandle(output_read);
+  }
   return wait != WAIT_TIMEOUT && exit_code == 0;
 #else
+  (void)output;
   return std::system(command.c_str()) == 0;
 #endif
 }
@@ -310,11 +359,17 @@ void test_rmcp_conformance_client_tools_call() {
   set_process_env("MCP_CONFORMANCE_SCENARIO", "tools_call");
   set_process_env("NO_PROXY", "127.0.0.1,localhost");
   set_process_env("no_proxy", "127.0.0.1,localhost");
+  set_process_env("RUST_BACKTRACE", "1");
+  set_process_env("RUST_LOG", "debug");
   const auto command =
       quote_path(conformance_client_executable()) + " " +
       quote_text("http://127.0.0.1:" + std::to_string(port) + "/mcp");
-  require(run_command_with_timeout(command, std::chrono::seconds(60)),
-          "RMCP conformance tools_call scenario should succeed");
+  std::string output;
+  if (!run_command_with_timeout(command, std::chrono::seconds(60), &output)) {
+    throw std::runtime_error(
+        "RMCP conformance tools_call scenario should succeed. Output:\n" +
+        output);
+  }
 }
 
 }  // namespace

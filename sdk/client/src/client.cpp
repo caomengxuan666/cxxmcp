@@ -49,6 +49,34 @@ core::Result<protocol::Json> require_result_payload(
   return *response.result;
 }
 
+core::Result<protocol::Json> require_initialize_payload(
+    const protocol::JsonRpcResponse& response) {
+  const auto payload = require_result_payload(response);
+  if (!payload) {
+    return std::unexpected(payload.error());
+  }
+  if (!payload->is_object()) {
+    return std::unexpected(
+        make_client_error(static_cast<int>(protocol::ErrorCode::InvalidRequest),
+                          "initialize response must be an object"));
+  }
+  if (!payload->contains("protocolVersion") ||
+      !payload->at("protocolVersion").is_string()) {
+    return std::unexpected(make_client_error(
+        static_cast<int>(protocol::ErrorCode::InvalidRequest),
+        "initialize response requires a string protocolVersion"));
+  }
+
+  const auto version = payload->at("protocolVersion").get<std::string>();
+  if (!protocol::is_supported_protocol_version(version)) {
+    return std::unexpected(
+        make_client_error(static_cast<int>(protocol::ErrorCode::InvalidRequest),
+                          "unsupported MCP protocol version", version));
+  }
+
+  return *payload;
+}
+
 core::Result<protocol::JsonRpcResponse> make_error_response(
     const protocol::JsonRpcRequest& request, int code, std::string message,
     std::string detail = {}) {
@@ -214,7 +242,7 @@ core::Result<protocol::JsonRpcResponse> Client::send_rpc_request(
     }
 
     const auto initialized_payload =
-        require_result_payload(*initialize_response);
+        require_initialize_payload(*initialize_response);
     if (!initialized_payload) {
       return std::unexpected(initialized_payload.error());
     }
@@ -243,7 +271,7 @@ core::Result<protocol::JsonRpcResponse> Client::send_rpc_request(
           }
 
           const auto initialized_payload =
-              require_result_payload(*initialize_response);
+              require_initialize_payload(*initialize_response);
           if (!initialized_payload) {
             return std::unexpected(initialized_payload.error());
           }
@@ -263,8 +291,15 @@ core::Result<protocol::Json> Client::initialize(std::string client_name,
   auto params = initialize_params(std::move(client_name),
                                   std::move(client_version), capabilities_);
   last_initialize_params_ = params;
-  return send_request(std::string(protocol::InitializeMethod),
-                      std::move(params));
+  const auto response = send_rpc_request(protocol::JsonRpcRequest{
+      .method = std::string(protocol::InitializeMethod),
+      .params = std::move(params),
+      .id = next_request_id_++,
+  });
+  if (!response) {
+    return std::unexpected(response.error());
+  }
+  return require_initialize_payload(*response);
 }
 
 core::Result<core::Unit> Client::notify_initialized() {

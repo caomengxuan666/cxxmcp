@@ -21,6 +21,18 @@ Already covered in the current tree:
 
 The remaining gaps in this document are the ones that still need attention.
 
+Current review snapshot:
+
+- `cxxmcp` is now roughly `75-80%` of the RMCP SDK shape.
+- The current tree is a strong C++ SDK candidate, not yet RMCP-grade.
+- Recent work closed several release-blocking and interop-blocking items:
+  protocol-version validation, SSE event ids, task/executor guardrails,
+  stdio lifecycle hardening, typed server authoring helpers, and package-smoke
+  reliability.
+- The main remaining gap is depth, not surface area: RMCP still has a more
+  unified service runtime, deeper transport/session behavior, broader
+  conformance coverage, and stronger authoring ergonomics.
+
 ## RMCP Reference Shape
 
 The RMCP core crate is organized around these layers:
@@ -72,6 +84,13 @@ This is a technical SDK-readiness judgment, not an ecosystem adoption judgment.
 Even ignoring stars, package downloads, or downstream users, the C++ SDK should
 not yet be described as a de facto-standard-grade SDK. A more accurate label is
 `RMCP-like strong candidate`.
+
+After the latest local changes, the gap has narrowed. Package-smoke and RMCP
+conformance now pass in the reviewed `build-smoke` tree, protocol-version
+handling is explicit, and Streamable HTTP now emits SSE event ids. The remaining
+RMCP delta is no longer about whether the project has the expected SDK nouns.
+It is about whether those nouns are the real runtime kernel and whether every
+transport and protocol family is covered by RMCP-grade behavior tests.
 
 | Dimension | RMCP | Current C++ SDK |
 |---|---|---|
@@ -613,14 +632,16 @@ This review used four separate sub-agent passes:
 
 The combined conclusion is that `cxxmcp` is a strong candidate for becoming the
 default C++ MCP SDK, but it has not yet reached de facto-standard status. The
-aggregate score is about `6.5 / 10`.
+original aggregate score was about `6.5 / 10`. After the later package-smoke,
+protocol-version, task, SSE event-id, and stdio lifecycle fixes captured above,
+the current practical RMCP comparison is closer to `7.5-8 / 10`.
 
 | Review area | Score | Summary |
 |---|---:|---|
-| Protocol and API coverage | 7 / 10 | Broad protocol families and peer/service facades exist, but protocol negotiation, HTTP auth, and public-contract stability need work. |
-| Transport and interop | 6 / 10 | stdio, process stdio, and Streamable HTTP are usable, but conformance coverage is narrow and HTTP session/backpressure/resume behavior is not yet standard-grade. |
-| Engineering and release maturity | 6.5 / 10 | CMake packaging, install targets, scripts, and release policy exist, but CI, API/ABI policy enforcement, dependency governance, and package smoke reliability are not enough. |
-| Developer experience and ecosystem | 6.5 / 10 | README, examples, CMake targets, CLI, and smoke tests are useful, but package-manager entry points, public docs, governance files, and community signals are missing. |
+| Protocol and API coverage | 7.5 / 10 | Broad protocol families, protocol-version validation, and peer/service facades exist, but multi-version policy, HTTP auth, and public-contract stability need work. |
+| Transport and interop | 7 / 10 | stdio, process stdio, and Streamable HTTP are usable and SSE event ids exist, but conformance coverage is narrow and HTTP session/backpressure/resume behavior is not yet standard-grade. |
+| Engineering and release maturity | 7.5 / 10 | CMake packaging, install targets, scripts, release policy, and package-smoke coverage exist, but CI, API/ABI policy enforcement, dependency governance, and package-manager routes are not enough. |
+| Developer experience and ecosystem | 7 / 10 | README, examples, CMake targets, typed authoring helpers, CLI, and smoke tests are useful, but package-manager entry points, public docs, governance files, and community signals are missing. |
 
 ### Current Baseline
 
@@ -666,7 +687,7 @@ Broader smoke verification captured by the review:
 ctest --test-dir build-smoke -C Debug --output-on-failure
 ```
 
-Result: `8 / 12` passed.
+Latest result: `12 / 12` passed.
 
 Passed:
 
@@ -678,20 +699,15 @@ Passed:
 - `sdk`
 - `public_targets`
 - `process_stdio_transport`
+- `transport_contract`
+- `transport_stdio_contract`
+- `transport_adapters`
+- `package_smoke`
 
-Failed or not runnable at the time of that review:
-
-- `transport_contract`: test executable was missing from the build directory
-- `transport_stdio_contract`: test executable was missing from the build
-  directory
-- `transport_adapters`: test executable was missing from the build directory
-- `package_smoke`: failed in the external consumer build because MSVC runtime
-  settings were mixed between `MTd_StaticDebug` and `MDd_DynamicDebug`
-
-This package-smoke failure was a release-grade blocker when the review was
-written. The durable requirement remains: a de facto-standard SDK must not
-merely build in-tree; it must install and link reliably from a clean consumer
-project on every supported toolchain.
+The earlier package-smoke blocker has been closed in this local tree. The
+durable requirement remains: a de facto-standard SDK must not merely build
+in-tree; it must install and link reliably from a clean consumer project on
+every supported toolchain and generator.
 
 ### Blocking Gaps
 
@@ -700,19 +716,23 @@ project on every supported toolchain.
    Installed-package consumption needs to remain a required release gate. CI
    also needs to run the same package-smoke path on Windows, Linux, and macOS.
 
-2. Protocol version negotiation is too thin.
+2. Protocol version negotiation still needs multi-version policy.
 
-   The SDK tracks `2025-11-25` as the current protocol version, but a standard
-   SDK needs explicit supported-version lists, initialize negotiation, rejection
-   behavior, and compatibility tests. Official MCP versioning requires client
-   and server to agree on one protocol version during initialization.
+   The SDK now tracks an explicit supported-version list, validates
+   `initialize` protocol versions on both client and server paths, rejects
+   unsupported versions, and has compatibility tests for the tracked
+   `2025-11-25` version. The remaining standard-grade work is the policy and
+   test matrix for carrying more than one MCP version at once when future
+   protocol snapshots need overlapping support windows.
 
 3. Streamable HTTP is usable but not yet product-grade.
 
    The implementation has session ids, POST, GET SSE, DELETE, and basic
    server-to-client messaging, but standard-grade behavior needs multi-session
    tests, bounded queues, backpressure, timeout/cancellation semantics,
-   reconnect behavior, event ids, and `Last-Event-ID` resume coverage.
+   reconnect behavior, and `Last-Event-ID` resume coverage. SSE event ids are
+   now present; the remaining work is to make them part of a tested resume and
+   replay contract.
 
 4. HTTP authorization is not yet an SDK-level contract.
 
@@ -748,8 +768,8 @@ The shortest path to a defensible fact-standard claim is:
 1. Keep `package_smoke` as a required release gate across supported generators
    and runtimes.
 2. Add CI for Windows/MSVC, Linux/GCC, Linux/Clang, and macOS/AppleClang.
-3. Add protocol-version negotiation tests and initialize fixtures for the
-   tracked MCP version.
+3. Keep protocol-version negotiation tests as a release gate and extend them
+   when the SDK supports more than one MCP protocol version.
 4. Complete Streamable HTTP session, backpressure, cancellation, reconnect, and
    resume semantics.
 5. Add POSIX process-stdio support.
@@ -762,6 +782,113 @@ Until those are closed, the right public description is:
 ```text
 cxxmcp is an MCP C++ SDK and a strong candidate for the default C++ SDK,
 but it is not yet a de facto-standard-grade SDK.
+```
+
+## Latest RMCP Delta After Recent Changes
+
+Date: 2026-05-25.
+
+This section records the current comparison against the pinned local RMCP
+source after the latest local additions.
+
+### What Has Moved Closer To RMCP
+
+- The SDK now has the expected public surface: `protocol`, `transport`,
+  `handler`, `peer`, `service`, `client`, and `server`.
+- `Peer<RoleClient>` / `Peer<RoleServer>` and `Service<RoleClient>` /
+  `Service<RoleServer>` give users an RMCP-like entry point.
+- Client-side typed async helpers and request handles now cover the common
+  request families more broadly.
+- Task support is no longer just protocol modeling; SDK server task processing,
+  task-aware `tools/call`, fallback task handlers, task status notifications,
+  cooperative cancellation, and bounded/TTL cleanup are present.
+- Capability bags now use RMCP-style object presence more consistently.
+- Protocol-version support is explicit and initialize paths reject unsupported
+  versions.
+- Streamable HTTP has started to expose the event identity needed for resume
+  semantics by emitting SSE event ids.
+- Package-smoke and RMCP conformance passed in the reviewed `build-smoke`
+  configuration.
+
+### What Still Keeps RMCP Ahead
+
+1. RMCP's service runtime is still deeper.
+
+   RMCP's `Peer`, `Service`, and `RunningService` are the core execution model.
+   In `cxxmcp`, the equivalent names exist and are useful, but they still wrap
+   concrete `Client` / `Server` paths more than they drive the whole runtime.
+   `RunningService::wait()`, shutdown, and cancellation need to become real
+   lifecycle joins around the active transport/service loop.
+
+2. RMCP's transport model is more native and async.
+
+   `cxxmcp` has a role-generic transport contract, but built-in HTTP and
+   process-stdio still carry compatibility/request-response internals. RMCP is
+   closer to having the role-generic transport as the native boundary for all
+   service execution.
+
+3. Streamable HTTP still needs session-grade behavior.
+
+   SSE event ids are now present, but RMCP-level Streamable HTTP also needs
+   tested `Last-Event-ID` resume behavior, stale-session handling, init
+   timeout behavior, concurrent SSE streams, bounded queues, backpressure, and
+   inflight response drain behavior.
+
+4. Process stdio must become fully cross-platform.
+
+   Windows lifecycle behavior has improved, but the SDK still needs complete
+   POSIX process-stdio support. Spawning local MCP servers is a core SDK use
+   case, so this cannot remain platform-partial.
+
+5. Protocol-version support needs an overlap policy.
+
+   Single-version validation is now in place. RMCP-grade behavior needs a
+   documented policy and tests for carrying more than one MCP protocol snapshot
+   when future versions require overlapping compatibility windows.
+
+6. The model layer still needs richer edge coverage.
+
+   The C++ model layer is broad, but RMCP remains stronger around consistent
+   `_meta`, annotations, extension bags, elicitation schema behavior, and
+   detailed task result transport. These are the details richer clients and
+   servers notice.
+
+7. Authoring ergonomics still favor RMCP.
+
+   C++ builders and typed registration helpers are improving, but RMCP's macro
+   routers for tools, prompts, handlers, and task handlers remain more concise.
+   The C++ equivalent should keep pushing typed registration, schema traits,
+   context injection, and low-boilerplate handler adapters.
+
+8. Conformance is still too narrow.
+
+   Passing `rmcp_conformance` is a good signal, but it is not yet the same as
+   RMCP's broader matrix around Streamable HTTP sessions, tasks, progress,
+   elicitation, cancellation, concurrent streams, stale sessions, and error
+   behavior.
+
+9. Ecosystem proof still trails RMCP.
+
+   Cargo gives RMCP a clear consumption story. `cxxmcp` now has CMake package
+   smoke coverage, but still needs public release CI, package-manager routes
+   such as vcpkg or Conan, published API docs, governance/security docs, and
+   release artifacts before it can credibly act as the default C++ MCP SDK.
+
+### Current Judgment
+
+`cxxmcp` is no longer just an implementation with some SDK APIs. It is a strong
+SDK candidate with an RMCP-like public shape and passing smoke/conformance
+signals. The remaining work is to make the facade the real runtime, make
+Streamable HTTP and process stdio production-grade across platforms, and expand
+interop tests from a few happy paths into a release-blocking matrix.
+
+The current practical rating against RMCP is about `75-80%`. The most accurate
+public claim is:
+
+```text
+cxxmcp is an MCP C++ SDK with RMCP-like architecture and strong standard-SDK
+potential, but RMCP remains ahead in service runtime depth, transport/session
+semantics, conformance breadth, and ecosystem maturity.
 ```
 
 Relevant protocol references:

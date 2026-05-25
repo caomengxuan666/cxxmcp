@@ -42,6 +42,36 @@ protocol::Json initialize_result_to_json(const ServerOptions& options) {
   return result;
 }
 
+core::Result<core::Unit> validate_initialize_params(
+    const protocol::Json& params) {
+  if (!params.is_object()) {
+    return std::unexpected(core::Error{
+        static_cast<int>(protocol::ErrorCode::InvalidParams),
+        "initialize params must be an object",
+        {},
+    });
+  }
+  if (!params.contains("protocolVersion") ||
+      !params.at("protocolVersion").is_string()) {
+    return std::unexpected(core::Error{
+        static_cast<int>(protocol::ErrorCode::InvalidParams),
+        "initialize requires a string protocolVersion",
+        {},
+    });
+  }
+
+  const auto version = params.at("protocolVersion").get<std::string>();
+  if (!protocol::is_supported_protocol_version(version)) {
+    return std::unexpected(core::Error{
+        static_cast<int>(protocol::ErrorCode::InvalidParams),
+        "unsupported MCP protocol version",
+        version,
+    });
+  }
+
+  return core::Unit{};
+}
+
 core::Result<protocol::JsonRpcResponse> make_error_response(
     const protocol::JsonRpcRequest& request, int code, std::string message,
     std::string detail = {}) {
@@ -243,6 +273,11 @@ core::Result<protocol::JsonRpcResponse> Server::handle_request(
   }
 
   if (request.method == protocol::InitializeMethod) {
+    const auto valid = validate_initialize_params(request.params);
+    if (!valid) {
+      return make_error_response(request, valid.error().code,
+                                 valid.error().message, valid.error().detail);
+    }
     return protocol::make_response(request.id,
                                    initialize_result_to_json(options_));
   }

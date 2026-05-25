@@ -12,6 +12,7 @@
 #include <variant>
 #include <vector>
 
+#include "cxxmcp/core/executor.hpp"
 #include "cxxmcp/sdk.hpp"
 
 namespace {
@@ -346,6 +347,15 @@ void test_app_builder_rejects_empty_std_function_handlers() {
   require(threw, "empty sampling function pointer should be rejected");
 }
 
+void test_executor_rejects_empty_task() {
+  mcp::core::BoundedExecutor executor(1, 4);
+  std::function<void()> empty_task;
+  const auto queued = executor.enqueue(std::move(empty_task));
+  require(!queued.has_value(), "empty executor task should be rejected");
+  require(queued.error().message == "executor task must be callable",
+          "empty executor task error mismatch");
+}
+
 }  // namespace
 
 int main() {
@@ -353,6 +363,7 @@ int main() {
     test_sdk_peer_and_service_surface();
     test_request_handle_rejects_invalid_state();
     test_app_builder_rejects_empty_std_function_handlers();
+    test_executor_rejects_empty_task();
     std::cout << "sdk peer/service test passed\n";
     return 0;
   } catch (const std::exception& ex) {

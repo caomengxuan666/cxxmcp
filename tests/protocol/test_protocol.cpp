@@ -120,6 +120,16 @@ void test_initialized_notification_round_trip() {
           "constructed initialized method mismatch");
 }
 
+void test_supported_protocol_versions_are_explicit() {
+  require(!mcp::protocol::McpSupportedProtocolVersions.empty(),
+          "supported protocol versions should be explicit");
+  require(mcp::protocol::is_supported_protocol_version(
+              mcp::protocol::McpProtocolVersion),
+          "current MCP protocol version should be supported");
+  require(!mcp::protocol::is_supported_protocol_version("2024-11-05"),
+          "unknown MCP protocol version should not be supported");
+}
+
 void test_ping_request_round_trip() {
   const auto input = load_fixture_text("ping.request.json");
   const auto parsed = mcp::protocol::parse_message(input);
@@ -1438,6 +1448,8 @@ int main() {
       {"initialize request round trip", test_initialize_request_round_trip},
       {"initialized notification round trip",
        test_initialized_notification_round_trip},
+      {"supported protocol versions are explicit",
+       test_supported_protocol_versions_are_explicit},
       {"ping request round trip", test_ping_request_round_trip},
       {"response round trips", test_response_round_trips},
       {"tool protocol round trips", test_tool_protocol_round_trips},

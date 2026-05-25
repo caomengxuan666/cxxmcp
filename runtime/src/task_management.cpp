@@ -58,6 +58,10 @@ core::Result<protocol::Task> TaskManagementService::enqueue_task(
     std::function<core::Result<protocol::Json>()> job,
     std::optional<std::int64_t> ttl,
     std::optional<std::int64_t> poll_interval) {
+  if (!job) {
+    return std::unexpected(make_task_error("task job must be callable"));
+  }
+
   protocol::Task task;
   task.status = protocol::TaskStatus::Working;
   task.created_at = now_timestamp();

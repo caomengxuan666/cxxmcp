@@ -10,12 +10,35 @@ This is not a protocol fork plan. It is a standardization plan for the current C
 
 ## Status
 
-Completed in the current tree:
+Foundation already present in the current tree:
 
 - SDK-first public surface around `protocol`, `client`, `server`, `peer`, `service`, `handler`, and `transport`
 - release policy and changelog discipline in `docs/release_policy.md` and `CHANGELOG.md`
-- interop coverage against local RMCP source through the stdio fixture tests and RMCP conformance client
+- interop coverage against local RMCP source through the stdio fixture tests
+  and RMCP conformance client
 - client/server, stdio, and HTTP regression coverage in the C++ test suite
+- package-smoke and RMCP conformance passing in the reviewed `build-smoke`
+  configuration
+
+This is enough to make `cxxmcp` a strong SDK candidate. It is not enough to
+claim de facto-standard status yet; the remaining closure points are tracked
+below and in [RMCP Source Gap Analysis](./rmcp_source_gap_analysis.md).
+
+Current RMCP comparison snapshot:
+
+- practical readiness against the pinned local RMCP source is roughly
+  `75-80%`
+- the remaining gap is mostly runtime and transport depth, not API naming
+- `Peer` / `Service` need to become the real execution core instead of mostly
+  facades over concrete `Client` / `Server` paths
+- Streamable HTTP still needs tested session resume, stale-session,
+  backpressure, concurrent stream, init-timeout, and inflight-drain behavior
+- process stdio needs full POSIX support
+- protocol-version validation exists, but multi-version overlap policy and
+  tests are still future work
+- the conformance story needs to grow from passing smoke cases into a
+  release-blocking matrix across tasks, progress, elicitation, cancellation,
+  errors, transports, and cross-SDK pairs
 
 ## 1. What "Fact Standard" Means
 
@@ -127,48 +150,56 @@ These are useful, but they are not what makes the SDK a standard:
 
 The SDK can coexist with these, but it should not depend on them.
 
-## 5. The Closure Points
+## 5. The Gaps That Still Matter
 
-This is the shortest honest list of what blocked fact-standard status. The current tree now covers each item below.
+This is the shortest honest list of what still blocks fact-standard status.
 
 ### 5.1 Public abstraction
 
 RMCP centers the API on role-aware peer/service objects. The C++ SDK is moving in that direction, but the compatibility wrappers are still visible.
 
-Covered by current tree:
+Needed:
 
 - keep `Peer<RoleClient>` / `Peer<RoleServer>` as the main story
 - keep `Service<Role>` as the lifecycle story
-- make `Client` and `Server` look like compatibility layers, not the core abstraction
+- make `Client` and `Server` look like compatibility layers, not the core
+  abstraction
+- move the real request loop, shutdown, wait, and cancellation behavior behind
+  the peer/service path instead of leaving it as a facade over concrete wrappers
 
 ### 5.2 Transport contract
 
 RMCP's transport model is broader and more abstract.
 
-Covered by current tree:
+Needed:
 
 - a narrow shared transport contract
 - explicit request / notification flow
 - async-capable behavior at the SDK boundary
-- support for stdio, HTTP, and compatibility transports without leaking implementation detail
+- support for stdio, HTTP, and compatibility transports without leaking
+  implementation detail
+- native role-generic receive-loop behavior for stdio, process stdio, and
+  Streamable HTTP, with documented concurrency and backpressure semantics
 
 ### 5.3 Request lifecycle
 
 The SDK has started to add request handles and timeout options, but this needs to become a stable public promise.
 
-Covered by current tree:
+Needed:
 
 - request handle semantics
 - cancellation on timeout
 - explicit request options
-- typed async client / client-peer helpers for common MCP request families
 - consistent error mapping for transport and handler failures
+- typed async client / client-peer helpers for all common MCP request families
+- uniform timeout and cancellation propagation from peer through transport and
+  handler execution
 
 ### 5.4 Protocol modeling
 
 RMCP's model layer is richer.
 
-Covered by current tree:
+Needed:
 
 - `_meta` support where the spec expects it
 - annotations, icons, and extension bags where they matter
@@ -181,18 +212,19 @@ These are already present in the codebase and now have public SDK entry points.
 The remaining standardization work is lifecycle precision and compatibility
 coverage.
 
-Covered by current tree:
+Needed:
 
 - clear negotiation rules
 - clean typed helper APIs
 - server-side lifecycle support
 - documentation that says what is core, optional, or experimental
+- compatibility coverage against RMCP task and elicitation behavior
 
 ### 5.6 Streamable HTTP
 
 The HTTP transport needs to feel like a product-grade MCP transport, not just a wrapper around a request library.
 
-Covered by current tree:
+Needed:
 
 - session behavior
 - reconnect behavior
@@ -204,7 +236,7 @@ Covered by current tree:
 
 This is the point that turns "good library" into "fact standard."
 
-Covered by current tree:
+Needed:
 
 - stable `cxxmcp::protocol`, `cxxmcp::client`, `cxxmcp::server`,
   `cxxmcp::peer`, `cxxmcp::service`, `cxxmcp::handler`,
@@ -214,6 +246,8 @@ Covered by current tree:
 - changelog discipline for public releases
 - package-smoke coverage that installs the SDK and builds an external consumer
   through the exported CMake targets
+- release CI that proves the package contract on every supported platform and
+  generator
 
 ## 6. API Contract to Freeze
 
@@ -272,7 +306,7 @@ For a C++ SDK, source compatibility matters more than internal layout purity.
 
 ## 8. Quality Bar
 
-The SDK now meets the boring reliability bar through the test suite.
+To become a fact standard, the SDK must be boringly reliable.
 
 Minimum quality bar:
 
@@ -301,7 +335,7 @@ The repository should keep one clear recommendation, not a spread of equivalent-
 
 ## 10. Release Bar
 
-Release discipline is part of standardization, and it is now documented in the tree.
+Release discipline is part of standardization.
 
 ### 10.1 Release stages
 
