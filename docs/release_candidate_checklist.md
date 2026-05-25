@@ -42,6 +42,8 @@ path review.
       those runtimes are advertised for the release.
 - [ ] Doxygen HTML was generated from the same commit as the source artifact.
 - [ ] Source archive checksum was recorded in release notes.
+- [ ] `scripts/check_release_evidence.py` passed for the source tree and the
+      uploaded `cxxmcp-release-evidence` artifact.
 
 ## Public Surface Review
 

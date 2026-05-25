@@ -72,6 +72,12 @@ interop matrix:
 - TypeScript SDK reference: `@modelcontextprotocol/sdk@1.29.0`
 - Python SDK reference: `mcp==1.27.1`
 
+The `scripts/check_release_evidence.py` verifier runs before the release
+evidence artifact is uploaded. It fails the workflow if the release evidence is
+missing required documents, if SDK API docs accidentally include runtime or
+tooling headers, if pinned interop versions are absent, or if compatibility and
+runtime examples are not labelled as non-canonical SDK paths.
+
 The same workflow uploads:
 
 - `cxxmcp-doxygen-html`: generated public API documentation.

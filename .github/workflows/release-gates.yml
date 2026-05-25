@@ -228,6 +228,11 @@ jobs:
         with:
           submodules: recursive
 
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
       - name: Collect release evidence documents
         shell: bash
         run: |
@@ -251,6 +256,9 @@ jobs:
             echo "typescript_sdk_reference=@modelcontextprotocol/sdk@1.29.0"
             echo "python_sdk_reference=mcp==1.27.1"
           } > release-evidence/MANIFEST.txt
+
+      - name: Verify release evidence
+        run: python scripts/check_release_evidence.py --source . --evidence release-evidence
 
       - name: Upload release evidence
         uses: actions/upload-artifact@v4

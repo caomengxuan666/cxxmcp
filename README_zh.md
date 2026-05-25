@@ -345,7 +345,7 @@ protocol 层。
 - 安装后消费 CMake target 的 package-smoke fixture
 - 本地 RMCP conformance coverage
 - examples build preset
-- formatting、cpplint、clang-tidy、Doxygen scripts
+- formatting、cpplint、clang-tidy、Doxygen 和 release-evidence scripts
 
 当前标准化工作统一记录在 [Fact-standard TODO](todo.md)。
 

@@ -370,7 +370,7 @@ The repository keeps SDK-grade checks close to the source tree:
 - package-smoke fixture for installed CMake target consumption
 - local RMCP conformance coverage
 - examples build preset
-- formatting, cpplint, clang-tidy, and Doxygen scripts
+- formatting, cpplint, clang-tidy, Doxygen, and release-evidence scripts
 
 Current standardization work is tracked in [Fact-standard TODO](todo.md).
 
