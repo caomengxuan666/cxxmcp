@@ -411,6 +411,8 @@ and task requests, while the older concrete server API is still mostly
 synchronous and direct.
 Task-aware tool calls also share the synchronous local validation behavior when
 required task parameters are missing.
+Typed async helpers preserve `RequestOptions` metadata and expose cancellation
+tokens through their returned request handles.
 
 Gap:
 

@@ -878,6 +878,7 @@ void test_client_peer_typed_async_helpers() {
 
   mcp::RequestOptions options;
   options.timeout = std::chrono::seconds(1);
+  options.meta = Json{{"traceId", "typed-async"}};
 
   const auto listed = peer.list_tools_async(options).await_response();
   require(listed.has_value(), "typed async list_tools failed");
@@ -1053,6 +1054,11 @@ void test_client_peer_typed_async_helpers() {
           "typed async cancel_task method mismatch");
   require(recording->requests.at(14).method == "tasks/result",
           "typed async task_result method mismatch");
+  for (const auto& request : recording->requests) {
+    require(request.meta.has_value(), "typed async request meta missing");
+    require(request.meta->at("traceId") == "typed-async",
+            "typed async request meta mismatch");
+  }
 }
 
 void test_server_client_peer_request_handle_times_out_and_cancels() {
@@ -1130,9 +1136,9 @@ void test_client_peer_request_handle_observes_cancellation_token() {
   mcp::RequestOptions options;
   options.cancellation_token = cancellation.token();
 
-  auto handle = peer.request_async("tools/list", Json::object(), options);
+  auto handle = peer.list_tools_async(options);
   require(handle.cancellation_token().has_value(),
-          "request handle should expose cancellation token");
+          "typed request handle should expose cancellation token");
   recording->wait_until_request_started();
   cancellation.cancel();
 
