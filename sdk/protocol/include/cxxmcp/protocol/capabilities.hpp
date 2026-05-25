@@ -11,6 +11,7 @@
 /// compatibility.
 
 #include <optional>
+#include <string>
 #include <utility>
 
 #include "cxxmcp/protocol/task.hpp"
@@ -200,6 +201,93 @@ struct ClientCapabilities {
   Json extensions = Json::object();
 };
 
+/// @brief Fluent builder for client initialize capabilities.
+class ClientCapabilitiesBuilder {
+ public:
+  ClientCapabilitiesBuilder& roots(bool list_changed = false) {
+    capabilities_.roots.enabled = true;
+    capabilities_.roots.list_changed = list_changed;
+    return *this;
+  }
+
+  ClientCapabilitiesBuilder& sampling(bool tools = false,
+                                      bool context = false) {
+    capabilities_.sampling.enabled = true;
+    capabilities_.sampling.tools = tools;
+    capabilities_.sampling.context = context;
+    return *this;
+  }
+
+  ClientCapabilitiesBuilder& elicitation_form(
+      std::optional<bool> schema_validation = std::nullopt) {
+    capabilities_.elicitation.form = true;
+    capabilities_.elicitation.form_schema_validation = schema_validation;
+    return *this;
+  }
+
+  ClientCapabilitiesBuilder& elicitation_url() {
+    capabilities_.elicitation.url = true;
+    return *this;
+  }
+
+  ClientCapabilitiesBuilder& tasks(TaskCapabilities value) {
+    capabilities_.tasks = std::move(value);
+    return *this;
+  }
+
+  ClientCapabilitiesBuilder& task_list(bool value = true) {
+    ensure_tasks().list = value;
+    return *this;
+  }
+
+  ClientCapabilitiesBuilder& task_cancel(bool value = true) {
+    ensure_tasks().cancel = value;
+    return *this;
+  }
+
+  ClientCapabilitiesBuilder& task_tool_calls(bool value = true) {
+    ensure_tasks().tools_call = value;
+    return *this;
+  }
+
+  ClientCapabilitiesBuilder& task_sampling(bool value = true) {
+    ensure_tasks().sampling_create_message = value;
+    return *this;
+  }
+
+  ClientCapabilitiesBuilder& task_elicitation(bool value = true) {
+    ensure_tasks().elicitation_create = value;
+    return *this;
+  }
+
+  ClientCapabilitiesBuilder& experimental(Json value) {
+    capabilities_.experimental = std::move(value);
+    return *this;
+  }
+
+  ClientCapabilitiesBuilder& extension(std::string name, Json value) {
+    capabilities_.extensions[std::move(name)] = std::move(value);
+    return *this;
+  }
+
+  ClientCapabilities build() const { return capabilities_; }
+
+ private:
+  TaskCapabilities& ensure_tasks() {
+    if (!capabilities_.tasks.has_value()) {
+      capabilities_.tasks = TaskCapabilities{};
+    }
+    return *capabilities_.tasks;
+  }
+
+  ClientCapabilities capabilities_;
+};
+
+/// @brief Starts a fluent client capability builder.
+inline ClientCapabilitiesBuilder client_capabilities() {
+  return ClientCapabilitiesBuilder{};
+}
+
 /// @brief Serializes client capabilities to the MCP initialize payload shape.
 /// @param capabilities Client capability flags and extension data.
 /// @return JSON object suitable for `initialize.params.capabilities`.
@@ -273,6 +361,97 @@ struct ServerCapabilities {
   /// Vendor or SDK extension capability bag.
   Json extensions = Json::object();
 };
+
+/// @brief Fluent builder for server initialize result capabilities.
+class ServerCapabilitiesBuilder {
+ public:
+  ServerCapabilitiesBuilder& tools(bool list_changed = false) {
+    capabilities_.tools.enabled = true;
+    capabilities_.tools.list_changed = list_changed;
+    return *this;
+  }
+
+  ServerCapabilitiesBuilder& resources(bool list_changed = false,
+                                       bool subscribe = false) {
+    capabilities_.resources.enabled = true;
+    capabilities_.resources.list_changed = list_changed;
+    capabilities_.resources.subscribe = subscribe;
+    return *this;
+  }
+
+  ServerCapabilitiesBuilder& prompts(bool list_changed = false) {
+    capabilities_.prompts.enabled = true;
+    capabilities_.prompts.list_changed = list_changed;
+    return *this;
+  }
+
+  ServerCapabilitiesBuilder& logging() {
+    capabilities_.logging.enabled = true;
+    return *this;
+  }
+
+  ServerCapabilitiesBuilder& completions() {
+    capabilities_.completions.enabled = true;
+    return *this;
+  }
+
+  ServerCapabilitiesBuilder& tasks(TaskCapabilities value) {
+    capabilities_.tasks = std::move(value);
+    return *this;
+  }
+
+  ServerCapabilitiesBuilder& task_list(bool value = true) {
+    ensure_tasks().list = value;
+    return *this;
+  }
+
+  ServerCapabilitiesBuilder& task_cancel(bool value = true) {
+    ensure_tasks().cancel = value;
+    return *this;
+  }
+
+  ServerCapabilitiesBuilder& task_tool_calls(bool value = true) {
+    ensure_tasks().tools_call = value;
+    return *this;
+  }
+
+  ServerCapabilitiesBuilder& task_sampling(bool value = true) {
+    ensure_tasks().sampling_create_message = value;
+    return *this;
+  }
+
+  ServerCapabilitiesBuilder& task_elicitation(bool value = true) {
+    ensure_tasks().elicitation_create = value;
+    return *this;
+  }
+
+  ServerCapabilitiesBuilder& experimental(Json value) {
+    capabilities_.experimental = std::move(value);
+    return *this;
+  }
+
+  ServerCapabilitiesBuilder& extension(std::string name, Json value) {
+    capabilities_.extensions[std::move(name)] = std::move(value);
+    return *this;
+  }
+
+  ServerCapabilities build() const { return capabilities_; }
+
+ private:
+  TaskCapabilities& ensure_tasks() {
+    if (!capabilities_.tasks.has_value()) {
+      capabilities_.tasks = TaskCapabilities{};
+    }
+    return *capabilities_.tasks;
+  }
+
+  ServerCapabilities capabilities_;
+};
+
+/// @brief Starts a fluent server capability builder.
+inline ServerCapabilitiesBuilder server_capabilities() {
+  return ServerCapabilitiesBuilder{};
+}
 
 /// @brief Serializes server capabilities to the MCP initialize result shape.
 /// @param capabilities Server capability flags and extension data.

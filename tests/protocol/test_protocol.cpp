@@ -731,6 +731,94 @@ void test_server_capability_wire_shape() {
           "explicit empty server tasks capability should be preserved");
 }
 
+void test_capability_builders_match_wire_shape() {
+  const auto client_capabilities =
+      mcp::protocol::client_capabilities()
+          .roots(true)
+          .sampling(true, true)
+          .elicitation_form(true)
+          .elicitation_url()
+          .task_list()
+          .task_cancel()
+          .task_sampling()
+          .task_elicitation()
+          .experimental(Json{{"beta", true}})
+          .extension("vendor/feature", Json{{"enabled", true}})
+          .build();
+
+  const auto client_json =
+      mcp::protocol::client_capabilities_to_json(client_capabilities);
+  require(client_json.at("roots").at("listChanged") == true,
+          "client capability builder roots mismatch");
+  require(client_json.at("sampling").at("tools").is_object(),
+          "client capability builder sampling tools mismatch");
+  require(client_json.at("sampling").at("context").is_object(),
+          "client capability builder sampling context mismatch");
+  require(
+      client_json.at("elicitation").at("form").at("schemaValidation") == true,
+      "client capability builder elicitation form mismatch");
+  require(client_json.at("elicitation").at("url").is_object(),
+          "client capability builder elicitation url mismatch");
+  require(client_json.at("tasks").at("list").is_object(),
+          "client capability builder task list mismatch");
+  require(client_json.at("tasks").at("cancel").is_object(),
+          "client capability builder task cancel mismatch");
+  require(client_json.at("tasks")
+              .at("requests")
+              .at("sampling")
+              .at("createMessage")
+              .is_object(),
+          "client capability builder sampling task mismatch");
+  require(client_json.at("tasks")
+              .at("requests")
+              .at("elicitation")
+              .at("create")
+              .is_object(),
+          "client capability builder elicitation task mismatch");
+  require(client_json.at("experimental").at("beta"),
+          "client capability builder experimental mismatch");
+  require(client_json.at("extensions").at("vendor/feature").at("enabled"),
+          "client capability builder extension mismatch");
+
+  const auto server_capabilities =
+      mcp::protocol::server_capabilities()
+          .tools(true)
+          .resources(false, true)
+          .prompts(true)
+          .logging()
+          .completions()
+          .task_list()
+          .task_cancel()
+          .task_tool_calls()
+          .experimental(Json{{"beta", true}})
+          .extension("vendor/feature", Json::object())
+          .build();
+
+  const auto server_json =
+      mcp::protocol::server_capabilities_to_json(server_capabilities);
+  require(server_json.at("tools").at("listChanged") == true,
+          "server capability builder tools mismatch");
+  require(server_json.at("resources").at("subscribe") == true,
+          "server capability builder resources mismatch");
+  require(server_json.at("prompts").at("listChanged") == true,
+          "server capability builder prompts mismatch");
+  require(server_json.at("logging").is_object(),
+          "server capability builder logging mismatch");
+  require(server_json.at("completions").is_object(),
+          "server capability builder completions mismatch");
+  require(server_json.at("tasks").at("list").is_object(),
+          "server capability builder task list mismatch");
+  require(server_json.at("tasks").at("cancel").is_object(),
+          "server capability builder task cancel mismatch");
+  require(
+      server_json.at("tasks").at("requests").at("tools").at("call").is_object(),
+      "server capability builder tool task mismatch");
+  require(server_json.at("experimental").at("beta"),
+          "server capability builder experimental mismatch");
+  require(server_json.at("extensions").at("vendor/feature").is_object(),
+          "server capability builder extension mismatch");
+}
+
 void test_prompt_protocol_round_trips() {
   require(mcp::protocol::PromptsListMethod == "prompts/list",
           "prompts/list method mismatch");
@@ -1322,6 +1410,8 @@ int main() {
       {"task protocol round trips", test_task_protocol_round_trips},
       {"client capability wire shape", test_client_capability_wire_shape},
       {"server capability wire shape", test_server_capability_wire_shape},
+      {"capability builders match wire shape",
+       test_capability_builders_match_wire_shape},
       {"prompt protocol round trips", test_prompt_protocol_round_trips},
       {"resource protocol round trips", test_resource_protocol_round_trips},
       {"roots completion logging sampling round trips",

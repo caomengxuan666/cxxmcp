@@ -242,7 +242,7 @@ Examples in RMCP:
 The current C++ models are simpler:
 
 - `ContentBlock` supports text, image, audio, embedded resource, and resource
-  link variants
+  link variants, with convenience constructors and typed accessors
 - `ToolDefinition` has name, description, input schema, output schema,
   streaming flag, icons, execution/task-support metadata, annotations, and
   metadata
@@ -261,8 +261,6 @@ Gap:
 
 Action:
 
-- add remaining content convenience builders and typed accessors outside the
-  core `ContentBlock` helpers where higher-level APIs need them
 - finish annotations support where it is still represented as raw JSON
 - add `_meta` support at the proper model/request/notification levels
 - keep simple helper constructors for common text-only cases
@@ -292,11 +290,11 @@ Covered by current tree:
   capability objects
 - public capability structs can express present-but-empty roots, server
   tool/resource/prompt families, sampling, elicitation modes, and tasks
+- fluent client/server capability builders avoid verbose nested boolean setup
 
 Action:
 
 - tighten extension bag typing and empty-map semantics
-- add builder helpers to avoid verbose capability setup
 
 ### 6. Task Support
 
@@ -477,7 +475,7 @@ Still to close:
 
 ### Phase 2: Align Core Protocol Models
 
-- expand content variants
+- keep content variant helpers aligned with new MCP content shapes
 - add annotations
 - add `_meta` and extensions
 - expand tool/resource/prompt models
