@@ -419,7 +419,7 @@ void test_sdk_peer_and_service_surface() {
   require(contract_all_tasks.has_value() && contract_all_tasks->size() == 2 &&
               contract_all_tasks->back().task_id == "task-next",
           "client peer generic transport list_all_tasks failed");
-  contract_client_peer.client().stop();
+  contract_client_peer.stop();
   require(contract_transport_ptr->stopped,
           "client peer generic transport should close");
 

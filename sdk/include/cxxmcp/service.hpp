@@ -171,7 +171,7 @@ class RunningService<RoleClient> {
   }
 
   core::Result<core::Unit> stop() noexcept {
-    return detail::stop_service(state_, [this] { peer_.client().stop(); });
+    return detail::stop_service(state_, [this] { peer_.stop(); });
   }
 
  private:

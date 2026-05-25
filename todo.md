@@ -70,6 +70,8 @@ incrementally. Keep them concrete; do not replace them with broad claims.
         unexpected response ids and closed transport before response.
   - [x] Canonical `cxxmcp/peer.hpp` uses adapter factory declarations instead
         of including compatibility transport-adapter implementation headers.
+  - [x] Client service shutdown calls `ClientPeer::stop()` so native
+        role-generic transports close through the Peer lifecycle boundary.
   - [x] Client and server contract transport adapters cover duplicate response
         ids as stable unexpected-response failures.
 - Request lifecycle:

@@ -211,6 +211,14 @@ class Peer<RoleClient> {
 
   const client::Client& client() const noexcept { return client_; }
 
+  void stop() noexcept {
+    if (native_transport_) {
+      (void)native_transport_->close();
+      return;
+    }
+    client_.stop();
+  }
+
   core::Result<protocol::Json> initialize(std::string client_name = "cxxmcp",
                                           std::string client_version = "0") {
     if (native_transport_) {
