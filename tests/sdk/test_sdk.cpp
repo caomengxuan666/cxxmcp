@@ -628,6 +628,42 @@ void test_client_peer_native_raw_request_dispatches_interleaved_messages() {
           "native client peer list_tools_async result mismatch");
 }
 
+void test_client_peer_native_raw_request_reports_transport_failures() {
+  auto unexpected_transport =
+      std::make_unique<RecordingClientContractTransport>();
+  unexpected_transport->received.push_back(mcp::protocol::JsonRpcResponse{
+      .id = mcp::protocol::RequestId{std::int64_t{999}},
+      .result = Json::object(),
+  });
+  mcp::ClientPeer unexpected_peer(std::move(unexpected_transport));
+  const auto unexpected = unexpected_peer.raw_request(
+      mcp::protocol::JsonRpcRequest{.method = "custom/unexpected",
+                                    .params = Json::object(),
+                                    .id = std::int64_t{77}});
+  require(!unexpected.has_value(),
+          "native client peer should reject unexpected response ids");
+  require(unexpected.error().message ==
+              "client peer transport received unexpected response id",
+          "native client peer unexpected response message mismatch");
+  require(unexpected.error().category == "transport",
+          "native client peer unexpected response category mismatch");
+
+  auto closed_transport = std::make_unique<RecordingClientContractTransport>();
+  mcp::ClientPeer closed_peer(std::move(closed_transport));
+  const auto closed = closed_peer.raw_request(mcp::protocol::JsonRpcRequest{
+      .method = "custom/closed",
+      .params = Json::object(),
+      .id = std::int64_t{78},
+  });
+  require(!closed.has_value(),
+          "native client peer should fail when transport closes");
+  require(
+      closed.error().message == "client peer transport closed before response",
+      "native client peer closed transport message mismatch");
+  require(closed.error().category == "transport",
+          "native client peer closed transport category mismatch");
+}
+
 void test_request_handle_rejects_invalid_state() {
   mcp::RequestHandle<Json> default_handle;
   const auto default_result = default_handle.await_response();
@@ -958,6 +994,7 @@ int main() {
     test_running_service_moved_from_is_inert();
     test_peer_serve_transport_observes_precancelled_token();
     test_client_peer_native_raw_request_dispatches_interleaved_messages();
+    test_client_peer_native_raw_request_reports_transport_failures();
     test_request_handle_rejects_invalid_state();
     test_public_dispatch_boundaries_translate_handler_exceptions();
     test_request_handle_latches_terminal_timeout();
