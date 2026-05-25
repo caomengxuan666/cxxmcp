@@ -172,6 +172,7 @@ true:
 - [x] Add native role-generic receive-loop behavior for stdio.
 - [x] Add native role-generic receive-loop behavior for process stdio.
 - [x] Add native role-generic receive-loop behavior for Streamable HTTP.
+- [x] Keep compatibility transport adapters out of canonical SDK entry headers.
 - [ ] Keep compatibility adapters for old concrete transports, but make them
   implementation details.
 - [ ] Stress-test all adapters for bidirectional request/notification flow.

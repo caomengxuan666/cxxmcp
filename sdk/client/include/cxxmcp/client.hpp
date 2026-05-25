@@ -14,4 +14,3 @@
 #include "cxxmcp/client/process_stdio_transport.hpp"
 #include "cxxmcp/client/session.hpp"
 #include "cxxmcp/client/stdio_transport.hpp"
-#include "cxxmcp/client/transport_adapter.hpp"

@@ -19,4 +19,3 @@
 #include "cxxmcp/server/stdio_transport.hpp"
 #include "cxxmcp/server/task_manager.hpp"
 #include "cxxmcp/server/transport.hpp"
-#include "cxxmcp/server/transport_adapter.hpp"

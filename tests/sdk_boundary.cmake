@@ -52,3 +52,18 @@ foreach(root IN LISTS public_include_roots)
         endforeach()
     endforeach()
 endforeach()
+
+set(canonical_sdk_entry_headers
+    sdk/include/cxxmcp/client.hpp
+    sdk/include/cxxmcp/server.hpp
+    sdk/include/cxxmcp/peer.hpp
+    sdk/include/cxxmcp/sdk.hpp
+)
+
+foreach(header IN LISTS canonical_sdk_entry_headers)
+    file(READ "${REPO_SOURCE_DIR}/${header}" content)
+    if(content MATCHES "#[ \t]*include[ \t]*[<\"]cxxmcp/.*/transport_adapter\\.hpp")
+        message(FATAL_ERROR
+            "Canonical SDK entry header ${header} must not expose compatibility transport adapters")
+    endif()
+endforeach()

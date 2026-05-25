@@ -18,13 +18,13 @@
 
 #include "cxxmcp/client/client.hpp"
 #include "cxxmcp/client/session.hpp"
-#include "cxxmcp/client/transport_adapter.hpp"
+#include "cxxmcp/client/transport_adapter_fwd.hpp"
 #include "cxxmcp/error.hpp"
 #include "cxxmcp/handler.hpp"
 #include "cxxmcp/roles.hpp"
 #include "cxxmcp/server/peer.hpp"
 #include "cxxmcp/server/server.hpp"
-#include "cxxmcp/server/transport_adapter.hpp"
+#include "cxxmcp/server/transport_adapter_fwd.hpp"
 #include "cxxmcp/transport/transport.hpp"
 
 namespace mcp {
@@ -57,8 +57,8 @@ class Peer<RoleClient> {
 
   /// @brief Creates a client peer from an owned role-generic transport.
   explicit Peer(std::unique_ptr<transport::ClientTransport> transport)
-      : client_(std::make_unique<client::ContractTransportAdapter>(
-            std::move(transport))) {}
+      : client_(client::make_contract_transport_adapter(std::move(transport))) {
+  }
 
   /// @brief Creates a client peer from an existing client implementation.
   explicit Peer(client::Client client) : client_(std::move(client)) {}
@@ -598,8 +598,7 @@ class Peer<RoleServer> {
   core::Result<core::Unit> add_transport(
       std::unique_ptr<transport::ServerTransport> transport) {
     return server_->add_transport(
-        std::make_unique<server::ContractTransportAdapter>(
-            std::move(transport)));
+        server::make_contract_transport_adapter(std::move(transport)));
   }
 
   core::Result<core::Unit> start() { return server_->start(); }

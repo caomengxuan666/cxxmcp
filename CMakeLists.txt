@@ -178,6 +178,7 @@ if(MCP_ENABLE_CLIENT)
         sdk/client/src/http_transport.cpp
         sdk/client/src/process_stdio_transport.cpp
         sdk/client/src/stdio_transport.cpp
+        sdk/client/src/transport_adapter.cpp
     )
     set_target_properties(mcp_client PROPERTIES EXPORT_NAME client)
     target_include_directories(mcp_client PUBLIC
@@ -202,6 +203,7 @@ if(MCP_ENABLE_SERVER)
         sdk/server/src/server.cpp
         sdk/server/src/stdio_transport.cpp
         sdk/server/src/task_manager.cpp
+        sdk/server/src/transport_adapter.cpp
     )
     set_target_properties(mcp_server PROPERTIES EXPORT_NAME server)
     target_include_directories(mcp_server PUBLIC
