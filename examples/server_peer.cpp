@@ -2,20 +2,25 @@
 
 #include <atomic>
 #include <chrono>
+#include <condition_variable>
 #include <cstdint>
+#include <deque>
 #include <iostream>
 #include <memory>
+#include <mutex>
+#include <optional>
 #include <stdexcept>
 #include <string>
 #include <string_view>
 #include <thread>
 #include <utility>
-#include <vector>
+#include <variant>
 
 #include "cxxmcp/peer.hpp"
 #include "cxxmcp/protocol/serialization.hpp"
 #include "cxxmcp/server.hpp"
 #include "cxxmcp/service.hpp"
+#include "cxxmcp/transport.hpp"
 
 namespace {
 
@@ -39,57 +44,92 @@ bool wait_until(Predicate predicate, std::chrono::milliseconds timeout) {
   return predicate();
 }
 
-class LoopbackTransport final : public mcp::server::Transport {
+class LoopbackTransport final : public mcp::transport::ServerTransport {
  public:
-  mcp::core::Result<mcp::core::Unit> start(
-      mcp::server::RequestHandler handler,
-      mcp::server::NotificationHandler notification_handler = {}) override {
-    request_handler_ = std::move(handler);
-    notification_handler_ = std::move(notification_handler);
-    started_.store(true);
-    return mcp::core::Unit{};
-  }
-
-  mcp::core::Result<mcp::protocol::JsonRpcResponse> dispatch_request(
-      const mcp::protocol::JsonRpcRequest& request) {
-    if (!request_handler_) {
-      return std::unexpected(mcp::core::Error{
-          static_cast<int>(mcp::protocol::ErrorCode::InternalError),
-          "transport is not started",
-          {},
-      });
-    }
-    return request_handler_(request, mcp::server::SessionContext{
-                                         .session_id = "server-peer-example",
-                                         .remote_address = "loopback",
-                                         .transport = this,
-                                     });
-  }
-
-  mcp::core::Result<mcp::core::Unit> send_notification(
-      const mcp::protocol::JsonRpcNotification& notification) override {
-    notifications_.push_back(notification);
-    return mcp::core::Unit{};
-  }
-
-  void stop() noexcept override {}
-
   std::string_view name() const noexcept override {
     return "server-peer-loopback";
   }
 
-  bool started() const noexcept { return started_.load(); }
+  mcp::core::Result<mcp::core::Unit> send(TxMessage message) override {
+    {
+      std::lock_guard lock(mutex_);
+      sent_.push_back(std::move(message));
+    }
+    cv_.notify_all();
+    return mcp::core::Unit{};
+  }
 
-  const std::vector<mcp::protocol::JsonRpcNotification>& notifications()
-      const noexcept {
-    return notifications_;
+  mcp::core::Result<std::optional<RxMessage>> receive() override {
+    std::unique_lock lock(mutex_);
+    receiving_.store(true);
+    cv_.notify_all();
+    cv_.wait(lock, [&] { return closed_ || !incoming_.empty(); });
+    if (incoming_.empty()) {
+      return std::nullopt;
+    }
+    auto message = std::move(incoming_.front());
+    incoming_.pop_front();
+    return message;
+  }
+
+  mcp::core::Result<mcp::core::Unit> close() override {
+    {
+      std::lock_guard lock(mutex_);
+      closed_ = true;
+    }
+    cv_.notify_all();
+    return mcp::core::Unit{};
+  }
+
+  void push_request(mcp::protocol::JsonRpcRequest request) {
+    {
+      std::lock_guard lock(mutex_);
+      incoming_.push_back(mcp::protocol::JsonRpcMessage{std::move(request)});
+    }
+    cv_.notify_all();
+  }
+
+  bool receiving() const noexcept { return receiving_.load(); }
+
+  std::optional<mcp::protocol::JsonRpcResponse> take_response(
+      const mcp::protocol::RequestId& id, std::chrono::milliseconds timeout) {
+    const auto deadline = std::chrono::steady_clock::now() + timeout;
+    std::unique_lock lock(mutex_);
+    while (std::chrono::steady_clock::now() < deadline) {
+      for (auto it = sent_.begin(); it != sent_.end(); ++it) {
+        auto* response = std::get_if<mcp::protocol::JsonRpcResponse>(&*it);
+        if (response != nullptr && response->id.has_value() &&
+            *response->id == id) {
+          auto value = std::move(*response);
+          sent_.erase(it);
+          return value;
+        }
+      }
+      cv_.wait_until(lock, deadline);
+    }
+    return std::nullopt;
+  }
+
+  std::size_t notification_count(std::string_view method) const {
+    std::lock_guard lock(mutex_);
+    std::size_t count = 0;
+    for (const auto& message : sent_) {
+      const auto* notification =
+          std::get_if<mcp::protocol::JsonRpcNotification>(&message);
+      if (notification != nullptr && notification->method == method) {
+        ++count;
+      }
+    }
+    return count;
   }
 
  private:
-  mcp::server::RequestHandler request_handler_;
-  mcp::server::NotificationHandler notification_handler_;
-  std::atomic_bool started_{false};
-  std::vector<mcp::protocol::JsonRpcNotification> notifications_;
+  mutable std::mutex mutex_;
+  std::condition_variable cv_;
+  std::deque<RxMessage> incoming_;
+  std::deque<TxMessage> sent_;
+  std::atomic_bool receiving_{false};
+  bool closed_ = false;
 };
 
 }  // namespace
@@ -134,17 +174,18 @@ int main() {
 
     auto running = mcp::serve(std::move(peer));
     require(running.has_value(), "server peer service failed to start");
-    require(wait_until([&] { return transport_ptr->started(); },
+    require(wait_until([&] { return transport_ptr->receiving(); },
                        std::chrono::milliseconds(1000)),
-            "server peer transport did not start");
+            "server peer transport did not enter receive loop");
 
-    const auto listed =
-        transport_ptr->dispatch_request(mcp::protocol::JsonRpcRequest{
-            .method = std::string(mcp::protocol::ToolsListMethod),
-            .params = Json::object(),
-            .id = std::int64_t{1},
-        });
-    require(listed.has_value(), "server peer tools/list request failed");
+    transport_ptr->push_request(mcp::protocol::JsonRpcRequest{
+        .method = std::string(mcp::protocol::ToolsListMethod),
+        .params = Json::object(),
+        .id = std::int64_t{1},
+    });
+    const auto listed = transport_ptr->take_response(
+        std::int64_t{1}, std::chrono::milliseconds(1000));
+    require(listed.has_value(), "server peer tools/list response missing");
     require(listed->result.has_value(),
             "server peer tools/list result missing");
     require(listed->result->at("tools").size() == 1,
@@ -161,11 +202,9 @@ int main() {
 
     require(running->peer().notify_roots_list_changed().has_value(),
             "server peer notify_roots_list_changed failed");
-    require(transport_ptr->notifications().size() == 1,
+    require(transport_ptr->notification_count(
+                mcp::protocol::RootsListChangedNotificationMethod) == 1,
             "server peer notification count mismatch");
-    require(transport_ptr->notifications().front().method ==
-                std::string(mcp::protocol::RootsListChangedNotificationMethod),
-            "server peer notification method mismatch");
 
     require(running->stop().has_value(), "server peer service stop failed");
     std::cout << "server peer example passed\n";

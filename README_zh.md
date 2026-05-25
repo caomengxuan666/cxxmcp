@@ -118,13 +118,14 @@ cmake --install build-smoke --config Debug --prefix out/install/cxxmcp
 ### 首选 Server Peer/Service
 
 ```cpp
+#include <iostream>
 #include <memory>
 #include <utility>
 
 #include <cxxmcp/peer.hpp>
 #include <cxxmcp/server.hpp>
-#include <cxxmcp/server/stdio_transport.hpp>
 #include <cxxmcp/service.hpp>
+#include <cxxmcp/transport/stdio_transport.hpp>
 
 int main() {
     mcp::server::ServerBuilder builder;
@@ -148,7 +149,9 @@ int main() {
     }
 
     mcp::ServerPeer peer(std::move(*server));
-    peer.add_transport(std::make_unique<mcp::server::StdioTransport>());
+    peer.add_transport(
+        std::make_unique<mcp::transport::ServerStdioTransport>(
+            std::cin, std::cout));
 
     auto running = mcp::serve(std::move(peer));
     if (!running) {
@@ -311,6 +314,8 @@ protocol 层。
   library 作为稳定发布物，必须先定义 ABI policy。
 - Release review 必须包含 public header diff、独立 public-header compile
   tests、安装树 `package_smoke`，以及该 release 可用的 conformance matrix。
+- Release-blocking tests、labels，以及支持的 compiler/generator/runtime
+  matrix 记录在 [Release gates](docs/release_gates.md)。
 
 ## Examples
 
@@ -336,6 +341,7 @@ protocol 层。
 ## 文档
 
 - [Fact-standard TODO](todo.md)
+- [Release gates](docs/release_gates.md)
 - [Peer/Service 迁移指南](docs/sdk_peer_service_migration.md)
 - [更新日志](CHANGELOG.md)
 

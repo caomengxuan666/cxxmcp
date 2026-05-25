@@ -18,13 +18,14 @@ Use this layering for new code:
 Server side:
 
 ```cpp
+#include <iostream>
 #include <memory>
 #include <utility>
 
 #include <cxxmcp/peer.hpp>
 #include <cxxmcp/server.hpp>
-#include <cxxmcp/server/stdio_transport.hpp>
 #include <cxxmcp/service.hpp>
+#include <cxxmcp/transport/stdio_transport.hpp>
 
 int main() {
   mcp::server::ServerBuilder builder;
@@ -36,7 +37,9 @@ int main() {
   }
 
   mcp::ServerPeer peer(std::move(*server));
-  peer.add_transport(std::make_unique<mcp::server::StdioTransport>());
+  peer.add_transport(
+      std::make_unique<mcp::transport::ServerStdioTransport>(std::cin,
+                                                             std::cout));
 
   auto running = mcp::serve(std::move(peer));
   if (!running) {
@@ -91,7 +94,8 @@ mcp::server::ServerBuilder builder;
 auto server = builder.build();
 
 mcp::ServerPeer peer(std::move(*server));
-peer.add_transport(std::make_unique<mcp::server::StdioTransport>());
+peer.add_transport(std::make_unique<mcp::transport::ServerStdioTransport>(
+    std::cin, std::cout));
 
 auto running = mcp::serve(std::move(peer));
 running->wait();

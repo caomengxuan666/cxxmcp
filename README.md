@@ -121,13 +121,14 @@ cmake --install build-smoke --config Debug --prefix out/install/cxxmcp
 ### Canonical Server Peer/Service
 
 ```cpp
+#include <iostream>
 #include <memory>
 #include <utility>
 
 #include <cxxmcp/peer.hpp>
 #include <cxxmcp/server.hpp>
-#include <cxxmcp/server/stdio_transport.hpp>
 #include <cxxmcp/service.hpp>
+#include <cxxmcp/transport/stdio_transport.hpp>
 
 int main() {
     mcp::server::ServerBuilder builder;
@@ -151,7 +152,9 @@ int main() {
     }
 
     mcp::ServerPeer peer(std::move(*server));
-    peer.add_transport(std::make_unique<mcp::server::StdioTransport>());
+    peer.add_transport(
+        std::make_unique<mcp::transport::ServerStdioTransport>(
+            std::cin, std::cout));
 
     auto running = mcp::serve(std::move(peer));
     if (!running) {
@@ -328,6 +331,8 @@ layers it needs.
 - Release review must include a public header diff, independent public-header
   compile tests, installed-tree `package_smoke`, and the conformance matrix
   available for that release.
+- Release-blocking tests, labels, and the supported compiler/generator/runtime
+  matrix are tracked in [Release gates](docs/release_gates.md).
 
 ## Examples
 
@@ -354,6 +359,7 @@ Current standardization work is tracked in [Fact-standard TODO](todo.md).
 ## Documentation
 
 - [Fact-standard TODO](todo.md)
+- [Release gates](docs/release_gates.md)
 - [Peer/Service migration guide](docs/sdk_peer_service_migration.md)
 - [Changelog](CHANGELOG.md)
 
