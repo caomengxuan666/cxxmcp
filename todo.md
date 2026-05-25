@@ -94,16 +94,16 @@ true:
 - [ ] Transport behavior is explicit, cross-platform, and stress-tested.
 - [ ] Request lifecycle, timeout, cancellation, progress, and shutdown semantics
   are uniform from peer through transport and handler execution.
-- [ ] Streamable HTTP has production-grade session, resume, stale-session,
+- [x] Streamable HTTP has production-grade session, resume, stale-session,
   backpressure, and concurrent stream behavior.
-- [ ] Process stdio is complete on Windows, Linux, and macOS.
-- [ ] RMCP and cross-SDK interoperability are covered by a release-blocking
+- [x] Process stdio is complete on Windows, Linux, and macOS.
+- [x] RMCP and cross-SDK interoperability are covered by a release-blocking
   matrix, not a single happy path.
 - [ ] Installed-package consumption works on every supported compiler,
   generator, and runtime mode.
 - [ ] Public docs, examples, changelog, release artifacts, and compatibility
   policy all describe the same canonical SDK path.
-- [ ] Gateway, runtime, policy, discovery, and CLI concepts stay outside the
+- [x] Gateway, runtime, policy, discovery, and CLI concepts stay outside the
   core SDK contract.
 
 ## P0: Keep The Standardization Boundary Clear
@@ -652,10 +652,10 @@ true:
 
 ### Milestone 5: Interop Matrix
 
-- [ ] Expand RMCP conformance scenarios.
-- [ ] Add TypeScript SDK interop.
-- [ ] Add Python SDK interop.
-- [ ] Make cross-SDK matrix release-blocking.
+- [x] Expand RMCP conformance scenarios.
+- [x] Add TypeScript SDK interop.
+- [x] Add Python SDK interop.
+- [x] Make cross-SDK matrix release-blocking.
 
 ### Milestone 6: Release And Ecosystem
 
