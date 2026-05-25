@@ -932,8 +932,14 @@ core::Result<core::Unit> Client::set_level(
 }
 
 core::Result<core::Unit> Client::set_level(std::string_view level) {
+  const auto parsed = protocol::logging_level_from_string(std::string(level));
+  if (!parsed.has_value()) {
+    return std::unexpected(
+        make_client_error(static_cast<int>(protocol::ErrorCode::InvalidRequest),
+                          "logging/setLevel level is invalid"));
+  }
   protocol::LoggingSetLevelParams params;
-  params.level = *protocol::logging_level_from_string(std::string(level));
+  params.level = *parsed;
   return set_level(params);
 }
 

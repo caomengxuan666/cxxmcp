@@ -135,6 +135,16 @@ class RecordingClientContractTransport final
           .id = request->id,
           .result = Json::object(),
       });
+    } else if (request->method ==
+                   std::string(mcp::protocol::LoggingSetLevelMethod) ||
+               request->method ==
+                   std::string(mcp::protocol::ResourcesSubscribeMethod) ||
+               request->method ==
+                   std::string(mcp::protocol::ResourcesUnsubscribeMethod)) {
+      received.push_back(mcp::protocol::JsonRpcResponse{
+          .id = request->id,
+          .result = Json::object(),
+      });
     } else if (request->method == std::string(mcp::protocol::ToolsListMethod)) {
       const bool has_cursor =
           request->params.is_object() && request->params.contains("cursor");
@@ -371,6 +381,16 @@ void test_sdk_peer_and_service_surface() {
           "client peer should accept role-generic transport");
   require(contract_client_peer.ping().has_value(),
           "client peer generic transport ping failed");
+  require(contract_client_peer.notify_initialized().has_value(),
+          "client peer generic transport initialized notification failed");
+  require(contract_client_peer.set_level("debug").has_value(),
+          "client peer generic transport set_level failed");
+  require(!contract_client_peer.set_level("not-a-level").has_value(),
+          "client peer generic transport should reject invalid logging level");
+  require(contract_client_peer.subscribe("file:///native.txt").has_value(),
+          "client peer generic transport subscribe failed");
+  require(contract_client_peer.unsubscribe("file:///native.txt").has_value(),
+          "client peer generic transport unsubscribe failed");
   const auto contract_tools = contract_client_peer.list_tools();
   require(contract_tools.has_value() && contract_tools->size() == 1 &&
               contract_tools->front().name == "native-echo",

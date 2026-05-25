@@ -165,26 +165,43 @@ class Peer<RoleClient> {
   }
 
   core::Result<core::Unit> notify_initialized() {
-    return client_.notify_initialized();
+    return raw_notification(protocol::make_notification(
+        std::string(protocol::InitializedMethod), protocol::Json::object()));
   }
 
   core::Result<core::Unit> notify_cancelled(protocol::RequestId request_id,
                                             std::string reason = {}) {
-    return client_.notify_cancelled(std::move(request_id), std::move(reason));
+    protocol::CancelledNotificationParams params;
+    params.request_id = std::move(request_id);
+    params.reason = std::move(reason);
+    return raw_notification(protocol::make_notification(
+        std::string(protocol::CancelledNotificationMethod),
+        protocol::cancelled_notification_params_to_json(params)));
   }
 
   core::Result<core::Unit> notify_progress(
       protocol::ProgressToken progress_token, double progress,
       std::optional<double> total = std::nullopt, std::string message = {}) {
-    return client_.notify_progress(std::move(progress_token), progress, total,
-                                   std::move(message));
+    protocol::ProgressNotificationParams params;
+    params.progress_token = std::move(progress_token);
+    params.progress = progress;
+    params.total = total;
+    params.message = std::move(message);
+    return raw_notification(protocol::make_notification(
+        std::string(protocol::ProgressNotificationMethod),
+        protocol::progress_notification_params_to_json(params)));
   }
 
   core::Result<core::Unit> notify_roots_list_changed() {
-    return client_.notify_roots_list_changed();
+    return raw_notification(protocol::make_notification(
+        std::string(protocol::RootsListChangedNotificationMethod),
+        protocol::Json::object()));
   }
 
-  core::Result<core::Unit> ping() { return client_.ping(); }
+  core::Result<core::Unit> ping() {
+    return request_unit(std::string(protocol::PingMethod),
+                        protocol::Json::object());
+  }
 
   std::vector<protocol::Root> list_roots() const {
     return client_.list_roots();
@@ -540,15 +557,30 @@ class Peer<RoleClient> {
   }
 
   core::Result<core::Unit> set_level(std::string_view level) {
-    return client_.set_level(level);
+    const auto parsed = protocol::logging_level_from_string(std::string(level));
+    if (!parsed.has_value()) {
+      return std::unexpected(errors::make(protocol::ErrorCode::InvalidRequest,
+                                          "logging/setLevel level is invalid",
+                                          {}, "protocol"));
+    }
+    protocol::LoggingSetLevelParams params;
+    params.level = *parsed;
+    return request_unit(std::string(protocol::LoggingSetLevelMethod),
+                        protocol::logging_set_level_params_to_json(params));
   }
 
   core::Result<core::Unit> subscribe(std::string_view uri) {
-    return client_.subscribe(uri);
+    protocol::ResourcesSubscribeParams params;
+    params.uri = std::string(uri);
+    return request_unit(std::string(protocol::ResourcesSubscribeMethod),
+                        protocol::resources_subscribe_params_to_json(params));
   }
 
   core::Result<core::Unit> unsubscribe(std::string_view uri) {
-    return client_.unsubscribe(uri);
+    protocol::ResourcesUnsubscribeParams params;
+    params.uri = std::string(uri);
+    return request_unit(std::string(protocol::ResourcesUnsubscribeMethod),
+                        protocol::resources_unsubscribe_params_to_json(params));
   }
 
   core::Result<protocol::Json> raw_request(
@@ -879,6 +911,9 @@ class Peer<RoleClient> {
 
   core::Result<core::Unit> raw_notification(
       const protocol::JsonRpcNotification& notification) {
+    if (native_transport_) {
+      return native_transport_->send(protocol::JsonRpcMessage{notification});
+    }
     return client_.raw_notification(notification);
   }
 
@@ -933,6 +968,15 @@ class Peer<RoleClient> {
                                             protocol::Json params) {
     return raw_request(protocol::make_request(
         std::move(method), next_peer_request_id(), std::move(params)));
+  }
+
+  core::Result<core::Unit> request_unit(std::string method,
+                                        protocol::Json params) {
+    auto payload = request_json(std::move(method), std::move(params));
+    if (!payload) {
+      return std::unexpected(payload.error());
+    }
+    return core::Unit{};
   }
 
   static protocol::Json cursor_params(
