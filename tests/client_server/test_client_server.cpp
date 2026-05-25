@@ -1661,6 +1661,44 @@ void test_server_task_processor_timeout_and_retention() {
           "expired task error mismatch");
 }
 
+void test_task_processor_generic_operation() {
+  mcp::server::TaskOperationProcessor processor(
+      mcp::server::TaskOperationProcessorOptions{
+          .worker_count = 1,
+          .queue_size = 4,
+      });
+
+  const auto created = processor.submit_operation(
+      mcp::server::TaskOperationDescriptor{
+          .name = "generic.operation",
+          .task = mcp::protocol::TaskRequestParameters{.ttl = std::int64_t{60}},
+      },
+      [](const mcp::server::CancellationToken& cancellation)
+          -> mcp::core::Result<Json> {
+        require(!cancellation.cancelled(),
+                "generic operation should not start cancelled");
+        return Json{{"kind", "generic"}, {"ok", true}};
+      });
+  require(created.has_value(), "generic operation should create task");
+  require(std::holds_alternative<std::int64_t>(created->task.ttl),
+          "generic operation ttl missing");
+  require(std::get<std::int64_t>(created->task.ttl) == 60,
+          "generic operation ttl mismatch");
+
+  wait_until(
+      [&] {
+        const auto task = processor.get_task(
+            mcp::protocol::TaskGetParams{.task_id = created->task.task_id});
+        return task.has_value() &&
+               task->status == mcp::protocol::TaskStatus::Completed;
+      },
+      "generic operation should complete");
+  const auto result = processor.task_result(
+      mcp::protocol::TaskResultParams{.task_id = created->task.task_id});
+  require(result.has_value(), "generic operation result missing");
+  require(result->at("kind") == "generic", "generic operation result mismatch");
+}
+
 void test_ping_raw_request() {
   auto server = make_server();
   mcp::client::Client client(std::make_unique<LoopbackTransport>(server));
@@ -2941,6 +2979,8 @@ int main() {
        test_server_task_processor_failed_and_cancelled_tasks},
       {"server task processor timeout and retention",
        test_server_task_processor_timeout_and_retention},
+      {"task processor generic operation",
+       test_task_processor_generic_operation},
       {"ping raw request", test_ping_raw_request},
       {"server info accessors and ping", test_server_info_accessors_and_ping},
       {"initialize handshake shape", test_initialize_handshake_shape},

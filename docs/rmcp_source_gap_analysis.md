@@ -96,7 +96,7 @@ protocol
 | Request dispatch | typed request/response/notification enums | string method dispatch plus manual JSON conversion |
 | Bidirectional calls | `Peer` is first-class | partially supported, but not the core abstraction |
 | Timeout/cancellation | request handles and cancellation tokens | mostly ad hoc or transport-specific |
-| Task support | integrated task manager and handler methods | SDK server task processor now covers task-aware `tools/call`; remaining gaps are harder cancellation, TTL cleanup, and deeper operation-processor parity |
+| Task support | integrated task manager and handler methods | SDK server task processor now covers generic operations and task-aware `tools/call`; remaining gaps are harder cancellation and deeper result-transport parity |
 | Product runtime | outside SDK core | gateway/runtime concepts are prominent in the repository |
 
 This means the current C++ design has both product-friendly compatibility
@@ -300,6 +300,7 @@ Covered by current tree:
 - tool-level `TaskSupport` / `ToolExecution` wire modeling and server-side
   required/forbidden/optional invocation validation
 - SDK server task processor for `tools/call` requests with `task` parameters
+- generic SDK server `submit_operation` path for non-tool task operations
 - task-aware `tools/call` returns `CreateTaskResult` and executes the tool in
   the background
 - built-in server fallback handlers for `tasks/list`, `tasks/get`,
@@ -318,8 +319,7 @@ Still to close:
 
 - hard cancellation of already running C++ handlers; current behavior is a
   cooperative token and late-result suppression
-- richer operation result transport abstractions beyond tool-call JSON payloads
-- deeper parity with RMCP's operation processor model
+- richer typed operation result transports beyond JSON payload storage
 
 ### 7. Elicitation
 
@@ -454,6 +454,7 @@ Still to close:
 Current tree covers:
 
 - SDK server task operation processor
+- generic operation submission API
 - task-aware `tools/call` creation and background execution
 - built-in `tasks/list`, `tasks/get`, `tasks/result`, and `tasks/cancel`
   handling

@@ -40,6 +40,18 @@ struct TaskOperationProcessorOptions {
   std::size_t max_completed_tasks = 128;
 };
 
+/// @brief Metadata for a background operation managed as an MCP task.
+struct TaskOperationDescriptor {
+  /// Human-readable operation name used for diagnostics.
+  std::string name;
+  /// Optional task request metadata supplied by the peer.
+  std::optional<protocol::TaskRequestParameters> task;
+};
+
+/// @brief Callable executed by the task processor.
+using TaskOperationHandler =
+    std::function<core::Result<protocol::Json>(const CancellationToken&)>;
+
 /// @brief RMCP-style operation processor for server-side task execution.
 ///
 /// The processor keeps task state in SDK/server, executes requested tool calls
@@ -54,6 +66,10 @@ class TaskOperationProcessor {
 
   /// @brief Stops accepting background work and waits for workers to finish.
   void stop() noexcept;
+
+  /// @brief Submit a generic background operation.
+  core::Result<protocol::CreateTaskResult> submit_operation(
+      TaskOperationDescriptor descriptor, TaskOperationHandler operation);
 
   /// @brief Submit a `tools/call` request for background execution.
   core::Result<protocol::CreateTaskResult> submit_tool_call(

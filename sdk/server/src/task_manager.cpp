@@ -5,6 +5,7 @@
 #include <algorithm>
 #include <chrono>
 #include <ctime>
+#include <exception>
 #include <iomanip>
 #include <sstream>
 #include <utility>
@@ -168,23 +169,28 @@ void TaskOperationProcessor::finish_task(std::string task_id,
 }
 
 core::Result<protocol::CreateTaskResult>
-TaskOperationProcessor::submit_tool_call(const ToolRegistry& tools,
-                                         protocol::ToolCall call,
-                                         const SessionContext& context) {
+TaskOperationProcessor::submit_operation(TaskOperationDescriptor descriptor,
+                                         TaskOperationHandler operation) {
+  if (!operation) {
+    return std::unexpected(make_task_error(
+        protocol::ErrorCode::InvalidRequest,
+        "task operation handler must be callable", descriptor.name));
+  }
+
   protocol::Task task;
   task.status = protocol::TaskStatus::Working;
   task.created_at = now_timestamp();
   task.last_updated_at = task.created_at;
   task.poll_interval = options_.poll_interval;
   std::optional<std::chrono::seconds> timeout = options_.default_timeout;
-  if (call.task.has_value() && call.task->ttl.has_value()) {
-    if (*call.task->ttl < 0) {
+  if (descriptor.task.has_value() && descriptor.task->ttl.has_value()) {
+    if (*descriptor.task->ttl < 0) {
       return std::unexpected(
           make_task_error(protocol::ErrorCode::InvalidRequest,
-                          "task ttl must be non-negative", call.name));
+                          "task ttl must be non-negative", descriptor.name));
     }
-    task.ttl = *call.task->ttl;
-    timeout = std::chrono::seconds(*call.task->ttl);
+    task.ttl = *descriptor.task->ttl;
+    timeout = std::chrono::seconds(*descriptor.task->ttl);
   } else {
     task.ttl = options_.default_timeout.count();
   }
@@ -210,16 +216,22 @@ TaskOperationProcessor::submit_tool_call(const ToolRegistry& tools,
     const auto* record = find_task_locked(task_id);
     return record == nullptr ? CancellationToken{} : record->cancellation;
   }();
-  const auto queued =
-      executor_.enqueue([this, &tools, call = std::move(call), context, task_id,
-                         cancellation]() mutable {
-        auto result = tools.call(std::move(call), context, cancellation);
-        if (!result) {
-          finish_task(std::move(task_id), std::unexpected(result.error()));
-          return;
-        }
-        finish_task(std::move(task_id), protocol::tool_result_to_json(*result));
-      });
+  const auto queued = executor_.enqueue([this, operation = std::move(operation),
+                                         task_id, cancellation]() mutable {
+    try {
+      auto outcome = operation(cancellation);
+      finish_task(task_id, std::move(outcome));
+    } catch (const std::exception& exception) {
+      finish_task(task_id,
+                  std::unexpected(make_task_error(
+                      protocol::ErrorCode::InternalError,
+                      "task operation threw an exception", exception.what())));
+    } catch (...) {
+      finish_task(task_id, std::unexpected(make_task_error(
+                               protocol::ErrorCode::InternalError,
+                               "task operation threw an unknown exception")));
+    }
+  });
   if (!queued) {
     std::lock_guard<std::mutex> lock(mutex_);
     tasks_.erase(task.task_id);
@@ -229,6 +241,26 @@ TaskOperationProcessor::submit_tool_call(const ToolRegistry& tools,
   }
 
   return protocol::CreateTaskResult{.task = std::move(task)};
+}
+
+core::Result<protocol::CreateTaskResult>
+TaskOperationProcessor::submit_tool_call(const ToolRegistry& tools,
+                                         protocol::ToolCall call,
+                                         const SessionContext& context) {
+  TaskOperationDescriptor descriptor;
+  descriptor.name = call.name;
+  descriptor.task = call.task;
+  return submit_operation(
+      std::move(descriptor),
+      [&tools, call = std::move(call),
+       context](const CancellationToken& cancellation) mutable
+          -> core::Result<protocol::Json> {
+        auto result = tools.call(std::move(call), context, cancellation);
+        if (!result) {
+          return std::unexpected(result.error());
+        }
+        return protocol::tool_result_to_json(*result);
+      });
 }
 
 core::Result<protocol::TaskListResult> TaskOperationProcessor::list_tasks(
