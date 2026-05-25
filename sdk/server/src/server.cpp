@@ -2,6 +2,7 @@
 
 #include "cxxmcp/server/server.hpp"
 
+#include <algorithm>
 #include <exception>
 #include <memory>
 #include <optional>
@@ -91,7 +92,7 @@ std::string request_cancellation_key(const protocol::RequestId& request_id) {
 }
 
 core::Result<core::Unit> update_resource_subscription(
-    std::unordered_map<const Transport*, std::unordered_set<std::string>>&
+    std::unordered_map<Transport*, std::unordered_set<std::string>>&
         subscriptions,
     const SessionContext& context, std::string_view uri, bool subscribed) {
   if (!context.transport) {
@@ -740,6 +741,15 @@ core::Result<core::Unit> Server::broadcast_notification(
       return std::unexpected(sent.error());
     }
   }
+  for (auto* transport : session_transports_) {
+    if (transport == nullptr) {
+      continue;
+    }
+    const auto sent = transport->send_notification(notification);
+    if (!sent) {
+      return std::unexpected(sent.error());
+    }
+  }
   return core::Unit{};
 }
 
@@ -808,21 +818,16 @@ core::Result<core::Unit> Server::notify_resource_subscribers(
     std::string_view uri, const protocol::JsonRpcNotification& notification) {
   std::vector<Transport*> recipients;
   bool has_any_subscription = false;
+  const std::string subscribed_uri(uri);
   {
     std::lock_guard lock(*subscriptions_mutex_);
     has_any_subscription = !resource_subscriptions_.empty();
-    for (auto& transport : transports_) {
-      if (!transport) {
+    for (const auto& [transport, uris] : resource_subscriptions_) {
+      if (transport == nullptr) {
         continue;
       }
-      const auto subscription_it =
-          resource_subscriptions_.find(transport.get());
-      if (subscription_it == resource_subscriptions_.end()) {
-        continue;
-      }
-      if (subscription_it->second.find(std::string(uri)) !=
-          subscription_it->second.end()) {
-        recipients.push_back(transport.get());
+      if (uris.find(subscribed_uri) != uris.end()) {
+        recipients.push_back(transport);
       }
     }
   }
@@ -878,6 +883,14 @@ core::Result<core::Unit> Server::add_transport(
   }
 
   transports_.push_back(std::move(transport));
+  return core::Unit{};
+}
+
+core::Result<core::Unit> Server::add_session_transport(Transport& transport) {
+  if (std::find(session_transports_.begin(), session_transports_.end(),
+                &transport) == session_transports_.end()) {
+    session_transports_.push_back(&transport);
+  }
   return core::Unit{};
 }
 

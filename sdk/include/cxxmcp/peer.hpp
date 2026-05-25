@@ -5,16 +5,19 @@
 /// @file
 /// @brief Role-aware peer facades for MCP client and server SDK users.
 ///
-/// Peer<RoleClient> and Peer<RoleServer> are SDK-facing facades over the
-/// existing client and server implementations. They expose a role-generic
-/// message dispatch loop so Transport<Role> can be the public service boundary
-/// while the concrete classes continue to provide protocol behavior.
+/// Peer<RoleClient> and Peer<RoleServer> are the SDK-facing MCP execution
+/// boundary. They expose role-generic message dispatch loops so
+/// Transport<Role> can be the public service boundary while concrete Client and
+/// Server types remain lower-level convenience APIs.
 
 #include <memory>
+#include <mutex>
 #include <optional>
 #include <string_view>
+#include <thread>
 #include <utility>
 #include <variant>
+#include <vector>
 
 #include "cxxmcp/cancellation.hpp"
 #include "cxxmcp/client/client.hpp"
@@ -25,6 +28,7 @@
 #include "cxxmcp/roles.hpp"
 #include "cxxmcp/server/peer.hpp"
 #include "cxxmcp/server/server.hpp"
+#include "cxxmcp/server/transport_adapter.hpp"
 #include "cxxmcp/server/transport_adapter_fwd.hpp"
 #include "cxxmcp/transport/transport.hpp"
 
@@ -66,6 +70,15 @@ inline core::Result<core::Unit> serve_transport_loop(
     }
   }
   return core::Unit{};
+}
+
+inline void keep_first_service_error(std::optional<core::Error>& first_error,
+                                     std::mutex& mutex,
+                                     core::Error error) noexcept {
+  std::lock_guard lock(mutex);
+  if (!first_error.has_value()) {
+    first_error = std::move(error);
+  }
 }
 
 }  // namespace detail
@@ -610,13 +623,72 @@ class Peer<RoleServer> {
   /// @brief Adds an owned role-generic server transport.
   core::Result<core::Unit> add_transport(
       std::unique_ptr<transport::ServerTransport> transport) {
-    return server_->add_transport(
-        server::make_contract_transport_adapter(std::move(transport)));
+    if (!transport) {
+      return std::unexpected(detail::peer_dispatch_error(
+          "server peer transport must not be null"));
+    }
+    native_transports_.push_back(std::move(transport));
+    native_context_transports_.push_back(
+        std::make_unique<server::ContractTransportAdapter>(
+            *native_transports_.back()));
+    const auto attached =
+        server_->add_session_transport(*native_context_transports_.back());
+    if (!attached) {
+      native_context_transports_.pop_back();
+      native_transports_.pop_back();
+      return std::unexpected(attached.error());
+    }
+    return core::Unit{};
   }
 
-  core::Result<core::Unit> start() { return server_->start(); }
+  core::Result<core::Unit> start(CancellationToken cancellation = {}) {
+    if (native_transports_.empty()) {
+      return server_->start();
+    }
 
-  void stop() noexcept { server_->stop(); }
+    std::vector<std::thread> workers;
+    workers.reserve(native_transports_.size());
+    std::mutex error_mutex;
+    std::optional<core::Error> first_error;
+
+    for (std::size_t index = 0; index < native_transports_.size(); ++index) {
+      auto* transport_ptr = native_transports_[index].get();
+      auto* context_transport_ptr = native_context_transports_[index].get();
+      workers.emplace_back([this, transport_ptr, context_transport_ptr,
+                            cancellation, &error_mutex,
+                            &first_error]() noexcept {
+        server::SessionContext context;
+        context.remote_address = std::string(transport_ptr->name());
+        context.transport = context_transport_ptr;
+        const auto served =
+            serve_transport(*transport_ptr, context, cancellation);
+        if (!served) {
+          detail::keep_first_service_error(first_error, error_mutex,
+                                           served.error());
+        }
+      });
+    }
+
+    for (auto& worker : workers) {
+      if (worker.joinable()) {
+        worker.join();
+      }
+    }
+
+    if (first_error.has_value()) {
+      return std::unexpected(*first_error);
+    }
+    return core::Unit{};
+  }
+
+  void stop() noexcept {
+    for (auto& transport : native_transports_) {
+      if (transport) {
+        (void)transport->close();
+      }
+    }
+    server_->stop();
+  }
 
   core::Result<core::Unit> notify_roots_list_changed() {
     return server_->notify_roots_list_changed();
@@ -703,6 +775,9 @@ class Peer<RoleServer> {
 
  private:
   std::unique_ptr<server::Server> server_;
+  std::vector<std::unique_ptr<transport::ServerTransport>> native_transports_;
+  std::vector<std::unique_ptr<server::ContractTransportAdapter>>
+      native_context_transports_;
 };
 
 using ClientPeer = Peer<RoleClient>;

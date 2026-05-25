@@ -317,6 +317,10 @@ void test_sdk_peer_and_service_surface() {
   require(server_peer.add_transport(std::move(server_service_transport))
               .has_value(),
           "server peer service transport should be accepted");
+  require(server_peer.notify_tool_list_changed().has_value(),
+          "server peer should notify role-generic transports");
+  require(!server_service_transport_ptr->sent.empty(),
+          "role-generic server transport should receive server notifications");
 
   auto running_server = mcp::serve(std::move(server_peer));
   require(running_server.has_value(), "server service should start");

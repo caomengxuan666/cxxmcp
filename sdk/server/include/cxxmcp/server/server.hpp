@@ -538,6 +538,14 @@ class Server {
   /// null.
   core::Result<core::Unit> add_transport(std::unique_ptr<Transport> transport);
 
+  /// @brief Registers a borrowed session transport for outbound server events.
+  ///
+  /// The server does not own, start, or stop this transport. Peer/Service
+  /// uses this low-level hook to keep server-initiated notifications and
+  /// resource subscription routing working when the receive loop is driven by a
+  /// role-generic transport.
+  core::Result<core::Unit> add_session_transport(Transport& transport);
+
   /// @brief Installs an authentication provider used by supported transports.
   void set_auth_provider(std::unique_ptr<AuthProvider> auth_provider);
 
@@ -689,8 +697,9 @@ class Server {
   ListChangedHandler prompt_list_changed_handler_;
   ListChangedHandler resource_list_changed_handler_;
   ResourceUpdatedHandler resource_updated_handler_;
-  std::unordered_map<const Transport*, std::unordered_set<std::string>>
+  std::unordered_map<Transport*, std::unordered_set<std::string>>
       resource_subscriptions_;
+  std::vector<Transport*> session_transports_;
   std::shared_ptr<std::mutex> subscriptions_mutex_ =
       std::make_shared<std::mutex>();
 

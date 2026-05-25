@@ -11,11 +11,11 @@
 /// Lifecycle contract:
 /// - serve(peer) transfers peer ownership into a RunningService.
 /// - Server services own a background service loop that calls
-///   ServerPeer::start(), or ServerPeer::serve_transport() when constructed
-///   with a role-generic server transport. Client services do not create an
-///   additional universal receive loop because the current built-in client
-///   transports already drive inbound callbacks through the concrete Client
-///   transport model.
+///   ServerPeer::start(token), or ServerPeer::serve_transport() when
+///   constructed with a one-off role-generic server transport. Client services
+///   do not create an additional universal receive loop because the current
+///   built-in client transports already drive inbound callbacks through the
+///   concrete Client transport model.
 /// - close() and stop() are equivalent, idempotent, noexcept-safe shutdown
 ///   entry points. They cancel the service token, stop the underlying peer, and
 ///   unblock wait().
@@ -290,7 +290,7 @@ class RunningService<RoleServer> {
           const auto started =
               transport
                   ? peer->serve_transport(*transport, context, cancellation)
-                  : peer->start();
+                  : peer->start(cancellation);
           if (!started) {
             detail::finish_service(state, started.error());
           } else {

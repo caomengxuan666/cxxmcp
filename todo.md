@@ -34,6 +34,14 @@ turning the SDK surface into a gateway/runtime product.
 These are the release-blocking test slices that prove the remaining P0 work
 incrementally. Keep them concrete; do not replace them with broad claims.
 
+- Peer/service core:
+  - [x] `ServerPeer::add_transport(transport::ServerTransport)` keeps
+        role-generic transports on the peer boundary instead of adapting them
+        into owned concrete server transports.
+  - [x] `serve(ServerPeer)` drives peer-owned role-generic server transports
+        through `Peer<RoleServer>::serve_transport`.
+  - [x] Peer-owned role-generic server transports remain reachable for
+        server-initiated notifications and resource subscription routing.
 - Request lifecycle:
   - [x] Client peer timeout emits `notifications/cancelled`.
   - [x] Server-side client peer timeout emits `notifications/cancelled`.
