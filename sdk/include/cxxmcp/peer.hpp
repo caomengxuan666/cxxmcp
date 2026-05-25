@@ -433,129 +433,263 @@ class Peer<RoleClient> {
 
   RequestHandle<std::vector<protocol::ToolDefinition>> list_tools_async(
       RequestOptions options = {}) {
-    return client_.list_tools_async(std::move(options));
+    return request_async<std::vector<protocol::ToolDefinition>>(
+        std::string(protocol::ToolsListMethod), protocol::Json::object(),
+        [](const protocol::Json& payload)
+            -> core::Result<std::vector<protocol::ToolDefinition>> {
+          const auto result = protocol::tools_list_result_from_json(payload);
+          if (!result) {
+            return std::unexpected(result.error());
+          }
+          return result->tools;
+        },
+        std::move(options));
   }
 
   RequestHandle<std::vector<protocol::Prompt>> list_prompts_async(
       RequestOptions options = {}) {
-    return client_.list_prompts_async(std::move(options));
+    return request_async<std::vector<protocol::Prompt>>(
+        std::string(protocol::PromptsListMethod), protocol::Json::object(),
+        [](const protocol::Json& payload)
+            -> core::Result<std::vector<protocol::Prompt>> {
+          const auto result = protocol::prompts_list_result_from_json(payload);
+          if (!result) {
+            return std::unexpected(result.error());
+          }
+          return result->prompts;
+        },
+        std::move(options));
   }
 
   RequestHandle<std::vector<protocol::Resource>> list_resources_async(
       RequestOptions options = {}) {
-    return client_.list_resources_async(std::move(options));
+    return request_async<std::vector<protocol::Resource>>(
+        std::string(protocol::ResourcesListMethod), protocol::Json::object(),
+        [](const protocol::Json& payload)
+            -> core::Result<std::vector<protocol::Resource>> {
+          const auto result =
+              protocol::resources_list_result_from_json(payload);
+          if (!result) {
+            return std::unexpected(result.error());
+          }
+          return result->resources;
+        },
+        std::move(options));
   }
 
   RequestHandle<std::vector<protocol::ResourceTemplate>>
   list_resource_templates_async(RequestOptions options = {}) {
-    return client_.list_resource_templates_async(std::move(options));
+    return request_async<std::vector<protocol::ResourceTemplate>>(
+        std::string(protocol::ResourcesTemplatesListMethod),
+        protocol::Json::object(),
+        [](const protocol::Json& payload)
+            -> core::Result<std::vector<protocol::ResourceTemplate>> {
+          const auto result =
+              protocol::resource_templates_list_result_from_json(payload);
+          if (!result) {
+            return std::unexpected(result.error());
+          }
+          return result->resource_templates;
+        },
+        std::move(options));
   }
 
   RequestHandle<protocol::ToolResult> call_tool_async(
       const protocol::ToolCall& call, RequestOptions options = {}) {
-    return client_.call_tool_async(call, std::move(options));
+    return request_async<protocol::ToolResult>(
+        std::string(protocol::ToolsCallMethod),
+        protocol::tool_call_to_json(call),
+        [](const protocol::Json& payload) {
+          return protocol::tool_result_from_json(payload);
+        },
+        std::move(options));
   }
 
   RequestHandle<protocol::ToolResult> call_tool_async(
       std::string_view name,
       const protocol::Json& arguments = protocol::Json::object(),
       RequestOptions options = {}) {
-    return client_.call_tool_async(name, arguments, std::move(options));
+    protocol::ToolCall call;
+    call.name = std::string(name);
+    call.arguments = arguments;
+    return call_tool_async(call, std::move(options));
   }
 
   RequestHandle<protocol::CreateTaskResult> call_tool_task_async(
       const protocol::ToolCall& call, RequestOptions options = {}) {
-    return client_.call_tool_task_async(call, std::move(options));
+    if (!call.task.has_value()) {
+      return RequestHandle<protocol::CreateTaskResult>::ready(
+          next_peer_request_id(),
+          std::unexpected(
+              errors::make(protocol::ErrorCode::InvalidRequest,
+                           "task-aware tool call requires task parameters", {},
+                           "protocol")));
+    }
+
+    return request_async<protocol::CreateTaskResult>(
+        std::string(protocol::ToolsCallMethod),
+        protocol::tool_call_to_json(call),
+        [](const protocol::Json& payload) {
+          return protocol::create_task_result_from_json(payload);
+        },
+        std::move(options));
   }
 
   RequestHandle<protocol::PromptsGetResult> get_prompt_async(
       const protocol::PromptsGetParams& params, RequestOptions options = {}) {
-    return client_.get_prompt_async(params, std::move(options));
+    return request_async<protocol::PromptsGetResult>(
+        std::string(protocol::PromptsGetMethod),
+        protocol::prompts_get_params_to_json(params),
+        [](const protocol::Json& payload) {
+          return protocol::prompts_get_result_from_json(payload);
+        },
+        std::move(options));
   }
 
   RequestHandle<protocol::PromptsGetResult> get_prompt_async(
       std::string_view name,
       const protocol::Json& arguments = protocol::Json::object(),
       RequestOptions options = {}) {
-    return client_.get_prompt_async(name, arguments, std::move(options));
+    protocol::PromptsGetParams params;
+    params.name = std::string(name);
+    params.arguments = arguments;
+    return get_prompt_async(params, std::move(options));
   }
 
   RequestHandle<protocol::ResourcesReadResult> read_resource_async(
       const protocol::ResourcesReadParams& params,
       RequestOptions options = {}) {
-    return client_.read_resource_async(params, std::move(options));
+    return request_async<protocol::ResourcesReadResult>(
+        std::string(protocol::ResourcesReadMethod),
+        protocol::resources_read_params_to_json(params),
+        [](const protocol::Json& payload) {
+          return protocol::resources_read_result_from_json(payload);
+        },
+        std::move(options));
   }
 
   RequestHandle<protocol::ResourcesReadResult> read_resource_async(
       std::string_view uri, RequestOptions options = {}) {
-    return client_.read_resource_async(uri, std::move(options));
+    return read_resource_async(protocol::ResourcesReadParams{std::string(uri)},
+                               std::move(options));
   }
 
   RequestHandle<protocol::CompleteResult> complete_async(
       const protocol::CompleteParams& request, RequestOptions options = {}) {
-    return client_.complete_async(request, std::move(options));
+    return request_async<protocol::CompleteResult>(
+        std::string(protocol::CompletionCompleteMethod),
+        protocol::complete_params_to_json(request),
+        [](const protocol::Json& payload) {
+          return protocol::complete_result_from_json(payload);
+        },
+        std::move(options));
   }
 
   RequestHandle<protocol::Json> complete_async(const protocol::Json& request,
                                                RequestOptions options = {}) {
-    return client_.complete_async(request, std::move(options));
+    return request_async(std::string(protocol::CompletionCompleteMethod),
+                         request, std::move(options));
   }
 
   RequestHandle<protocol::CreateMessageResult> create_message_async(
       const protocol::CreateMessageParams& request,
       RequestOptions options = {}) {
-    return client_.create_message_async(request, std::move(options));
+    return request_async<protocol::CreateMessageResult>(
+        std::string(protocol::SamplingCreateMessageMethod),
+        protocol::create_message_params_to_json(request),
+        [](const protocol::Json& payload) {
+          return protocol::create_message_result_from_json(payload);
+        },
+        std::move(options));
   }
 
   RequestHandle<protocol::Json> create_message_async(
       const protocol::Json& request, RequestOptions options = {}) {
-    return client_.create_message_async(request, std::move(options));
+    return request_async(std::string(protocol::SamplingCreateMessageMethod),
+                         request, std::move(options));
   }
 
   RequestHandle<protocol::CreateElicitationResult> create_elicitation_async(
       const protocol::CreateElicitationRequestParam& request,
       RequestOptions options = {}) {
-    return client_.create_elicitation_async(request, std::move(options));
+    return request_async<protocol::CreateElicitationResult>(
+        std::string(protocol::ElicitationCreateMethod),
+        protocol::create_elicitation_request_param_to_json(request),
+        [](const protocol::Json& payload) {
+          return protocol::create_elicitation_result_from_json(payload);
+        },
+        std::move(options));
   }
 
   RequestHandle<protocol::Json> create_elicitation_async(
       const protocol::Json& request, RequestOptions options = {}) {
-    return client_.create_elicitation_async(request, std::move(options));
+    return request_async(std::string(protocol::ElicitationCreateMethod),
+                         request, std::move(options));
   }
 
   RequestHandle<std::vector<protocol::Task>> list_tasks_async(
       RequestOptions options = {}) {
-    return client_.list_tasks_async(std::move(options));
+    return request_async<std::vector<protocol::Task>>(
+        std::string(protocol::TasksListMethod), protocol::Json::object(),
+        [](const protocol::Json& payload)
+            -> core::Result<std::vector<protocol::Task>> {
+          const auto result = protocol::task_list_result_from_json(payload);
+          if (!result) {
+            return std::unexpected(result.error());
+          }
+          return result->tasks;
+        },
+        std::move(options));
   }
 
   RequestHandle<protocol::Task> get_task_async(
       const protocol::TaskGetParams& request, RequestOptions options = {}) {
-    return client_.get_task_async(request, std::move(options));
+    return request_async<protocol::Task>(
+        std::string(protocol::TasksGetMethod),
+        protocol::task_get_params_to_json(request),
+        [](const protocol::Json& payload) {
+          return protocol::task_from_json(payload);
+        },
+        std::move(options));
   }
 
   RequestHandle<protocol::Task> get_task_async(std::string_view task_id,
                                                RequestOptions options = {}) {
-    return client_.get_task_async(task_id, std::move(options));
+    protocol::TaskGetParams params;
+    params.task_id = std::string(task_id);
+    return get_task_async(params, std::move(options));
   }
 
   RequestHandle<protocol::Task> cancel_task_async(
       const protocol::TaskCancelParams& request, RequestOptions options = {}) {
-    return client_.cancel_task_async(request, std::move(options));
+    return request_async<protocol::Task>(
+        std::string(protocol::TasksCancelMethod),
+        protocol::task_cancel_params_to_json(request),
+        [](const protocol::Json& payload) {
+          return protocol::task_from_json(payload);
+        },
+        std::move(options));
   }
 
   RequestHandle<protocol::Task> cancel_task_async(std::string_view task_id,
                                                   RequestOptions options = {}) {
-    return client_.cancel_task_async(task_id, std::move(options));
+    protocol::TaskCancelParams params;
+    params.task_id = std::string(task_id);
+    return cancel_task_async(params, std::move(options));
   }
 
   RequestHandle<protocol::Json> task_result_async(
       const protocol::TaskResultParams& request, RequestOptions options = {}) {
-    return client_.task_result_async(request, std::move(options));
+    return request_async(std::string(protocol::TasksResultMethod),
+                         protocol::task_result_params_to_json(request),
+                         std::move(options));
   }
 
   RequestHandle<protocol::Json> task_result_async(std::string_view task_id,
                                                   RequestOptions options = {}) {
-    return client_.task_result_async(task_id, std::move(options));
+    protocol::TaskResultParams params;
+    params.task_id = std::string(task_id);
+    return task_result_async(params, std::move(options));
   }
 
   core::Result<core::Unit> raw_notification(

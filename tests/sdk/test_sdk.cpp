@@ -135,6 +135,16 @@ class RecordingClientContractTransport final
           .id = request->id,
           .result = Json::object(),
       });
+    } else if (request->method == std::string(mcp::protocol::ToolsListMethod)) {
+      received.push_back(mcp::protocol::JsonRpcResponse{
+          .id = request->id,
+          .result =
+              Json{{"tools", Json::array({Json{
+                                 {"name", "native-echo"},
+                                 {"description", "Native peer echo"},
+                                 {"inputSchema", Json{{"type", "object"}}},
+                             }})}},
+      });
     }
     return mcp::core::Unit{};
   }
@@ -473,6 +483,11 @@ void test_client_peer_native_raw_request_dispatches_interleaved_messages() {
           "native client peer should answer interleaved request");
   require(roots_response->result.has_value(),
           "native client peer interleaved response should contain result");
+
+  auto tools = peer.list_tools_async().await_response();
+  require(tools.has_value(), "native client peer list_tools_async failed");
+  require(tools->size() == 1 && tools->front().name == "native-echo",
+          "native client peer list_tools_async result mismatch");
 }
 
 void test_request_handle_rejects_invalid_state() {

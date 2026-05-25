@@ -51,6 +51,8 @@ incrementally. Keep them concrete; do not replace them with broad claims.
   - [x] `ClientPeer::raw_request` and Peer-created raw/typed
         `request_async` handles use a peer-level native transport request loop
         when the peer was constructed from `transport::ClientTransport`.
+  - [x] Client peer typed async helpers reuse Peer-level `request_async`
+        instead of directly forwarding to concrete `client::Client` helpers.
   - [x] Client and server contract transport adapters cover duplicate response
         ids as stable unexpected-response failures.
 - Request lifecycle:
