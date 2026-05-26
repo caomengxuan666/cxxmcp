@@ -761,6 +761,33 @@ void test_server_capability_wire_shape() {
           "server experimental capability mismatch");
   require(json.at("extensions").at("vendor/feature").is_object(),
           "server extension capability mismatch");
+  const auto parsed_capabilities =
+      mcp::protocol::server_capabilities_from_json(json);
+  require(parsed_capabilities.has_value(), "server capabilities should parse");
+  require(parsed_capabilities->tools.enabled,
+          "parsed server tools presence mismatch");
+  require(parsed_capabilities->tools.list_changed,
+          "parsed server tools listChanged mismatch");
+  require(parsed_capabilities->resources.enabled,
+          "parsed server resources presence mismatch");
+  require(parsed_capabilities->resources.subscribe,
+          "parsed server resources subscribe mismatch");
+  require(parsed_capabilities->prompts.enabled,
+          "parsed server prompts presence mismatch");
+  require(parsed_capabilities->prompts.list_changed,
+          "parsed server prompts listChanged mismatch");
+  require(parsed_capabilities->logging.enabled,
+          "parsed server logging presence mismatch");
+  require(parsed_capabilities->completions.enabled,
+          "parsed server completions presence mismatch");
+  require(parsed_capabilities->tasks.has_value(),
+          "parsed server tasks missing");
+  require(parsed_capabilities->tasks->tools_call,
+          "parsed server tools task mismatch");
+  require(parsed_capabilities->experimental->at("beta"),
+          "parsed server experimental mismatch");
+  require(parsed_capabilities->extensions.at("vendor/feature").is_object(),
+          "parsed server extensions mismatch");
 
   mcp::protocol::ServerCapabilities presence_capabilities;
   presence_capabilities.tools.enabled = true;
@@ -794,6 +821,18 @@ void test_server_capability_wire_shape() {
       mcp::protocol::server_capabilities_to_json(presence_capabilities);
   require(!invalid_extensions_json.contains("extensions"),
           "non-object server extensions should be omitted");
+  require(!mcp::protocol::server_capabilities_from_json(
+               Json{{"extensions", Json::array()}})
+               .has_value(),
+          "non-object server extensions should be rejected");
+  require(!mcp::protocol::server_capabilities_from_json(
+               Json{{"tools", Json::array()}})
+               .has_value(),
+          "non-object server feature capabilities should be rejected");
+  require(!mcp::protocol::server_capabilities_from_json(
+               Json{{"resources", Json{{"subscribe", "yes"}}}})
+               .has_value(),
+          "invalid server resource capability members should be rejected");
 }
 
 void test_capability_builders_match_wire_shape() {

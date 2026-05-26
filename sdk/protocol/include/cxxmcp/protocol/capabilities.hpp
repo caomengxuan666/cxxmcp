@@ -575,4 +575,96 @@ inline std::optional<ClientCapabilities> client_capabilities_from_json(
   return capabilities;
 }
 
+/// @brief Parses server capabilities from an initialize result.
+/// @param json JSON object from `initialize.result.capabilities`.
+/// @return Parsed capabilities, or nullopt if the top-level value is invalid.
+inline std::optional<ServerCapabilities> server_capabilities_from_json(
+    const Json& json) {
+  if (!json.is_object()) {
+    return std::nullopt;
+  }
+
+  ServerCapabilities capabilities;
+  if (json.contains("tools")) {
+    if (!json.at("tools").is_object()) {
+      return std::nullopt;
+    }
+    capabilities.tools.enabled = true;
+    const auto& tools = json.at("tools");
+    if (tools.contains("listChanged")) {
+      if (!tools.at("listChanged").is_boolean()) {
+        return std::nullopt;
+      }
+      capabilities.tools.list_changed = tools.at("listChanged").get<bool>();
+    }
+  }
+
+  if (json.contains("resources")) {
+    if (!json.at("resources").is_object()) {
+      return std::nullopt;
+    }
+    capabilities.resources.enabled = true;
+    const auto& resources = json.at("resources");
+    if (resources.contains("listChanged")) {
+      if (!resources.at("listChanged").is_boolean()) {
+        return std::nullopt;
+      }
+      capabilities.resources.list_changed =
+          resources.at("listChanged").get<bool>();
+    }
+    if (resources.contains("subscribe")) {
+      if (!resources.at("subscribe").is_boolean()) {
+        return std::nullopt;
+      }
+      capabilities.resources.subscribe = resources.at("subscribe").get<bool>();
+    }
+  }
+
+  if (json.contains("prompts")) {
+    if (!json.at("prompts").is_object()) {
+      return std::nullopt;
+    }
+    capabilities.prompts.enabled = true;
+    const auto& prompts = json.at("prompts");
+    if (prompts.contains("listChanged")) {
+      if (!prompts.at("listChanged").is_boolean()) {
+        return std::nullopt;
+      }
+      capabilities.prompts.list_changed = prompts.at("listChanged").get<bool>();
+    }
+  }
+
+  if (json.contains("logging")) {
+    if (!json.at("logging").is_object()) {
+      return std::nullopt;
+    }
+    capabilities.logging.enabled = true;
+  }
+  if (json.contains("completions")) {
+    if (!json.at("completions").is_object()) {
+      return std::nullopt;
+    }
+    capabilities.completions.enabled = true;
+  }
+  if (json.contains("tasks")) {
+    if (!json.at("tasks").is_object()) {
+      return std::nullopt;
+    }
+    capabilities.tasks = task_capabilities_from_json(json.at("tasks"));
+  }
+  if (json.contains("experimental")) {
+    if (!json.at("experimental").is_object()) {
+      return std::nullopt;
+    }
+    capabilities.experimental = json.at("experimental");
+  }
+  if (json.contains("extensions")) {
+    if (!json.at("extensions").is_object()) {
+      return std::nullopt;
+    }
+    capabilities.extensions = json.at("extensions");
+  }
+  return capabilities;
+}
+
 }  // namespace mcp::protocol

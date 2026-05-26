@@ -466,14 +466,14 @@ true:
 
 ## P1: Capabilities
 
-- [ ] Audit client capabilities against RMCP/spec.
-- [ ] Audit server capabilities against RMCP/spec.
-- [ ] Audit task capabilities against RMCP/spec.
-- [ ] Keep object-presence semantics for active capability families.
-- [ ] Preserve present-but-empty capability objects where meaningful.
-- [ ] Preserve experimental and extension bags.
-- [ ] Reject invalid non-object experimental/extension bags where appropriate.
-- [ ] Add tests for every capability serializer and parser.
+- [x] Audit client capabilities against RMCP/spec.
+- [x] Audit server capabilities against RMCP/spec.
+- [x] Audit task capabilities against RMCP/spec.
+- [x] Keep object-presence semantics for active capability families.
+- [x] Preserve present-but-empty capability objects where meaningful.
+- [x] Preserve experimental and extension bags.
+- [x] Reject invalid non-object experimental/extension bags where appropriate.
+- [x] Add tests for every capability serializer and parser.
 - [ ] Add tests for capability negotiation affecting helper behavior.
 - [ ] Gate roots helpers on roots capability.
 - [ ] Gate sampling helpers on sampling capability.
