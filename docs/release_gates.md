@@ -26,9 +26,11 @@ registered through `cxxmcp_mark_release_blocking()`.
 ## Source Style Gates
 
 - `source-style`: the release-gates workflow runs `scripts/format.ps1 -Check`
-  and `scripts/check-cpplint.ps1` on Ubuntu before release evidence is treated
-  as clean. clang-tidy is intentionally tracked separately because it depends on
-  a configured compile database and may need a narrower source scope.
+  `scripts/check-cpplint.ps1`, and
+  `scripts/check_protocol_model_coverage.py` on Ubuntu before release evidence
+  is treated as clean. clang-tidy is intentionally tracked separately because it
+  depends on a configured compile database and may need a narrower source
+  scope.
 
 ## Build Configuration Gates
 
@@ -40,6 +42,10 @@ registered through `cxxmcp_mark_release_blocking()`.
 
 ## Protocol, Transport, And Interop Gates
 
+- `check_protocol_model_coverage.py`: protocol headers must keep public
+  `*_from_json` and `*_to_json` helpers paired, with only documented internal
+  helper exceptions. This guards protocol model symmetry as new MCP families or
+  fields are added.
 - `protocol`: JSON-RPC and MCP protocol serialization, parsing, version policy,
   and typed model basics.
 - `transport_contract` and `transport_stdio_contract`: role-generic transport

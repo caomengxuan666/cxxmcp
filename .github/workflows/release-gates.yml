@@ -34,6 +34,9 @@ jobs:
         shell: pwsh
         run: pwsh -NoProfile -File scripts/check-cpplint.ps1
 
+      - name: Check protocol model coverage
+        run: python scripts/check_protocol_model_coverage.py --source .
+
   build-config-smoke:
     name: sdk-build-${{ matrix.build_type }}
     runs-on: ubuntu-latest

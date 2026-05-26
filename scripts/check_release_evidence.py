@@ -52,6 +52,7 @@ def check_source_tree(source: Path) -> None:
         "docs/request_lifecycle.md",
         "docs/sdk_peer_service_migration.md",
         "docs/Doxyfile",
+        "scripts/check_protocol_model_coverage.py",
         "templates/external_consumer/CMakeLists.txt",
         "templates/external_consumer/main.cpp",
         "templates/external_consumer/README.md",
@@ -111,6 +112,7 @@ def check_source_tree(source: Path) -> None:
     workflow = source / ".github/workflows/release-gates.yml"
     require_contains(workflow, "cxxmcp-release-evidence")
     require_contains(workflow, "if-no-files-found: error")
+    require_contains(workflow, "check_protocol_model_coverage.py")
     require_contains(workflow, "build-config-smoke")
     require_contains(workflow, "Release")
     require_contains(workflow, "typescript_sdk_reference=@modelcontextprotocol/sdk@1.29.0")

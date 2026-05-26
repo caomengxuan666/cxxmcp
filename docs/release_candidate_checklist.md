@@ -37,6 +37,8 @@ path review.
 ## Gate Review
 
 - [ ] `source-style` passed formatting and cpplint checks.
+- [ ] Protocol model coverage check passed for `*_from_json` / `*_to_json`
+      pairing.
 - [ ] `build-config-smoke` built the SDK Debug and Release configurations.
 - [ ] All release-blocking CTest labels passed on every advertised matrix leg.
 - [ ] `package_smoke` passed from installed output on every advertised matrix
