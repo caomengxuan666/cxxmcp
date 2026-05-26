@@ -647,48 +647,48 @@ true:
 
 ## P1: Documentation Bar
 
-- [ ] Keep one canonical "start here" SDK path.
-- [ ] Put `Peer` / `Service` examples before concrete `Client` / `Server`
+- [x] Keep one canonical "start here" SDK path.
+- [x] Put `Peer` / `Service` examples before concrete `Client` / `Server`
   examples.
-- [ ] Document which target to link for each use case.
-- [ ] Document which headers to include for each use case.
-- [ ] Document stable vs optional vs experimental features.
-- [ ] Document transport choices and recommended defaults.
-- [ ] Document Streamable HTTP as the default HTTP path.
-- [ ] Document legacy SSE as compatibility-only.
-- [ ] Document raw JSON-RPC escape hatches.
-- [ ] Document migration from old concrete APIs to peer/service APIs.
+- [x] Document which target to link for each use case.
+- [x] Document which headers to include for each use case.
+- [x] Document stable vs optional vs experimental features.
+- [x] Document transport choices and recommended defaults.
+- [x] Document Streamable HTTP as the default HTTP path.
+- [x] Document legacy SSE as compatibility-only.
+- [x] Document raw JSON-RPC escape hatches.
+- [x] Document migration from old concrete APIs to peer/service APIs.
 - [ ] Document timeout, cancellation, progress, and shutdown semantics.
-- [ ] Document task lifecycle and retention semantics.
-- [ ] Document elicitation lifecycle and capability requirements.
+- [x] Document task lifecycle and retention semantics.
+- [x] Document elicitation lifecycle and capability requirements.
 - [x] Document package consumption with `find_package(cxxmcp CONFIG REQUIRED)`.
-- [ ] Publish generated Doxygen docs for releases.
+- [x] Publish generated Doxygen docs for releases.
 - [ ] Keep README, README_zh, examples, Doxygen, and release notes in sync.
 - [ ] Add a minimal external consumer template.
 
 ## P1: CI And Release Gates
 
-- [ ] Add public CI for Windows/MSVC.
-- [ ] Add public CI for Linux/GCC.
-- [ ] Add public CI for Linux/Clang.
-- [ ] Add public CI for macOS/AppleClang.
+- [x] Add public CI for Windows/MSVC.
+- [x] Add public CI for Linux/GCC.
+- [x] Add public CI for Linux/Clang.
+- [x] Add public CI for macOS/AppleClang.
 - [ ] Run Debug and Release builds where practical.
-- [ ] Run Ninja and Visual Studio generators where practical.
-- [ ] Run package-smoke in CI for every supported platform.
-- [ ] Run protocol tests in CI.
-- [ ] Run client/server tests in CI.
-- [ ] Run stdio transport tests in CI.
-- [ ] Run process-stdio tests in CI.
-- [ ] Run HTTP transport tests in CI.
-- [ ] Run transport contract tests in CI.
-- [ ] Run transport adapter tests in CI.
-- [ ] Run RMCP/cross-SDK conformance tests in CI.
+- [x] Run Ninja and Visual Studio generators where practical.
+- [x] Run package-smoke in CI for every supported platform.
+- [x] Run protocol tests in CI.
+- [x] Run client/server tests in CI.
+- [x] Run stdio transport tests in CI.
+- [x] Run process-stdio tests in CI.
+- [x] Run HTTP transport tests in CI.
+- [x] Run transport contract tests in CI.
+- [x] Run transport adapter tests in CI.
+- [x] Run RMCP/cross-SDK conformance tests in CI.
 - [ ] Run formatting check in CI.
 - [ ] Run cpplint in CI.
 - [ ] Run clang-tidy in CI where practical.
-- [ ] Build generated docs in CI.
-- [ ] Keep all release-blocking tests documented.
-- [ ] Add a release checklist that fails if package-smoke or conformance is
+- [x] Build generated docs in CI.
+- [x] Keep all release-blocking tests documented.
+- [x] Add a release checklist that fails if package-smoke or conformance is
   skipped.
 
 ## P1: Release And Compatibility Process
