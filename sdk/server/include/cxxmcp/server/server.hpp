@@ -205,6 +205,7 @@ inline void apply_default_output_schema(protocol::ToolDefinition& definition) {
                 !std::is_same_v<std::decay_t<Result>, char*>) {
     if (definition.output_schema.empty()) {
       definition.output_schema = protocol::schema_for<Result>();
+      definition.output_schema_present = true;
     }
   }
 }
@@ -903,6 +904,7 @@ class TypedToolBuilder {
 
   TypedToolBuilder& output_schema(protocol::Json schema) {
     definition_.output_schema = std::move(schema);
+    definition_.output_schema_present = true;
     return *this;
   }
 

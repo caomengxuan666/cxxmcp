@@ -6,7 +6,6 @@
       "inputSchema": {
         "type": "object"
       },
-      "streaming": false,
       "annotations": {
         "category": "fixture"
       },

@@ -184,6 +184,8 @@ struct ToolDefinition {
   Json input_schema = Json::object();
   /// Optional JSON Schema object describing structured result content.
   Json output_schema = Json::object();
+  /// Whether output_schema was explicitly present on the wire or configured.
+  bool output_schema_present = false;
   /// Whether the tool may stream partial results outside a single response.
   bool streaming = false;
   /// Optional icon descriptors for client presentation.
@@ -235,6 +237,7 @@ class ToolDefinitionBuilder {
 
   ToolDefinitionBuilder& output_schema(Json schema) {
     definition_.output_schema = std::move(schema);
+    definition_.output_schema_present = true;
     return *this;
   }
 
@@ -541,12 +544,16 @@ inline Json tool_definition_to_json(const ToolDefinition& definition) {
     json["title"] = definition.title;
   }
   json["name"] = definition.name;
-  json["description"] = definition.description;
+  if (!definition.description.empty()) {
+    json["description"] = definition.description;
+  }
   json["inputSchema"] = definition.input_schema;
-  if (!definition.output_schema.empty()) {
+  if (definition.output_schema_present || !definition.output_schema.empty()) {
     json["outputSchema"] = definition.output_schema;
   }
-  json["streaming"] = definition.streaming;
+  if (definition.streaming) {
+    json["streaming"] = definition.streaming;
+  }
   if (!definition.icons.empty()) {
     json["icons"] = Json::array();
     for (const auto& icon : definition.icons) {
@@ -597,12 +604,19 @@ inline core::Result<ToolDefinition> tool_definition_from_json(
     definition.description = json.at("description").get<std::string>();
   }
 
-  if (json.contains("inputSchema")) {
-    definition.input_schema = json.at("inputSchema");
+  if (!json.contains("inputSchema") || !json.at("inputSchema").is_object()) {
+    return std::unexpected(
+        tool_json_error("tool definition requires object inputSchema"));
   }
+  definition.input_schema = json.at("inputSchema");
 
   if (json.contains("outputSchema")) {
+    if (!json.at("outputSchema").is_object()) {
+      return std::unexpected(
+          tool_json_error("tool definition outputSchema must be an object"));
+    }
     definition.output_schema = json.at("outputSchema");
+    definition.output_schema_present = true;
   }
 
   if (json.contains("streaming")) {

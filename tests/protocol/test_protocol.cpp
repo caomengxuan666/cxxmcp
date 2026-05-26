@@ -496,6 +496,8 @@ void test_tool_protocol_round_trips() {
           "tool title mismatch");
   require(parsed_list->tools.front().name == "echo", "tool name mismatch");
   require(parsed_list->tools.front().streaming, "tool streaming mismatch");
+  require(parsed_list->tools.front().output_schema_present,
+          "tool output schema presence mismatch");
   require(parsed_list->tools.front().output_schema.at("type") == "object",
           "tool output schema mismatch");
   require(parsed_list->tools.front().icons.size() == 1,
@@ -540,6 +542,31 @@ void test_tool_protocol_round_trips() {
               .at("execution")
               .empty(),
           "empty tool execution should serialize as an empty object");
+
+  const auto minimal_tool = mcp::protocol::tool_definition_from_json(
+      Json{{"name", "minimal"}, {"inputSchema", Json::object()}});
+  require(minimal_tool.has_value(), "minimal tool should parse");
+  const auto minimal_tool_json =
+      mcp::protocol::tool_definition_to_json(*minimal_tool);
+  require(!minimal_tool_json.contains("description"),
+          "minimal tool should omit absent description");
+  require(!minimal_tool_json.contains("streaming"),
+          "minimal tool should omit false streaming");
+  require(!minimal_tool_json.contains("outputSchema"),
+          "minimal tool should omit absent outputSchema");
+
+  const auto empty_output_schema_tool =
+      mcp::protocol::tool_definition_from_json(
+          Json{{"name", "empty-output"},
+               {"inputSchema", Json::object()},
+               {"outputSchema", Json::object()}});
+  require(empty_output_schema_tool.has_value(),
+          "tool with empty outputSchema should parse");
+  require(empty_output_schema_tool->output_schema_present,
+          "empty outputSchema presence should be preserved");
+  require(mcp::protocol::tool_definition_to_json(*empty_output_schema_tool)
+              .contains("outputSchema"),
+          "empty outputSchema should serialize when present");
 
   const mcp::protocol::ToolCall call{
       .name = "echo",
@@ -2742,6 +2769,9 @@ void test_protocol_required_fields_are_rejected() {
   require_parse_failure(mcp::protocol::tool_definition_from_json(
                             Json{{"description", "missing name"}}),
                         "tool definition without name should fail");
+  require_parse_failure(
+      mcp::protocol::tool_definition_from_json(Json{{"name", "missing-input"}}),
+      "tool definition without inputSchema should fail");
   require_parse_failure(mcp::protocol::tool_call_from_json(Json::object()),
                         "tools/call without name should fail");
   require_parse_failure(
@@ -2889,8 +2919,18 @@ void test_protocol_type_constraints_are_rejected() {
                             Json{{"name", 7}, {"inputSchema", Json::object()}}),
                         "tool definition non-string name should fail");
   require_parse_failure(mcp::protocol::tool_definition_from_json(
-                            Json{{"name", "tool"}, {"streaming", "yes"}}),
+                            Json{{"name", "tool"},
+                                 {"inputSchema", Json::object()},
+                                 {"streaming", "yes"}}),
                         "tool definition non-boolean streaming should fail");
+  require_parse_failure(mcp::protocol::tool_definition_from_json(Json{
+                            {"name", "tool"}, {"inputSchema", Json::array()}}),
+                        "tool definition non-object inputSchema should fail");
+  require_parse_failure(mcp::protocol::tool_definition_from_json(
+                            Json{{"name", "tool"},
+                                 {"inputSchema", Json::object()},
+                                 {"outputSchema", Json::array()}}),
+                        "tool definition non-object outputSchema should fail");
   require_parse_failure(mcp::protocol::tool_call_from_json(Json{
                             {"name", "tool"}, {"arguments", Json::array()}}),
                         "tools/call non-object arguments should fail");

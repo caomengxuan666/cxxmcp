@@ -481,6 +481,9 @@ true:
   metadata and omit empty no-param `params` members.
 - [x] Align initialize implementation metadata with RMCP `title`,
   `description`, `icons`, and `websiteUrl` fields.
+- [x] Tighten tool definition schema presence and optional field wire behavior:
+  required object `inputSchema`, explicit `outputSchema` presence, optional
+  `description`, and no default `streaming=false` emission.
 - [ ] Add negative parse tests for every required field and type constraint.
 - [x] Add cross-family required-field negative parse regression coverage for
   tools, prompts, resources, roots, completion, sampling, elicitation, and
