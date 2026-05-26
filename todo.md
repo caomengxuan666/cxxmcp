@@ -637,7 +637,7 @@ true:
   unless placed in structured debug data.
 - [x] Add tests for every public error family.
 - [x] Add tests that errors serialize as valid JSON-RPC error responses.
-- [ ] Add tests that raw handler failures are translated and not thrown through
+- [x] Add tests that raw handler failures are translated and not thrown through
   public APIs.
 
 ## P1: Documentation Bar

@@ -1782,6 +1782,50 @@ void test_public_dispatch_boundaries_translate_handler_exceptions() {
   require(server_response->error->data.has_value() &&
               *server_response->error->data == "server boom",
           "server thrown handler error detail mismatch");
+
+  mcp::server::Server raw_server(mcp::server::ServerOptions{});
+  raw_server.set_raw_request_handler(
+      [](const mcp::protocol::JsonRpcRequest&,
+         const mcp::server::SessionContext&)
+          -> std::optional<mcp::protocol::JsonRpcResponse> {
+        throw std::runtime_error("raw server boom");
+      });
+  const auto raw_server_response = raw_server.handle_request(
+      mcp::protocol::JsonRpcRequest{.method = "custom/raw-server",
+                                    .params = Json::object(),
+                                    .id = std::int64_t{503}},
+      mcp::server::SessionContext{});
+  require(raw_server_response.has_value(),
+          "raw server thrown handler should become an error response");
+  require(raw_server_response->error.has_value(),
+          "raw server thrown handler response should contain error");
+  require(raw_server_response->error->message == "handler failed",
+          "raw server thrown handler error message mismatch");
+  require(raw_server_response->error->data.has_value() &&
+              *raw_server_response->error->data == "raw server boom",
+          "raw server thrown handler error detail mismatch");
+
+  mcp::ServerPeer raw_peer;
+  raw_peer.set_raw_request_handler(
+      [](const mcp::protocol::JsonRpcRequest&,
+         const mcp::server::SessionContext&)
+          -> std::optional<mcp::protocol::JsonRpcResponse> {
+        throw std::runtime_error("raw peer boom");
+      });
+  const auto raw_peer_response = raw_peer.handle_request(
+      mcp::protocol::JsonRpcRequest{.method = "custom/raw-peer",
+                                    .params = Json::object(),
+                                    .id = std::int64_t{504}},
+      mcp::server::SessionContext{});
+  require(raw_peer_response.has_value(),
+          "raw peer thrown handler should become an error response");
+  require(raw_peer_response->error.has_value(),
+          "raw peer thrown handler response should contain error");
+  require(raw_peer_response->error->message == "handler failed",
+          "raw peer thrown handler error message mismatch");
+  require(raw_peer_response->error->data.has_value() &&
+              *raw_peer_response->error->data == "raw peer boom",
+          "raw peer thrown handler error detail mismatch");
 }
 
 void test_request_handle_latches_terminal_timeout() {
