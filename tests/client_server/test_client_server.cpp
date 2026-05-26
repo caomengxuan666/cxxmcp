@@ -4626,12 +4626,35 @@ void test_client_elicitation_defaults_to_decline_without_handler() {
               static_cast<int>(mcp::protocol::ErrorCode::InvalidParams),
           "invalid elicitation params error code mismatch");
 
+  mcp::client::Client validating_client(std::make_unique<RecordingTransport>());
+  validating_client.on_create_elicitation_request(
+      [](const mcp::protocol::CreateElicitationRequestParam&)
+          -> mcp::core::Result<mcp::protocol::CreateElicitationResult> {
+        mcp::protocol::CreateElicitationResult result;
+        result.action = mcp::protocol::ElicitationAction::Accept;
+        result.content = Json{{"name", 7}};
+        return result;
+      });
+  const auto invalid_result =
+      validating_client.handle_request(mcp::protocol::JsonRpcRequest{
+          .method = std::string(mcp::protocol::ElicitationCreateMethod),
+          .params = form_request,
+          .id = std::int64_t{32},
+      });
+  require(invalid_result.has_value(),
+          "invalid elicitation result should produce a response");
+  require(invalid_result->error.has_value(),
+          "invalid elicitation result should fail");
+  require(invalid_result->error->code ==
+              static_cast<int>(mcp::protocol::ErrorCode::InternalError),
+          "invalid elicitation result error code mismatch");
+
   mcp::ClientPeer peer(std::make_unique<RecordingTransport>());
   const auto peer_message = peer.dispatch_message(
       mcp::protocol::JsonRpcMessage{mcp::protocol::JsonRpcRequest{
           .method = std::string(mcp::protocol::ElicitationCreateMethod),
           .params = form_request,
-          .id = std::int64_t{32},
+          .id = std::int64_t{33},
       }});
   require(peer_message.has_value(),
           "peer default elicitation decline dispatch failed");
@@ -4650,7 +4673,7 @@ void test_client_elicitation_defaults_to_decline_without_handler() {
       mcp::protocol::JsonRpcMessage{mcp::protocol::JsonRpcRequest{
           .method = std::string(mcp::protocol::ElicitationCreateMethod),
           .params = Json{{"message", "choose"}},
-          .id = std::int64_t{33},
+          .id = std::int64_t{34},
       }});
   require(peer_invalid.has_value(),
           "peer invalid elicitation dispatch should produce response");
@@ -4665,6 +4688,35 @@ void test_client_elicitation_defaults_to_decline_without_handler() {
   require(peer_invalid_response->error->code ==
               static_cast<int>(mcp::protocol::ErrorCode::InvalidParams),
           "peer invalid elicitation params error code mismatch");
+
+  mcp::ClientPeer validating_peer(std::make_unique<RecordingTransport>());
+  validating_peer.on_create_elicitation_request(
+      [](const mcp::protocol::CreateElicitationRequestParam&)
+          -> mcp::core::Result<mcp::protocol::CreateElicitationResult> {
+        mcp::protocol::CreateElicitationResult result;
+        result.action = mcp::protocol::ElicitationAction::Accept;
+        result.content = Json{{"name", 7}};
+        return result;
+      });
+  const auto peer_invalid_result = validating_peer.dispatch_message(
+      mcp::protocol::JsonRpcMessage{mcp::protocol::JsonRpcRequest{
+          .method = std::string(mcp::protocol::ElicitationCreateMethod),
+          .params = form_request,
+          .id = std::int64_t{35},
+      }});
+  require(peer_invalid_result.has_value(),
+          "peer invalid elicitation result dispatch failed");
+  require(peer_invalid_result->has_value(),
+          "peer invalid elicitation result response missing");
+  const auto* peer_invalid_result_response =
+      std::get_if<mcp::protocol::JsonRpcResponse>(&**peer_invalid_result);
+  require(peer_invalid_result_response != nullptr,
+          "peer invalid elicitation result response type mismatch");
+  require(peer_invalid_result_response->error.has_value(),
+          "peer invalid elicitation result should fail");
+  require(peer_invalid_result_response->error->code ==
+              static_cast<int>(mcp::protocol::ErrorCode::InternalError),
+          "peer invalid elicitation result code mismatch");
 }
 
 void test_client_request_callbacks() {

@@ -116,6 +116,7 @@ protocol::ClientCapabilities default_client_capabilities(
   defaults.roots.list_changed = true;
   defaults.sampling.enabled = true;
   defaults.elicitation.form = true;
+  defaults.elicitation.form_schema_validation = true;
   defaults.elicitation.url = true;
   return defaults;
 }
@@ -1389,6 +1390,18 @@ core::Result<protocol::JsonRpcResponse> Client::handle_request(
     if (!result) {
       return make_error_response(request, result.error().code,
                                  result.error().message, result.error().detail);
+    }
+    const auto capabilities = default_client_capabilities(capabilities_);
+    if (params->mode == protocol::ElicitationMode::Form &&
+        capabilities.elicitation.form_schema_validation) {
+      const auto valid = protocol::validate_elicitation_result_content(
+          params->requested_schema, *result);
+      if (!valid) {
+        return make_error_response(
+            request, static_cast<int>(protocol::ErrorCode::InternalError),
+            "elicitation result failed schema validation",
+            valid.error().message);
+      }
     }
 
     return protocol::make_response(

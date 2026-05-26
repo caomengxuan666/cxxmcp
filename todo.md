@@ -614,7 +614,7 @@ true:
 - [x] Add optional JSON Schema validator integration.
 - [x] Validate tool input schemas where configured.
 - [x] Validate tool output schemas where configured.
-- [ ] Validate elicitation schemas where configured.
+- [x] Validate elicitation schemas where configured.
 - [ ] Keep low-boilerplate `App::Builder` helpers as convenience, not the only
   canonical API.
 - [ ] Add examples for typed registration, handler interfaces, and raw fallback

@@ -1627,6 +1627,20 @@ class Peer<RoleClient> {
       if (!result) {
         return native_error_response(request, result.error());
       }
+      const auto capabilities =
+          detail::default_peer_client_capabilities(client_capabilities_);
+      if (params->mode == protocol::ElicitationMode::Form &&
+          capabilities.elicitation.form_schema_validation) {
+        const auto valid = protocol::validate_elicitation_result_content(
+            params->requested_schema, *result);
+        if (!valid) {
+          return native_error_response(
+              request,
+              errors::make(protocol::ErrorCode::InternalError,
+                           "elicitation result failed schema validation",
+                           valid.error().message));
+        }
+      }
       return protocol::make_response(
           request.id, protocol::create_elicitation_result_to_json(*result));
     }
