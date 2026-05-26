@@ -1,15 +1,19 @@
 // Copyright (c) 2025 [caomengxuan666]
 
 #include <cstdint>
+#include <deque>
 #include <iostream>
 #include <memory>
+#include <optional>
 #include <stdexcept>
 #include <string>
 #include <string_view>
-#include <vector>
+#include <utility>
+#include <variant>
 
 #include "cxxmcp/peer.hpp"
 #include "cxxmcp/service.hpp"
+#include "cxxmcp/transport.hpp"
 
 namespace {
 
@@ -19,10 +23,39 @@ void require(bool condition, std::string_view message) {
   }
 }
 
-class LoopbackTransport final : public mcp::client::Transport {
+class LoopbackTransport final : public mcp::transport::ClientTransport {
  public:
-  mcp::core::Result<mcp::protocol::JsonRpcResponse> send(
-      const mcp::protocol::JsonRpcRequest& request) override {
+  std::string_view name() const noexcept override {
+    return "client-peer-loopback";
+  }
+
+  mcp::core::Result<mcp::core::Unit> send(TxMessage message) override {
+    if (const auto* request =
+            std::get_if<mcp::protocol::JsonRpcRequest>(&message)) {
+      received_.push_back(make_response(*request));
+    }
+    return mcp::core::Unit{};
+  }
+
+  mcp::core::Result<std::optional<RxMessage>> receive() override {
+    if (received_.empty()) {
+      return std::nullopt;
+    }
+    auto message = std::move(received_.front());
+    received_.pop_front();
+    return message;
+  }
+
+  mcp::core::Result<mcp::core::Unit> close() override {
+    stopped_ = true;
+    return mcp::core::Unit{};
+  }
+
+  bool stopped() const noexcept { return stopped_; }
+
+ private:
+  static mcp::protocol::JsonRpcResponse make_response(
+      const mcp::protocol::JsonRpcRequest& request) {
     if (request.method == "initialize") {
       return mcp::protocol::JsonRpcResponse{
           .id = request.id,
@@ -72,16 +105,7 @@ class LoopbackTransport final : public mcp::client::Transport {
     };
   }
 
-  mcp::core::Result<mcp::core::Unit> send_notification(
-      const mcp::protocol::JsonRpcNotification&) override {
-    return mcp::core::Unit{};
-  }
-
-  void stop() noexcept override { stopped_ = true; }
-
-  bool stopped() const noexcept { return stopped_; }
-
- private:
+  std::deque<RxMessage> received_;
   bool stopped_ = false;
 };
 
@@ -91,7 +115,7 @@ int main() {
   try {
     auto transport = std::make_unique<LoopbackTransport>();
     auto* transport_ptr = transport.get();
-    mcp::ClientPeer peer(mcp::client::Client(std::move(transport)));
+    mcp::ClientPeer peer(std::move(transport));
 
     auto running = mcp::serve(std::move(peer));
     require(running.has_value(), "client peer service failed to start");

@@ -1,4 +1,8 @@
 // Copyright (c) 2025 [caomengxuan666]
+//
+// Compatibility example: exercises concrete client/server loopback plumbing.
+// New SDK application examples should start from Peer/Service and role-generic
+// transports.
 
 #include <cstdint>
 #include <iostream>
@@ -58,7 +62,8 @@ int main() {
         mcp::server::App::builder()
             .name("cxxmcp-example-loopback-server")
             .version("1.0.0")
-            .instructions("Example server used by the client facade example.")
+            .instructions(
+                "Example server used by the client compatibility example.")
             .tool<mcp::protocol::Json, mcp::protocol::Json>(
                 "echo",
                 [](const mcp::protocol::Json& input) {
@@ -153,7 +158,6 @@ int main() {
     auto transport = std::make_unique<LoopbackTransport>(**server);
     auto* transport_ptr = transport.get();
     mcp::ClientPeer peer(mcp::client::Client(std::move(transport)));
-    auto& client = peer.client();
 
     std::size_t logging_messages = 0;
     std::size_t tool_notifications = 0;
@@ -163,19 +167,19 @@ int main() {
     std::vector<std::string> updated_uris;
     std::vector<std::string> raw_methods;
 
-    client.on_logging_message(
+    peer.on_logging_message(
         [&](std::string_view level, std::string_view message) {
           ++logging_messages;
           require(!level.empty(), "logging level should be populated");
           require(!message.empty(), "logging message should be populated");
         });
-    client.on_tool_list_changed([&] { ++tool_notifications; });
-    client.on_prompt_list_changed([&] { ++prompt_notifications; });
-    client.on_resource_list_changed([&] { ++resource_notifications; });
-    client.on_resource_updated(
+    peer.on_tool_list_changed([&] { ++tool_notifications; });
+    peer.on_prompt_list_changed([&] { ++prompt_notifications; });
+    peer.on_resource_list_changed([&] { ++resource_notifications; });
+    peer.on_resource_updated(
         [&](const std::string& uri) { updated_uris.push_back(uri); });
-    client.on_roots_list_changed([&] { ++root_notifications; });
-    client.on_raw_notification(
+    peer.on_roots_list_changed([&] { ++root_notifications; });
+    peer.on_raw_notification(
         [&](const mcp::protocol::JsonRpcNotification& notification) {
           raw_methods.push_back(notification.method);
         });
@@ -243,7 +247,7 @@ int main() {
     require(sample->at("role") == "assistant",
             "client create_message role mismatch");
 
-    const auto health = client.raw_request(mcp::protocol::JsonRpcRequest{
+    const auto health = peer.raw_request(mcp::protocol::JsonRpcRequest{
         .method = "example/health",
         .params = mcp::protocol::Json::object(),
         .id = std::int64_t{9},
@@ -264,51 +268,51 @@ int main() {
     require(transport_ptr->notifications().size() == 4,
             "client notifications were not recorded");
 
-    require(client
-                .handle_notification(mcp::protocol::JsonRpcNotification{
+    require(peer
+                .dispatch_message(mcp::protocol::JsonRpcNotification{
                     .method = "notifications/message",
                     .params = mcp::protocol::Json{{"level", "info"},
                                                   {"data", "example log"}},
                 })
                 .has_value(),
             "client logging notification failed");
-    require(client
-                .handle_notification(mcp::protocol::JsonRpcNotification{
-                    .method = "notifications/tools/list_changed",
-                    .params = mcp::protocol::Json::object(),
-                })
-                .has_value(),
-            "client tools list notification failed");
-    require(client
-                .handle_notification(mcp::protocol::JsonRpcNotification{
+    require(
+        peer.dispatch_message(mcp::protocol::JsonRpcNotification{
+                                  .method = "notifications/tools/list_changed",
+                                  .params = mcp::protocol::Json::object(),
+                              })
+            .has_value(),
+        "client tools list notification failed");
+    require(peer
+                .dispatch_message(mcp::protocol::JsonRpcNotification{
                     .method = "notifications/prompts/list_changed",
                     .params = mcp::protocol::Json::object(),
                 })
                 .has_value(),
             "client prompts list notification failed");
-    require(client
-                .handle_notification(mcp::protocol::JsonRpcNotification{
+    require(peer
+                .dispatch_message(mcp::protocol::JsonRpcNotification{
                     .method = "notifications/resources/list_changed",
                     .params = mcp::protocol::Json::object(),
                 })
                 .has_value(),
             "client resources list notification failed");
     require(
-        client
-            .handle_notification(mcp::protocol::JsonRpcNotification{
+        peer
+            .dispatch_message(mcp::protocol::JsonRpcNotification{
                 .method = "notifications/resources/updated",
                 .params =
                     mcp::protocol::Json{{"uri", "file:///workspace/README.md"}},
             })
             .has_value(),
         "client resource updated notification failed");
-    require(client
-                .handle_notification(mcp::protocol::JsonRpcNotification{
-                    .method = "notifications/roots/list_changed",
-                    .params = mcp::protocol::Json::object(),
-                })
-                .has_value(),
-            "client roots list notification failed");
+    require(
+        peer.dispatch_message(mcp::protocol::JsonRpcNotification{
+                                  .method = "notifications/roots/list_changed",
+                                  .params = mcp::protocol::Json::object(),
+                              })
+            .has_value(),
+        "client roots list notification failed");
 
     require(logging_messages == 1, "client logging handler not called");
     require(tool_notifications == 1,

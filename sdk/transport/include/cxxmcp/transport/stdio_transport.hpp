@@ -22,7 +22,15 @@ namespace mcp::transport {
 ///
 /// Messages are encoded as one JSON-RPC document per line. receive() reads the
 /// next line and parses it as a JsonRpcMessage; EOF is reported as
-/// std::nullopt.
+/// std::nullopt. send() is serialized with an internal mutex. receive() is
+/// sequential and must not be called concurrently. close() marks the transport
+/// closed; it makes later receive() calls return std::nullopt and later send()
+/// calls fail, but it cannot interrupt a platform stream read already blocked
+/// inside std::getline().
+///
+/// This message-level transport intentionally does not correlate requests and
+/// responses. Duplicate in-flight request-id checks are implemented by the
+/// peer/request engine or by transports that own an asynchronous pending map.
 template <class Role>
 class StdioTransport final : public Transport<Role> {
  public:
@@ -33,6 +41,14 @@ class StdioTransport final : public Transport<Role> {
       : input_(&input), output_(&output) {}
 
   std::string_view name() const noexcept override { return "stdio"; }
+
+  protocol::Json diagnostics() const override {
+    std::lock_guard<std::mutex> lock(mutex_);
+    return protocol::Json{
+        {"name", "stdio"},
+        {"closed", closed_},
+    };
+  }
 
   core::Result<core::Unit> send(TxMessage message) override {
     const auto serialized = protocol::serialize_message(message);
@@ -92,12 +108,13 @@ class StdioTransport final : public Transport<Role> {
         static_cast<int>(code),
         std::move(message),
         {},
+        "transport",
     };
   }
 
   std::istream* input_;
   std::ostream* output_;
-  std::mutex mutex_;
+  mutable std::mutex mutex_;
   bool closed_ = false;
 };
 

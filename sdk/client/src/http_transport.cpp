@@ -3,17 +3,26 @@
 #include "cxxmcp/client/http_transport.hpp"
 
 #include <chrono>
+#include <condition_variable>
 #include <ctime>
+#include <deque>
+#include <exception>
+#include <map>
 #include <mutex>
 #include <optional>
+#include <set>
 #include <string>
 #include <string_view>
+#include <system_error>
+#include <thread>
 #include <type_traits>
 #include <utility>
 #include <variant>
 #include <vector>
 
+#include "cxxmcp/error.hpp"
 #include "cxxmcp/protocol/serialization.hpp"
+#include "cxxmcp/transport/http_transport.hpp"
 #include "httplib.h"
 
 namespace mcp::client {
@@ -26,7 +35,7 @@ constexpr std::string_view NameHeader = "Mcp-Name";
 
 core::Error make_transport_error(int code, std::string message,
                                  std::string detail = {}) {
-  return core::Error{code, std::move(message), std::move(detail)};
+  return core::Error{code, std::move(message), std::move(detail), "transport"};
 }
 
 std::string request_id_to_string(const protocol::RequestId& request_id) {
@@ -484,6 +493,13 @@ struct HttpTransport::Impl {
       if (!parsed) {
         return std::unexpected(parsed.error());
       }
+      if (!parsed->id.has_value() || *parsed->id != request_id) {
+        return std::unexpected(make_transport_error(
+            static_cast<int>(protocol::ErrorCode::InvalidRequest),
+            "http transport received an unexpected response",
+            parsed->id.has_value() ? request_id_to_string(*parsed->id)
+                                   : std::string{}));
+      }
       return *parsed;
     }
 
@@ -524,7 +540,14 @@ struct HttpTransport::Impl {
         handler = notification_handler;
       }
       if (handler) {
-        const auto handled = handler(*notification);
+        core::Result<core::Unit> handled;
+        try {
+          handled = handler(*notification);
+        } catch (const std::exception& ex) {
+          handled = std::unexpected(errors::handler_failed(ex.what()));
+        } catch (...) {
+          handled = std::unexpected(errors::handler_unknown_exception());
+        }
         if (!handled) {
           return std::unexpected(handled.error());
         }
@@ -553,7 +576,14 @@ struct HttpTransport::Impl {
         return std::optional<protocol::JsonRpcResponse>{};
       }
 
-      auto response = handler(*request);
+      core::Result<protocol::JsonRpcResponse> response;
+      try {
+        response = handler(*request);
+      } catch (const std::exception& ex) {
+        response = std::unexpected(errors::handler_failed(ex.what()));
+      } catch (...) {
+        response = std::unexpected(errors::handler_unknown_exception());
+      }
       if (!response) {
         response = protocol::make_error_response(
             std::optional<protocol::RequestId>{request->id},
@@ -667,3 +697,383 @@ core::Result<core::Unit> HttpTransport::start(
 void HttpTransport::stop() noexcept { impl_->stop(); }
 
 }  // namespace mcp::client
+
+namespace mcp::transport {
+namespace {
+
+core::Error make_native_http_error(protocol::ErrorCode code,
+                                   std::string message,
+                                   std::string detail = {}) {
+  return core::Error{
+      static_cast<int>(code),
+      std::move(message),
+      std::move(detail),
+      "transport",
+  };
+}
+
+client::HttpTransportOptions to_legacy_options(
+    StreamableHttpClientTransportOptions options) {
+  client::HttpTransportOptions legacy;
+  legacy.uri = std::move(options.uri);
+  legacy.host = std::move(options.host);
+  legacy.port = options.port;
+  legacy.path = std::move(options.path);
+  legacy.headers = std::move(options.headers);
+  legacy.auth_header = std::move(options.auth_header);
+  legacy.timeout = options.timeout;
+  return legacy;
+}
+
+std::string request_id_to_string_for_native_http(
+    const protocol::RequestId& request_id) {
+  return std::visit(
+      [](const auto& value) -> std::string {
+        using Value = std::decay_t<decltype(value)>;
+        if constexpr (std::is_same_v<Value, std::string>) {
+          return value;
+        } else {
+          return std::to_string(value);
+        }
+      },
+      request_id);
+}
+
+}  // namespace
+
+class StreamableHttpClientTransport::Impl {
+ public:
+  explicit Impl(StreamableHttpClientTransportOptions options)
+      : transport_(to_legacy_options(std::move(options))) {}
+
+  ~Impl() { (void)close(); }
+
+  protocol::Json diagnostics() const {
+    std::lock_guard<std::mutex> lock(mutex_);
+    return protocol::Json{
+        {"name", "streamable-http"},
+        {"closed", closed_},
+        {"queued", inbound_.size()},
+        {"pendingServerRequests", pending_server_requests_.size()},
+        {"requestWorkers", request_threads_.size()},
+        {"activeRequestWorkers", active_request_workers_},
+        {"completedRequestWorkers", completed_request_workers_},
+        {"failedRequestWorkers", failed_request_workers_},
+        {"timedOutRequestWorkers", timed_out_request_workers_},
+    };
+  }
+
+  core::Result<core::Unit> send(protocol::JsonRpcMessage message) {
+    const auto started = ensure_started();
+    if (!started) {
+      return std::unexpected(started.error());
+    }
+
+    if (auto* request = std::get_if<protocol::JsonRpcRequest>(&message)) {
+      return start_request_thread(std::move(*request));
+    }
+
+    if (auto* notification =
+            std::get_if<protocol::JsonRpcNotification>(&message)) {
+      return transport_.send_notification(*notification);
+    }
+
+    auto* response = std::get_if<protocol::JsonRpcResponse>(&message);
+    if (response == nullptr || !response->id.has_value()) {
+      return std::unexpected(make_native_http_error(
+          protocol::ErrorCode::InvalidRequest,
+          "streamable http client transport cannot send response without id"));
+    }
+    return complete_server_request(std::move(*response));
+  }
+
+  core::Result<std::optional<protocol::JsonRpcMessage>> receive() {
+    const auto started = ensure_started();
+    if (!started) {
+      return std::unexpected(started.error());
+    }
+
+    std::unique_lock<std::mutex> lock(mutex_);
+    receive_cv_.wait(lock, [this] { return closed_ || !inbound_.empty(); });
+    if (inbound_.empty()) {
+      return std::nullopt;
+    }
+    auto message = std::move(inbound_.front());
+    inbound_.pop_front();
+    return message;
+  }
+
+  core::Result<core::Unit> close() {
+    std::map<protocol::RequestId, std::shared_ptr<PendingServerRequest>>
+        pending;
+    std::vector<std::thread> request_threads;
+    {
+      std::lock_guard<std::mutex> lock(mutex_);
+      if (closed_) {
+        return core::Unit{};
+      }
+      closed_ = true;
+      pending.swap(pending_server_requests_);
+      request_threads.swap(request_threads_);
+    }
+
+    for (auto& [_, request] : pending) {
+      {
+        std::lock_guard<std::mutex> request_lock(request->mutex);
+        request->response = protocol::make_error_response(
+            std::optional<protocol::RequestId>{request->id},
+            protocol::make_error(protocol::ErrorCode::InternalError,
+                                 "streamable http transport closed"));
+      }
+      request->cv.notify_all();
+    }
+
+    receive_cv_.notify_all();
+    transport_.stop();
+    for (auto& thread : request_threads) {
+      if (thread.joinable() && thread.get_id() != std::this_thread::get_id()) {
+        thread.join();
+      }
+    }
+    return core::Unit{};
+  }
+
+ private:
+  struct PendingServerRequest {
+    explicit PendingServerRequest(protocol::RequestId request_id)
+        : id(std::move(request_id)) {}
+
+    protocol::RequestId id;
+    std::mutex mutex;
+    std::condition_variable cv;
+    std::optional<protocol::JsonRpcResponse> response;
+  };
+
+  core::Result<core::Unit> ensure_started() {
+    std::lock_guard<std::mutex> lock(mutex_);
+    if (closed_) {
+      return std::unexpected(
+          make_native_http_error(protocol::ErrorCode::InvalidRequest,
+                                 "streamable http client transport is closed"));
+    }
+    if (started_) {
+      return core::Unit{};
+    }
+    started_ = true;
+
+    auto started = transport_.start(
+        [this](const protocol::JsonRpcRequest& request) {
+          return handle_server_request(request);
+        },
+        [this](const protocol::JsonRpcNotification& notification) {
+          return handle_server_notification(notification);
+        });
+    if (!started) {
+      started_ = false;
+      return std::unexpected(started.error());
+    }
+    return core::Unit{};
+  }
+
+  core::Result<core::Unit> start_request_thread(
+      protocol::JsonRpcRequest request) {
+    const auto request_id = request.id;
+    bool registered = false;
+    try {
+      std::lock_guard<std::mutex> lock(mutex_);
+      if (closed_) {
+        return std::unexpected(make_native_http_error(
+            protocol::ErrorCode::InvalidRequest,
+            "streamable http client transport is closed"));
+      }
+      const auto [_, inserted] = in_flight_request_ids_.insert(request_id);
+      if (!inserted) {
+        return std::unexpected(make_native_http_error(
+            protocol::ErrorCode::InvalidRequest,
+            "duplicate streamable http request id",
+            request_id_to_string_for_native_http(request_id)));
+      }
+      registered = true;
+      ++active_request_workers_;
+      request_threads_.emplace_back(
+          [this, request_id, request = std::move(request)]() mutable {
+            auto response = transport_.send(request);
+            if (response) {
+              finish_request_worker(request_id, false, false);
+              enqueue(protocol::JsonRpcMessage{std::move(*response)});
+              return;
+            }
+            finish_request_worker(request_id, true,
+                                  is_timeout_error(response.error()));
+            enqueue(protocol::JsonRpcMessage{protocol::make_error_response(
+                std::optional<protocol::RequestId>{request.id},
+                protocol::make_error(response.error().code,
+                                     response.error().message,
+                                     response.error().detail.empty()
+                                         ? std::nullopt
+                                         : std::optional<protocol::Json>{
+                                               response.error().detail}))});
+          });
+    } catch (const std::system_error& ex) {
+      if (registered) {
+        forget_request_worker(request_id);
+      }
+      return std::unexpected(make_native_http_error(
+          protocol::ErrorCode::InternalError,
+          "failed to start streamable http request worker", ex.what()));
+    }
+    return core::Unit{};
+  }
+
+  core::Result<protocol::JsonRpcResponse> handle_server_request(
+      const protocol::JsonRpcRequest& request) {
+    auto pending = std::make_shared<PendingServerRequest>(request.id);
+    {
+      std::lock_guard<std::mutex> lock(mutex_);
+      if (closed_) {
+        return protocol::make_error_response(
+            std::optional<protocol::RequestId>{request.id},
+            protocol::make_error(protocol::ErrorCode::InternalError,
+                                 "streamable http transport closed"));
+      }
+      const auto [_, inserted] =
+          pending_server_requests_.emplace(request.id, pending);
+      if (!inserted) {
+        return protocol::make_error_response(
+            std::optional<protocol::RequestId>{request.id},
+            protocol::make_error(protocol::ErrorCode::InvalidRequest,
+                                 "duplicate server request id"));
+      }
+      inbound_.push_back(protocol::JsonRpcMessage{request});
+    }
+
+    receive_cv_.notify_one();
+
+    std::unique_lock<std::mutex> pending_lock(pending->mutex);
+    pending->cv.wait(pending_lock,
+                     [&pending] { return pending->response.has_value(); });
+    return std::move(*pending->response);
+  }
+
+  core::Result<core::Unit> handle_server_notification(
+      const protocol::JsonRpcNotification& notification) {
+    {
+      std::lock_guard<std::mutex> lock(mutex_);
+      if (closed_) {
+        return core::Unit{};
+      }
+      inbound_.push_back(protocol::JsonRpcMessage{notification});
+    }
+    receive_cv_.notify_one();
+    return core::Unit{};
+  }
+
+  void enqueue(protocol::JsonRpcMessage message) {
+    {
+      std::lock_guard<std::mutex> lock(mutex_);
+      if (closed_) {
+        return;
+      }
+      inbound_.push_back(std::move(message));
+    }
+    receive_cv_.notify_one();
+  }
+
+  static bool is_timeout_error(const core::Error& error) {
+    return error.message.find("timed out") != std::string::npos;
+  }
+
+  void finish_request_worker(const protocol::RequestId& request_id, bool failed,
+                             bool timed_out) {
+    std::lock_guard<std::mutex> lock(mutex_);
+    in_flight_request_ids_.erase(request_id);
+    if (active_request_workers_ > 0) {
+      --active_request_workers_;
+    }
+    ++completed_request_workers_;
+    if (failed) {
+      ++failed_request_workers_;
+    }
+    if (timed_out) {
+      ++timed_out_request_workers_;
+    }
+  }
+
+  void forget_request_worker(const protocol::RequestId& request_id) {
+    std::lock_guard<std::mutex> lock(mutex_);
+    in_flight_request_ids_.erase(request_id);
+    if (active_request_workers_ > 0) {
+      --active_request_workers_;
+    }
+  }
+
+  core::Result<core::Unit> complete_server_request(
+      protocol::JsonRpcResponse response) {
+    const auto id = *response.id;
+    std::shared_ptr<PendingServerRequest> pending;
+    {
+      std::lock_guard<std::mutex> lock(mutex_);
+      const auto it = pending_server_requests_.find(id);
+      if (it == pending_server_requests_.end()) {
+        return std::unexpected(make_native_http_error(
+            protocol::ErrorCode::InvalidRequest,
+            "streamable http client transport has no pending server request",
+            request_id_to_string_for_native_http(id)));
+      }
+      pending = it->second;
+      pending_server_requests_.erase(it);
+    }
+
+    {
+      std::lock_guard<std::mutex> pending_lock(pending->mutex);
+      pending->response = std::move(response);
+    }
+    pending->cv.notify_all();
+    return core::Unit{};
+  }
+
+  client::HttpTransport transport_;
+  mutable std::mutex mutex_;
+  std::condition_variable receive_cv_;
+  std::deque<protocol::JsonRpcMessage> inbound_;
+  std::map<protocol::RequestId, std::shared_ptr<PendingServerRequest>>
+      pending_server_requests_;
+  std::set<protocol::RequestId> in_flight_request_ids_;
+  std::vector<std::thread> request_threads_;
+  std::size_t active_request_workers_ = 0;
+  std::size_t completed_request_workers_ = 0;
+  std::size_t failed_request_workers_ = 0;
+  std::size_t timed_out_request_workers_ = 0;
+  bool started_ = false;
+  bool closed_ = false;
+};
+
+StreamableHttpClientTransport::StreamableHttpClientTransport(
+    StreamableHttpClientTransportOptions options)
+    : impl_(std::make_unique<Impl>(std::move(options))) {}
+
+StreamableHttpClientTransport::~StreamableHttpClientTransport() = default;
+
+std::string_view StreamableHttpClientTransport::name() const noexcept {
+  return "streamable-http";
+}
+
+protocol::Json StreamableHttpClientTransport::diagnostics() const {
+  return impl_->diagnostics();
+}
+
+core::Result<core::Unit> StreamableHttpClientTransport::send(
+    TxMessage message) {
+  return impl_->send(std::move(message));
+}
+
+core::Result<std::optional<StreamableHttpClientTransport::RxMessage>>
+StreamableHttpClientTransport::receive() {
+  return impl_->receive();
+}
+
+core::Result<core::Unit> StreamableHttpClientTransport::close() {
+  return impl_->close();
+}
+
+}  // namespace mcp::transport

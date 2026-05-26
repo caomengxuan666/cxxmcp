@@ -3,6 +3,7 @@
 #include "cxxmcp/client/client.hpp"
 
 #include <cstdint>
+#include <exception>
 #include <optional>
 #include <string>
 #include <string_view>
@@ -12,6 +13,7 @@
 #include "cxxmcp/client/process_stdio_transport.hpp"
 #include "cxxmcp/client/session.hpp"
 #include "cxxmcp/client/stdio_transport.hpp"
+#include "cxxmcp/error.hpp"
 #include "cxxmcp/protocol/completion.hpp"
 #include "cxxmcp/protocol/elicitation.hpp"
 #include "cxxmcp/protocol/logging.hpp"
@@ -26,7 +28,7 @@ namespace {
 
 core::Error make_client_error(int code, std::string message,
                               std::string detail = {}) {
-  return core::Error{code, std::move(message), std::move(detail)};
+  return core::Error{code, std::move(message), std::move(detail), "protocol"};
 }
 
 core::Result<protocol::Json> require_result_payload(
@@ -37,6 +39,7 @@ core::Result<protocol::Json> require_result_payload(
         response.error->message,
         response.error->data.has_value() ? response.error->data->dump()
                                          : std::string{},
+        "protocol",
     });
   }
 
@@ -102,11 +105,13 @@ protocol::ClientCapabilities default_client_capabilities(
     return *capabilities;
   }
 
-  return protocol::ClientCapabilities{
-      .roots = {.enabled = true, .list_changed = true},
-      .sampling = {.enabled = true},
-      .elicitation = {.form = true, .url = true},
-  };
+  protocol::ClientCapabilities defaults;
+  defaults.roots.enabled = true;
+  defaults.roots.list_changed = true;
+  defaults.sampling.enabled = true;
+  defaults.elicitation.form = true;
+  defaults.elicitation.url = true;
+  return defaults;
 }
 
 protocol::Json initialize_params(
@@ -140,6 +145,71 @@ core::Result<core::Unit> Transport::send_notification(
 Client::Client(std::unique_ptr<Transport> transport)
     : transport_(std::move(transport)) {}
 
+Client::Client(Client&& other) noexcept
+    : transport_(std::move(other.transport_)),
+      next_request_id_(other.next_request_id_.load(std::memory_order_relaxed)),
+      transport_started_(other.transport_started_),
+      roots_(std::move(other.roots_)),
+      last_initialize_params_(std::move(other.last_initialize_params_)),
+      capabilities_(std::move(other.capabilities_)),
+      initialized_handler_(std::move(other.initialized_handler_)),
+      cancelled_handler_(std::move(other.cancelled_handler_)),
+      logging_message_handler_(std::move(other.logging_message_handler_)),
+      tool_list_changed_handler_(std::move(other.tool_list_changed_handler_)),
+      prompt_list_changed_handler_(
+          std::move(other.prompt_list_changed_handler_)),
+      resource_list_changed_handler_(
+          std::move(other.resource_list_changed_handler_)),
+      resource_updated_handler_(std::move(other.resource_updated_handler_)),
+      progress_handler_(std::move(other.progress_handler_)),
+      elicitation_complete_handler_(
+          std::move(other.elicitation_complete_handler_)),
+      task_status_handler_(std::move(other.task_status_handler_)),
+      roots_list_changed_handler_(std::move(other.roots_list_changed_handler_)),
+      roots_list_request_handler_(std::move(other.roots_list_request_handler_)),
+      sampling_request_handler_(std::move(other.sampling_request_handler_)),
+      elicitation_request_handler_(
+          std::move(other.elicitation_request_handler_)),
+      custom_request_handler_(std::move(other.custom_request_handler_)),
+      raw_notification_handler_(std::move(other.raw_notification_handler_)) {
+  other.transport_started_ = false;
+}
+
+Client& Client::operator=(Client&& other) noexcept {
+  if (this != &other) {
+    transport_ = std::move(other.transport_);
+    next_request_id_.store(
+        other.next_request_id_.load(std::memory_order_relaxed),
+        std::memory_order_relaxed);
+    transport_started_ = other.transport_started_;
+    roots_ = std::move(other.roots_);
+    last_initialize_params_ = std::move(other.last_initialize_params_);
+    capabilities_ = std::move(other.capabilities_);
+    initialized_handler_ = std::move(other.initialized_handler_);
+    cancelled_handler_ = std::move(other.cancelled_handler_);
+    logging_message_handler_ = std::move(other.logging_message_handler_);
+    tool_list_changed_handler_ = std::move(other.tool_list_changed_handler_);
+    prompt_list_changed_handler_ =
+        std::move(other.prompt_list_changed_handler_);
+    resource_list_changed_handler_ =
+        std::move(other.resource_list_changed_handler_);
+    resource_updated_handler_ = std::move(other.resource_updated_handler_);
+    progress_handler_ = std::move(other.progress_handler_);
+    elicitation_complete_handler_ =
+        std::move(other.elicitation_complete_handler_);
+    task_status_handler_ = std::move(other.task_status_handler_);
+    roots_list_changed_handler_ = std::move(other.roots_list_changed_handler_);
+    roots_list_request_handler_ = std::move(other.roots_list_request_handler_);
+    sampling_request_handler_ = std::move(other.sampling_request_handler_);
+    elicitation_request_handler_ =
+        std::move(other.elicitation_request_handler_);
+    custom_request_handler_ = std::move(other.custom_request_handler_);
+    raw_notification_handler_ = std::move(other.raw_notification_handler_);
+    other.transport_started_ = false;
+  }
+  return *this;
+}
+
 core::Result<core::Unit> Client::ensure_transport_started() {
   if (transport_started_) {
     return core::Unit{};
@@ -166,15 +236,15 @@ core::Result<core::Unit> Client::ensure_transport_started() {
 }
 
 Client Client::connect_streamable_http(StreamableHttpEndpoint endpoint) {
-  return Client(std::make_unique<HttpTransport>(HttpTransportOptions{
-      .uri = std::move(endpoint.uri),
-      .host = std::move(endpoint.host),
-      .port = endpoint.port,
-      .path = std::move(endpoint.path),
-      .headers = std::move(endpoint.headers),
-      .auth_header = std::move(endpoint.auth_header),
-      .timeout = endpoint.timeout,
-  }));
+  HttpTransportOptions options;
+  options.uri = std::move(endpoint.uri);
+  options.host = std::move(endpoint.host);
+  options.port = endpoint.port;
+  options.path = std::move(endpoint.path);
+  options.headers = std::move(endpoint.headers);
+  options.auth_header = std::move(endpoint.auth_header);
+  options.timeout = endpoint.timeout;
+  return Client(std::make_unique<HttpTransport>(std::move(options)));
 }
 
 Client Client::connect_streamable_http(std::string uri) {
@@ -198,22 +268,18 @@ Client Client::connect_stdio(StdioEndpoint endpoint) {
   if (endpoint.command.empty()) {
     return Client(std::make_unique<StdioTransport>());
   }
-  return Client(
-      std::make_unique<ProcessStdioTransport>(ProcessStdioTransportOptions{
-          .command = std::move(endpoint.command),
-          .args = std::move(endpoint.args),
-          .cwd = std::move(endpoint.cwd),
-          .env = std::move(endpoint.env),
-      }));
+  ProcessStdioTransportOptions options;
+  options.command = std::move(endpoint.command);
+  options.args = std::move(endpoint.args);
+  options.cwd = std::move(endpoint.cwd);
+  options.env = std::move(endpoint.env);
+  return Client(std::make_unique<ProcessStdioTransport>(std::move(options)));
 }
 
 core::Result<protocol::Json> Client::send_request(std::string method,
                                                   protocol::Json params) {
-  const auto response = send_rpc_request(protocol::JsonRpcRequest{
-      .method = std::move(method),
-      .params = std::move(params),
-      .id = next_request_id_++,
-  });
+  const auto response = send_rpc_request(protocol::make_request(
+      std::move(method), next_request_id(), std::move(params)));
   if (!response) {
     return std::unexpected(response.error());
   }
@@ -232,11 +298,9 @@ core::Result<protocol::JsonRpcResponse> Client::send_rpc_request(
       !last_initialize_params_.has_value() &&
       dynamic_cast<HttpTransport*>(transport_.get()) != nullptr) {
     last_initialize_params_ = initialize_params("cxxmcp", "0", capabilities_);
-    const auto initialize_response = transport_->send(protocol::JsonRpcRequest{
-        .method = std::string(protocol::InitializeMethod),
-        .params = *last_initialize_params_,
-        .id = next_request_id_++,
-    });
+    const auto initialize_response = transport_->send(
+        protocol::make_request(std::string(protocol::InitializeMethod),
+                               next_request_id(), *last_initialize_params_));
     if (!initialize_response) {
       return std::unexpected(initialize_response.error());
     }
@@ -261,11 +325,9 @@ core::Result<protocol::JsonRpcResponse> Client::send_rpc_request(
           }
 
           const auto initialize_response =
-              transport_->send(protocol::JsonRpcRequest{
-                  .method = std::string(protocol::InitializeMethod),
-                  .params = *last_initialize_params_,
-                  .id = next_request_id_++,
-              });
+              transport_->send(protocol::make_request(
+                  std::string(protocol::InitializeMethod), next_request_id(),
+                  *last_initialize_params_));
           if (!initialize_response) {
             return std::unexpected(initialize_response.error());
           }
@@ -291,11 +353,9 @@ core::Result<protocol::Json> Client::initialize(std::string client_name,
   auto params = initialize_params(std::move(client_name),
                                   std::move(client_version), capabilities_);
   last_initialize_params_ = params;
-  const auto response = send_rpc_request(protocol::JsonRpcRequest{
-      .method = std::string(protocol::InitializeMethod),
-      .params = std::move(params),
-      .id = next_request_id_++,
-  });
+  const auto response = send_rpc_request(
+      protocol::make_request(std::string(protocol::InitializeMethod),
+                             next_request_id(), std::move(params)));
   if (!response) {
     return std::unexpected(response.error());
   }
@@ -303,10 +363,8 @@ core::Result<protocol::Json> Client::initialize(std::string client_name,
 }
 
 core::Result<core::Unit> Client::notify_initialized() {
-  return raw_notification(protocol::JsonRpcNotification{
-      .method = std::string(protocol::InitializedMethod),
-      .params = protocol::Json::object(),
-  });
+  return raw_notification(protocol::make_notification(
+      std::string(protocol::InitializedMethod), protocol::Json::object()));
 }
 
 Client& Client::on_progress(ProgressHandler handler) {
@@ -326,36 +384,30 @@ Client& Client::on_task_status(TaskStatusHandler handler) {
 
 core::Result<core::Unit> Client::notify_cancelled(
     protocol::RequestId request_id, std::string reason) {
-  return raw_notification(protocol::JsonRpcNotification{
-      .method = "notifications/cancelled",
-      .params = protocol::cancelled_notification_params_to_json(
-          protocol::CancelledNotificationParams{
-              .request_id = std::move(request_id),
-              .reason = std::move(reason),
-          }),
-  });
+  protocol::CancelledNotificationParams params;
+  params.request_id = std::move(request_id);
+  params.reason = std::move(reason);
+  return raw_notification(protocol::make_notification(
+      "notifications/cancelled",
+      protocol::cancelled_notification_params_to_json(params)));
 }
 
 core::Result<core::Unit> Client::notify_progress(
     protocol::ProgressToken progress_token, double progress,
     std::optional<double> total, std::string message) {
-  return raw_notification(protocol::JsonRpcNotification{
-      .method = "notifications/progress",
-      .params = protocol::progress_notification_params_to_json(
-          protocol::ProgressNotificationParams{
-              .progress_token = std::move(progress_token),
-              .progress = progress,
-              .total = total,
-              .message = std::move(message),
-          }),
-  });
+  protocol::ProgressNotificationParams params;
+  params.progress_token = std::move(progress_token);
+  params.progress = progress;
+  params.total = total;
+  params.message = std::move(message);
+  return raw_notification(protocol::make_notification(
+      "notifications/progress",
+      protocol::progress_notification_params_to_json(params)));
 }
 
 core::Result<core::Unit> Client::notify_roots_list_changed() {
-  return raw_notification(protocol::JsonRpcNotification{
-      .method = "notifications/roots/list_changed",
-      .params = protocol::Json::object(),
-  });
+  return raw_notification(protocol::make_notification(
+      "notifications/roots/list_changed", protocol::Json::object()));
 }
 
 core::Result<core::Unit> Client::ping() {
@@ -402,11 +454,9 @@ core::Result<std::vector<protocol::Prompt>> Client::list_all_prompts() {
 
 core::Result<protocol::PromptsGetResult> Client::get_prompt(
     const protocol::PromptsGetParams& params) {
-  const auto response = send_rpc_request(protocol::JsonRpcRequest{
-      .method = std::string(protocol::PromptsGetMethod),
-      .params = protocol::prompts_get_params_to_json(params),
-      .id = next_request_id_++,
-  });
+  const auto response = send_rpc_request(protocol::make_request(
+      std::string(protocol::PromptsGetMethod), next_request_id(),
+      protocol::prompts_get_params_to_json(params)));
   if (!response) {
     return std::unexpected(response.error());
   }
@@ -426,18 +476,16 @@ core::Result<protocol::PromptsGetResult> Client::get_prompt(
 
 core::Result<protocol::PromptsGetResult> Client::get_prompt(
     std::string_view name, const protocol::Json& arguments) {
-  return get_prompt(protocol::PromptsGetParams{
-      .name = std::string(name),
-      .arguments = arguments,
-  });
+  protocol::PromptsGetParams params;
+  params.name = std::string(name);
+  params.arguments = arguments;
+  return get_prompt(params);
 }
 
 core::Result<std::vector<protocol::Resource>> Client::list_resources() {
-  const auto response = send_rpc_request(protocol::JsonRpcRequest{
-      .method = std::string(protocol::ResourcesListMethod),
-      .params = protocol::Json::object(),
-      .id = next_request_id_++,
-  });
+  const auto response = send_rpc_request(
+      protocol::make_request(std::string(protocol::ResourcesListMethod),
+                             next_request_id(), protocol::Json::object()));
   if (!response) {
     return std::unexpected(response.error());
   }
@@ -476,11 +524,9 @@ core::Result<std::vector<protocol::Resource>> Client::list_all_resources() {
 
 core::Result<protocol::ResourcesReadResult> Client::read_resource(
     const protocol::ResourcesReadParams& params) {
-  const auto response = send_rpc_request(protocol::JsonRpcRequest{
-      .method = std::string(protocol::ResourcesReadMethod),
-      .params = protocol::resources_read_params_to_json(params),
-      .id = next_request_id_++,
-  });
+  const auto response = send_rpc_request(protocol::make_request(
+      std::string(protocol::ResourcesReadMethod), next_request_id(),
+      protocol::resources_read_params_to_json(params)));
   if (!response) {
     return std::unexpected(response.error());
   }
@@ -541,11 +587,8 @@ Client::list_all_resource_templates() {
 }
 
 core::Result<std::vector<protocol::ToolDefinition>> Client::list_tools() {
-  const auto response = send_rpc_request(protocol::JsonRpcRequest{
-      .method = "tools/list",
-      .params = protocol::Json::object(),
-      .id = next_request_id_++,
-  });
+  const auto response = send_rpc_request(protocol::make_request(
+      "tools/list", next_request_id(), protocol::Json::object()));
   if (!response) {
     return std::unexpected(response.error());
   }
@@ -611,11 +654,9 @@ core::Result<std::vector<protocol::ToolDefinition>> Client::list_all_tools() {
 
 core::Result<protocol::ToolResult> Client::call_tool(
     const protocol::ToolCall& call) {
-  const auto response = send_rpc_request(protocol::JsonRpcRequest{
-      .method = std::string(protocol::ToolsCallMethod),
-      .params = protocol::tool_call_to_json(call),
-      .id = next_request_id_++,
-  });
+  const auto response = send_rpc_request(protocol::make_request(
+      std::string(protocol::ToolsCallMethod), next_request_id(),
+      protocol::tool_call_to_json(call)));
   if (!response) {
     return std::unexpected(response.error());
   }
@@ -641,11 +682,9 @@ core::Result<protocol::CreateTaskResult> Client::call_tool_task(
                           "task-aware tool call requires task parameters"));
   }
 
-  const auto response = send_rpc_request(protocol::JsonRpcRequest{
-      .method = std::string(protocol::ToolsCallMethod),
-      .params = protocol::tool_call_to_json(call),
-      .id = next_request_id_++,
-  });
+  const auto response = send_rpc_request(protocol::make_request(
+      std::string(protocol::ToolsCallMethod), next_request_id(),
+      protocol::tool_call_to_json(call)));
   if (!response) {
     return std::unexpected(response.error());
   }
@@ -664,10 +703,10 @@ core::Result<protocol::CreateTaskResult> Client::call_tool_task(
 
 core::Result<protocol::ToolResult> Client::call_raw(
     std::string_view name, const protocol::Json& arguments) {
-  return call_tool(protocol::ToolCall{
-      .name = std::string(name),
-      .arguments = arguments,
-  });
+  protocol::ToolCall call;
+  call.name = std::string(name);
+  call.arguments = arguments;
+  return call_tool(call);
 }
 
 core::Result<protocol::CompleteResult> Client::complete(
@@ -693,15 +732,14 @@ core::Result<protocol::Json> Client::complete(const protocol::Json& request) {
 core::Result<protocol::CompletionResult> Client::complete_prompt_argument(
     std::string_view prompt_name, std::string_view argument_name,
     std::string current_value, protocol::Json context) {
-  const auto result = complete(protocol::CompleteParams{
-      .ref = protocol::prompt_completion_reference(std::string(prompt_name)),
-      .argument =
-          protocol::CompletionArgument{
-              .name = std::string(argument_name),
-              .value = std::move(current_value),
-          },
-      .context = std::move(context),
-  });
+  protocol::CompletionArgument argument;
+  argument.name = std::string(argument_name);
+  argument.value = std::move(current_value);
+  protocol::CompleteParams params;
+  params.ref = protocol::prompt_completion_reference(std::string(prompt_name));
+  params.argument = std::move(argument);
+  params.context = std::move(context);
+  const auto result = complete(params);
   if (!result) {
     return std::unexpected(result.error());
   }
@@ -711,15 +749,15 @@ core::Result<protocol::CompletionResult> Client::complete_prompt_argument(
 core::Result<protocol::CompletionResult> Client::complete_resource_argument(
     std::string_view uri_template, std::string_view argument_name,
     std::string current_value, protocol::Json context) {
-  const auto result = complete(protocol::CompleteParams{
-      .ref = protocol::resource_completion_reference(std::string(uri_template)),
-      .argument =
-          protocol::CompletionArgument{
-              .name = std::string(argument_name),
-              .value = std::move(current_value),
-          },
-      .context = std::move(context),
-  });
+  protocol::CompletionArgument argument;
+  argument.name = std::string(argument_name);
+  argument.value = std::move(current_value);
+  protocol::CompleteParams params;
+  params.ref =
+      protocol::resource_completion_reference(std::string(uri_template));
+  params.argument = std::move(argument);
+  params.context = std::move(context);
+  const auto result = complete(params);
   if (!result) {
     return std::unexpected(result.error());
   }
@@ -842,7 +880,9 @@ core::Result<protocol::Task> Client::get_task(
 }
 
 core::Result<protocol::Task> Client::get_task(std::string_view task_id) {
-  return get_task(protocol::TaskGetParams{.task_id = std::string(task_id)});
+  protocol::TaskGetParams params;
+  params.task_id = std::string(task_id);
+  return get_task(params);
 }
 
 core::Result<protocol::Task> Client::cancel_task(
@@ -863,8 +903,9 @@ core::Result<protocol::Task> Client::cancel_task(
 }
 
 core::Result<protocol::Task> Client::cancel_task(std::string_view task_id) {
-  return cancel_task(
-      protocol::TaskCancelParams{.task_id = std::string(task_id)});
+  protocol::TaskCancelParams params;
+  params.task_id = std::string(task_id);
+  return cancel_task(params);
 }
 
 core::Result<protocol::Json> Client::task_result(
@@ -874,8 +915,9 @@ core::Result<protocol::Json> Client::task_result(
 }
 
 core::Result<protocol::Json> Client::task_result(std::string_view task_id) {
-  return task_result(
-      protocol::TaskResultParams{.task_id = std::string(task_id)});
+  protocol::TaskResultParams params;
+  params.task_id = std::string(task_id);
+  return task_result(params);
 }
 
 core::Result<core::Unit> Client::set_level(
@@ -890,9 +932,15 @@ core::Result<core::Unit> Client::set_level(
 }
 
 core::Result<core::Unit> Client::set_level(std::string_view level) {
-  return set_level(protocol::LoggingSetLevelParams{
-      .level = *protocol::logging_level_from_string(std::string(level)),
-  });
+  const auto parsed = protocol::logging_level_from_string(std::string(level));
+  if (!parsed.has_value()) {
+    return std::unexpected(
+        make_client_error(static_cast<int>(protocol::ErrorCode::InvalidRequest),
+                          "logging/setLevel level is invalid"));
+  }
+  protocol::LoggingSetLevelParams params;
+  params.level = *parsed;
+  return set_level(params);
 }
 
 core::Result<core::Unit> Client::subscribe(std::string_view uri) {
@@ -1021,7 +1069,7 @@ Client& Client::on_custom_notification(RawNotificationHandler handler) {
 }
 
 core::Result<core::Unit> Client::handle_notification(
-    const protocol::JsonRpcNotification& notification) {
+    const protocol::JsonRpcNotification& notification) try {
   if (notification.method == std::string(protocol::InitializedMethod) &&
       initialized_handler_) {
     initialized_handler_();
@@ -1115,10 +1163,14 @@ core::Result<core::Unit> Client::handle_notification(
     raw_notification_handler_(notification);
   }
   return core::Unit{};
+} catch (const std::exception& ex) {
+  return std::unexpected(errors::handler_failed(ex.what()));
+} catch (...) {
+  return std::unexpected(errors::handler_unknown_exception());
 }
 
 core::Result<protocol::JsonRpcResponse> Client::handle_request(
-    const protocol::JsonRpcRequest& request) {
+    const protocol::JsonRpcRequest& request) try {
   if (request.method == std::string(protocol::PingMethod)) {
     return protocol::make_response(request.id, protocol::Json::object());
   }
@@ -1134,11 +1186,10 @@ core::Result<protocol::JsonRpcResponse> Client::handle_request(
           request.id, protocol::roots_list_result_to_json(*roots));
     }
 
-    return protocol::make_response(
-        request.id,
-        protocol::roots_list_result_to_json(protocol::RootsListResult{
-            .roots = roots_,
-        }));
+    protocol::RootsListResult result;
+    result.roots = roots_;
+    return protocol::make_response(request.id,
+                                   protocol::roots_list_result_to_json(result));
   }
 
   if (request.method == std::string(protocol::SamplingCreateMessageMethod)) {
@@ -1201,6 +1252,12 @@ core::Result<protocol::JsonRpcResponse> Client::handle_request(
   return make_error_response(
       request, static_cast<int>(protocol::ErrorCode::MethodNotFound),
       "method not found", request.method);
+} catch (const std::exception& ex) {
+  const auto error = errors::handler_failed(ex.what());
+  return make_error_response(request, error.code, error.message, error.detail);
+} catch (...) {
+  const auto error = errors::handler_unknown_exception();
+  return make_error_response(request, error.code, error.message, error.detail);
 }
 
 core::Result<protocol::Json> Client::raw_request(
@@ -1216,11 +1273,8 @@ core::Result<protocol::Json> Client::raw_request(
 RequestHandle<protocol::Json> Client::request_async(std::string method,
                                                     protocol::Json params,
                                                     RequestOptions options) {
-  protocol::JsonRpcRequest request{
-      .method = std::move(method),
-      .params = std::move(params),
-      .id = next_request_id_++,
-  };
+  protocol::JsonRpcRequest request = protocol::make_request(
+      std::move(method), next_request_id(), std::move(params));
   if (options.meta.has_value()) {
     request.meta = std::move(options.meta);
   }
@@ -1311,9 +1365,10 @@ RequestHandle<protocol::ToolResult> Client::call_tool_async(
 RequestHandle<protocol::ToolResult> Client::call_tool_async(
     std::string_view name, const protocol::Json& arguments,
     RequestOptions options) {
-  return call_tool_async(
-      protocol::ToolCall{.name = std::string(name), .arguments = arguments},
-      std::move(options));
+  protocol::ToolCall call;
+  call.name = std::string(name);
+  call.arguments = arguments;
+  return call_tool_async(call, std::move(options));
 }
 
 RequestHandle<protocol::PromptsGetResult> Client::get_prompt_async(
@@ -1330,9 +1385,10 @@ RequestHandle<protocol::PromptsGetResult> Client::get_prompt_async(
 RequestHandle<protocol::PromptsGetResult> Client::get_prompt_async(
     std::string_view name, const protocol::Json& arguments,
     RequestOptions options) {
-  return get_prompt_async(protocol::PromptsGetParams{.name = std::string(name),
-                                                     .arguments = arguments},
-                          std::move(options));
+  protocol::PromptsGetParams params;
+  params.name = std::string(name);
+  params.arguments = arguments;
+  return get_prompt_async(params, std::move(options));
 }
 
 RequestHandle<protocol::ResourcesReadResult> Client::read_resource_async(
@@ -1356,7 +1412,7 @@ RequestHandle<protocol::CreateTaskResult> Client::call_tool_task_async(
     const protocol::ToolCall& call, RequestOptions options) {
   if (!call.task.has_value()) {
     return RequestHandle<protocol::CreateTaskResult>::ready(
-        next_request_id_++,
+        next_request_id(),
         std::unexpected(make_client_error(
             static_cast<int>(protocol::ErrorCode::InvalidRequest),
             "task-aware tool call requires task parameters")));
@@ -1451,9 +1507,9 @@ RequestHandle<protocol::Task> Client::get_task_async(
 
 RequestHandle<protocol::Task> Client::get_task_async(std::string_view task_id,
                                                      RequestOptions options) {
-  return get_task_async(
-      protocol::TaskGetParams{.task_id = std::string(task_id)},
-      std::move(options));
+  protocol::TaskGetParams params;
+  params.task_id = std::string(task_id);
+  return get_task_async(params, std::move(options));
 }
 
 RequestHandle<protocol::Task> Client::cancel_task_async(
@@ -1469,9 +1525,9 @@ RequestHandle<protocol::Task> Client::cancel_task_async(
 
 RequestHandle<protocol::Task> Client::cancel_task_async(
     std::string_view task_id, RequestOptions options) {
-  return cancel_task_async(
-      protocol::TaskCancelParams{.task_id = std::string(task_id)},
-      std::move(options));
+  protocol::TaskCancelParams params;
+  params.task_id = std::string(task_id);
+  return cancel_task_async(params, std::move(options));
 }
 
 RequestHandle<protocol::Json> Client::task_result_async(
@@ -1483,9 +1539,9 @@ RequestHandle<protocol::Json> Client::task_result_async(
 
 RequestHandle<protocol::Json> Client::task_result_async(
     std::string_view task_id, RequestOptions options) {
-  return task_result_async(
-      protocol::TaskResultParams{.task_id = std::string(task_id)},
-      std::move(options));
+  protocol::TaskResultParams params;
+  params.task_id = std::string(task_id);
+  return task_result_async(params, std::move(options));
 }
 
 core::Result<core::Unit> Client::raw_notification(

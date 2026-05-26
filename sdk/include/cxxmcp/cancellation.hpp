@@ -18,7 +18,9 @@ class CancellationToken {
 
   /// @brief Returns true after the associated source has requested
   /// cancellation.
-  bool cancelled() const noexcept { return cancelled_->load(); }
+  bool cancelled() const noexcept {
+    return cancelled_ != nullptr && cancelled_->load();
+  }
 
  private:
   friend class CancellationSource;
@@ -41,10 +43,16 @@ class CancellationSource {
   }
 
   /// @brief Requests cancellation for all tokens created from this source.
-  void cancel() const noexcept { cancelled_->store(true); }
+  void cancel() const noexcept {
+    if (cancelled_ != nullptr) {
+      cancelled_->store(true);
+    }
+  }
 
   /// @brief Returns true when cancellation has been requested.
-  bool cancelled() const noexcept { return cancelled_->load(); }
+  bool cancelled() const noexcept {
+    return cancelled_ != nullptr && cancelled_->load();
+  }
 
  private:
   std::shared_ptr<std::atomic_bool> cancelled_;

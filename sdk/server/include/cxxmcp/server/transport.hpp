@@ -38,7 +38,7 @@ struct SessionContext {
   /// Borrowed transport used to create a ClientPeer for outbound messages.
   Transport* transport = nullptr;
 
-  /// @brief Return a non-owning peer facade for the client on this session.
+  /// @brief Return a non-owning peer handle for the client on this session.
   /// @return A ClientPeer bound to transport, or an unavailable peer when no
   /// transport is associated with the context.
   ClientPeer client() const noexcept;
@@ -105,6 +105,18 @@ class Transport {
     });
   }
 
+  /// @brief Send a JSON-RPC request to a specific logical session.
+  /// @param session_id Transport-defined session identifier.
+  /// @param request Request to serialize and deliver.
+  /// @return The client response, or an error if the session is unavailable or
+  /// outbound requests are unsupported.
+  /// @note Transports without session routing delegate to send_request().
+  virtual core::Result<protocol::JsonRpcResponse> send_request_to_session(
+      std::string_view session_id, const protocol::JsonRpcRequest& request) {
+    (void)session_id;
+    return send_request(request);
+  }
+
   /// @brief Return capabilities learned from the client's initialize request.
   /// @return Client capabilities when known; std::nullopt before initialize
   /// or when the transport cannot provide them.
@@ -113,12 +125,35 @@ class Transport {
     return std::nullopt;
   }
 
+  /// @brief Return capabilities learned for a specific logical session.
+  /// @param session_id Transport-defined session identifier.
+  /// @return Client capabilities when known for the session.
+  /// @note Transports without session routing delegate to
+  /// client_capabilities().
+  virtual std::optional<protocol::ClientCapabilities>
+  client_capabilities_for_session(std::string_view session_id) const {
+    (void)session_id;
+    return client_capabilities();
+  }
+
   /// @brief Send a JSON-RPC notification from the server to the client.
   /// @param notification Notification to serialize and deliver.
   /// @return core::Unit on success, or a core::Error for serialization,
   /// stopped-session, or I/O failures.
   virtual core::Result<core::Unit> send_notification(
       const protocol::JsonRpcNotification& notification) = 0;
+
+  /// @brief Send a JSON-RPC notification to a specific logical session.
+  /// @param session_id Transport-defined session identifier.
+  /// @param notification Notification to serialize and deliver.
+  /// @return core::Unit on success, or an error if the session is unavailable.
+  /// @note Transports without session routing delegate to send_notification().
+  virtual core::Result<core::Unit> send_notification_to_session(
+      std::string_view session_id,
+      const protocol::JsonRpcNotification& notification) {
+    (void)session_id;
+    return send_notification(notification);
+  }
 
   /// @brief Request transport shutdown.
   ///

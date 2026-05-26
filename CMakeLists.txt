@@ -5,14 +5,14 @@ project(cxxmcp
     LANGUAGES CXX
 )
 
-set(CMAKE_CXX_STANDARD 20)
-set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 set(BUILD_SHARED_LIBS OFF CACHE BOOL "Build static libraries by default" FORCE)
 
 include(CTest)
 include(CMakePackageConfigHelpers)
 include(GNUInstallDirs)
+
+find_package(Threads REQUIRED)
 
 function(cxxmcp_build_option canonical legacy description default_value)
     if(DEFINED ${legacy} AND NOT DEFINED ${canonical})
@@ -24,13 +24,29 @@ function(cxxmcp_build_option canonical legacy description default_value)
     mark_as_advanced(${legacy})
 endfunction()
 
-function(cxxmcp_require_cxx20 target_name)
+set(CXXMCP_SDK_CXX_STANDARD "17" CACHE STRING
+    "Minimum C++ standard required by exported cxxmcp SDK targets")
+set_property(CACHE CXXMCP_SDK_CXX_STANDARD PROPERTY STRINGS 17 20 23 26)
+if(NOT CXXMCP_SDK_CXX_STANDARD MATCHES "^(17|20|23|26)$")
+    message(FATAL_ERROR
+        "CXXMCP_SDK_CXX_STANDARD must be one of 17, 20, 23, or 26")
+endif()
+
+function(cxxmcp_require_cxx_standard target_name standard)
     get_target_property(target_type "${target_name}" TYPE)
     if(target_type STREQUAL "INTERFACE_LIBRARY")
-        target_compile_features("${target_name}" INTERFACE cxx_std_20)
+        target_compile_features("${target_name}" INTERFACE cxx_std_${standard})
     else()
-        target_compile_features("${target_name}" PUBLIC cxx_std_20)
+        target_compile_features("${target_name}" PUBLIC cxx_std_${standard})
     endif()
+endfunction()
+
+function(cxxmcp_require_sdk_cxx target_name)
+    cxxmcp_require_cxx_standard("${target_name}" "${CXXMCP_SDK_CXX_STANDARD}")
+endfunction()
+
+function(cxxmcp_require_cxx20 target_name)
+    cxxmcp_require_cxx_standard("${target_name}" 20)
 endfunction()
 
 set(CXXMCP_MSVC_RUNTIME_LIBRARY "" CACHE STRING
@@ -119,7 +135,7 @@ target_include_directories(mcp_core INTERFACE
     $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>
 )
 
-cxxmcp_require_cxx20(mcp_core)
+cxxmcp_require_sdk_cxx(mcp_core)
 
 add_library(jsonrpcpp INTERFACE)
 target_include_directories(jsonrpcpp INTERFACE
@@ -129,16 +145,16 @@ target_include_directories(jsonrpcpp INTERFACE
     $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}/cxxmcp/third_party/jsonrpcpp>
 )
 
-cxxmcp_require_cxx20(jsonrpcpp)
+cxxmcp_require_sdk_cxx(jsonrpcpp)
 
+# Internal implementation dependency for HTTP transports and tests. It is not
+# installed or exported as part of the public SDK package contract.
 add_library(cpp_httplib INTERFACE)
 target_include_directories(cpp_httplib INTERFACE
     $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/third_party/httplib>
-    $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>
-    $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}/cxxmcp/third_party/httplib>
 )
 
-cxxmcp_require_cxx20(cpp_httplib)
+cxxmcp_require_sdk_cxx(cpp_httplib)
 
 add_subdirectory(third_party/spdlog EXCLUDE_FROM_ALL)
 
@@ -153,7 +169,7 @@ if(MCP_ENABLE_PROTOCOL)
         $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>
     )
     target_link_libraries(mcp_protocol PUBLIC mcp_core jsonrpcpp)
-    cxxmcp_require_cxx20(mcp_protocol)
+    cxxmcp_require_sdk_cxx(mcp_protocol)
 endif()
 
 if(MCP_ENABLE_CLIENT)
@@ -162,6 +178,7 @@ if(MCP_ENABLE_CLIENT)
         sdk/client/src/http_transport.cpp
         sdk/client/src/process_stdio_transport.cpp
         sdk/client/src/stdio_transport.cpp
+        sdk/client/src/transport_adapter.cpp
     )
     set_target_properties(mcp_client PROPERTIES EXPORT_NAME client)
     target_include_directories(mcp_client PUBLIC
@@ -169,8 +186,14 @@ if(MCP_ENABLE_CLIENT)
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/sdk/client/include>
         $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>
     )
-    target_link_libraries(mcp_client PUBLIC mcp_core mcp_protocol cpp_httplib)
-    cxxmcp_require_cxx20(mcp_client)
+    target_include_directories(mcp_client PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/third_party/httplib
+    )
+    target_link_libraries(mcp_client
+        PUBLIC mcp_core mcp_protocol
+        PRIVATE Threads::Threads
+    )
+    cxxmcp_require_sdk_cxx(mcp_client)
 endif()
 
 if(MCP_ENABLE_SERVER)
@@ -180,6 +203,7 @@ if(MCP_ENABLE_SERVER)
         sdk/server/src/server.cpp
         sdk/server/src/stdio_transport.cpp
         sdk/server/src/task_manager.cpp
+        sdk/server/src/transport_adapter.cpp
     )
     set_target_properties(mcp_server PROPERTIES EXPORT_NAME server)
     target_include_directories(mcp_server PUBLIC
@@ -187,8 +211,11 @@ if(MCP_ENABLE_SERVER)
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/sdk/server/include>
         $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>
     )
-    target_link_libraries(mcp_server PUBLIC mcp_core mcp_protocol cpp_httplib)
-    cxxmcp_require_cxx20(mcp_server)
+    target_include_directories(mcp_server PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/third_party/httplib
+    )
+    target_link_libraries(mcp_server PUBLIC mcp_core mcp_protocol)
+    cxxmcp_require_sdk_cxx(mcp_server)
 endif()
 
 if(TARGET mcp_protocol OR TARGET mcp_client OR TARGET mcp_server)
@@ -208,7 +235,7 @@ if(TARGET mcp_protocol OR TARGET mcp_client OR TARGET mcp_server)
     if(TARGET mcp_server)
         target_link_libraries(mcp_sdk INTERFACE mcp_server)
     endif()
-    cxxmcp_require_cxx20(mcp_sdk)
+    cxxmcp_require_sdk_cxx(mcp_sdk)
 endif()
 
 if(TARGET mcp_protocol)
@@ -220,7 +247,7 @@ if(TARGET mcp_protocol)
         $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>
     )
     target_link_libraries(mcp_transport INTERFACE mcp_core mcp_protocol)
-    cxxmcp_require_cxx20(mcp_transport)
+    cxxmcp_require_sdk_cxx(mcp_transport)
 endif()
 
 if(TARGET mcp_sdk AND TARGET mcp_transport)
@@ -243,7 +270,7 @@ if(TARGET mcp_client AND TARGET mcp_server)
         $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>
     )
     target_link_libraries(mcp_peer INTERFACE mcp_client mcp_server)
-    cxxmcp_require_cxx20(mcp_peer)
+    cxxmcp_require_sdk_cxx(mcp_peer)
 
     add_library(mcp_handler INTERFACE)
     set_target_properties(mcp_handler PROPERTIES EXPORT_NAME handler)
@@ -252,7 +279,7 @@ if(TARGET mcp_client AND TARGET mcp_server)
         $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>
     )
     target_link_libraries(mcp_handler INTERFACE mcp_client mcp_server)
-    cxxmcp_require_cxx20(mcp_handler)
+    cxxmcp_require_sdk_cxx(mcp_handler)
 
     add_library(mcp_service INTERFACE)
     set_target_properties(mcp_service PROPERTIES EXPORT_NAME service)
@@ -261,7 +288,7 @@ if(TARGET mcp_client AND TARGET mcp_server)
         $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>
     )
     target_link_libraries(mcp_service INTERFACE mcp_peer)
-    cxxmcp_require_cxx20(mcp_service)
+    cxxmcp_require_sdk_cxx(mcp_service)
 endif()
 
 if(TARGET mcp_sdk)
@@ -316,7 +343,7 @@ if(TARGET mcp_protocol)
     )
     target_link_libraries(mcp_plugin_sdk INTERFACE mcp_core mcp_protocol)
     set_target_properties(mcp_plugin_sdk PROPERTIES EXPORT_NAME plugin_sdk)
-    cxxmcp_require_cxx20(mcp_plugin_sdk)
+    cxxmcp_require_sdk_cxx(mcp_plugin_sdk)
     add_library(cxxmcp::plugin_sdk ALIAS mcp_plugin_sdk)
 endif()
 
@@ -328,7 +355,7 @@ if(TARGET mcp_server AND TARGET mcp_plugin_sdk)
     )
     target_link_libraries(mcp_adapters INTERFACE mcp_core mcp_protocol mcp_server mcp_plugin_sdk)
     set_target_properties(mcp_adapters PROPERTIES EXPORT_NAME adapters)
-    cxxmcp_require_cxx20(mcp_adapters)
+    cxxmcp_require_sdk_cxx(mcp_adapters)
     add_library(cxxmcp::adapters ALIAS mcp_adapters)
 endif()
 
@@ -425,7 +452,7 @@ if(CXXMCP_BUILD_DOCS)
     )
 endif()
 
-set(CXXMCP_INSTALL_TARGETS mcp_core jsonrpcpp cpp_httplib)
+set(CXXMCP_INSTALL_TARGETS mcp_core jsonrpcpp)
 if(TARGET mcp_protocol)
     list(APPEND CXXMCP_INSTALL_TARGETS mcp_protocol)
 endif()
@@ -501,10 +528,6 @@ install(FILES
 install(FILES
     third_party/jsonrpcpp/jsonrpcpp.hpp
     DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/cxxmcp/third_party/jsonrpcpp
-)
-install(FILES
-    third_party/httplib/httplib.h
-    DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/cxxmcp/third_party/httplib
 )
 install(FILES
     third_party/nlohmann/json.hpp

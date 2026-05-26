@@ -25,12 +25,16 @@ struct Root {
   std::string uri;
   /// Optional human-readable name for display.
   std::string name;
+  /// Optional `_meta` extension object preserved on the wire.
+  std::optional<Json> meta;
 };
 
 /// @brief Result object for `roots/list`.
 struct RootsListResult {
   /// Roots currently available to the server.
   std::vector<Root> roots;
+  /// Optional `_meta` extension object preserved on the wire.
+  std::optional<Json> meta;
 };
 
 /// @brief Builds an InvalidRequest error for roots JSON validation failures.
@@ -45,6 +49,9 @@ inline Json root_to_json(const Root& root) {
   json["uri"] = root.uri;
   if (!root.name.empty()) {
     json["name"] = root.name;
+  }
+  if (root.meta.has_value()) {
+    json["_meta"] = *root.meta;
   }
   return json;
 }
@@ -67,6 +74,12 @@ inline core::Result<Root> root_from_json(const Json& json) {
     }
     root.name = json.at("name").get<std::string>();
   }
+  if (json.contains("_meta")) {
+    if (!json.at("_meta").is_object()) {
+      return std::unexpected(roots_json_error("root _meta must be an object"));
+    }
+    root.meta = json.at("_meta");
+  }
   return root;
 }
 
@@ -76,6 +89,9 @@ inline Json roots_list_result_to_json(const RootsListResult& result) {
   json["roots"] = Json::array();
   for (const auto& root : result.roots) {
     json["roots"].push_back(root_to_json(root));
+  }
+  if (result.meta.has_value()) {
+    json["_meta"] = *result.meta;
   }
   return json;
 }
@@ -100,6 +116,13 @@ inline core::Result<RootsListResult> roots_list_result_from_json(
       return std::unexpected(root.error());
     }
     result.roots.push_back(*root);
+  }
+  if (json.contains("_meta")) {
+    if (!json.at("_meta").is_object()) {
+      return std::unexpected(
+          roots_json_error("roots/list result _meta must be an object"));
+    }
+    result.meta = json.at("_meta");
   }
   return result;
 }

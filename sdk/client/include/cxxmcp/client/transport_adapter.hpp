@@ -7,6 +7,7 @@
 /// contract.
 
 #include <deque>
+#include <exception>
 #include <memory>
 #include <optional>
 #include <string>
@@ -15,6 +16,7 @@
 #include <variant>
 
 #include "cxxmcp/client/client.hpp"
+#include "cxxmcp/error.hpp"
 #include "cxxmcp/protocol/serialization.hpp"
 #include "cxxmcp/transport/transport.hpp"
 
@@ -23,11 +25,8 @@ namespace mcp::client {
 namespace detail {
 
 inline core::Error adapter_error(std::string_view message) {
-  return core::Error{
-      static_cast<int>(protocol::ErrorCode::InvalidRequest),
-      std::string(message),
-      {},
-  };
+  return errors::make(protocol::ErrorCode::InvalidRequest, std::string(message),
+                      {}, "transport");
 }
 
 }  // namespace detail
@@ -36,7 +35,10 @@ inline core::Error adapter_error(std::string_view message) {
 ///
 /// Request responses are queued for receive(). Inbound server-to-client
 /// requests and notifications still belong to the concrete transport's start()
-/// callback model and are not synthesized by this adapter.
+/// callback model and are not synthesized by this adapter. This compatibility
+/// adapter is not internally synchronized; callers must serialize send(),
+/// receive(), and close() access unless the wrapped transport and caller add
+/// their own synchronization.
 class TransportContractAdapter final : public transport::ClientTransport {
  public:
   explicit TransportContractAdapter(mcp::client::Transport& transport)
@@ -98,10 +100,11 @@ class TransportContractAdapter final : public transport::ClientTransport {
 /// @brief Adapts a transport::ClientTransport to the existing client::Transport
 /// API.
 ///
-/// This lets the established Client and ClientPeer facades run over the
-/// role-generic transport contract. Inbound notifications and requests received
-/// while waiting for the matching response are dispatched through handlers
-/// installed with start().
+/// This lets the established Client compatibility API and ClientPeer run over
+/// the role-generic transport contract. Inbound notifications and requests
+/// received while waiting for the matching response are dispatched through
+/// handlers installed with start(). This compatibility adapter expects send()
+/// calls to be serialized by the caller.
 class ContractTransportAdapter final : public mcp::client::Transport {
  public:
   explicit ContractTransportAdapter(transport::ClientTransport& transport)
@@ -191,19 +194,35 @@ class ContractTransportAdapter final : public mcp::client::Transport {
     if (!notification_handler_) {
       return core::Unit{};
     }
-    return notification_handler_(notification);
+    try {
+      return notification_handler_(notification);
+    } catch (const std::exception& ex) {
+      return std::unexpected(errors::handler_failed(ex.what()));
+    } catch (...) {
+      return std::unexpected(errors::handler_unknown_exception());
+    }
   }
 
   core::Result<core::Unit> handle_request(
       const protocol::JsonRpcRequest& request) {
     protocol::JsonRpcResponse response;
     if (request_handler_) {
-      auto handled = request_handler_(request);
-      if (!handled) {
+      try {
+        auto handled = request_handler_(request);
+        if (!handled) {
+          response = protocol::make_error_response(
+              request.id, error_object_from_core_error(handled.error()));
+        } else {
+          response = std::move(*handled);
+        }
+      } catch (const std::exception& ex) {
         response = protocol::make_error_response(
-            request.id, error_object_from_core_error(handled.error()));
-      } else {
-        response = std::move(*handled);
+            request.id,
+            error_object_from_core_error(errors::handler_failed(ex.what())));
+      } catch (...) {
+        response = protocol::make_error_response(
+            request.id,
+            error_object_from_core_error(errors::handler_unknown_exception()));
       }
     } else {
       response = protocol::make_error_response(
@@ -221,15 +240,7 @@ class ContractTransportAdapter final : public mcp::client::Transport {
 
   static protocol::ErrorObject error_object_from_core_error(
       const core::Error& error) {
-    std::optional<protocol::Json> data;
-    if (!error.detail.empty()) {
-      data = error.detail;
-    }
-    return protocol::ErrorObject{
-        .code = error.code,
-        .message = error.message,
-        .data = std::move(data),
-    };
+    return errors::to_json_rpc_error(error);
   }
 
   std::unique_ptr<transport::ClientTransport> owned_;

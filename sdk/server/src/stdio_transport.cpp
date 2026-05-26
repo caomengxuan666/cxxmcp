@@ -2,12 +2,14 @@
 
 #include "cxxmcp/server/stdio_transport.hpp"
 
+#include <exception>
 #include <iostream>
 #include <optional>
 #include <string>
 #include <utility>
 #include <variant>
 
+#include "cxxmcp/error.hpp"
 #include "cxxmcp/protocol/serialization.hpp"
 
 namespace mcp::server {
@@ -16,7 +18,7 @@ namespace {
 
 core::Error make_transport_error(int code, std::string message,
                                  std::string detail = {}) {
-  return core::Error{code, std::move(message), std::move(detail)};
+  return core::Error{code, std::move(message), std::move(detail), "transport"};
 }
 
 core::Result<core::Unit> write_response(
@@ -120,12 +122,18 @@ core::Result<core::Unit> StdioTransport::start(
     if (const auto* notification =
             std::get_if<protocol::JsonRpcNotification>(&*message)) {
       if (notification_handler) {
-        const auto handled =
-            notification_handler(*notification, SessionContext{
-                                                    .session_id = "stdio",
-                                                    .remote_address = "stdio",
-                                                    .transport = this,
-                                                });
+        SessionContext context;
+        context.session_id = "stdio";
+        context.remote_address = "stdio";
+        context.transport = this;
+        core::Result<core::Unit> handled;
+        try {
+          handled = notification_handler(*notification, context);
+        } catch (const std::exception& ex) {
+          handled = std::unexpected(errors::handler_failed(ex.what()));
+        } catch (...) {
+          handled = std::unexpected(errors::handler_unknown_exception());
+        }
         if (!handled) {
           running_ = false;
           return std::unexpected(handled.error());
@@ -147,11 +155,18 @@ core::Result<core::Unit> StdioTransport::start(
       continue;
     }
 
-    auto response = handler(*request, SessionContext{
-                                          .session_id = "stdio",
-                                          .remote_address = "stdio",
-                                          .transport = this,
-                                      });
+    SessionContext context;
+    context.session_id = "stdio";
+    context.remote_address = "stdio";
+    context.transport = this;
+    core::Result<protocol::JsonRpcResponse> response;
+    try {
+      response = handler(*request, context);
+    } catch (const std::exception& ex) {
+      response = std::unexpected(errors::handler_failed(ex.what()));
+    } catch (...) {
+      response = std::unexpected(errors::handler_unknown_exception());
+    }
     if (!response) {
       response = protocol::make_error_response(
           std::optional<protocol::RequestId>{request->id},

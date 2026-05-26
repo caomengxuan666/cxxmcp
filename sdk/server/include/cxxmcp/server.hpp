@@ -6,7 +6,7 @@
 /// @brief Server-side high-level C++ API for MCP servers, transports,
 /// registries, and handlers.
 ///
-/// Include this header when a server application wants the full facade,
+/// Include this header when a server application wants the full server SDK,
 /// including auth, rate limiting, stdio and HTTP transports, registries, peer
 /// helpers, and the fluent server builder.
 
@@ -19,4 +19,3 @@
 #include "cxxmcp/server/stdio_transport.hpp"
 #include "cxxmcp/server/task_manager.hpp"
 #include "cxxmcp/server/transport.hpp"
-#include "cxxmcp/server/transport_adapter.hpp"

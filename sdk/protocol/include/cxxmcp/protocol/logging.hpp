@@ -42,6 +42,8 @@ enum class LoggingLevel {
 struct LoggingSetLevelParams {
   /// Minimum level the receiver should emit after the request.
   LoggingLevel level = LoggingLevel::Info;
+  /// Optional `_meta` extension object preserved on the wire.
+  std::optional<Json> meta;
 };
 
 /// @brief Parameters for `notifications/message`.
@@ -52,6 +54,8 @@ struct LoggingMessageNotificationParams {
   std::string logger;
   /// Structured log payload.
   Json data;
+  /// Optional `_meta` extension object preserved on the wire.
+  std::optional<Json> meta;
 };
 
 /// @brief Builds an InvalidRequest error for logging JSON validation failures.
@@ -117,7 +121,11 @@ inline std::optional<LoggingLevel> logging_level_from_string(
 /// @brief Serializes `logging/setLevel` params.
 inline Json logging_set_level_params_to_json(
     const LoggingSetLevelParams& params) {
-  return Json{{"level", logging_level_to_string(params.level)}};
+  Json json = Json{{"level", logging_level_to_string(params.level)}};
+  if (params.meta.has_value()) {
+    json["_meta"] = *params.meta;
+  }
+  return json;
 }
 
 /// @brief Parses `logging/setLevel` params.
@@ -138,7 +146,16 @@ inline core::Result<LoggingSetLevelParams> logging_set_level_params_from_json(
     return std::unexpected(
         logging_json_error("logging level is not supported"));
   }
-  return LoggingSetLevelParams{*level};
+  LoggingSetLevelParams params;
+  params.level = *level;
+  if (json.contains("_meta")) {
+    if (!json.at("_meta").is_object()) {
+      return std::unexpected(
+          logging_json_error("logging/setLevel _meta must be an object"));
+    }
+    params.meta = json.at("_meta");
+  }
+  return params;
 }
 
 /// @brief Serializes logging message notification params.
@@ -150,6 +167,9 @@ inline Json logging_message_notification_params_to_json(
     json["logger"] = params.logger;
   }
   json["data"] = params.data;
+  if (params.meta.has_value()) {
+    json["_meta"] = *params.meta;
+  }
   return json;
 }
 
@@ -186,6 +206,13 @@ logging_message_notification_params_from_json(const Json& json) {
     params.logger = json.at("logger").get<std::string>();
   }
   params.data = json.at("data");
+  if (json.contains("_meta")) {
+    if (!json.at("_meta").is_object()) {
+      return std::unexpected(
+          logging_json_error("logging message _meta must be an object"));
+    }
+    params.meta = json.at("_meta");
+  }
   return params;
 }
 

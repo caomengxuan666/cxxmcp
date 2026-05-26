@@ -31,7 +31,7 @@ using CancellationToken = mcp::CancellationToken;
 /// adds tool arguments. It does not own the transport; client() returns a
 /// non-owning ClientPeer for optional server-to-client calls during handling.
 struct ToolContext : SessionContext {
-  /// @brief Return a non-owning peer facade for this invocation's client.
+  /// @brief Return a non-owning peer handle for this invocation's client.
   ClientPeer client() const noexcept { return client_peer(*this); }
 
   /// JSON arguments supplied with the tool call.
@@ -47,7 +47,7 @@ struct ToolContext : SessionContext {
 
 /// @brief Invocation context passed to prompt handlers.
 struct PromptContext : SessionContext {
-  /// @brief Return a non-owning peer facade for this invocation's client.
+  /// @brief Return a non-owning peer handle for this invocation's client.
   ClientPeer client() const noexcept { return client_peer(*this); }
 
   /// JSON arguments supplied with the prompt request.
@@ -56,7 +56,7 @@ struct PromptContext : SessionContext {
 
 /// @brief Invocation context passed to resource read handlers.
 struct ResourceContext : SessionContext {
-  /// @brief Return a non-owning peer facade for this invocation's client.
+  /// @brief Return a non-owning peer handle for this invocation's client.
   ClientPeer client() const noexcept { return client_peer(*this); }
 
   /// Requested resource URI.

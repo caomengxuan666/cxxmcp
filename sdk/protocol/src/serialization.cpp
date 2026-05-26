@@ -15,13 +15,14 @@ namespace {
 
 core::Error make_protocol_error(int code, std::string message,
                                 std::string detail = {}) {
-  return core::Error{code, std::move(message), std::move(detail)};
+  return core::Error{code, std::move(message), std::move(detail), "protocol"};
 }
 
 core::Error translate_rpc_error(const jsonrpcpp::Error& error) {
   core::Error translated;
   translated.code = error.code();
   translated.message = error.message();
+  translated.category = "protocol";
   if (!error.data().is_null()) {
     translated.detail = error.data().dump();
   }
@@ -129,13 +130,13 @@ core::Result<JsonRpcResponse> from_response(const jsonrpcpp::Response& response,
   }
   message.meta = *meta;
   if (response.error()) {
-    message.error = ErrorObject{
-        .code = response.error().code(),
-        .message = response.error().message(),
-        .data = response.error().data().is_null()
-                    ? std::optional<Json>{}
-                    : std::optional<Json>{response.error().data()},
-    };
+    ErrorObject error;
+    error.code = response.error().code();
+    error.message = response.error().message();
+    error.data = response.error().data().is_null()
+                     ? std::optional<Json>{}
+                     : std::optional<Json>{response.error().data()};
+    message.error = std::move(error);
   } else {
     message.result = response.result();
   }

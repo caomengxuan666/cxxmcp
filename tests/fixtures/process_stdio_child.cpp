@@ -1,5 +1,7 @@
 // Copyright (c) 2025 [caomengxuan666]
 
+#include <cstdlib>
+#include <filesystem>
 #include <iostream>
 #include <optional>
 #include <string>
@@ -13,6 +15,8 @@
 namespace {
 
 using mcp::protocol::Json;
+
+std::string g_observed_arg;
 
 void write_response(const mcp::protocol::JsonRpcResponse& response) {
   const auto serialized = mcp::protocol::serialize_response(response);
@@ -184,7 +188,7 @@ void handle_request(const mcp::protocol::JsonRpcRequest& request) {
     });
 
     const auto response = read_response();
-    if (!response || !response->result.has_value()) {
+    if (!response) {
       return;
     }
     if (!response->id.has_value() ||
@@ -192,9 +196,29 @@ void handle_request(const mcp::protocol::JsonRpcRequest& request) {
         std::get<std::string>(*response->id) != "server-1") {
       return;
     }
+    if (response->error.has_value()) {
+      write_response(mcp::protocol::make_response(
+          request.id,
+          Json{{"handlerError", response->error->message}, {"ok", false}}));
+      return;
+    }
+    if (!response->result.has_value()) {
+      return;
+    }
 
     write_response(
         mcp::protocol::make_response(request.id, Json{{"ok", true}}));
+    return;
+  }
+
+  if (request.method == "custom/options") {
+    const char* env_value = std::getenv("CXXMCP_PROCESS_TEST_ENV");
+    write_response(mcp::protocol::make_response(
+        request.id, Json{
+                        {"arg", g_observed_arg},
+                        {"env", env_value == nullptr ? "" : env_value},
+                        {"cwd", std::filesystem::current_path().string()},
+                    }));
     return;
   }
 
@@ -205,16 +229,32 @@ void handle_request(const mcp::protocol::JsonRpcRequest& request) {
 }  // namespace
 
 int main(int argc, char** argv) {
+  if (argc > 2) {
+    g_observed_arg = argv[2];
+  }
+
   if (argc > 1 && std::string_view(argv[1]) == "--ignore-requests") {
     std::string ignored;
     while (std::getline(std::cin, ignored)) {
     }
     return 0;
   }
+  if (argc > 1 && std::string_view(argv[1]) == "--exit-immediately") {
+    return 0;
+  }
+  if (argc > 1 && std::string_view(argv[1]) == "--stderr-before-response") {
+    std::cerr << "child stderr is intentionally noisy\n";
+    std::cerr.flush();
+  }
 
   std::string line;
   while (std::getline(std::cin, line)) {
     if (line.empty()) {
+      continue;
+    }
+    if (argc > 1 && std::string_view(argv[1]) == "--malformed-output") {
+      std::cout << "{not-json}\n";
+      std::cout.flush();
       continue;
     }
 
@@ -224,6 +264,11 @@ int main(int argc, char** argv) {
     }
     if (const auto* request =
             std::get_if<mcp::protocol::JsonRpcRequest>(&*message)) {
+      if (argc > 1 && std::string_view(argv[1]) == "--wrong-response-id") {
+        write_response(mcp::protocol::make_response(std::int64_t{999},
+                                                    Json{{"ok", true}}));
+        continue;
+      }
       handle_request(*request);
     }
   }

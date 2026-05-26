@@ -3,14 +3,22 @@
 #include "cxxmcp/client/process_stdio_transport.hpp"
 
 #include <algorithm>
+#include <atomic>
+#include <cerrno>
 #include <chrono>
 #include <condition_variable>
+#include <cstdlib>
+#include <cstring>
 #include <cwchar>
+#include <deque>
 #include <future>
 #include <map>
+#include <memory>
 #include <mutex>
 #include <optional>
+#include <set>
 #include <string>
+#include <system_error>
 #include <thread>
 #include <type_traits>
 #include <utility>
@@ -21,14 +29,23 @@
 #ifdef _WIN32
 #define NOMINMAX
 #include <windows.h>
+#else
+#include <pthread.h>
+#include <sys/types.h>
+#include <sys/wait.h>
+#include <unistd.h>
+
+#include <csignal>
 #endif
+
+#include "cxxmcp/transport/process_stdio_transport.hpp"
 
 namespace mcp::client {
 namespace {
 
 core::Error make_process_error(int code, std::string message,
                                std::string detail = {}) {
-  return core::Error{code, std::move(message), std::move(detail)};
+  return core::Error{code, std::move(message), std::move(detail), "transport"};
 }
 
 core::Error make_process_error(std::string message, std::string detail = {}) {
@@ -212,6 +229,132 @@ class Handle final {
   HANDLE handle_ = nullptr;
 };
 
+#else
+
+std::string posix_error_message(int error) { return std::strerror(error); }
+
+class ScopedSigpipeBlock final {
+ public:
+  ScopedSigpipeBlock() noexcept {
+    ::sigemptyset(&sigpipe_set_);
+    ::sigaddset(&sigpipe_set_, SIGPIPE);
+    if (::pthread_sigmask(SIG_BLOCK, &sigpipe_set_, &previous_mask_) == 0) {
+      blocked_ = true;
+      sigset_t pending;
+      if (::sigpending(&pending) == 0) {
+        had_pending_sigpipe_ = ::sigismember(&pending, SIGPIPE) == 1;
+      }
+    }
+  }
+
+  ~ScopedSigpipeBlock() {
+    if (!blocked_) {
+      return;
+    }
+
+    if (!had_pending_sigpipe_) {
+      sigset_t pending;
+      if (::sigpending(&pending) == 0 &&
+          ::sigismember(&pending, SIGPIPE) == 1) {
+        int signal = 0;
+        (void)::sigwait(&sigpipe_set_, &signal);
+      }
+    }
+
+    (void)::pthread_sigmask(SIG_SETMASK, &previous_mask_, nullptr);
+  }
+
+  ScopedSigpipeBlock(const ScopedSigpipeBlock&) = delete;
+  ScopedSigpipeBlock& operator=(const ScopedSigpipeBlock&) = delete;
+
+ private:
+  sigset_t sigpipe_set_{};
+  sigset_t previous_mask_{};
+  bool blocked_ = false;
+  bool had_pending_sigpipe_ = false;
+};
+
+class FileDescriptor final {
+ public:
+  FileDescriptor() = default;
+  explicit FileDescriptor(int fd) : fd_(fd) {}
+  ~FileDescriptor() { reset(); }
+
+  FileDescriptor(const FileDescriptor&) = delete;
+  FileDescriptor& operator=(const FileDescriptor&) = delete;
+
+  FileDescriptor(FileDescriptor&& other) noexcept
+      : fd_(std::exchange(other.fd_, -1)) {}
+
+  FileDescriptor& operator=(FileDescriptor&& other) noexcept {
+    if (this != &other) {
+      reset();
+      fd_ = std::exchange(other.fd_, -1);
+    }
+    return *this;
+  }
+
+  int get() const noexcept { return fd_; }
+
+  int release() noexcept { return std::exchange(fd_, -1); }
+
+  void reset(int fd = -1) noexcept {
+    if (fd_ >= 0) {
+      while (::close(fd_) != 0 && errno == EINTR) {
+      }
+    }
+    fd_ = fd;
+  }
+
+  explicit operator bool() const noexcept { return fd_ >= 0; }
+
+ private:
+  int fd_ = -1;
+};
+
+std::vector<char*> argv_from_options(
+    const ProcessStdioTransportOptions& options) {
+  std::vector<char*> argv;
+  argv.reserve(options.args.size() + 2);
+  argv.push_back(const_cast<char*>(options.command.c_str()));
+  for (const auto& arg : options.args) {
+    argv.push_back(const_cast<char*>(arg.c_str()));
+  }
+  argv.push_back(nullptr);
+  return argv;
+}
+
+void apply_child_environment(const ProcessStdioTransportOptions& options) {
+  for (const auto& [key, value] : options.env) {
+    if (!key.empty()) {
+      ::setenv(key.c_str(), value.c_str(), 1);
+    }
+  }
+}
+
+bool wait_for_process_exit(pid_t pid,
+                           std::chrono::milliseconds timeout) noexcept {
+  int status = 0;
+  const auto deadline = std::chrono::steady_clock::now() + timeout;
+  while (std::chrono::steady_clock::now() < deadline) {
+    const pid_t waited = ::waitpid(pid, &status, WNOHANG);
+    if (waited == pid || (waited < 0 && errno == ECHILD)) {
+      return true;
+    }
+    if (waited < 0 && errno != EINTR) {
+      return true;
+    }
+    std::this_thread::sleep_for(std::chrono::milliseconds(10));
+  }
+  return false;
+}
+
+void reap_process(pid_t pid) noexcept {
+  int status = 0;
+  while (::waitpid(pid, &status, 0) < 0 && errno == EINTR) {
+  }
+}
+
 #endif
 
 }  // namespace
@@ -242,8 +385,27 @@ class ProcessStdioTransport::Impl {
     }
     return core::Unit{};
 #else
-    return std::unexpected(make_process_error(
-        "process stdio transport is not implemented on this platform"));
+    std::lock_guard<std::mutex> lock(write_mutex_);
+    const std::string payload = line + "\n";
+    const ScopedSigpipeBlock sigpipe_block;
+    std::size_t written = 0;
+    while (written < payload.size()) {
+      const auto result = ::write(stdin_write_.get(), payload.data() + written,
+                                  payload.size() - written);
+      if (result < 0) {
+        if (errno == EINTR) {
+          continue;
+        }
+        return std::unexpected(make_process_error(
+            "failed to write process stdin", posix_error_message(errno)));
+      }
+      if (result == 0) {
+        return std::unexpected(make_process_error(
+            "failed to write process stdin", "write returned zero bytes"));
+      }
+      written += static_cast<std::size_t>(result);
+    }
+    return core::Unit{};
 #endif
   }
 
@@ -435,8 +597,29 @@ class ProcessStdioTransport::Impl {
     }
     return line;
 #else
-    return std::unexpected(make_process_error(
-        "process stdio transport is not implemented on this platform"));
+    std::string line;
+    char ch = '\0';
+    while (true) {
+      const auto result = ::read(stdout_read_.get(), &ch, 1);
+      if (result < 0) {
+        if (errno == EINTR) {
+          continue;
+        }
+        return std::unexpected(make_process_error(
+            "failed to read process stdout", posix_error_message(errno)));
+      }
+      if (result == 0) {
+        return std::unexpected(make_process_error(
+            "failed to read process stdout", "child process closed stdout"));
+      }
+      if (ch == '\n') {
+        break;
+      }
+      if (ch != '\r') {
+        line.push_back(ch);
+      }
+    }
+    return line;
 #endif
   }
 
@@ -508,8 +691,63 @@ class ProcessStdioTransport::Impl {
     thread_.reset(process_info.hThread);
     return core::Unit{};
 #else
-    return std::unexpected(make_process_error(
-        "process stdio transport is not implemented on this platform"));
+    std::lock_guard<std::mutex> process_lock(process_mutex_);
+    if (process_pid_ > 0) {
+      return core::Unit{};
+    }
+    if (options_.command.empty()) {
+      return std::unexpected(
+          make_process_error("process command must not be empty"));
+    }
+
+    int stdin_pipe_raw[2] = {-1, -1};
+    if (::pipe(stdin_pipe_raw) != 0) {
+      return std::unexpected(make_process_error(
+          "failed to create process stdin pipe", posix_error_message(errno)));
+    }
+    FileDescriptor stdin_read(stdin_pipe_raw[0]);
+    FileDescriptor stdin_write(stdin_pipe_raw[1]);
+
+    int stdout_pipe_raw[2] = {-1, -1};
+    if (::pipe(stdout_pipe_raw) != 0) {
+      return std::unexpected(make_process_error(
+          "failed to create process stdout pipe", posix_error_message(errno)));
+    }
+    FileDescriptor stdout_read(stdout_pipe_raw[0]);
+    FileDescriptor stdout_write(stdout_pipe_raw[1]);
+
+    const pid_t pid = ::fork();
+    if (pid < 0) {
+      return std::unexpected(make_process_error("failed to start process",
+                                                posix_error_message(errno)));
+    }
+
+    if (pid == 0) {
+      stdin_write.reset();
+      stdout_read.reset();
+
+      if (::dup2(stdin_read.get(), STDIN_FILENO) < 0 ||
+          ::dup2(stdout_write.get(), STDOUT_FILENO) < 0) {
+        _exit(127);
+      }
+      stdin_read.reset();
+      stdout_write.reset();
+
+      if (!options_.cwd.empty() && ::chdir(options_.cwd.c_str()) != 0) {
+        _exit(127);
+      }
+      apply_child_environment(options_);
+      auto argv = argv_from_options(options_);
+      ::execvp(options_.command.c_str(), argv.data());
+      _exit(127);
+    }
+
+    stdin_read.reset();
+    stdout_write.reset();
+    stdin_write_ = std::move(stdin_write);
+    stdout_read_ = std::move(stdout_read);
+    process_pid_ = pid;
+    return core::Unit{};
 #endif
   }
 
@@ -534,13 +772,34 @@ class ProcessStdioTransport::Impl {
     if (reader_thread_.joinable()) {
       reader_thread_.join();
     }
+#else
+    running_ = false;
+    {
+      std::lock_guard<std::mutex> process_lock(process_mutex_);
+      stdin_write_.reset();
+      if (process_pid_ > 0) {
+        if (!wait_for_process_exit(process_pid_, std::chrono::seconds(1))) {
+          ::kill(process_pid_, SIGTERM);
+          if (!wait_for_process_exit(process_pid_, std::chrono::seconds(1))) {
+            ::kill(process_pid_, SIGKILL);
+            reap_process(process_pid_);
+          }
+        }
+        process_pid_ = -1;
+      }
+      stdout_read_.reset();
+    }
+    if (reader_thread_.joinable() &&
+        reader_thread_.get_id() != std::this_thread::get_id()) {
+      reader_thread_.join();
+    }
 #endif
   }
 
  private:
   ProcessStdioTransportOptions options_;
   bool started_ = false;
-  bool running_ = true;
+  std::atomic_bool running_{true};
   TransportRequestHandler request_handler_;
   TransportNotificationHandler notification_handler_;
   std::thread reader_thread_;
@@ -555,6 +814,10 @@ class ProcessStdioTransport::Impl {
   Handle stdout_read_;
   Handle process_;
   Handle thread_;
+#else
+  FileDescriptor stdin_write_;
+  FileDescriptor stdout_read_;
+  pid_t process_pid_ = -1;
 #endif
 };
 
@@ -589,7 +852,18 @@ core::Result<protocol::JsonRpcResponse> ProcessStdioTransport::send(
       return std::unexpected(line.error());
     }
 
-    return protocol::parse_response(*line);
+    auto response = protocol::parse_response(*line);
+    if (!response) {
+      return std::unexpected(response.error());
+    }
+    if (!response->id.has_value() || *response->id != request.id) {
+      return std::unexpected(make_process_error(
+          static_cast<int>(protocol::ErrorCode::InvalidRequest),
+          "process stdio transport received an unexpected response",
+          response->id.has_value() ? request_id_to_string(*response->id)
+                                   : std::string{"null"}));
+    }
+    return *response;
   }
 
   return impl_->send_request(request);
@@ -608,3 +882,380 @@ core::Result<core::Unit> ProcessStdioTransport::send_notification(
 void ProcessStdioTransport::stop() noexcept { impl_->stop(); }
 
 }  // namespace mcp::client
+
+namespace mcp::transport {
+namespace {
+
+core::Error make_native_process_error(protocol::ErrorCode code,
+                                      std::string message,
+                                      std::string detail = {}) {
+  return core::Error{
+      static_cast<int>(code),
+      std::move(message),
+      std::move(detail),
+      "transport",
+  };
+}
+
+client::ProcessStdioTransportOptions to_legacy_options(
+    ProcessStdioClientTransportOptions options) {
+  client::ProcessStdioTransportOptions legacy;
+  legacy.command = std::move(options.command);
+  legacy.args = std::move(options.args);
+  legacy.cwd = std::move(options.cwd);
+  legacy.env = std::move(options.env);
+  legacy.request_timeout = options.request_timeout;
+  return legacy;
+}
+
+std::string request_id_to_string_for_native(
+    const protocol::RequestId& request_id) {
+  return std::visit(
+      [](const auto& value) -> std::string {
+        using Value = std::decay_t<decltype(value)>;
+        if constexpr (std::is_same_v<Value, std::string>) {
+          return value;
+        } else {
+          return std::to_string(value);
+        }
+      },
+      request_id);
+}
+
+}  // namespace
+
+class ProcessStdioClientTransport::Impl {
+ public:
+  explicit Impl(ProcessStdioClientTransportOptions options)
+      : transport_(to_legacy_options(std::move(options))) {}
+
+  ~Impl() { (void)close(); }
+
+  protocol::Json diagnostics() const {
+    std::lock_guard<std::mutex> lock(mutex_);
+    return protocol::Json{
+        {"name", "process-stdio"},
+        {"closed", closed_},
+        {"queued", inbound_.size()},
+        {"pendingServerRequests", pending_server_requests_.size()},
+        {"requestWorkers", request_threads_.size()},
+        {"activeRequestWorkers", active_request_workers_},
+        {"completedRequestWorkers", completed_request_workers_},
+        {"failedRequestWorkers", failed_request_workers_},
+        {"timedOutRequestWorkers", timed_out_request_workers_},
+    };
+  }
+
+  core::Result<core::Unit> send(protocol::JsonRpcMessage message) {
+    const auto started = ensure_started();
+    if (!started) {
+      return std::unexpected(started.error());
+    }
+
+    if (auto* request = std::get_if<protocol::JsonRpcRequest>(&message)) {
+      return start_request_thread(std::move(*request));
+    }
+
+    if (auto* notification =
+            std::get_if<protocol::JsonRpcNotification>(&message)) {
+      return transport_.send_notification(*notification);
+    }
+
+    auto* response = std::get_if<protocol::JsonRpcResponse>(&message);
+    if (response == nullptr || !response->id.has_value()) {
+      return std::unexpected(make_native_process_error(
+          protocol::ErrorCode::InvalidRequest,
+          "process stdio client transport cannot send response without id"));
+    }
+    return complete_server_request(std::move(*response));
+  }
+
+  core::Result<std::optional<protocol::JsonRpcMessage>> receive() {
+    const auto started = ensure_started();
+    if (!started) {
+      return std::unexpected(started.error());
+    }
+
+    std::unique_lock<std::mutex> lock(mutex_);
+    receive_cv_.wait(lock, [this] { return closed_ || !inbound_.empty(); });
+    if (inbound_.empty()) {
+      return std::nullopt;
+    }
+    auto message = std::move(inbound_.front());
+    inbound_.pop_front();
+    return message;
+  }
+
+  core::Result<core::Unit> close() {
+    std::map<protocol::RequestId, std::shared_ptr<PendingServerRequest>>
+        pending;
+    std::vector<std::thread> request_threads;
+    {
+      std::lock_guard<std::mutex> lock(mutex_);
+      if (closed_) {
+        return core::Unit{};
+      }
+      closed_ = true;
+      pending.swap(pending_server_requests_);
+      request_threads.swap(request_threads_);
+    }
+
+    for (auto& [_, request] : pending) {
+      {
+        std::lock_guard<std::mutex> request_lock(request->mutex);
+        request->response = protocol::make_error_response(
+            std::optional<protocol::RequestId>{request->id},
+            protocol::make_error(protocol::ErrorCode::InternalError,
+                                 "process stdio transport closed"));
+      }
+      request->cv.notify_all();
+    }
+
+    receive_cv_.notify_all();
+    transport_.stop();
+    for (auto& thread : request_threads) {
+      if (thread.joinable() && thread.get_id() != std::this_thread::get_id()) {
+        thread.join();
+      }
+    }
+    return core::Unit{};
+  }
+
+ private:
+  struct PendingServerRequest {
+    explicit PendingServerRequest(protocol::RequestId request_id)
+        : id(std::move(request_id)) {}
+
+    protocol::RequestId id;
+    std::mutex mutex;
+    std::condition_variable cv;
+    std::optional<protocol::JsonRpcResponse> response;
+  };
+
+  core::Result<core::Unit> ensure_started() {
+    std::lock_guard<std::mutex> lock(mutex_);
+    if (closed_) {
+      return std::unexpected(make_native_process_error(
+          protocol::ErrorCode::InvalidRequest,
+          "process stdio client transport is closed"));
+    }
+    if (started_) {
+      return core::Unit{};
+    }
+    started_ = true;
+
+    auto started = transport_.start(
+        [this](const protocol::JsonRpcRequest& request) {
+          return handle_server_request(request);
+        },
+        [this](const protocol::JsonRpcNotification& notification) {
+          return handle_server_notification(notification);
+        });
+    if (!started) {
+      started_ = false;
+      return std::unexpected(started.error());
+    }
+    return core::Unit{};
+  }
+
+  core::Result<core::Unit> start_request_thread(
+      protocol::JsonRpcRequest request) {
+    const auto request_id = request.id;
+    bool registered = false;
+    try {
+      std::lock_guard<std::mutex> lock(mutex_);
+      if (closed_) {
+        return std::unexpected(make_native_process_error(
+            protocol::ErrorCode::InvalidRequest,
+            "process stdio client transport is closed"));
+      }
+      const auto [_, inserted] = in_flight_request_ids_.insert(request_id);
+      if (!inserted) {
+        return std::unexpected(make_native_process_error(
+            protocol::ErrorCode::InvalidRequest,
+            "duplicate process stdio client request id",
+            request_id_to_string_for_native(request_id)));
+      }
+      registered = true;
+      ++active_request_workers_;
+      request_threads_.emplace_back(
+          [this, request_id, request = std::move(request)]() mutable {
+            auto response = transport_.send(request);
+            if (response) {
+              finish_request_worker(request_id, false, false);
+              enqueue(protocol::JsonRpcMessage{std::move(*response)});
+              return;
+            }
+            finish_request_worker(request_id, true,
+                                  is_timeout_error(response.error()));
+            enqueue(protocol::JsonRpcMessage{protocol::make_error_response(
+                std::optional<protocol::RequestId>{request.id},
+                protocol::make_error(response.error().code,
+                                     response.error().message,
+                                     response.error().detail.empty()
+                                         ? std::nullopt
+                                         : std::optional<protocol::Json>{
+                                               response.error().detail}))});
+          });
+    } catch (const std::system_error& ex) {
+      if (registered) {
+        forget_request_worker(request_id);
+      }
+      return std::unexpected(make_native_process_error(
+          protocol::ErrorCode::InternalError,
+          "failed to start process stdio request worker", ex.what()));
+    }
+    return core::Unit{};
+  }
+
+  core::Result<protocol::JsonRpcResponse> handle_server_request(
+      const protocol::JsonRpcRequest& request) {
+    auto pending = std::make_shared<PendingServerRequest>(request.id);
+    {
+      std::lock_guard<std::mutex> lock(mutex_);
+      if (closed_) {
+        return protocol::make_error_response(
+            std::optional<protocol::RequestId>{request.id},
+            protocol::make_error(protocol::ErrorCode::InternalError,
+                                 "process stdio transport closed"));
+      }
+      const auto [_, inserted] =
+          pending_server_requests_.emplace(request.id, pending);
+      if (!inserted) {
+        return protocol::make_error_response(
+            std::optional<protocol::RequestId>{request.id},
+            protocol::make_error(protocol::ErrorCode::InvalidRequest,
+                                 "duplicate server request id"));
+      }
+      inbound_.push_back(protocol::JsonRpcMessage{request});
+    }
+
+    receive_cv_.notify_one();
+
+    std::unique_lock<std::mutex> pending_lock(pending->mutex);
+    pending->cv.wait(pending_lock,
+                     [&pending] { return pending->response.has_value(); });
+    return std::move(*pending->response);
+  }
+
+  core::Result<core::Unit> handle_server_notification(
+      const protocol::JsonRpcNotification& notification) {
+    {
+      std::lock_guard<std::mutex> lock(mutex_);
+      if (closed_) {
+        return core::Unit{};
+      }
+      inbound_.push_back(protocol::JsonRpcMessage{notification});
+    }
+    receive_cv_.notify_one();
+    return core::Unit{};
+  }
+
+  void enqueue(protocol::JsonRpcMessage message) {
+    {
+      std::lock_guard<std::mutex> lock(mutex_);
+      if (closed_) {
+        return;
+      }
+      inbound_.push_back(std::move(message));
+    }
+    receive_cv_.notify_one();
+  }
+
+  static bool is_timeout_error(const core::Error& error) {
+    return error.message.find("timed out") != std::string::npos;
+  }
+
+  void finish_request_worker(const protocol::RequestId& request_id, bool failed,
+                             bool timed_out) {
+    std::lock_guard<std::mutex> lock(mutex_);
+    in_flight_request_ids_.erase(request_id);
+    if (active_request_workers_ > 0) {
+      --active_request_workers_;
+    }
+    ++completed_request_workers_;
+    if (failed) {
+      ++failed_request_workers_;
+    }
+    if (timed_out) {
+      ++timed_out_request_workers_;
+    }
+  }
+
+  void forget_request_worker(const protocol::RequestId& request_id) {
+    std::lock_guard<std::mutex> lock(mutex_);
+    in_flight_request_ids_.erase(request_id);
+    if (active_request_workers_ > 0) {
+      --active_request_workers_;
+    }
+  }
+
+  core::Result<core::Unit> complete_server_request(
+      protocol::JsonRpcResponse response) {
+    const auto id = *response.id;
+    std::shared_ptr<PendingServerRequest> pending;
+    {
+      std::lock_guard<std::mutex> lock(mutex_);
+      const auto it = pending_server_requests_.find(id);
+      if (it == pending_server_requests_.end()) {
+        return std::unexpected(make_native_process_error(
+            protocol::ErrorCode::InvalidRequest,
+            "process stdio client transport has no pending server request",
+            request_id_to_string_for_native(id)));
+      }
+      pending = it->second;
+      pending_server_requests_.erase(it);
+    }
+
+    {
+      std::lock_guard<std::mutex> pending_lock(pending->mutex);
+      pending->response = std::move(response);
+    }
+    pending->cv.notify_all();
+    return core::Unit{};
+  }
+
+  client::ProcessStdioTransport transport_;
+  mutable std::mutex mutex_;
+  std::condition_variable receive_cv_;
+  std::deque<protocol::JsonRpcMessage> inbound_;
+  std::map<protocol::RequestId, std::shared_ptr<PendingServerRequest>>
+      pending_server_requests_;
+  std::set<protocol::RequestId> in_flight_request_ids_;
+  std::vector<std::thread> request_threads_;
+  std::size_t active_request_workers_ = 0;
+  std::size_t completed_request_workers_ = 0;
+  std::size_t failed_request_workers_ = 0;
+  std::size_t timed_out_request_workers_ = 0;
+  bool started_ = false;
+  bool closed_ = false;
+};
+
+ProcessStdioClientTransport::ProcessStdioClientTransport(
+    ProcessStdioClientTransportOptions options)
+    : impl_(std::make_unique<Impl>(std::move(options))) {}
+
+ProcessStdioClientTransport::~ProcessStdioClientTransport() = default;
+
+std::string_view ProcessStdioClientTransport::name() const noexcept {
+  return "process-stdio";
+}
+
+protocol::Json ProcessStdioClientTransport::diagnostics() const {
+  return impl_->diagnostics();
+}
+
+core::Result<core::Unit> ProcessStdioClientTransport::send(TxMessage message) {
+  return impl_->send(std::move(message));
+}
+
+core::Result<std::optional<ProcessStdioClientTransport::RxMessage>>
+ProcessStdioClientTransport::receive() {
+  return impl_->receive();
+}
+
+core::Result<core::Unit> ProcessStdioClientTransport::close() {
+  return impl_->close();
+}
+
+}  // namespace mcp::transport

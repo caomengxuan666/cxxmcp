@@ -16,6 +16,11 @@ namespace mcp::client {
 /// This transport is useful for tests, embedded integrations, or process
 /// environments where the streams are supplied by the caller instead of
 /// launching a child process.
+///
+/// send() is a single synchronous request/response exchange. The concrete
+/// stdio layer does not maintain an in-flight request registry, so duplicate
+/// in-flight request-id validation belongs to Peer/request-handle or
+/// role-generic transport adapters that add asynchronous correlation.
 class StdioTransport final : public Transport {
  public:
   /// @brief Creates a stdio transport using standard input and output streams.

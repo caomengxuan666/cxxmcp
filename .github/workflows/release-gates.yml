@@ -1,0 +1,269 @@
+name: release-gates
+
+on:
+  workflow_dispatch:
+  pull_request:
+  push:
+    branches:
+      - rewrite-v2
+      - main
+
+jobs:
+  release-blocking:
+    name: ${{ matrix.name }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: linux-gcc-ninja
+            os: ubuntu-latest
+            generator: Ninja
+            build_type: Debug
+            cc: gcc
+            cxx: g++
+          - name: linux-clang-ninja
+            os: ubuntu-latest
+            generator: Ninja
+            build_type: Debug
+            cc: clang
+            cxx: clang++
+          - name: macos-appleclang-ninja
+            os: macos-latest
+            generator: Ninja
+            build_type: Debug
+          - name: windows-msvc-ninja-static-runtime
+            os: windows-latest
+            generator: Ninja
+            build_type: Debug
+            msvc_runtime: MultiThreaded$<$<CONFIG:Debug>:Debug>
+          - name: windows-msvc-vs-dynamic-runtime
+            os: windows-latest
+            generator: Visual Studio 17 2022
+            config: Debug
+            msvc_runtime: MultiThreaded$<$<CONFIG:Debug>:Debug>DLL
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Install Ninja
+        if: matrix.generator == 'Ninja'
+        shell: bash
+        run: |
+          if [[ "${RUNNER_OS}" == "Linux" ]]; then
+            sudo apt-get update
+            sudo apt-get install -y ninja-build
+          elif [[ "${RUNNER_OS}" == "macOS" ]]; then
+            brew install ninja
+          elif [[ "${RUNNER_OS}" == "Windows" ]]; then
+            choco install ninja --no-progress
+          fi
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Setup uv
+        uses: astral-sh/setup-uv@v5
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Checkout pinned RMCP reference
+        shell: bash
+        run: |
+          mkdir -p reference
+          git clone https://github.com/modelcontextprotocol/rust-sdk.git reference/rmcp
+          git -C reference/rmcp checkout c330fede90e4729c234f8e87fdbc5ea27a1dd10c
+
+      - name: Configure
+        shell: pwsh
+        env:
+          CC: ${{ matrix.cc }}
+          CXX: ${{ matrix.cxx }}
+        run: |
+          $cmakeArgs = @(
+            "-S", ".",
+            "-B", "build-release-gates",
+            "-G", "${{ matrix.generator }}",
+            "-DCXXMCP_BUILD_SDK=ON",
+            "-DCXXMCP_BUILD_CLIENT=ON",
+            "-DCXXMCP_BUILD_SERVER=ON",
+            "-DCXXMCP_BUILD_RUNTIME=ON",
+            "-DCXXMCP_BUILD_APP=ON",
+            "-DCXXMCP_BUILD_GATEWAY=ON",
+            "-DCXXMCP_BUILD_CLI=OFF",
+            "-DCXXMCP_BUILD_EXAMPLES=ON",
+            "-DCXXMCP_BUILD_TESTS=ON"
+          )
+          if ("${{ matrix.build_type }}") {
+            $cmakeArgs += "-DCMAKE_BUILD_TYPE=${{ matrix.build_type }}"
+          }
+          if ("${{ matrix.msvc_runtime }}") {
+            $cmakeArgs += "-DCXXMCP_MSVC_RUNTIME_LIBRARY=${{ matrix.msvc_runtime }}"
+          }
+          cmake @cmakeArgs
+
+      - name: Build
+        shell: pwsh
+        run: |
+          $buildArgs = @("--build", "build-release-gates", "--parallel")
+          if ("${{ matrix.config }}") {
+            $buildArgs += @("--config", "${{ matrix.config }}")
+          }
+          cmake @buildArgs
+
+      - name: Run release-blocking tests
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path "build-release-gates/test-results" | Out-Null
+          $ctestArgs = @(
+            "--test-dir", "build-release-gates",
+            "-L", "release-blocking",
+            "--output-on-failure",
+            "--timeout", "300",
+            "--output-junit", "build-release-gates/test-results/release-blocking.xml"
+          )
+          if ("${{ matrix.config }}") {
+            $ctestArgs += @("-C", "${{ matrix.config }}")
+          }
+          ctest @ctestArgs
+
+      - name: Upload release gate evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: cxxmcp-release-gates-${{ matrix.name }}
+          path: |
+            build-release-gates/CMakeCache.txt
+            build-release-gates/test-results/release-blocking.xml
+            build-release-gates/Testing/Temporary/*.log
+          if-no-files-found: warn
+
+  docs-artifact:
+    name: doxygen-docs
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Install Doxygen
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y doxygen graphviz ninja-build
+
+      - name: Configure docs
+        run: >
+          cmake -S . -B build-docs -G Ninja
+          -DCMAKE_BUILD_TYPE=Release
+          -DCXXMCP_BUILD_DOCS=ON
+          -DCXXMCP_BUILD_TESTS=OFF
+
+      - name: Build docs
+        run: cmake --build build-docs --target docs
+
+      - name: Verify docs artifact
+        run: test -f docs/doxygen/html/index.html
+
+      - name: Upload docs artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: cxxmcp-doxygen-html
+          path: docs/doxygen/html
+          if-no-files-found: error
+
+  source-artifact:
+    name: source-artifact
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Create source archive
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p release-artifacts
+          archive="release-artifacts/cxxmcp-source-${GITHUB_SHA}.tar.gz"
+          tar \
+            --exclude-vcs \
+            --exclude='./.cache' \
+            --exclude='./out' \
+            --exclude='./build' \
+            --exclude='./build-*' \
+            --exclude='./docs/doxygen' \
+            --exclude='./release-artifacts' \
+            -czf "${archive}" .
+          sha256sum "${archive}" > release-artifacts/SHA256SUMS.txt
+
+      - name: Upload source artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: cxxmcp-source
+          path: release-artifacts
+          if-no-files-found: error
+
+  release-evidence:
+    name: release-evidence
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Collect release evidence documents
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p release-evidence/docs release-evidence/examples
+          cp README.md README_zh.md CHANGELOG.md todo.md release-evidence/
+          cp \
+            docs/compatibility_policy.md \
+            docs/release_gates.md \
+            docs/release_candidate_checklist.md \
+            docs/release_notes_template.md \
+            docs/sdk_peer_service_migration.md \
+            release-evidence/docs/
+          cp examples/*.cpp examples/CMakeLists.txt release-evidence/examples/
+          {
+            echo "commit=${GITHUB_SHA}"
+            echo "workflow=${GITHUB_WORKFLOW}"
+            echo "run_id=${GITHUB_RUN_ID}"
+            echo "run_attempt=${GITHUB_RUN_ATTEMPT}"
+            echo "mcp_protocol_snapshot=2025-11-25"
+            echo "rmcp_reference_commit=c330fede90e4729c234f8e87fdbc5ea27a1dd10c"
+            echo "typescript_sdk_reference=@modelcontextprotocol/sdk@1.29.0"
+            echo "python_sdk_reference=mcp==1.27.1"
+          } > release-evidence/MANIFEST.txt
+
+      - name: Verify release evidence
+        run: python scripts/check_release_evidence.py --source . --evidence release-evidence
+
+      - name: Upload release evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: cxxmcp-release-evidence
+          path: release-evidence
+          if-no-files-found: error

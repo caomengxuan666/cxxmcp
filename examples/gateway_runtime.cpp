@@ -1,4 +1,7 @@
 // Copyright (c) 2025 [caomengxuan666]
+//
+// Runtime tooling example: demonstrates the optional gateway layer above the
+// SDK. It is not the canonical SDK starting path.
 
 #include <chrono>
 #include <cstdint>
@@ -106,6 +109,6 @@ int main() {
           "gateway resources/read failed");
 
   require(runtime->stop().has_value(), "gateway runtime stop failed");
-  std::cout << "gateway facade example passed\n";
+  std::cout << "gateway runtime example passed\n";
   return 0;
 }

@@ -3,7 +3,8 @@
 #pragma once
 
 /// @file
-/// @brief High-level server facade, builder, and convenience app API.
+/// @brief High-level server compatibility API, builder, and convenience app
+/// API.
 ///
 /// Server owns registries for MCP tools, prompts, resources, and resource
 /// templates. Request handlers return core::Result<T> to surface protocol
@@ -378,12 +379,14 @@ struct ServerInfo {
 struct ServerHandler;
 struct ServerHandlerInterface;
 
-/// @brief High-level MCP server facade.
+/// @brief High-level MCP server compatibility API.
 ///
 /// Server owns the configured transports and registries. Register tools,
 /// prompts, resources, and resource templates before start(), then use
 /// transports to serve JSON-RPC requests. Direct list/get/call/read methods are
-/// also available for tests, embedded use, and custom routing.
+/// also available for tests, embedded use, and custom routing. New
+/// applications should prefer ServerPeer and Service as their entry points;
+/// Server remains a stable embeddable layer and compatibility surface.
 class Server {
  public:
   /// @brief Constructs a server from explicit options.
@@ -517,6 +520,10 @@ class Server {
   /// @param uri Resource URI that changed.
   core::Result<core::Unit> notify_resource_updated(std::string_view uri);
 
+  /// @brief Updates resource subscription routing for a transport session.
+  core::Result<core::Unit> set_resource_subscription(
+      const SessionContext& context, std::string_view uri, bool subscribed);
+
   /// @brief Sends a progress notification to connected clients.
   core::Result<core::Unit> notify_progress(
       const protocol::ProgressNotificationParams& params);
@@ -537,6 +544,14 @@ class Server {
   /// @param transport Transport to start when start() is called. It must not be
   /// null.
   core::Result<core::Unit> add_transport(std::unique_ptr<Transport> transport);
+
+  /// @brief Registers a borrowed session transport for outbound server events.
+  ///
+  /// The server does not own, start, or stop this transport. Peer/Service
+  /// uses this low-level hook to keep server-initiated notifications and
+  /// resource subscription routing working when the receive loop is driven by a
+  /// role-generic transport.
+  core::Result<core::Unit> add_session_transport(Transport& transport);
 
   /// @brief Installs an authentication provider used by supported transports.
   void set_auth_provider(std::unique_ptr<AuthProvider> auth_provider);
@@ -689,8 +704,9 @@ class Server {
   ListChangedHandler prompt_list_changed_handler_;
   ListChangedHandler resource_list_changed_handler_;
   ResourceUpdatedHandler resource_updated_handler_;
-  std::unordered_map<const Transport*, std::unordered_set<std::string>>
+  std::unordered_map<Transport*, std::unordered_set<std::string>>
       resource_subscriptions_;
+  std::vector<Transport*> session_transports_;
   std::shared_ptr<std::mutex> subscriptions_mutex_ =
       std::make_shared<std::mutex>();
 
@@ -698,8 +714,15 @@ class Server {
       const protocol::JsonRpcNotification& notification);
   core::Result<core::Unit> notify_resource_subscribers(
       std::string_view uri, const protocol::JsonRpcNotification& notification);
-  core::Result<core::Unit> set_resource_subscription(
-      const SessionContext& context, std::string_view uri, bool subscribed);
+  CancellationToken begin_request_cancellation(
+      const protocol::RequestId& request_id);
+  void end_request_cancellation(const protocol::RequestId& request_id) noexcept;
+  void cancel_request(const protocol::RequestId& request_id) noexcept;
+
+  std::shared_ptr<std::mutex> active_request_cancellations_mutex_ =
+      std::make_shared<std::mutex>();
+  std::unordered_map<std::string, CancellationSource>
+      active_request_cancellations_;
 };
 
 /// @brief Fluent builder for constructing a configured Server.
@@ -914,10 +937,8 @@ class TypedToolBuilder {
   template <class Handler>
   TypedToolRegistration<Args, Result, Handler> handler(Handler value) {
     detail::require_callable(value, "tool");
-    return TypedToolRegistration<Args, Result, Handler>{
-        .definition = std::move(definition_),
-        .handler = std::move(value),
-    };
+    return TypedToolRegistration<Args, Result, Handler>{std::move(definition_),
+                                                        std::move(value)};
   }
 
  private:

@@ -3,13 +3,15 @@
 #pragma once
 
 /// @file
-/// @brief Core client facade and transport interface for MCP clients.
+/// @brief Core client compatibility API and transport interface for MCP
+/// clients.
 ///
 /// The client API is synchronous at the call site: methods return
 /// core::Result<T> with either a protocol value or an error. Inbound requests
 /// and notifications are delivered through registered callbacks, which may be
 /// invoked by the transport thread that received the message.
 
+#include <atomic>
 #include <chrono>
 #include <cstdint>
 #include <functional>
@@ -112,13 +114,15 @@ class Transport {
   virtual void stop() noexcept {}
 };
 
-/// @brief High-level MCP client facade.
+/// @brief High-level MCP client compatibility API.
 ///
 /// Client owns a Transport and exposes MCP operations such as initialize,
 /// discovery, tool invocation, prompt/resource access, roots, logging,
 /// sampling, elicitation, and task helpers. Methods return core::Result<T>;
 /// protocol and transport failures are reported through that result rather than
-/// by changing global state.
+/// by changing global state. New applications should prefer ClientPeer and
+/// Service as their entry points; Client remains a stable embeddable layer and
+/// compatibility surface.
 class Client {
  public:
   /// @brief Endpoint options for streamable HTTP and legacy SSE client
@@ -254,6 +258,10 @@ class Client {
   /// @brief Constructs a client from a custom transport.
   /// @param transport Transport instance to own. It must not be null.
   explicit Client(std::unique_ptr<Transport> transport);
+  Client(const Client&) = delete;
+  Client& operator=(const Client&) = delete;
+  Client(Client&& other) noexcept;
+  Client& operator=(Client&& other) noexcept;
 
   /// @brief Sends the MCP initialize request.
   /// @param client_name Name advertised to the server.
@@ -445,11 +453,10 @@ class Client {
   template <class T, class Parser>
   RequestHandle<T> request_async(std::string method, protocol::Json params,
                                  Parser parser, RequestOptions options = {}) {
-    protocol::JsonRpcRequest request{
-        .method = std::move(method),
-        .params = std::move(params),
-        .id = next_request_id_++,
-    };
+    protocol::JsonRpcRequest request;
+    request.method = std::move(method);
+    request.params = std::move(params);
+    request.id = next_request_id();
     if (options.meta.has_value()) {
       request.meta = std::move(options.meta);
     }
@@ -636,7 +643,7 @@ class Client {
       CreateElicitationRequestHandler handler);
 
   /// @brief Registers a handler for custom server requests not handled by the
-  /// facade.
+  /// built-in client dispatcher.
   Client& on_custom_request(CustomRequestHandler handler);
 
   /// @brief Compatibility alias for on_list_roots_request().
@@ -692,9 +699,12 @@ class Client {
   core::Result<protocol::JsonRpcResponse> send_rpc_request(
       protocol::JsonRpcRequest request);
   core::Result<core::Unit> ensure_transport_started();
+  std::int64_t next_request_id() noexcept {
+    return next_request_id_.fetch_add(1, std::memory_order_relaxed);
+  }
 
   std::unique_ptr<Transport> transport_;
-  std::int64_t next_request_id_ = 1;
+  std::atomic<std::int64_t> next_request_id_{1};
   bool transport_started_ = false;
   std::vector<protocol::Root> roots_;
   std::optional<protocol::Json> last_initialize_params_;

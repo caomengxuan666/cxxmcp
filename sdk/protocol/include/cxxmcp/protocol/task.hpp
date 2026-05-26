@@ -79,6 +79,10 @@ inline std::optional<TaskStatus> task_status_from_string(
 struct TaskRequestParameters {
   /// Optional requested time-to-live for the created task.
   std::optional<std::int64_t> ttl;
+  /// Vendor or future task options preserved for forward compatibility.
+  Json extensions = Json::object();
+  /// Optional `_meta` extension object preserved on the wire.
+  std::optional<Json> meta;
 };
 
 /// @brief Snapshot of an asynchronous task.
@@ -103,12 +107,16 @@ struct Task {
 struct TaskListParams {
   /// Optional pagination cursor from a prior `tasks/list` result.
   std::optional<std::string> cursor;
+  /// Optional `_meta` extension object preserved on the wire.
+  std::optional<Json> meta;
 };
 
 /// @brief Parameters for `tasks/get`.
 struct TaskGetParams {
   /// Task identifier to retrieve.
   std::string task_id;
+  /// Optional `_meta` extension object preserved on the wire.
+  std::optional<Json> meta;
 };
 
 /// @brief Parameters for `tasks/result`.
@@ -118,6 +126,8 @@ using TaskResultParams = TaskGetParams;
 struct TaskCancelParams {
   /// Task identifier to cancel.
   std::string task_id;
+  /// Optional `_meta` extension object preserved on the wire.
+  std::optional<Json> meta;
 };
 
 /// @brief Result object for `tasks/list`.
@@ -126,6 +136,8 @@ struct TaskListResult {
   std::vector<Task> tasks;
   /// Optional cursor for retrieving the next page.
   std::optional<std::string> next_cursor;
+  /// Optional `_meta` extension object preserved on the wire.
+  std::optional<Json> meta;
 };
 
 /// @brief Result wrapper returned when a feature request creates a task.
@@ -146,8 +158,18 @@ inline core::Error task_json_error(std::string message) {
 inline Json task_request_parameters_to_json(
     const TaskRequestParameters& parameters) {
   Json json = Json::object();
+  if (parameters.extensions.is_object()) {
+    for (const auto& [key, value] : parameters.extensions.items()) {
+      if (key != "ttl" && key != "_meta") {
+        json[key] = value;
+      }
+    }
+  }
   if (parameters.ttl.has_value()) {
     json["ttl"] = *parameters.ttl;
+  }
+  if (parameters.meta.has_value()) {
+    json["_meta"] = *parameters.meta;
   }
   return json;
 }
@@ -167,6 +189,18 @@ inline core::Result<TaskRequestParameters> task_request_parameters_from_json(
       return std::unexpected(task_json_error("task ttl must be an integer"));
     }
     parameters.ttl = json.at("ttl").get<std::int64_t>();
+  }
+  if (json.contains("_meta")) {
+    if (!json.at("_meta").is_object()) {
+      return std::unexpected(
+          task_json_error("task parameters _meta must be an object"));
+    }
+    parameters.meta = json.at("_meta");
+  }
+  for (const auto& [key, value] : json.items()) {
+    if (key != "ttl" && key != "_meta") {
+      parameters.extensions[key] = value;
+    }
   }
   return parameters;
 }
@@ -254,6 +288,9 @@ inline Json task_list_params_to_json(const TaskListParams& params) {
   if (params.cursor.has_value()) {
     json["cursor"] = *params.cursor;
   }
+  if (params.meta.has_value()) {
+    json["_meta"] = *params.meta;
+  }
   return json;
 }
 
@@ -273,12 +310,23 @@ inline core::Result<TaskListParams> task_list_params_from_json(
     }
     params.cursor = json.at("cursor").get<std::string>();
   }
+  if (json.contains("_meta")) {
+    if (!json.at("_meta").is_object()) {
+      return std::unexpected(
+          task_json_error("tasks/list _meta must be an object"));
+    }
+    params.meta = json.at("_meta");
+  }
   return params;
 }
 
 /// @brief Serializes `tasks/get` params.
 inline Json task_get_params_to_json(const TaskGetParams& params) {
-  return Json{{"taskId", params.task_id}};
+  Json json = Json{{"taskId", params.task_id}};
+  if (params.meta.has_value()) {
+    json["_meta"] = *params.meta;
+  }
+  return json;
 }
 
 /// @brief Parses `tasks/get` params.
@@ -291,12 +339,25 @@ inline core::Result<TaskGetParams> task_get_params_from_json(const Json& json) {
   if (!json.contains("taskId") || !json.at("taskId").is_string()) {
     return std::unexpected(task_json_error("tasks/get params require taskId"));
   }
-  return TaskGetParams{json.at("taskId").get<std::string>()};
+  TaskGetParams params;
+  params.task_id = json.at("taskId").get<std::string>();
+  if (json.contains("_meta")) {
+    if (!json.at("_meta").is_object()) {
+      return std::unexpected(
+          task_json_error("tasks/get _meta must be an object"));
+    }
+    params.meta = json.at("_meta");
+  }
+  return params;
 }
 
 /// @brief Serializes `tasks/cancel` params.
 inline Json task_cancel_params_to_json(const TaskCancelParams& params) {
-  return Json{{"taskId", params.task_id}};
+  Json json = Json{{"taskId", params.task_id}};
+  if (params.meta.has_value()) {
+    json["_meta"] = *params.meta;
+  }
+  return json;
 }
 
 /// @brief Parses `tasks/cancel` params.
@@ -311,7 +372,16 @@ inline core::Result<TaskCancelParams> task_cancel_params_from_json(
     return std::unexpected(
         task_json_error("tasks/cancel params require taskId"));
   }
-  return TaskCancelParams{json.at("taskId").get<std::string>()};
+  TaskCancelParams params;
+  params.task_id = json.at("taskId").get<std::string>();
+  if (json.contains("_meta")) {
+    if (!json.at("_meta").is_object()) {
+      return std::unexpected(
+          task_json_error("tasks/cancel _meta must be an object"));
+    }
+    params.meta = json.at("_meta");
+  }
+  return params;
 }
 
 /// @brief Serializes `tasks/result` params.
@@ -335,6 +405,9 @@ inline Json task_list_result_to_json(const TaskListResult& result) {
   }
   if (result.next_cursor.has_value()) {
     json["nextCursor"] = *result.next_cursor;
+  }
+  if (result.meta.has_value()) {
+    json["_meta"] = *result.meta;
   }
   return json;
 }
@@ -366,6 +439,13 @@ inline core::Result<TaskListResult> task_list_result_from_json(
           task_json_error("tasks/list nextCursor must be a string"));
     }
     result.next_cursor = json.at("nextCursor").get<std::string>();
+  }
+  if (json.contains("_meta")) {
+    if (!json.at("_meta").is_object()) {
+      return std::unexpected(
+          task_json_error("tasks/list result _meta must be an object"));
+    }
+    result.meta = json.at("_meta");
   }
   return result;
 }

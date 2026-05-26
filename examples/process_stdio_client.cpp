@@ -2,14 +2,16 @@
 
 #include <cstdint>
 #include <iostream>
+#include <memory>
 #include <stdexcept>
 #include <string>
 #include <string_view>
+#include <utility>
 
-#include "cxxmcp/client.hpp"
 #include "cxxmcp/peer.hpp"
 #include "cxxmcp/protocol/serialization.hpp"
 #include "cxxmcp/service.hpp"
+#include "cxxmcp/transport/process_stdio_transport.hpp"
 
 #ifndef MCP_EXAMPLE_CHILD_EXE
 #define MCP_EXAMPLE_CHILD_EXE ""
@@ -30,8 +32,12 @@ int main() {
     require(std::string_view(MCP_EXAMPLE_CHILD_EXE).size() != 0,
             "child server executable is not configured");
 
-    auto peer = mcp::ClientPeer::connect_stdio(
-        mcp::client::Client::StdioEndpoint{.command = MCP_EXAMPLE_CHILD_EXE});
+    auto transport =
+        std::make_unique<mcp::transport::ProcessStdioClientTransport>(
+            mcp::transport::ProcessStdioClientTransportOptions{
+                .command = MCP_EXAMPLE_CHILD_EXE,
+            });
+    mcp::ClientPeer peer(std::move(transport));
 
     auto running = mcp::serve(std::move(peer));
     require(running.has_value(), "process peer service failed to start");

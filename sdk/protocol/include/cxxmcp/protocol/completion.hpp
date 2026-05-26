@@ -23,8 +23,13 @@ namespace mcp::protocol {
 struct CompletionReference {
   /// Reference kind, for example a prompt or resource-template reference.
   std::string type;
-  /// Name of the referenced prompt or template.
+  /// Name of the referenced prompt. Kept for prompt references and older
+  /// resource-reference callers.
   std::string name;
+  /// URI of the referenced resource or resource template.
+  std::optional<std::string> uri;
+  /// Optional human-readable reference title.
+  std::string title;
 };
 
 /// @brief Builds a prompt completion reference.
@@ -34,7 +39,11 @@ inline CompletionReference prompt_completion_reference(std::string name) {
 
 /// @brief Builds a resource completion reference.
 inline CompletionReference resource_completion_reference(std::string uri) {
-  return CompletionReference{"ref/resource", std::move(uri)};
+  CompletionReference ref;
+  ref.type = "ref/resource";
+  ref.name = uri;
+  ref.uri = std::move(uri);
+  return ref;
 }
 
 /// @brief Argument value being completed.
@@ -53,6 +62,8 @@ struct CompleteParams {
   CompletionArgument argument;
   /// Optional contextual argument values used to improve completions.
   Json context = Json::object();
+  /// Optional `_meta` extension object preserved on the wire.
+  std::optional<Json> meta;
 };
 
 /// @brief Completion candidates returned by the server.
@@ -69,6 +80,8 @@ struct CompletionResult {
 struct CompleteResult {
   /// Completion payload nested under the protocol `completion` field.
   CompletionResult completion;
+  /// Optional `_meta` extension object preserved on the wire.
+  std::optional<Json> meta;
 };
 
 /// @brief Builds an InvalidRequest error for completion JSON validation
@@ -82,7 +95,14 @@ inline core::Error completion_json_error(std::string message) {
 inline Json completion_reference_to_json(const CompletionReference& ref) {
   Json json = Json::object();
   json["type"] = ref.type;
-  json["name"] = ref.name;
+  if (ref.uri.has_value()) {
+    json["uri"] = *ref.uri;
+  } else if (!ref.name.empty()) {
+    json["name"] = ref.name;
+  }
+  if (!ref.title.empty()) {
+    json["title"] = ref.title;
+  }
   return json;
 }
 
@@ -98,12 +118,37 @@ inline core::Result<CompletionReference> completion_reference_from_json(
     return std::unexpected(
         completion_json_error("completion ref requires a string type"));
   }
-  if (!json.contains("name") || !json.at("name").is_string()) {
+  if (!json.contains("name") && !json.contains("uri")) {
     return std::unexpected(
-        completion_json_error("completion ref requires a string name"));
+        completion_json_error("completion ref requires a string name or uri"));
   }
-  return CompletionReference{json.at("type").get<std::string>(),
-                             json.at("name").get<std::string>()};
+  CompletionReference ref;
+  ref.type = json.at("type").get<std::string>();
+  if (json.contains("name")) {
+    if (!json.at("name").is_string()) {
+      return std::unexpected(
+          completion_json_error("completion ref name must be a string"));
+    }
+    ref.name = json.at("name").get<std::string>();
+  }
+  if (json.contains("uri")) {
+    if (!json.at("uri").is_string()) {
+      return std::unexpected(
+          completion_json_error("completion ref uri must be a string"));
+    }
+    ref.uri = json.at("uri").get<std::string>();
+    if (ref.name.empty()) {
+      ref.name = *ref.uri;
+    }
+  }
+  if (json.contains("title")) {
+    if (!json.at("title").is_string()) {
+      return std::unexpected(
+          completion_json_error("completion ref title must be a string"));
+    }
+    ref.title = json.at("title").get<std::string>();
+  }
+  return ref;
 }
 
 /// @brief Serializes a completion argument.
@@ -138,6 +183,9 @@ inline Json complete_params_to_json(const CompleteParams& params) {
   json["argument"] = completion_argument_to_json(params.argument);
   if (!params.context.empty()) {
     json["context"] = params.context;
+  }
+  if (params.meta.has_value()) {
+    json["_meta"] = *params.meta;
   }
   return json;
 }
@@ -177,6 +225,13 @@ inline core::Result<CompleteParams> complete_params_from_json(
           completion_json_error("completion context must be an object"));
     }
     params.context = json.at("context");
+  }
+  if (json.contains("_meta")) {
+    if (!json.at("_meta").is_object()) {
+      return std::unexpected(
+          completion_json_error("completion _meta must be an object"));
+    }
+    params.meta = json.at("_meta");
   }
   return params;
 }
@@ -234,7 +289,12 @@ inline core::Result<CompletionResult> completion_result_from_json(
 
 /// @brief Serializes a `completion/complete` result.
 inline Json complete_result_to_json(const CompleteResult& result) {
-  return Json{{"completion", completion_result_to_json(result.completion)}};
+  Json json =
+      Json{{"completion", completion_result_to_json(result.completion)}};
+  if (result.meta.has_value()) {
+    json["_meta"] = *result.meta;
+  }
+  return json;
 }
 
 /// @brief Parses a `completion/complete` result.
@@ -253,7 +313,16 @@ inline core::Result<CompleteResult> complete_result_from_json(
   if (!completion) {
     return std::unexpected(completion.error());
   }
-  return CompleteResult{*completion};
+  CompleteResult result;
+  result.completion = *completion;
+  if (json.contains("_meta")) {
+    if (!json.at("_meta").is_object()) {
+      return std::unexpected(
+          completion_json_error("completion result _meta must be an object"));
+    }
+    result.meta = json.at("_meta");
+  }
+  return result;
 }
 
 }  // namespace mcp::protocol

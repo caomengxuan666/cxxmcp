@@ -14,6 +14,8 @@
 
 #include "cxxmcp/cancellation.hpp"
 #include "cxxmcp/client.hpp"
+#include "cxxmcp/config.hpp"
+#include "cxxmcp/error.hpp"
 #include "cxxmcp/handler.hpp"
 #include "cxxmcp/peer.hpp"
 #include "cxxmcp/protocol.hpp"

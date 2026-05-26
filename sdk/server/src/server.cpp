@@ -2,9 +2,13 @@
 
 #include "cxxmcp/server/server.hpp"
 
+#include <algorithm>
+#include <exception>
+#include <memory>
 #include <optional>
 #include <utility>
 
+#include "cxxmcp/error.hpp"
 #include "cxxmcp/protocol/logging.hpp"
 #include "cxxmcp/protocol/serialization.hpp"
 #include "cxxmcp/server/http_transport.hpp"
@@ -15,11 +19,11 @@ namespace mcp::server {
 namespace {
 
 ServerInfo server_info_from_options(const ServerOptions& options) {
-  return ServerInfo{
-      .name = options.server_name,
-      .version = options.server_version,
-      .instructions = options.instructions,
-  };
+  ServerInfo info;
+  info.name = options.server_name;
+  info.version = options.server_version;
+  info.instructions = options.instructions;
+  return info;
 }
 
 protocol::Json server_info_to_json(const ServerOptions& options) {
@@ -83,8 +87,12 @@ core::Result<protocol::JsonRpcResponse> make_error_response(
                                : std::optional<protocol::Json>{detail}));
 }
 
+std::string request_cancellation_key(const protocol::RequestId& request_id) {
+  return protocol::request_id_to_json(request_id).dump();
+}
+
 core::Result<core::Unit> update_resource_subscription(
-    std::unordered_map<const Transport*, std::unordered_set<std::string>>&
+    std::unordered_map<Transport*, std::unordered_set<std::string>>&
         subscriptions,
     const SessionContext& context, std::string_view uri, bool subscribed) {
   if (!context.transport) {
@@ -221,11 +229,8 @@ core::Result<protocol::Json> Server::initialize() {
 
 core::Result<protocol::Json> Server::ping(const SessionContext& context) {
   const auto response = handle_request(
-      protocol::JsonRpcRequest{
-          .method = std::string(protocol::PingMethod),
-          .params = protocol::Json::object(),
-          .id = std::int64_t{0},
-      },
+      protocol::make_request(std::string(protocol::PingMethod), std::int64_t{0},
+                             protocol::Json::object()),
       context);
   if (!response) {
     return std::unexpected(response.error());
@@ -240,8 +245,40 @@ core::Result<protocol::Json> Server::ping(const SessionContext& context) {
   return *response->result;
 }
 
+CancellationToken Server::begin_request_cancellation(
+    const protocol::RequestId& request_id) {
+  CancellationSource source;
+  auto token = source.token();
+  std::lock_guard lock(*active_request_cancellations_mutex_);
+  active_request_cancellations_[request_cancellation_key(request_id)] =
+      std::move(source);
+  return token;
+}
+
+void Server::end_request_cancellation(
+    const protocol::RequestId& request_id) noexcept {
+  std::lock_guard lock(*active_request_cancellations_mutex_);
+  active_request_cancellations_.erase(request_cancellation_key(request_id));
+}
+
+void Server::cancel_request(const protocol::RequestId& request_id) noexcept {
+  std::lock_guard lock(*active_request_cancellations_mutex_);
+  const auto it =
+      active_request_cancellations_.find(request_cancellation_key(request_id));
+  if (it != active_request_cancellations_.end()) {
+    it->second.cancel();
+  }
+}
+
 core::Result<protocol::JsonRpcResponse> Server::handle_request(
-    const protocol::JsonRpcRequest& request, const SessionContext& context) {
+    const protocol::JsonRpcRequest& request,
+    const SessionContext& context) try {
+  const auto request_cancellation = begin_request_cancellation(request.id);
+  const std::shared_ptr<void> request_cancellation_cleanup(
+      nullptr, [this, request_id = request.id](void*) noexcept {
+        end_request_cancellation(request_id);
+      });
+
   if (auth_provider_) {
     AuthRequest auth_request;
     auth_request.remote_address = context.remote_address;
@@ -254,11 +291,11 @@ core::Result<protocol::JsonRpcResponse> Server::handle_request(
   }
 
   if (rate_limiter_) {
-    const auto decision = rate_limiter_->check(RateLimitRequest{
-        .subject = context.session_id,
-        .method = request.method,
-        .request_bytes = request.params.dump().size(),
-    });
+    RateLimitRequest rate_limit_request;
+    rate_limit_request.subject = context.session_id;
+    rate_limit_request.method = request.method;
+    rate_limit_request.request_bytes = request.params.dump().size();
+    const auto decision = rate_limiter_->check(rate_limit_request);
     if (!decision) {
       return make_error_response(
           request, static_cast<int>(protocol::ErrorCode::RateLimited),
@@ -449,7 +486,7 @@ core::Result<protocol::JsonRpcResponse> Server::handle_request(
           request.id, protocol::create_task_result_to_json(*task));
     }
 
-    const auto result = tools_.call(*call, context);
+    const auto result = tools_.call(*call, context, request_cancellation);
     if (!result) {
       return protocol::make_error_response(
           std::optional<protocol::RequestId>{request.id},
@@ -465,11 +502,10 @@ core::Result<protocol::JsonRpcResponse> Server::handle_request(
   }
 
   if (request.method == "prompts/list") {
+    protocol::PromptsListResult result;
+    result.prompts = prompts_.list();
     return protocol::make_response(
-        request.id,
-        protocol::prompts_list_result_to_json(protocol::PromptsListResult{
-            .prompts = prompts_.list(),
-        }));
+        request.id, protocol::prompts_list_result_to_json(result));
   }
 
   if (request.method == "prompts/get") {
@@ -495,11 +531,10 @@ core::Result<protocol::JsonRpcResponse> Server::handle_request(
   }
 
   if (request.method == "resources/list") {
+    protocol::ResourcesListResult result;
+    result.resources = resources_.list();
     return protocol::make_response(
-        request.id,
-        protocol::resources_list_result_to_json(protocol::ResourcesListResult{
-            .resources = resources_.list(),
-        }));
+        request.id, protocol::resources_list_result_to_json(result));
   }
 
   if (request.method == "resources/read") {
@@ -526,11 +561,10 @@ core::Result<protocol::JsonRpcResponse> Server::handle_request(
   }
 
   if (request.method == "resources/templates/list") {
+    protocol::ResourceTemplatesListResult result;
+    result.resource_templates = resource_templates_.list();
     return protocol::make_response(
-        request.id, protocol::resource_templates_list_result_to_json(
-                        protocol::ResourceTemplatesListResult{
-                            .resource_templates = resource_templates_.list(),
-                        }));
+        request.id, protocol::resource_templates_list_result_to_json(result));
   }
 
   if (request.method == "resources/subscribe" ||
@@ -602,11 +636,17 @@ core::Result<protocol::JsonRpcResponse> Server::handle_request(
   return make_error_response(
       request, static_cast<int>(protocol::ErrorCode::MethodNotFound),
       "method not found", request.method);
+} catch (const std::exception& ex) {
+  const auto error = errors::handler_failed(ex.what());
+  return make_error_response(request, error.code, error.message, error.detail);
+} catch (...) {
+  const auto error = errors::handler_unknown_exception();
+  return make_error_response(request, error.code, error.message, error.detail);
 }
 
 core::Result<core::Unit> Server::handle_notification(
     const protocol::JsonRpcNotification& notification,
-    const SessionContext& context) {
+    const SessionContext& context) try {
   if (raw_notification_handler_) {
     const auto raw_result = raw_notification_handler_(notification, context);
     if (!raw_result) {
@@ -630,6 +670,7 @@ core::Result<core::Unit> Server::handle_notification(
           {},
       });
     }
+    cancel_request(cancelled->request_id);
   } else if (notification.method == protocol::ProgressNotificationMethod &&
              progress_handler_) {
     const auto params =
@@ -686,6 +727,10 @@ core::Result<core::Unit> Server::handle_notification(
   }
 
   return core::Unit{};
+} catch (const std::exception& ex) {
+  return std::unexpected(errors::handler_failed(ex.what()));
+} catch (...) {
+  return std::unexpected(errors::handler_unknown_exception());
 }
 
 core::Result<core::Unit> Server::broadcast_notification(
@@ -696,100 +741,93 @@ core::Result<core::Unit> Server::broadcast_notification(
       return std::unexpected(sent.error());
     }
   }
+  for (auto* transport : session_transports_) {
+    if (transport == nullptr) {
+      continue;
+    }
+    const auto sent = transport->send_notification(notification);
+    if (!sent) {
+      return std::unexpected(sent.error());
+    }
+  }
   return core::Unit{};
 }
 
 core::Result<core::Unit> Server::notify_roots_list_changed() {
-  return broadcast_notification(protocol::JsonRpcNotification{
-      .method = std::string(protocol::RootsListChangedNotificationMethod),
-      .params = protocol::Json::object(),
-  });
+  return broadcast_notification(protocol::make_notification(
+      std::string(protocol::RootsListChangedNotificationMethod),
+      protocol::Json::object()));
 }
 
 core::Result<core::Unit> Server::notify_tool_list_changed() {
-  return broadcast_notification(protocol::JsonRpcNotification{
-      .method = std::string(protocol::ToolsListChangedNotificationMethod),
-      .params = protocol::Json::object(),
-  });
+  return broadcast_notification(protocol::make_notification(
+      std::string(protocol::ToolsListChangedNotificationMethod),
+      protocol::Json::object()));
 }
 
 core::Result<core::Unit> Server::notify_prompt_list_changed() {
-  return broadcast_notification(protocol::JsonRpcNotification{
-      .method = std::string(protocol::PromptsListChangedNotificationMethod),
-      .params = protocol::Json::object(),
-  });
+  return broadcast_notification(protocol::make_notification(
+      std::string(protocol::PromptsListChangedNotificationMethod),
+      protocol::Json::object()));
 }
 
 core::Result<core::Unit> Server::notify_resource_list_changed() {
-  return broadcast_notification(protocol::JsonRpcNotification{
-      .method = std::string(protocol::ResourcesListChangedNotificationMethod),
-      .params = protocol::Json::object(),
-  });
+  return broadcast_notification(protocol::make_notification(
+      std::string(protocol::ResourcesListChangedNotificationMethod),
+      protocol::Json::object()));
 }
 
 core::Result<core::Unit> Server::notify_resource_updated(std::string_view uri) {
   return notify_resource_subscribers(
-      uri,
-      protocol::JsonRpcNotification{
-          .method = std::string(protocol::ResourcesUpdatedNotificationMethod),
-          .params = protocol::Json{{"uri", std::string(uri)}},
-      });
+      uri, protocol::make_notification(
+               std::string(protocol::ResourcesUpdatedNotificationMethod),
+               protocol::Json{{"uri", std::string(uri)}}));
 }
 
 core::Result<core::Unit> Server::notify_progress(
     const protocol::ProgressNotificationParams& params) {
-  return broadcast_notification(protocol::JsonRpcNotification{
-      .method = std::string(protocol::ProgressNotificationMethod),
-      .params = protocol::progress_notification_params_to_json(params),
-  });
+  return broadcast_notification(protocol::make_notification(
+      std::string(protocol::ProgressNotificationMethod),
+      protocol::progress_notification_params_to_json(params)));
 }
 
 core::Result<core::Unit> Server::notify_logging_message(
     const protocol::LoggingMessageNotificationParams& params) {
-  return broadcast_notification(protocol::JsonRpcNotification{
-      .method = std::string(protocol::LoggingMessageNotificationMethod),
-      .params = protocol::logging_message_notification_params_to_json(params),
-  });
+  return broadcast_notification(protocol::make_notification(
+      std::string(protocol::LoggingMessageNotificationMethod),
+      protocol::logging_message_notification_params_to_json(params)));
 }
 
 core::Result<core::Unit> Server::notify_elicitation_complete(
     std::string elicitation_id) {
-  return broadcast_notification(protocol::JsonRpcNotification{
-      .method = std::string(protocol::ElicitationCompleteNotificationMethod),
-      .params = protocol::elicitation_complete_notification_params_to_json(
-          protocol::ElicitationCompleteNotificationParams{
-              .elicitation_id = std::move(elicitation_id),
-          }),
-  });
+  protocol::ElicitationCompleteNotificationParams params;
+  params.elicitation_id = std::move(elicitation_id);
+  return broadcast_notification(protocol::make_notification(
+      std::string(protocol::ElicitationCompleteNotificationMethod),
+      protocol::elicitation_complete_notification_params_to_json(params)));
 }
 
 core::Result<core::Unit> Server::notify_task_status(
     const protocol::Task& task) {
-  return broadcast_notification(protocol::JsonRpcNotification{
-      .method = std::string(protocol::TasksStatusNotificationMethod),
-      .params = protocol::task_to_json(task),
-  });
+  return broadcast_notification(protocol::make_notification(
+      std::string(protocol::TasksStatusNotificationMethod),
+      protocol::task_to_json(task)));
 }
 
 core::Result<core::Unit> Server::notify_resource_subscribers(
     std::string_view uri, const protocol::JsonRpcNotification& notification) {
   std::vector<Transport*> recipients;
   bool has_any_subscription = false;
+  const std::string subscribed_uri(uri);
   {
     std::lock_guard lock(*subscriptions_mutex_);
     has_any_subscription = !resource_subscriptions_.empty();
-    for (auto& transport : transports_) {
-      if (!transport) {
+    for (const auto& [transport, uris] : resource_subscriptions_) {
+      if (transport == nullptr) {
         continue;
       }
-      const auto subscription_it =
-          resource_subscriptions_.find(transport.get());
-      if (subscription_it == resource_subscriptions_.end()) {
-        continue;
-      }
-      if (subscription_it->second.find(std::string(uri)) !=
-          subscription_it->second.end()) {
-        recipients.push_back(transport.get());
+      if (uris.find(subscribed_uri) != uris.end()) {
+        recipients.push_back(transport);
       }
     }
   }
@@ -845,6 +883,14 @@ core::Result<core::Unit> Server::add_transport(
   }
 
   transports_.push_back(std::move(transport));
+  return core::Unit{};
+}
+
+core::Result<core::Unit> Server::add_session_transport(Transport& transport) {
+  if (std::find(session_transports_.begin(), session_transports_.end(),
+                &transport) == session_transports_.end()) {
+    session_transports_.push_back(&transport);
+  }
   return core::Unit{};
 }
 
@@ -1222,11 +1268,11 @@ App::Builder& App::Builder::stdio() {
 App::Builder& App::Builder::streamable_http(std::string host,
                                             std::uint16_t port,
                                             std::string path) {
-  builder_.with_transport(std::make_unique<HttpTransport>(HttpTransportOptions{
-      .listen_host = std::move(host),
-      .listen_port = static_cast<int>(port),
-      .path = std::move(path),
-  }));
+  HttpTransportOptions options;
+  options.listen_host = std::move(host);
+  options.listen_port = static_cast<int>(port);
+  options.path = std::move(path);
+  builder_.with_transport(std::make_unique<HttpTransport>(std::move(options)));
   return *this;
 }
 

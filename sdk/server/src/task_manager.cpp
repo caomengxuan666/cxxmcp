@@ -199,14 +199,13 @@ TaskOperationProcessor::submit_operation(TaskOperationDescriptor descriptor,
     std::lock_guard<std::mutex> lock(mutex_);
     task.task_id = make_task_id();
     CancellationSource cancellation;
-    tasks_.emplace(task.task_id,
-                   TaskRecord{
-                       .task = task,
-                       .started_at = std::chrono::steady_clock::now(),
-                       .terminal_at = std::nullopt,
-                       .timeout = timeout,
-                       .cancellation = cancellation,
-                   });
+    TaskRecord record;
+    record.task = task;
+    record.started_at = std::chrono::steady_clock::now();
+    record.terminal_at = std::nullopt;
+    record.timeout = timeout;
+    record.cancellation = cancellation;
+    tasks_.emplace(task.task_id, std::move(record));
     order_.push_back(task.task_id);
   }
 
@@ -241,7 +240,9 @@ TaskOperationProcessor::submit_operation(TaskOperationDescriptor descriptor,
     return std::unexpected(queued.error());
   }
 
-  return protocol::CreateTaskResult{.task = std::move(task)};
+  protocol::CreateTaskResult result;
+  result.task = std::move(task);
+  return result;
 }
 
 core::Result<protocol::CreateTaskResult>

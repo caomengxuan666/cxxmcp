@@ -59,6 +59,8 @@ struct PromptsListResult {
   std::vector<Prompt> prompts;
   /// Optional cursor for retrieving the next page.
   std::optional<std::string> next_cursor;
+  /// Optional `_meta` extension object preserved on the wire.
+  std::optional<Json> meta;
 };
 
 /// @brief Parameters for `prompts/get`.
@@ -67,6 +69,8 @@ struct PromptsGetParams {
   std::string name;
   /// JSON object keyed by prompt argument name.
   Json arguments = Json::object();
+  /// Optional `_meta` extension object preserved on the wire.
+  std::optional<Json> meta;
 };
 
 /// @brief One rendered prompt message.
@@ -75,6 +79,8 @@ struct PromptMessage {
   std::string role;
   /// Message content block.
   ContentBlock content;
+  /// Optional `_meta` extension object preserved on the wire.
+  std::optional<Json> meta;
 };
 
 /// @brief Result object for `prompts/get`.
@@ -83,6 +89,8 @@ struct PromptsGetResult {
   std::string description;
   /// Ordered messages produced by the prompt.
   std::vector<PromptMessage> messages;
+  /// Optional `_meta` extension object preserved on the wire.
+  std::optional<Json> meta;
 };
 
 /// @brief Builds an InvalidRequest error for prompt JSON validation failures.
@@ -264,6 +272,9 @@ inline Json prompts_list_result_to_json(const PromptsListResult& result) {
   if (result.next_cursor.has_value()) {
     json["nextCursor"] = *result.next_cursor;
   }
+  if (result.meta.has_value()) {
+    json["_meta"] = *result.meta;
+  }
   return json;
 }
 
@@ -295,6 +306,13 @@ inline core::Result<PromptsListResult> prompts_list_result_from_json(
     }
     result.next_cursor = json.at("nextCursor").get<std::string>();
   }
+  if (json.contains("_meta")) {
+    if (!json.at("_meta").is_object()) {
+      return std::unexpected(
+          prompt_json_error("prompts/list result _meta must be an object"));
+    }
+    result.meta = json.at("_meta");
+  }
   return result;
 }
 
@@ -304,6 +322,9 @@ inline Json prompts_get_params_to_json(const PromptsGetParams& params) {
   json["name"] = params.name;
   if (!params.arguments.empty()) {
     json["arguments"] = params.arguments;
+  }
+  if (params.meta.has_value()) {
+    json["_meta"] = *params.meta;
   }
   return json;
 }
@@ -330,6 +351,13 @@ inline core::Result<PromptsGetParams> prompts_get_params_from_json(
     }
     params.arguments = json.at("arguments");
   }
+  if (json.contains("_meta")) {
+    if (!json.at("_meta").is_object()) {
+      return std::unexpected(
+          prompt_json_error("prompts/get _meta must be an object"));
+    }
+    params.meta = json.at("_meta");
+  }
   return params;
 }
 
@@ -338,6 +366,9 @@ inline Json prompt_message_to_json(const PromptMessage& message) {
   Json json = Json::object();
   json["role"] = message.role;
   json["content"] = content_block_to_json(message.content);
+  if (message.meta.has_value()) {
+    json["_meta"] = *message.meta;
+  }
   return json;
 }
 
@@ -365,6 +396,13 @@ inline core::Result<PromptMessage> prompt_message_from_json(const Json& json) {
   PromptMessage message;
   message.role = json.at("role").get<std::string>();
   message.content = *content;
+  if (json.contains("_meta")) {
+    if (!json.at("_meta").is_object()) {
+      return std::unexpected(
+          prompt_json_error("prompt message _meta must be an object"));
+    }
+    message.meta = json.at("_meta");
+  }
   return message;
 }
 
@@ -377,6 +415,9 @@ inline Json prompts_get_result_to_json(const PromptsGetResult& result) {
   json["messages"] = Json::array();
   for (const auto& message : result.messages) {
     json["messages"].push_back(prompt_message_to_json(message));
+  }
+  if (result.meta.has_value()) {
+    json["_meta"] = *result.meta;
   }
   return json;
 }
@@ -408,6 +449,13 @@ inline core::Result<PromptsGetResult> prompts_get_result_from_json(
       return std::unexpected(message.error());
     }
     result.messages.push_back(*message);
+  }
+  if (json.contains("_meta")) {
+    if (!json.at("_meta").is_object()) {
+      return std::unexpected(
+          prompt_json_error("prompts/get result _meta must be an object"));
+    }
+    result.meta = json.at("_meta");
   }
   return result;
 }

@@ -87,8 +87,10 @@ core::Result<protocol::ToolDefinition> ToolRegistry::get(
 
 core::Result<protocol::ToolResult> ToolRegistry::call(
     std::string_view name, protocol::Json arguments) const {
-  return call(protocol::ToolCall{.name = std::string(name),
-                                 .arguments = std::move(arguments)});
+  protocol::ToolCall call;
+  call.name = std::string(name);
+  call.arguments = std::move(arguments);
+  return this->call(std::move(call));
 }
 
 core::Result<protocol::ToolResult> ToolRegistry::call(
@@ -112,9 +114,10 @@ core::Result<core::Unit> ToolRegistry::validate(
 core::Result<protocol::ToolResult> ToolRegistry::call(
     std::string_view name, protocol::Json arguments,
     const SessionContext& session_context) const {
-  return this->call(protocol::ToolCall{.name = std::string(name),
-                                       .arguments = std::move(arguments)},
-                    session_context);
+  protocol::ToolCall call;
+  call.name = std::string(name);
+  call.arguments = std::move(arguments);
+  return this->call(std::move(call), session_context);
 }
 
 core::Result<protocol::ToolResult> ToolRegistry::call(
@@ -157,8 +160,9 @@ core::Result<protocol::ToolResult> ToolRegistry::call(
 core::Result<protocol::ToolResult> ToolRegistry::call(
     std::string_view name, protocol::Json arguments,
     const std::string& session_id) const {
-  return call(name, std::move(arguments),
-              SessionContext{.session_id = session_id});
+  SessionContext context;
+  context.session_id = session_id;
+  return call(name, std::move(arguments), context);
 }
 
 std::vector<protocol::ToolDefinition> ToolRegistry::list() const {
@@ -211,8 +215,9 @@ core::Result<core::Unit> PromptRegistry::add(protocol::Prompt prompt,
 core::Result<protocol::PromptsGetResult> PromptRegistry::get(
     std::string_view name, protocol::Json arguments,
     const std::string& session_id) const {
-  return get(name, std::move(arguments),
-             SessionContext{.session_id = session_id});
+  SessionContext context;
+  context.session_id = session_id;
+  return get(name, std::move(arguments), context);
 }
 
 core::Result<protocol::PromptsGetResult> PromptRegistry::get(
@@ -290,7 +295,9 @@ core::Result<core::Unit> ResourceRegistry::add(protocol::Resource resource,
 core::Result<protocol::ResourcesReadResult> ResourceRegistry::read(
     std::string_view uri, protocol::Json params,
     const std::string& session_id) const {
-  return read(uri, std::move(params), SessionContext{.session_id = session_id});
+  SessionContext context;
+  context.session_id = session_id;
+  return read(uri, std::move(params), context);
 }
 
 core::Result<protocol::ResourcesReadResult> ResourceRegistry::read(

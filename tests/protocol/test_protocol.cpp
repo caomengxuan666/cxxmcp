@@ -126,6 +126,8 @@ void test_supported_protocol_versions_are_explicit() {
   require(mcp::protocol::is_supported_protocol_version(
               mcp::protocol::McpProtocolVersion),
           "current MCP protocol version should be supported");
+  require(mcp::protocol::McpSupportedProtocolVersions.size() == 1,
+          "add multi-version protocol tests when a second version is enabled");
   require(!mcp::protocol::is_supported_protocol_version("2024-11-05"),
           "unknown MCP protocol version should not be supported");
 }
@@ -1325,6 +1327,303 @@ void test_elicitation_protocol_round_trips() {
           "elicitation completion id mismatch");
 }
 
+void test_sampling_tool_use_round_trips() {
+  const auto tool_use = mcp::protocol::SamplingMessageContent::tool_use_content(
+      mcp::protocol::ToolUseContent{
+          .id = "tool-use-1",
+          .name = "lookup",
+          .input = Json{{"query", "weather"}},
+          .meta = Json{{"trace", "tool-use"}},
+      });
+  const auto tool_result =
+      mcp::protocol::SamplingMessageContent::tool_result_content(
+          mcp::protocol::ToolResultContent{
+              .tool_use_id = "tool-use-1",
+              .content = {mcp::protocol::ContentBlock::text_content("sunny")},
+              .structured_content = Json{{"condition", "sunny"}},
+              .is_error = false,
+              .meta = Json{{"trace", "tool-result"}},
+          });
+
+  const mcp::protocol::CreateMessageParams params{
+      .messages =
+          {
+              mcp::protocol::SamplingMessage{
+                  .role = "assistant",
+                  .contents = {tool_use},
+              },
+              mcp::protocol::SamplingMessage{
+                  .role = "user",
+                  .contents = {tool_result},
+              },
+              mcp::protocol::SamplingMessage{
+                  .role = "user",
+                  .contents =
+                      {
+                          mcp::protocol::SamplingMessageContent::text("hello"),
+                          mcp::protocol::SamplingMessageContent::from_content(
+                              mcp::protocol::ContentBlock::image("base64-image",
+                                                                 "image/png")),
+                      },
+              },
+          },
+      .max_tokens = 256,
+      .tools =
+          {
+              mcp::protocol::tool_definition("lookup")
+                  .description("Lookup weather")
+                  .input_schema(Json{{"type", "object"}})
+                  .build(),
+          },
+      .tool_choice = mcp::protocol::ToolChoice::required(),
+  };
+
+  const auto json = mcp::protocol::create_message_params_to_json(params);
+  require(json.at("messages").at(0).at("content").at("type") == "tool_use",
+          "sampling tool_use type mismatch");
+  require(json.at("messages").at(1).at("content").at("type") == "tool_result",
+          "sampling tool_result type mismatch");
+  require(json.at("messages").at(2).at("content").is_array(),
+          "sampling multiple content should serialize as an array");
+  require(json.at("tools").at(0).at("name") == "lookup",
+          "sampling tools mismatch");
+  require(json.at("toolChoice").at("mode") == "required",
+          "sampling toolChoice mismatch");
+
+  const auto parsed = mcp::protocol::create_message_params_from_json(json);
+  require(parsed.has_value(), "sampling tool-use params should parse");
+  require(parsed->messages.at(0).contents.front().tool_use->id == "tool-use-1",
+          "sampling parsed tool_use id mismatch");
+  require(parsed->messages.at(1)
+                  .contents.front()
+                  .tool_result->structured_content->at("condition") == "sunny",
+          "sampling parsed tool_result structured content mismatch");
+  require(parsed->messages.at(2).contents.size() == 2,
+          "sampling parsed multiple content mismatch");
+  require(parsed->tools.front().name == "lookup",
+          "sampling parsed tools mismatch");
+  require(parsed->tool_choice->mode == mcp::protocol::ToolChoiceMode::Required,
+          "sampling parsed toolChoice mismatch");
+  require(mcp::protocol::create_message_params_to_json(*parsed) == json,
+          "sampling tool-use params should round trip");
+
+  const mcp::protocol::CreateMessageResult result{
+      .role = "assistant",
+      .contents = {tool_use},
+      .model = "tool-model",
+      .stop_reason = "toolUse",
+  };
+  const auto result_json = mcp::protocol::create_message_result_to_json(result);
+  const auto parsed_result =
+      mcp::protocol::create_message_result_from_json(result_json);
+  require(parsed_result.has_value(), "sampling tool-use result should parse");
+  require(parsed_result->contents.front().tool_use->name == "lookup",
+          "sampling result tool_use mismatch");
+}
+
+void test_protocol_meta_round_trips() {
+  Json meta = mcp::protocol::meta_with_progress_token(
+      mcp::protocol::ProgressToken{std::string("progress-1")});
+  meta["traceId"] = "trace-1";
+  const auto progress_token = mcp::protocol::meta_progress_token(meta);
+  require(progress_token.has_value(), "meta progressToken should parse");
+  require(std::get<std::string>(*progress_token) == "progress-1",
+          "meta progressToken mismatch");
+  require(mcp::protocol::set_meta_progress_token(
+              meta, mcp::protocol::ProgressToken{std::int64_t{42}}),
+          "setting meta progressToken should succeed");
+  const auto numeric_progress_token = mcp::protocol::meta_progress_token(meta);
+  require(numeric_progress_token.has_value(),
+          "numeric meta progressToken should parse");
+  require(std::get<std::int64_t>(*numeric_progress_token) == 42,
+          "numeric meta progressToken mismatch");
+  meta["progressToken"] = "progress-1";
+  Json invalid_meta = Json::array();
+  require(!mcp::protocol::set_meta_progress_token(
+              invalid_meta, mcp::protocol::ProgressToken{std::string("bad")}),
+          "setting progressToken on non-object meta should fail");
+  require(!mcp::protocol::meta_progress_token(invalid_meta).has_value(),
+          "non-object meta should not expose a progressToken");
+
+  const auto tool_call = mcp::protocol::tool_call_from_json(
+      mcp::protocol::tool_call_to_json(mcp::protocol::ToolCall{
+          .name = "echo",
+          .arguments = Json{{"value", "hello"}},
+          .task =
+              mcp::protocol::TaskRequestParameters{
+                  .ttl = std::int64_t{60},
+                  .extensions = Json{{"vendor", Json{{"mode", "queued"}}}},
+                  .meta = Json{{"taskTrace", "task-1"}},
+              },
+          .meta = meta,
+      }));
+  require(tool_call.has_value(), "tools/call with _meta should parse");
+  require(tool_call->meta->at("progressToken") == "progress-1",
+          "tools/call _meta mismatch");
+  require(tool_call->task->extensions.at("vendor").at("mode") == "queued",
+          "task extension should round trip");
+  require(tool_call->task->meta->at("taskTrace") == "task-1",
+          "task _meta should round trip");
+
+  const auto tool_result = mcp::protocol::tool_result_from_json(
+      mcp::protocol::tool_result_to_json(mcp::protocol::ToolResult{
+          .content = {mcp::protocol::ContentBlock::text_content("ok")},
+          .structured_content = Json{{"ok", true}},
+          .meta = meta,
+      }));
+  require(tool_result.has_value(), "tool result with _meta should parse");
+  require(tool_result->meta->at("traceId") == "trace-1",
+          "tool result _meta mismatch");
+
+  const auto read_params = mcp::protocol::resources_read_params_from_json(
+      mcp::protocol::resources_read_params_to_json(
+          mcp::protocol::ResourcesReadParams{.uri = "file:///a.txt",
+                                             .meta = meta}));
+  require(read_params.has_value(), "resources/read _meta should parse");
+  require(read_params->meta->at("traceId") == "trace-1",
+          "resources/read _meta mismatch");
+
+  const auto read_result = mcp::protocol::resources_read_result_from_json(
+      mcp::protocol::resources_read_result_to_json(
+          mcp::protocol::ResourcesReadResult{
+              .contents =
+                  {
+                      mcp::protocol::ResourceContents{
+                          .uri = "file:///a.txt",
+                          .mime_type = "text/plain",
+                          .text = std::string("hello"),
+                          .meta = Json{{"contentTrace", "resource-1"}},
+                      },
+                  },
+              .meta = meta,
+          }));
+  require(read_result.has_value(), "resources/read result _meta should parse");
+  require(
+      read_result->contents.front().meta->at("contentTrace") == "resource-1",
+      "resource contents _meta mismatch");
+  require(read_result->meta->at("traceId") == "trace-1",
+          "resources/read result _meta mismatch");
+
+  const auto prompt_params = mcp::protocol::prompts_get_params_from_json(
+      mcp::protocol::prompts_get_params_to_json(
+          mcp::protocol::PromptsGetParams{.name = "summarize",
+                                          .arguments = Json{{"text", "hi"}},
+                                          .meta = meta}));
+  require(prompt_params.has_value(), "prompts/get _meta should parse");
+  require(prompt_params->meta->at("traceId") == "trace-1",
+          "prompts/get _meta mismatch");
+
+  const auto prompt_result = mcp::protocol::prompts_get_result_from_json(
+      mcp::protocol::prompts_get_result_to_json(mcp::protocol::PromptsGetResult{
+          .description = "Summary",
+          .messages =
+              {
+                  mcp::protocol::PromptMessage{
+                      .role = "user",
+                      .content =
+                          mcp::protocol::ContentBlock::text_content("hi"),
+                      .meta = Json{{"messageTrace", "prompt-1"}},
+                  },
+              },
+          .meta = meta,
+      }));
+  require(prompt_result.has_value(), "prompts/get result _meta should parse");
+  require(
+      prompt_result->messages.front().meta->at("messageTrace") == "prompt-1",
+      "prompt message _meta mismatch");
+  require(prompt_result->meta->at("traceId") == "trace-1",
+          "prompts/get result _meta mismatch");
+
+  const auto completion_params = mcp::protocol::complete_params_from_json(
+      mcp::protocol::complete_params_to_json(mcp::protocol::CompleteParams{
+          .ref = mcp::protocol::resource_completion_reference(
+              "file:///workspace/{name}.txt"),
+          .argument =
+              mcp::protocol::CompletionArgument{.name = "name", .value = "a"},
+          .context = Json{{"arguments", Json::object()}},
+          .meta = meta,
+      }));
+  require(completion_params.has_value(), "completion _meta should parse");
+  require(completion_params->ref.uri.value() == "file:///workspace/{name}.txt",
+          "resource completion uri mismatch");
+  require(completion_params->meta->at("traceId") == "trace-1",
+          "completion _meta mismatch");
+
+  const auto completion_result = mcp::protocol::complete_result_from_json(
+      mcp::protocol::complete_result_to_json(mcp::protocol::CompleteResult{
+          .completion = mcp::protocol::CompletionResult{.values = {"alpha"}},
+          .meta = meta,
+      }));
+  require(completion_result.has_value(),
+          "completion result _meta should parse");
+  require(completion_result->meta->at("traceId") == "trace-1",
+          "completion result _meta mismatch");
+
+  const auto roots_result = mcp::protocol::roots_list_result_from_json(
+      mcp::protocol::roots_list_result_to_json(mcp::protocol::RootsListResult{
+          .roots = {mcp::protocol::Root{.uri = "file:///workspace",
+                                        .name = "workspace",
+                                        .meta = Json{{"rootTrace", "root-1"}}}},
+          .meta = meta,
+      }));
+  require(roots_result.has_value(), "roots/list result _meta should parse");
+  require(roots_result->roots.front().meta->at("rootTrace") == "root-1",
+          "root _meta mismatch");
+
+  const auto sample = mcp::protocol::create_message_params_from_json(
+      mcp::protocol::create_message_params_to_json(
+          mcp::protocol::CreateMessageParams{
+              .messages =
+                  {
+                      mcp::protocol::SamplingMessage{
+                          .role = "user",
+                          .content =
+                              mcp::protocol::ContentBlock::text_content("hi"),
+                          .meta = Json{{"sampleMessageTrace", "sample-1"}},
+                      },
+                  },
+              .max_tokens = 32,
+              .meta = meta,
+          }));
+  require(sample.has_value(), "sampling params _meta should parse");
+  require(sample->messages.front().meta->at("sampleMessageTrace") == "sample-1",
+          "sampling message _meta mismatch");
+  require(sample->meta->at("traceId") == "trace-1",
+          "sampling params _meta mismatch");
+
+  const auto sample_result = mcp::protocol::create_message_result_from_json(
+      mcp::protocol::create_message_result_to_json(
+          mcp::protocol::CreateMessageResult{
+              .role = "assistant",
+              .content = mcp::protocol::ContentBlock::text_content("ok"),
+              .model = "model-1",
+              .meta = meta,
+          }));
+  require(sample_result.has_value(), "sampling result _meta should parse");
+  require(sample_result->meta->at("traceId") == "trace-1",
+          "sampling result _meta mismatch");
+
+  const auto elicitation = mcp::protocol::create_elicitation_result_from_json(
+      mcp::protocol::create_elicitation_result_to_json(
+          mcp::protocol::CreateElicitationResult{
+              .action = mcp::protocol::ElicitationAction::Decline,
+              .meta = meta,
+          }));
+  require(elicitation.has_value(), "elicitation result _meta should parse");
+  require(elicitation->meta->at("traceId") == "trace-1",
+          "elicitation result _meta mismatch");
+
+  const auto log_level = mcp::protocol::logging_set_level_params_from_json(
+      mcp::protocol::logging_set_level_params_to_json(
+          mcp::protocol::LoggingSetLevelParams{
+              .level = mcp::protocol::LoggingLevel::Debug,
+              .meta = meta,
+          }));
+  require(log_level.has_value(), "logging/setLevel _meta should parse");
+  require(log_level->meta->at("traceId") == "trace-1",
+          "logging/setLevel _meta mismatch");
+}
+
 void test_notification_helpers_round_trip() {
   require(
       mcp::protocol::CancelledNotificationMethod == "notifications/cancelled",
@@ -1468,6 +1767,8 @@ int main() {
        test_roots_completion_logging_sampling_round_trips},
       {"elicitation protocol round trips",
        test_elicitation_protocol_round_trips},
+      {"sampling tool use round trips", test_sampling_tool_use_round_trips},
+      {"protocol meta round trips", test_protocol_meta_round_trips},
       {"notification helpers round trip", test_notification_helpers_round_trip},
       {"invalid json is rejected", test_invalid_json_is_rejected},
       {"invalid messages are rejected", test_invalid_messages_are_rejected},
