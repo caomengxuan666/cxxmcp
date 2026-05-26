@@ -697,7 +697,7 @@ true:
 - [x] Document elicitation lifecycle and capability requirements.
 - [x] Document package consumption with `find_package(cxxmcp CONFIG REQUIRED)`.
 - [x] Publish generated Doxygen docs for releases.
-- [ ] Keep README, README_zh, examples, Doxygen, and release notes in sync.
+- [x] Keep README, README_zh, examples, Doxygen, and release notes in sync.
 - [x] Add a minimal external consumer template.
 
 ## P1: CI And Release Gates
@@ -879,10 +879,10 @@ true:
 
 ### Milestone 4: Protocol And Capability Parity
 
-- [ ] Finish `_meta`, annotations, icons, extension bags, and content variants.
-- [ ] Audit capability shapes.
-- [ ] Add multi-version protocol policy.
-- [ ] Add protocol round-trip and negative tests for every family.
+- [x] Finish `_meta`, annotations, icons, extension bags, and content variants.
+- [x] Audit capability shapes.
+- [x] Add multi-version protocol policy.
+- [x] Add protocol round-trip and negative tests for every family.
 
 ### Milestone 5: Interop Matrix
 
@@ -893,8 +893,8 @@ true:
 
 ### Milestone 6: Release And Ecosystem
 
-- [ ] Add public CI matrix.
-- [ ] Publish generated docs.
-- [ ] Add vcpkg/Conan route.
-- [ ] Add contribution/security/governance docs.
+- [x] Add public CI matrix.
+- [x] Publish generated docs.
+- [x] Add vcpkg/Conan route.
+- [x] Add contribution/security/governance docs.
 - [ ] Publish versioned release artifacts and compatibility notes.
