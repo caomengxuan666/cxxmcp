@@ -37,6 +37,7 @@ Read this in [Chinese](README_zh.md).
 - [Protocol Boundary](#protocol-boundary)
 - [HTTP Transport Policy](#http-transport-policy)
 - [Compatibility Contract](#compatibility-contract)
+- [Examples](#examples)
 - [Release Evidence](#release-evidence)
 - [Documentation](#documentation)
 - [Project Status](#project-status)
@@ -79,10 +80,13 @@ Package-manager work starts from the SDK-only contract:
 
 - Conan 2 recipe: `conanfile.py`
 - vcpkg overlay port: `packaging/vcpkg/ports/cxxmcp`
+- xmake-repo recipe draft: `packaging/xmake/packages/c/cxxmcp/xmake.lua`
+- FetchContent / CPM.cmake snippets:
+  [Package consumption](docs/package_consumption.md)
 
-Both build the C++17 SDK targets and keep runtime, gateway, and CLI disabled.
-The vcpkg port is an overlay port for this checkout; an upstream registry port
-will need a fixed release URL and checksum.
+These paths build the C++17 SDK targets and keep runtime, gateway, and CLI
+disabled. The vcpkg port is an overlay port for this checkout; an upstream
+registry port will need a fixed release URL and checksum.
 
 ## Quality Signals
 
@@ -453,13 +457,23 @@ request semantics remain stable.
 
 ## Examples
 
-The examples preset builds representative SDK entry points:
+The in-tree examples preset builds compact SDK entry points:
 
 - First-choice Peer/Service examples: `server_peer`, `client_peer`,
   `process_stdio_client`
 - Compatibility and low-level examples: `stdio_server`, `typed_stdio_server`,
   `client_loopback`, `task_async_client_server`
 - Optional runtime tooling example: `gateway_runtime`
+
+The separate
+[cxxmcp-examples](https://github.com/caomengxuan666/cxxmcp-examples)
+repository is the downstream, application-style validation suite. It exercises
+the SDK through a normal external CMake project and covers advanced surfaces
+that are intentionally broader than the compact in-tree samples: direct
+Streamable HTTP and legacy SSE, process stdio, custom transports, transport
+adapters, async request handles, cursor pagination, subscriptions,
+server-to-client callbacks, tasks and cancellation, plugin/adapters, gateway
+runtime, and app service management.
 
 ## Quality Bar
 
