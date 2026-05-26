@@ -45,6 +45,7 @@ def check_source_tree(source: Path) -> None:
         "todo.md",
         "docs/compatibility_policy.md",
         "docs/dependency_policy.md",
+        "docs/release_process.md",
         "docs/release_gates.md",
         "docs/release_candidate_checklist.md",
         "docs/release_notes_template.md",
@@ -80,6 +81,20 @@ def check_source_tree(source: Path) -> None:
     require_contains(release_notes, "Canonical SDK Path")
     require_contains(release_notes, "Required Artifacts")
     require_contains(release_notes, "Checksums")
+
+    release_process = source / "docs/release_process.md"
+    for needle in [
+        "semantic versioning",
+        "Alpha",
+        "Beta",
+        "RC",
+        "Stable",
+        "versioned SDK source archive",
+        "Public API Review",
+        "Dependency Review",
+        "Security And Advisories",
+    ]:
+        require_contains(release_process, needle)
 
     doxygen = source / "docs/Doxyfile"
     require_contains(doxygen, 'PROJECT_BRIEF          = "C++ MCP SDK"')
@@ -139,6 +154,7 @@ def check_evidence_dir(evidence: Path) -> None:
         "MANIFEST.txt",
         "docs/compatibility_policy.md",
         "docs/dependency_policy.md",
+        "docs/release_process.md",
         "docs/release_gates.md",
         "docs/release_candidate_checklist.md",
         "docs/release_notes_template.md",

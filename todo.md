@@ -693,21 +693,21 @@ true:
 
 ## P1: Release And Compatibility Process
 
-- [ ] Use semantic versioning for public releases.
-- [ ] Define alpha, beta, rc, and stable gates in release checklist form.
-- [ ] For alpha: allow API movement but require clear changelog.
-- [ ] For beta: require API mostly settled and breaking changes rare.
-- [ ] For rc: only bug fixes and docs.
-- [ ] For stable: freeze public contract for the minor line.
-- [ ] Include versioned source artifacts for every release.
-- [ ] Include generated API documentation for every release.
-- [ ] Include changelog entries for every release.
-- [ ] Include compatibility notes for every public surface change.
-- [ ] Include package metadata for every release.
-- [ ] Publish prebuilt or source package artifacts as appropriate.
-- [ ] Add a public API diff review step.
-- [ ] Add a public dependency update review step.
-- [ ] Add a security/advisory process for vulnerabilities.
+- [x] Use semantic versioning for public releases.
+- [x] Define alpha, beta, rc, and stable gates in release checklist form.
+- [x] For alpha: allow API movement but require clear changelog.
+- [x] For beta: require API mostly settled and breaking changes rare.
+- [x] For rc: only bug fixes and docs.
+- [x] For stable: freeze public contract for the minor line.
+- [x] Include versioned source artifacts for every release.
+- [x] Include generated API documentation for every release.
+- [x] Include changelog entries for every release.
+- [x] Include compatibility notes for every public surface change.
+- [x] Include package metadata for every release.
+- [x] Publish prebuilt or source package artifacts as appropriate.
+- [x] Add a public API diff review step.
+- [x] Add a public dependency update review step.
+- [x] Add a security/advisory process for vulnerabilities.
 
 ## P1: Package Manager And Consumer Experience
 
