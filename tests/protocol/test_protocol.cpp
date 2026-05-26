@@ -3053,9 +3053,20 @@ void test_protocol_type_constraints_are_rejected() {
       mcp::protocol::resource_from_json(
           Json{{"uri", "file:///a"}, {"name", "a"}, {"size", "big"}}),
       "resource non-integer size should fail");
+  require_parse_failure(mcp::protocol::resource_from_json(Json{
+                            {"uri", "file:///a"}, {"name", "a"}, {"size", -1}}),
+                        "resource negative size should fail");
+  require_parse_failure(
+      mcp::protocol::resource_from_json(
+          Json{{"uri", "file:///a"}, {"name", "a"}, {"size", 4294967296LL}}),
+      "resource size above uint32 should fail");
   require_parse_failure(mcp::protocol::resource_template_from_json(
                             Json{{"uriTemplate", 3}, {"name", "rt"}}),
                         "resource template non-string uriTemplate should fail");
+  require_parse_failure(
+      mcp::protocol::resource_template_from_json(Json{
+          {"uriTemplate", "file:///{name}"}, {"name", "rt"}, {"size", -1}}),
+      "resource template negative size should fail");
   require_parse_failure(
       mcp::protocol::resources_read_params_from_json(Json{{"uri", 3}}),
       "resources/read non-string uri should fail");

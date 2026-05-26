@@ -492,6 +492,8 @@ true:
   the existing bool convenience field.
 - [x] Enforce completion reference tagged-union constraints for prompt and
   resource references.
+- [x] Constrain resource and resource-template `size` parsing to the RMCP
+  `u32` range.
 - [ ] Add negative parse tests for every required field and type constraint.
 - [x] Add cross-family required-field negative parse regression coverage for
   tools, prompts, resources, roots, completion, sampling, elicitation, and

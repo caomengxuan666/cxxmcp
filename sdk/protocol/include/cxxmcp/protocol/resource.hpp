@@ -11,6 +11,7 @@
 /// server advertises resource subscription support.
 
 #include <cstdint>
+#include <limits>
 #include <optional>
 #include <string>
 #include <vector>
@@ -155,6 +156,21 @@ inline core::Error resource_json_error(std::string message) {
       static_cast<int>(ErrorCode::InvalidRequest), std::move(message), {}};
 }
 
+inline core::Result<std::int64_t> resource_size_from_json(
+    const Json& json, std::string_view context) {
+  if (!json.is_number_integer()) {
+    return std::unexpected(
+        resource_json_error(std::string(context) + " size must be an integer"));
+  }
+  const auto size = json.get<std::int64_t>();
+  if (size < 0 || size > static_cast<std::int64_t>(
+                             std::numeric_limits<std::uint32_t>::max())) {
+    return std::unexpected(resource_json_error(std::string(context) +
+                                               " size must be a uint32 value"));
+  }
+  return size;
+}
+
 /// @brief Serializes a resource descriptor.
 inline Json resource_to_json(const Resource& resource) {
   Json json = Json::object();
@@ -230,11 +246,11 @@ inline core::Result<Resource> resource_from_json(const Json& json) {
     resource.mime_type = json.at("mimeType").get<std::string>();
   }
   if (json.contains("size")) {
-    if (!json.at("size").is_number_integer()) {
-      return std::unexpected(
-          resource_json_error("resource size must be an integer"));
+    const auto size = resource_size_from_json(json.at("size"), "resource");
+    if (!size) {
+      return std::unexpected(size.error());
     }
-    resource.size = json.at("size").get<std::int64_t>();
+    resource.size = *size;
   }
   if (json.contains("icons")) {
     if (!json.at("icons").is_array()) {
@@ -339,11 +355,12 @@ inline core::Result<ResourceTemplate> resource_template_from_json(
     resource_template.mime_type = json.at("mimeType").get<std::string>();
   }
   if (json.contains("size")) {
-    if (!json.at("size").is_number_integer()) {
-      return std::unexpected(
-          resource_json_error("resource template size must be an integer"));
+    const auto size =
+        resource_size_from_json(json.at("size"), "resource template");
+    if (!size) {
+      return std::unexpected(size.error());
     }
-    resource_template.size = json.at("size").get<std::int64_t>();
+    resource_template.size = *size;
   }
   if (json.contains("icons")) {
     if (!json.at("icons").is_array()) {
