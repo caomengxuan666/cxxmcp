@@ -414,14 +414,14 @@ inline Json client_capabilities_to_json(
     json["roots"] = std::move(roots);
   }
 
-  if (capabilities.sampling.enabled) {
-    Json sampling = capability_raw_object(capabilities.sampling.raw);
-    if (capabilities.sampling.tools) {
-      sampling["tools"] = capability_member_object(sampling, "tools");
-    }
-    if (capabilities.sampling.context) {
-      sampling["context"] = capability_member_object(sampling, "context");
-    }
+  Json sampling = capability_raw_object(capabilities.sampling.raw);
+  if (capabilities.sampling.tools) {
+    sampling["tools"] = capability_member_object(sampling, "tools");
+  }
+  if (capabilities.sampling.context) {
+    sampling["context"] = capability_member_object(sampling, "context");
+  }
+  if (capabilities.sampling.enabled || !sampling.empty()) {
     json["sampling"] = std::move(sampling);
   }
 

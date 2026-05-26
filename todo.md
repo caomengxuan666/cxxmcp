@@ -512,6 +512,8 @@ true:
   elicitation completion notifications.
 - [x] Keep helper constructors for common text-only flows.
 - [ ] Avoid bool-heavy shortcuts when the wire shape expects object presence.
+  - [x] Preserve client sampling raw object payloads without requiring
+        `sampling.enabled`.
 
 ## P1: Capabilities
 

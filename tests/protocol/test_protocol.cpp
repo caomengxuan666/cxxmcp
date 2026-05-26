@@ -1450,6 +1450,27 @@ void test_client_capability_wire_shape() {
   require(!json.contains("tasks"),
           "client tasks should be omitted when not advertised");
 
+  mcp::protocol::ClientCapabilities sampling_payload_capabilities;
+  sampling_payload_capabilities.sampling.raw =
+      Json{{"futureSampling", Json{{"enabled", true}}},
+           {"tools", Json{{"maxCalls", 2}}}};
+  const auto sampling_payload_json =
+      mcp::protocol::client_capabilities_to_json(sampling_payload_capabilities);
+  require(
+      sampling_payload_json.at("sampling").at("futureSampling").at("enabled"),
+      "client sampling raw capability payload should be preserved");
+  require(
+      sampling_payload_json.at("sampling").at("tools").at("maxCalls") == 2,
+      "client sampling member object payload should not require bool enable");
+  const auto parsed_sampling_payload =
+      mcp::protocol::client_capabilities_from_json(sampling_payload_json);
+  require(parsed_sampling_payload.has_value(),
+          "client sampling raw capability payload should parse");
+  require(parsed_sampling_payload->sampling.enabled,
+          "client sampling raw payload should imply family presence");
+  require(parsed_sampling_payload->sampling.tools,
+          "client sampling raw tools object should imply tool support");
+
   const auto parsed_empty_elicitation =
       mcp::protocol::client_capabilities_from_json(
           Json{{"elicitation", Json::object()}});
