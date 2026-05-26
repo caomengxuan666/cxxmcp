@@ -60,6 +60,35 @@ add_executable(my_client main.cpp)
 target_link_libraries(my_client PRIVATE cxxmcp::client)
 ```
 
+## 窄 SDK Targets
+
+按当前二进制实际需要选择最窄的 public target。这样可以让传递依赖更可控，也避免
+把未使用的 SDK 层带进下游构建。
+
+```cmake
+find_package(cxxmcp CONFIG REQUIRED)
+
+add_library(protocol_only protocol_only.cpp)
+target_link_libraries(protocol_only PRIVATE cxxmcp::protocol)
+
+add_executable(my_client client_main.cpp)
+target_link_libraries(my_client PRIVATE cxxmcp::client)
+
+add_executable(my_server server_main.cpp)
+target_link_libraries(my_server PRIVATE cxxmcp::server)
+
+add_executable(loopback loopback.cpp)
+target_link_libraries(loopback PRIVATE cxxmcp::sdk)
+```
+
+- `cxxmcp::protocol` 只用于协议模型、JSON-RPC envelope 和序列化辅助函数。
+- `cxxmcp::client` 用于嵌入式 MCP client；它会带上 client transport 所需的
+  protocol 和 transport SDK 层。
+- `cxxmcp::server` 用于嵌入式 MCP server；它会带上 server transport 所需的
+  protocol 和 transport SDK 层。
+- `cxxmcp::sdk` 只在一个 target 明确同时需要 protocol、client、server API
+  时使用，比如 loopback 测试或 SDK 示例。
+
 ## xmake-repo
 
 xmake-repo recipe 草案在：

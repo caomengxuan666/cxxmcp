@@ -677,10 +677,10 @@ true:
 - [x] Add Conan packaging or a documented Conan recipe.
 - [x] Document FetchContent usage if supported.
 - [x] Document install-from-source usage.
-- [ ] Document consuming only `cxxmcp::protocol`.
-- [ ] Document consuming only `cxxmcp::client`.
-- [ ] Document consuming only `cxxmcp::server`.
-- [ ] Document consuming the aggregate `cxxmcp::sdk`.
+- [x] Document consuming only `cxxmcp::protocol`.
+- [x] Document consuming only `cxxmcp::client`.
+- [x] Document consuming only `cxxmcp::server`.
+- [x] Document consuming the aggregate `cxxmcp::sdk`.
 - [ ] Verify third-party header installation layout.
 - [ ] Decide and document dependency vendoring policy.
 - [ ] Decide and document whether downstream users can use system versions of

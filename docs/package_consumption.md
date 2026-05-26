@@ -62,6 +62,37 @@ add_executable(my_client main.cpp)
 target_link_libraries(my_client PRIVATE cxxmcp::client)
 ```
 
+## Narrow SDK Targets
+
+Choose the narrowest public target that matches the binary you are building.
+This keeps transitive dependencies predictable and avoids pulling SDK layers
+that the consumer does not use.
+
+```cmake
+find_package(cxxmcp CONFIG REQUIRED)
+
+add_library(protocol_only protocol_only.cpp)
+target_link_libraries(protocol_only PRIVATE cxxmcp::protocol)
+
+add_executable(my_client client_main.cpp)
+target_link_libraries(my_client PRIVATE cxxmcp::client)
+
+add_executable(my_server server_main.cpp)
+target_link_libraries(my_server PRIVATE cxxmcp::server)
+
+add_executable(loopback loopback.cpp)
+target_link_libraries(loopback PRIVATE cxxmcp::sdk)
+```
+
+- Use `cxxmcp::protocol` for protocol models, JSON-RPC envelopes, and
+  serialization helpers only.
+- Use `cxxmcp::client` for an embeddable MCP client. It brings the protocol
+  and transport SDK layers needed by client transports.
+- Use `cxxmcp::server` for an embeddable MCP server. It brings the protocol
+  and transport SDK layers needed by server transports.
+- Use `cxxmcp::sdk` only when one target intentionally needs protocol, client,
+  and server APIs together, such as loopback tests or SDK examples.
+
 ## xmake-repo
 
 The xmake-repo recipe draft lives at:
