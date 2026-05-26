@@ -1776,6 +1776,129 @@ void test_elicitation_content_validation() {
       "accepted elicitation result without required content should fail");
 }
 
+void test_elicitation_enum_schema_shapes() {
+  const Json enum_names_json =
+      Json{{"type", "string"},
+           {"enum", Json::array({"small", "large"})},
+           {"enumNames", Json::array({"Small", "Large"})},
+           {"default", "large"}};
+  const auto enum_names_schema =
+      mcp::protocol::primitive_schema_from_json(enum_names_json);
+  require(enum_names_schema.has_value(),
+          "elicitation enumNames schema should parse");
+  const auto& enum_names =
+      std::get<mcp::protocol::EnumSchema>(*enum_names_schema);
+  require(enum_names.enum_names.size() == 2,
+          "elicitation enumNames should be preserved");
+  require(mcp::protocol::primitive_schema_to_json(*enum_names_schema) ==
+              enum_names_json,
+          "elicitation enumNames schema should round trip");
+
+  const Json titled_single_json = Json{
+      {"type", "string"},
+      {"oneOf", Json::array({Json{{"const", "us"}, {"title", "United States"}},
+                             Json{{"const", "ca"}, {"title", "Canada"}}})},
+      {"default", "ca"}};
+  const auto titled_single_schema =
+      mcp::protocol::primitive_schema_from_json(titled_single_json);
+  require(titled_single_schema.has_value(),
+          "elicitation titled single-select should parse");
+  const auto& titled_single =
+      std::get<mcp::protocol::EnumSchema>(*titled_single_schema);
+  require(titled_single.titled_single_select,
+          "elicitation titled single-select marker mismatch");
+  require(titled_single.value_titles.size() == 2,
+          "elicitation titled single-select titles mismatch");
+  require(mcp::protocol::primitive_schema_to_json(*titled_single_schema) ==
+              titled_single_json,
+          "elicitation titled single-select should round trip");
+
+  const Json multi_json =
+      Json{{"type", "array"},
+           {"items", Json{{"type", "string"},
+                          {"enum", Json::array({"read", "write", "admin"})}}},
+           {"minItems", 1},
+           {"maxItems", 2},
+           {"default", Json::array({"read"})}};
+  const auto multi_schema =
+      mcp::protocol::primitive_schema_from_json(multi_json);
+  require(multi_schema.has_value(),
+          "elicitation multi-select enum should parse");
+  const auto& multi = std::get<mcp::protocol::EnumSchema>(*multi_schema);
+  require(multi.multi_select, "elicitation multi-select marker mismatch");
+  require(multi.min_items == 1 && multi.max_items == 2,
+          "elicitation multi-select bounds mismatch");
+  require(mcp::protocol::primitive_schema_to_json(*multi_schema) == multi_json,
+          "elicitation multi-select enum should round trip");
+
+  const Json titled_multi_json =
+      Json{{"type", "array"},
+           {"items",
+            Json{{"anyOf",
+                  Json::array({Json{{"const", "red"}, {"title", "Red"}},
+                               Json{{"const", "blue"}, {"title", "Blue"}}})}}},
+           {"default", Json::array({"blue"})}};
+  const auto titled_multi_schema =
+      mcp::protocol::primitive_schema_from_json(titled_multi_json);
+  require(titled_multi_schema.has_value(),
+          "elicitation titled multi-select should parse");
+  const auto& titled_multi =
+      std::get<mcp::protocol::EnumSchema>(*titled_multi_schema);
+  require(titled_multi.multi_select,
+          "elicitation titled multi-select marker mismatch");
+  require(titled_multi.value_titles.size() == 2,
+          "elicitation titled multi-select titles mismatch");
+  require(mcp::protocol::primitive_schema_to_json(*titled_multi_schema) ==
+              titled_multi_json,
+          "elicitation titled multi-select should round trip");
+
+  const Json one_of_alias_json = Json{
+      {"type", "array"},
+      {"items",
+       Json{{"oneOf",
+             Json::array({Json{{"const", "sync"}, {"title", "Sync"}},
+                          Json{{"const", "async"}, {"title", "Async"}}})}}}};
+  const auto one_of_alias_schema =
+      mcp::protocol::primitive_schema_from_json(one_of_alias_json);
+  require(one_of_alias_schema.has_value(),
+          "elicitation multi-select oneOf alias should parse");
+  const auto one_of_alias_round_trip =
+      mcp::protocol::primitive_schema_to_json(*one_of_alias_schema);
+  require(one_of_alias_round_trip.at("items").contains("anyOf"),
+          "elicitation multi-select oneOf alias should serialize as anyOf");
+  require(!one_of_alias_round_trip.at("items").contains("oneOf"),
+          "elicitation multi-select oneOf alias should not reserialize oneOf");
+
+  mcp::protocol::ElicitationSchema content_schema;
+  mcp::protocol::EnumSchema modes_schema;
+  modes_schema.values = {"sync", "async", "batch"};
+  modes_schema.multi_select = true;
+  modes_schema.min_items = 1;
+  modes_schema.max_items = 2;
+  content_schema.properties["modes"] = modes_schema;
+  require(mcp::protocol::validate_elicitation_content(
+              content_schema, Json{{"modes", Json::array({"sync", "async"})}})
+              .has_value(),
+          "elicitation multi-select content should validate");
+  require_parse_failure(
+      mcp::protocol::validate_elicitation_content(content_schema,
+                                                  Json{{"modes", "sync"}}),
+      "elicitation multi-select content non-array should fail");
+  require_parse_failure(
+      mcp::protocol::validate_elicitation_content(
+          content_schema, Json{{"modes", Json::array({"sync", "other"})}}),
+      "elicitation multi-select content invalid value should fail");
+  require_parse_failure(
+      mcp::protocol::validate_elicitation_content(
+          content_schema, Json{{"modes", Json::array()}}),
+      "elicitation multi-select content too few values should fail");
+  require_parse_failure(
+      mcp::protocol::validate_elicitation_content(
+          content_schema,
+          Json{{"modes", Json::array({"sync", "async", "batch"})}}),
+      "elicitation multi-select content too many values should fail");
+}
+
 void test_sampling_tool_use_round_trips() {
   const auto tool_use = mcp::protocol::SamplingMessageContent::tool_use_content(
       mcp::protocol::ToolUseContent{
@@ -2950,11 +3073,54 @@ void test_protocol_type_constraints_are_rejected() {
   require_parse_failure(mcp::protocol::primitive_schema_from_json(Json{
                             {"type", "string"}, {"enum", Json::array({1, 2})}}),
                         "elicitation enum values type should fail");
+  require_parse_failure(
+      mcp::protocol::primitive_schema_from_json(
+          Json{{"type", "number"}, {"enum", Json::array({"a", "b"})}}),
+      "elicitation enum non-string type should fail");
   require_parse_failure(mcp::protocol::primitive_schema_from_json(
                             Json{{"type", "string"},
                                  {"enum", Json::array({"a", "b"})},
                                  {"default", "c"}}),
                         "elicitation enum default outside values should fail");
+  require_parse_failure(mcp::protocol::primitive_schema_from_json(
+                            Json{{"type", "string"},
+                                 {"enum", Json::array({"a", "b"})},
+                                 {"enumNames", Json::array({"A"})}}),
+                        "elicitation enumNames size mismatch should fail");
+  require_parse_failure(
+      mcp::protocol::primitive_schema_from_json(Json{
+          {"type", "string"}, {"oneOf", Json::array({Json{{"const", "a"}}})}}),
+      "elicitation titled enum missing title should fail");
+  require_parse_failure(
+      mcp::protocol::primitive_schema_from_json(
+          Json{{"type", "integer"},
+               {"oneOf", Json::array({Json{{"const", "a"}, {"title", "A"}}})}}),
+      "elicitation titled enum non-string type should fail");
+  require_parse_failure(
+      mcp::protocol::primitive_schema_from_json(Json{
+          {"type", "array"},
+          {"items", Json{{"anyOf", Json::array({Json{{"title", "A"}}})}}}}),
+      "elicitation multi-select missing const should fail");
+  require_parse_failure(
+      mcp::protocol::primitive_schema_from_json(
+          Json{{"type", "array"},
+               {"items",
+                Json{{"type", "integer"}, {"enum", Json::array({"a", "b"})}}}}),
+      "elicitation multi-select item type should fail");
+  require_parse_failure(mcp::protocol::primitive_schema_from_json(Json{
+                            {"type", "array"},
+                            {"items", Json{{"type", "string"},
+                                           {"enum", Json::array({"a", "b"})}}},
+                            {"minItems", 3},
+                            {"maxItems", 1}}),
+                        "elicitation multi-select min above max should fail");
+  require_parse_failure(mcp::protocol::primitive_schema_from_json(Json{
+                            {"type", "array"},
+                            {"items", Json{{"type", "string"},
+                                           {"enum", Json::array({"a", "b"})}}},
+                            {"default", Json::array({"c"})}}),
+                        "elicitation multi-select default outside values "
+                        "should fail");
   require_parse_failure(
       mcp::protocol::elicitation_complete_notification_params_from_json(
           Json{{"elicitationId", 7}}),
@@ -2995,6 +3161,7 @@ int main() {
       {"elicitation protocol round trips",
        test_elicitation_protocol_round_trips},
       {"elicitation content validation", test_elicitation_content_validation},
+      {"elicitation enum schema shapes", test_elicitation_enum_schema_shapes},
       {"sampling tool use round trips", test_sampling_tool_use_round_trips},
       {"protocol meta round trips", test_protocol_meta_round_trips},
       {"protocol extension round trips", test_protocol_extension_round_trips},
