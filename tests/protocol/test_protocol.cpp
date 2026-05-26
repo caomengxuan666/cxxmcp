@@ -1496,6 +1496,34 @@ void test_client_capability_wire_shape() {
                   .at("listChanged") == false,
           "explicit false client roots listChanged should round trip");
 
+  Json false_client_task_requests = Json::object();
+  false_client_task_requests["tools"] = Json{{"call", false}};
+  false_client_task_requests["sampling"] = Json{{"createMessage", false}};
+  false_client_task_requests["elicitation"] = Json{{"create", false}};
+  const Json false_client_tasks_json =
+      Json{{"tasks", Json{{"list", false},
+                          {"cancel", false},
+                          {"requests", false_client_task_requests}}}};
+  const auto parsed_false_client_tasks =
+      mcp::protocol::client_capabilities_from_json(false_client_tasks_json);
+  require(parsed_false_client_tasks.has_value(),
+          "explicit false client task capabilities should parse");
+  require(parsed_false_client_tasks->tasks.has_value(),
+          "explicit false client tasks should preserve family presence");
+  require(!parsed_false_client_tasks->tasks->list,
+          "explicit false client task list mismatch");
+  require(!parsed_false_client_tasks->tasks->cancel,
+          "explicit false client task cancel mismatch");
+  require(!parsed_false_client_tasks->tasks->tools_call,
+          "explicit false client task tools mismatch");
+  require(!parsed_false_client_tasks->tasks->sampling_create_message,
+          "explicit false client task sampling mismatch");
+  require(!parsed_false_client_tasks->tasks->elicitation_create,
+          "explicit false client task elicitation mismatch");
+  require(mcp::protocol::client_capabilities_to_json(
+              *parsed_false_client_tasks) == false_client_tasks_json,
+          "explicit false client task capabilities should round trip");
+
   const Json client_payload_json = Json{
       {"roots", Json{{"listChanged", true}, {"futureRoot", Json{{"x", 1}}}}},
       {"sampling", Json{{"tools", Json{{"maxCalls", 2}}},
@@ -1709,6 +1737,34 @@ void test_server_capability_wire_shape() {
           "explicit false server resources subscribe should round trip");
   require(false_server_json.at("prompts").at("listChanged") == false,
           "explicit false server prompts listChanged should round trip");
+
+  Json false_server_task_requests = Json::object();
+  false_server_task_requests["tools"] = Json{{"call", false}};
+  false_server_task_requests["sampling"] = Json{{"createMessage", false}};
+  false_server_task_requests["elicitation"] = Json{{"create", false}};
+  const Json false_server_tasks_json =
+      Json{{"tasks", Json{{"list", false},
+                          {"cancel", false},
+                          {"requests", false_server_task_requests}}}};
+  const auto parsed_false_server_tasks =
+      mcp::protocol::server_capabilities_from_json(false_server_tasks_json);
+  require(parsed_false_server_tasks.has_value(),
+          "explicit false server task capabilities should parse");
+  require(parsed_false_server_tasks->tasks.has_value(),
+          "explicit false server tasks should preserve family presence");
+  require(!parsed_false_server_tasks->tasks->list,
+          "explicit false server task list mismatch");
+  require(!parsed_false_server_tasks->tasks->cancel,
+          "explicit false server task cancel mismatch");
+  require(!parsed_false_server_tasks->tasks->tools_call,
+          "explicit false server task tools mismatch");
+  require(!parsed_false_server_tasks->tasks->sampling_create_message,
+          "explicit false server task sampling mismatch");
+  require(!parsed_false_server_tasks->tasks->elicitation_create,
+          "explicit false server task elicitation mismatch");
+  require(mcp::protocol::server_capabilities_to_json(
+              *parsed_false_server_tasks) == false_server_tasks_json,
+          "explicit false server task capabilities should round trip");
 
   const Json server_payload_json = Json{
       {"tools", Json{{"listChanged", true}, {"futureTool", Json{{"x", 1}}}}},

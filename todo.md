@@ -524,6 +524,8 @@ true:
 - [ ] Avoid bool-heavy shortcuts when the wire shape expects object presence.
   - [x] Preserve client sampling raw object payloads without requiring
         `sampling.enabled`.
+  - [x] Preserve explicit `false` task capability members across client and
+        server capability round trips.
 
 ## P1: Capabilities
 
