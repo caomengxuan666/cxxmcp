@@ -1,6 +1,7 @@
 name: release-sdk
 
 on:
+  workflow_dispatch:
   push:
     tags:
       - "v*"
@@ -43,11 +44,12 @@ jobs:
             examples \
             tests \
             docs \
+            packaging \
+            conanfile.py \
             third_party/tl \
             third_party/jsonrpcpp \
             third_party/nlohmann \
             third_party/httplib/httplib.h \
-            third_party/spdlog \
             README.md \
             README_zh.md \
             CHANGELOG.md \
@@ -63,15 +65,18 @@ jobs:
       - name: Publish GitHub release
         shell: bash
         env:
-          GH_TOKEN: ${{ github.token }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -euo pipefail
 
           tag="${GITHUB_REF_NAME}"
-          notes="SDK source release for ${tag}.
+          notes="$(cat <<EOF
+          SDK source release for ${tag}.
 
-This release intentionally publishes SDK source and checksums only. Runtime,
-gateway, CLI, and other tool binaries are not attached to this SDK release."
+          This release intentionally publishes SDK source and checksums only. Runtime,
+          gateway, CLI, and other tool binaries are not attached to this SDK release.
+          EOF
+          )"
 
           if gh release view "${tag}" >/dev/null 2>&1; then
             gh release upload "${tag}" \

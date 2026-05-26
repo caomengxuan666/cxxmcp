@@ -75,6 +75,15 @@ target_link_libraries(my_client PRIVATE cxxmcp::client)
 Public SDK headers and package targets are C++17. Optional runtime, gateway,
 CLI, examples, and tests require C++20.
 
+Package-manager work starts from the SDK-only contract:
+
+- Conan 2 recipe: `conanfile.py`
+- vcpkg overlay port: `packaging/vcpkg/ports/cxxmcp`
+
+Both build the C++17 SDK targets and keep runtime, gateway, and CLI disabled.
+The vcpkg port is an overlay port for this checkout; an upstream registry port
+will need a fixed release URL and checksum.
+
 ## Quality Signals
 
 - Release gates cover public headers, package-smoke consumption, transports,

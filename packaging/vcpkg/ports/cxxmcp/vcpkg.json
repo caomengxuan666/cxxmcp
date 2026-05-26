@@ -1,0 +1,26 @@
+{
+  "name": "cxxmcp",
+  "version-semver": "2.0.2",
+  "port-version": 1,
+  "description": "C++ MCP SDK for protocol, client, server, transport, peer, and handler APIs.",
+  "homepage": "https://github.com/caomengxuan666/cxxmcp",
+  "license": "MIT",
+  "supports": "!uwp",
+  "dependencies": [
+    {
+      "name": "cpp-httplib",
+      "default-features": false,
+      "features": []
+    },
+    "nlohmann-json",
+    "tl-expected",
+    {
+      "name": "vcpkg-cmake",
+      "host": true
+    },
+    {
+      "name": "vcpkg-cmake-config",
+      "host": true
+    }
+  ]
+}

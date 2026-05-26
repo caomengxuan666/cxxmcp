@@ -1,12 +1,12 @@
 cmake_minimum_required(VERSION 3.23)
 
 project(cxxmcp
-    VERSION 2.0.0
+    VERSION 2.0.2
     LANGUAGES CXX
 )
 
 set(CMAKE_CXX_EXTENSIONS OFF)
-set(BUILD_SHARED_LIBS OFF CACHE BOOL "Build static libraries by default" FORCE)
+option(BUILD_SHARED_LIBS "Build shared libraries" OFF)
 
 include(CTest)
 include(CMakePackageConfigHelpers)
@@ -93,6 +93,10 @@ cxxmcp_build_option(CXXMCP_BUILD_TESTS MCP_BUILD_TESTS
 cxxmcp_build_option(CXXMCP_BUILD_DOCS MCP_BUILD_DOCS
     "Build Doxygen API documentation" OFF)
 
+option(CXXMCP_USE_SYSTEM_DEPS
+    "Use package-manager provided SDK dependencies instead of bundled headers"
+    OFF)
+
 unset(CXXMCP_BUILD_GUI CACHE)
 unset(MCP_BUILD_GUI CACHE)
 
@@ -137,35 +141,72 @@ add_library(mcp_core INTERFACE)
 set_target_properties(mcp_core PROPERTIES EXPORT_NAME core)
 target_include_directories(mcp_core INTERFACE
     $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/sdk/core/include>
-    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/third_party>
     $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>
 )
 
+if(CXXMCP_USE_SYSTEM_DEPS)
+    find_package(tl-expected CONFIG REQUIRED)
+    target_link_libraries(mcp_core INTERFACE tl::expected)
+else()
+    target_include_directories(mcp_core INTERFACE
+        $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/third_party>
+    )
+endif()
+
 cxxmcp_require_sdk_cxx(mcp_core)
+
+if(CXXMCP_USE_SYSTEM_DEPS)
+    find_package(nlohmann_json CONFIG REQUIRED)
+    find_package(httplib CONFIG REQUIRED)
+
+    set(CXXMCP_JSON_TARGET nlohmann_json::nlohmann_json)
+    set(CXXMCP_HTTPLIB_TARGET httplib::httplib)
+else()
+    set(CXXMCP_JSON_TARGET "")
+    set(CXXMCP_HTTPLIB_TARGET "")
+endif()
 
 add_library(jsonrpcpp INTERFACE)
 target_include_directories(jsonrpcpp INTERFACE
     $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/third_party/jsonrpcpp>
-    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/third_party>
-    $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>
     $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}/cxxmcp/third_party/jsonrpcpp>
 )
+if(CXXMCP_USE_SYSTEM_DEPS)
+    target_link_libraries(jsonrpcpp INTERFACE "${CXXMCP_JSON_TARGET}")
+else()
+    target_include_directories(jsonrpcpp INTERFACE
+        $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/third_party>
+        $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>
+    )
+endif()
 
 cxxmcp_require_sdk_cxx(jsonrpcpp)
+set(CXXMCP_JSONRPCPP_TARGET jsonrpcpp)
 
 # Internal implementation dependency for HTTP transports and tests. It is not
 # installed or exported as part of the public SDK package contract.
 add_library(cpp_httplib INTERFACE)
-target_include_directories(cpp_httplib INTERFACE
-    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/third_party/httplib>
-)
+if(CXXMCP_USE_SYSTEM_DEPS)
+    target_link_libraries(cpp_httplib INTERFACE "${CXXMCP_HTTPLIB_TARGET}")
+else()
+    target_include_directories(cpp_httplib INTERFACE
+        $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/third_party/httplib>
+    )
+endif()
 target_link_libraries(cpp_httplib INTERFACE
     $<$<PLATFORM_ID:Windows>:ws2_32>
 )
 
 cxxmcp_require_sdk_cxx(cpp_httplib)
 
-add_subdirectory(third_party/spdlog EXCLUDE_FROM_ALL)
+set(MCP_ENABLE_OBSERVABILITY OFF)
+if(MCP_ENABLE_RUNTIME OR MCP_ENABLE_APP OR MCP_ENABLE_GATEWAY OR MCP_ENABLE_CLI)
+    set(MCP_ENABLE_OBSERVABILITY ON)
+endif()
+
+if(MCP_ENABLE_OBSERVABILITY)
+    add_subdirectory(third_party/spdlog EXCLUDE_FROM_ALL)
+endif()
 
 if(MCP_ENABLE_PROTOCOL)
     add_library(mcp_protocol STATIC)
@@ -174,10 +215,18 @@ if(MCP_ENABLE_PROTOCOL)
     target_include_directories(mcp_protocol PUBLIC
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/sdk/include>
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/sdk/protocol/include>
-        $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/third_party>
         $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>
     )
-    target_link_libraries(mcp_protocol PUBLIC mcp_core jsonrpcpp)
+    if(NOT CXXMCP_USE_SYSTEM_DEPS)
+        target_include_directories(mcp_protocol PUBLIC
+            $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/third_party>
+        )
+    endif()
+    target_link_libraries(mcp_protocol PUBLIC mcp_core)
+    if(CXXMCP_JSON_TARGET)
+        target_link_libraries(mcp_protocol PUBLIC "${CXXMCP_JSON_TARGET}")
+    endif()
+    target_link_libraries(mcp_protocol PRIVATE "${CXXMCP_JSONRPCPP_TARGET}")
     cxxmcp_require_sdk_cxx(mcp_protocol)
 endif()
 
@@ -195,15 +244,19 @@ if(MCP_ENABLE_CLIENT)
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/sdk/client/include>
         $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>
     )
-    target_include_directories(mcp_client PRIVATE
-        ${CMAKE_CURRENT_SOURCE_DIR}/third_party/httplib
-    )
+    if(NOT CXXMCP_USE_SYSTEM_DEPS)
+        target_include_directories(mcp_client PRIVATE
+            ${CMAKE_CURRENT_SOURCE_DIR}/third_party/httplib
+        )
+    endif()
     target_link_libraries(mcp_client
         PUBLIC
             mcp_core
             mcp_protocol
             $<$<PLATFORM_ID:Windows>:ws2_32>
-        PRIVATE Threads::Threads
+        PRIVATE
+            Threads::Threads
+            ${CXXMCP_HTTPLIB_TARGET}
     )
     cxxmcp_require_sdk_cxx(mcp_client)
 endif()
@@ -223,14 +276,18 @@ if(MCP_ENABLE_SERVER)
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/sdk/server/include>
         $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>
     )
-    target_include_directories(mcp_server PRIVATE
-        ${CMAKE_CURRENT_SOURCE_DIR}/third_party/httplib
-    )
+    if(NOT CXXMCP_USE_SYSTEM_DEPS)
+        target_include_directories(mcp_server PRIVATE
+            ${CMAKE_CURRENT_SOURCE_DIR}/third_party/httplib
+        )
+    endif()
     target_link_libraries(mcp_server
         PUBLIC
             mcp_core
             mcp_protocol
             $<$<PLATFORM_ID:Windows>:ws2_32>
+        PRIVATE
+            ${CXXMCP_HTTPLIB_TARGET}
     )
     cxxmcp_require_sdk_cxx(mcp_server)
 endif()
@@ -376,9 +433,13 @@ if(TARGET mcp_server AND TARGET mcp_plugin_sdk)
     add_library(cxxmcp::adapters ALIAS mcp_adapters)
 endif()
 
-add_library(mcp_observability INTERFACE)
-target_include_directories(mcp_observability INTERFACE runtime/observability/include)
-target_link_libraries(mcp_observability INTERFACE spdlog::spdlog_header_only)
+if(MCP_ENABLE_OBSERVABILITY)
+    add_library(mcp_observability INTERFACE)
+    target_include_directories(mcp_observability INTERFACE
+        $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/runtime/observability/include>
+    )
+    target_link_libraries(mcp_observability INTERFACE spdlog::spdlog_header_only)
+endif()
 
 if(MCP_ENABLE_APP)
     add_library(mcp_app STATIC
@@ -469,7 +530,10 @@ if(CXXMCP_BUILD_DOCS)
     )
 endif()
 
-set(CXXMCP_INSTALL_TARGETS mcp_core jsonrpcpp)
+set(CXXMCP_INSTALL_TARGETS mcp_core)
+if(TARGET jsonrpcpp)
+    list(APPEND CXXMCP_INSTALL_TARGETS jsonrpcpp)
+endif()
 if(TARGET mcp_protocol)
     list(APPEND CXXMCP_INSTALL_TARGETS mcp_protocol)
 endif()
@@ -493,15 +557,6 @@ if(TARGET mcp_handler)
 endif()
 if(TARGET mcp_service)
     list(APPEND CXXMCP_INSTALL_TARGETS mcp_service)
-endif()
-if(TARGET mcp_app)
-    list(APPEND CXXMCP_INSTALL_TARGETS mcp_app)
-endif()
-if(TARGET mcp_gateway)
-    list(APPEND CXXMCP_INSTALL_TARGETS mcp_gateway)
-endif()
-if(TARGET mcp_cli)
-    list(APPEND CXXMCP_INSTALL_TARGETS mcp_cli)
 endif()
 if(TARGET mcp_plugin_sdk)
     list(APPEND CXXMCP_INSTALL_TARGETS mcp_plugin_sdk)
@@ -537,18 +592,20 @@ endif()
 if(TARGET mcp_adapters)
     install(DIRECTORY extensions/adapters/include/ DESTINATION ${CMAKE_INSTALL_INCLUDEDIR})
 endif()
-install(FILES
-    third_party/tl/expected.hpp
-    DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/tl
-)
+if(NOT CXXMCP_USE_SYSTEM_DEPS)
+    install(FILES
+        third_party/tl/expected.hpp
+        DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/tl
+    )
 
+    install(FILES
+        third_party/nlohmann/json.hpp
+        DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/nlohmann
+    )
+endif()
 install(FILES
     third_party/jsonrpcpp/jsonrpcpp.hpp
     DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/cxxmcp/third_party/jsonrpcpp
-)
-install(FILES
-    third_party/nlohmann/json.hpp
-    DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/nlohmann
 )
 
 write_basic_package_version_file(

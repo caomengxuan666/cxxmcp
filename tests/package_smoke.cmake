@@ -16,6 +16,7 @@ if(package_smoke_generator MATCHES "Visual Studio")
     set(package_smoke_uses_visual_studio ON)
 endif()
 
+file(REMOVE_RECURSE "${prefix_dir}" "${consumer_build_dir}")
 file(MAKE_DIRECTORY "${prefix_dir}")
 
 set(install_command "${CMAKE_COMMAND}" --install "${BUILD_DIR}" --prefix "${prefix_dir}")
@@ -53,6 +54,27 @@ if(DEFINED PACKAGE_SMOKE_CXX_COMPILER AND
    NOT package_smoke_uses_visual_studio)
     list(APPEND configure_command
         "-DCMAKE_CXX_COMPILER=${PACKAGE_SMOKE_CXX_COMPILER}")
+endif()
+if(DEFINED PACKAGE_SMOKE_TOOLCHAIN_FILE AND
+   NOT PACKAGE_SMOKE_TOOLCHAIN_FILE STREQUAL "")
+    list(APPEND configure_command
+        "-DCMAKE_TOOLCHAIN_FILE=${PACKAGE_SMOKE_TOOLCHAIN_FILE}")
+endif()
+if(DEFINED PACKAGE_SMOKE_VCPKG_TARGET_TRIPLET AND
+   NOT PACKAGE_SMOKE_VCPKG_TARGET_TRIPLET STREQUAL "")
+    list(APPEND configure_command
+        "-DVCPKG_TARGET_TRIPLET=${PACKAGE_SMOKE_VCPKG_TARGET_TRIPLET}")
+endif()
+if(DEFINED PACKAGE_SMOKE_VCPKG_INSTALLED_DIR AND
+   NOT PACKAGE_SMOKE_VCPKG_INSTALLED_DIR STREQUAL "")
+    list(APPEND configure_command
+        "-DVCPKG_INSTALLED_DIR=${PACKAGE_SMOKE_VCPKG_INSTALLED_DIR}")
+endif()
+if(NOT package_smoke_uses_visual_studio AND
+   DEFINED PACKAGE_SMOKE_BUILD_TYPE AND
+   NOT PACKAGE_SMOKE_BUILD_TYPE STREQUAL "")
+    list(APPEND configure_command
+        "-DCMAKE_BUILD_TYPE=${PACKAGE_SMOKE_BUILD_TYPE}")
 endif()
 if(DEFINED MSVC_RUNTIME_LIBRARY AND NOT MSVC_RUNTIME_LIBRARY STREQUAL "")
     list(APPEND configure_command
