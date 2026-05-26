@@ -44,6 +44,8 @@ struct LoggingSetLevelParams {
   LoggingLevel level = LoggingLevel::Info;
   /// Optional `_meta` extension object preserved on the wire.
   std::optional<Json> meta;
+  /// Unknown JSON members preserved for forward-compatible round trips.
+  Json extensions = Json::object();
 };
 
 /// @brief Parameters for `notifications/message`.
@@ -56,6 +58,8 @@ struct LoggingMessageNotificationParams {
   Json data;
   /// Optional `_meta` extension object preserved on the wire.
   std::optional<Json> meta;
+  /// Unknown JSON members preserved for forward-compatible round trips.
+  Json extensions = Json::object();
 };
 
 /// @brief Builds an InvalidRequest error for logging JSON validation failures.
@@ -125,6 +129,7 @@ inline Json logging_set_level_params_to_json(
   if (params.meta.has_value()) {
     json["_meta"] = *params.meta;
   }
+  append_json_extensions(json, params.extensions);
   return json;
 }
 
@@ -155,6 +160,7 @@ inline core::Result<LoggingSetLevelParams> logging_set_level_params_from_json(
     }
     params.meta = json.at("_meta");
   }
+  params.extensions = collect_json_extensions(json, {"level", "_meta"});
   return params;
 }
 
@@ -170,6 +176,7 @@ inline Json logging_message_notification_params_to_json(
   if (params.meta.has_value()) {
     json["_meta"] = *params.meta;
   }
+  append_json_extensions(json, params.extensions);
   return json;
 }
 
@@ -213,6 +220,8 @@ logging_message_notification_params_from_json(const Json& json) {
     }
     params.meta = json.at("_meta");
   }
+  params.extensions =
+      collect_json_extensions(json, {"level", "logger", "data", "_meta"});
   return params;
 }
 

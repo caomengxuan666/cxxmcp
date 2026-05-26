@@ -1653,6 +1653,15 @@ void test_protocol_extension_round_trips() {
               .at("enabled"),
           "tool extension should serialize");
 
+  const auto tools_list = mcp::protocol::tools_list_result_from_json(
+      Json{{"tools", Json::array({tool_json})}, {"x-tools-list", true}});
+  require(tools_list.has_value(), "tools/list with extension should parse");
+  require(tools_list->extensions.at("x-tools-list"),
+          "tools/list extension should be preserved");
+  require(
+      mcp::protocol::tools_list_result_to_json(*tools_list).at("x-tools-list"),
+      "tools/list extension should serialize");
+
   const Json content_json = Json{{"type", "custom_block"},
                                  {"text", "fallback"},
                                  {"x-payload", Json{{"value", 7}}}};
@@ -1686,6 +1695,17 @@ void test_protocol_extension_round_trips() {
                   .at("x-origin") == "cache",
           "resource contents extension should serialize");
 
+  const auto resource_read = mcp::protocol::resources_read_result_from_json(
+      Json{{"contents", Json::array({resource_contents_json})},
+           {"x-read-result", true}});
+  require(resource_read.has_value(),
+          "resource read result with extension should parse");
+  require(resource_read->extensions.at("x-read-result"),
+          "resource read result extension should be preserved");
+  require(mcp::protocol::resources_read_result_to_json(*resource_read)
+              .at("x-read-result"),
+          "resource read result extension should serialize");
+
   const Json prompt_json =
       Json{{"name", "summarize"},
            {"arguments",
@@ -1703,6 +1723,19 @@ void test_protocol_extension_round_trips() {
   require(serialized_prompt.at("arguments").front().at("x-argument"),
           "prompt argument extension should serialize");
 
+  const auto prompt_result = mcp::protocol::prompts_get_result_from_json(Json{
+      {"messages", Json::array({Json{
+                       {"role", "user"},
+                       {"content", Json{{"type", "text"}, {"text", "hi"}}}}})},
+      {"x-prompt-result", true}});
+  require(prompt_result.has_value(),
+          "prompt result with extension should parse");
+  require(prompt_result->extensions.at("x-prompt-result"),
+          "prompt result extension should be preserved");
+  require(mcp::protocol::prompts_get_result_to_json(*prompt_result)
+              .at("x-prompt-result"),
+          "prompt result extension should serialize");
+
   const Json prompt_message_json =
       Json{{"role", "user"},
            {"content", Json{{"type", "text"}, {"text", "hi"}}},
@@ -1717,6 +1750,141 @@ void test_protocol_extension_round_trips() {
       mcp::protocol::prompt_message_to_json(*prompt_message).at("x-message") ==
           "trace",
       "prompt message extension should serialize");
+
+  const Json completion_json =
+      Json{{"completion",
+            Json{{"values", Json::array({"alpha"})}, {"x-score", 0.9}}},
+           {"x-complete", true}};
+  const auto completion =
+      mcp::protocol::complete_result_from_json(completion_json);
+  require(completion.has_value(), "completion with extension should parse");
+  require(completion->completion.extensions.at("x-score") == 0.9,
+          "completion payload extension should be preserved");
+  require(completion->extensions.at("x-complete"),
+          "completion result extension should be preserved");
+  require(mcp::protocol::complete_result_to_json(*completion)
+                  .at("completion")
+                  .at("x-score") == 0.9,
+          "completion payload extension should serialize");
+
+  const Json roots_json =
+      Json{{"roots", Json::array({Json{{"uri", "file:///workspace"},
+                                       {"x-root", Json{{"trusted", true}}}}})},
+           {"x-roots", "workspace"}};
+  const auto roots = mcp::protocol::roots_list_result_from_json(roots_json);
+  require(roots.has_value(), "roots with extension should parse");
+  require(roots->roots.front().extensions.at("x-root").at("trusted"),
+          "root extension should be preserved");
+  require(roots->extensions.at("x-roots") == "workspace",
+          "roots result extension should be preserved");
+  require(mcp::protocol::roots_list_result_to_json(*roots)
+              .at("roots")
+              .front()
+              .at("x-root")
+              .at("trusted"),
+          "root extension should serialize");
+
+  const Json log_json = Json{{"level", "info"},
+                             {"data", Json{{"message", "hello"}}},
+                             {"x-log", Json{{"sink", "test"}}}};
+  const auto log =
+      mcp::protocol::logging_message_notification_params_from_json(log_json);
+  require(log.has_value(), "logging message with extension should parse");
+  require(log->extensions.at("x-log").at("sink") == "test",
+          "logging extension should be preserved");
+  require(mcp::protocol::logging_message_notification_params_to_json(*log)
+                  .at("x-log")
+                  .at("sink") == "test",
+          "logging extension should serialize");
+
+  const Json sampling_json = Json{
+      {"messages",
+       Json::array({Json{{"role", "user"},
+                         {"content", Json{{"type", "tool_use"},
+                                          {"id", "tool-use-1"},
+                                          {"name", "lookup"},
+                                          {"input", Json{{"query", "weather"}}},
+                                          {"x-tool-use", true}}},
+                         {"x-message", "sample"}}})},
+      {"maxTokens", 64},
+      {"modelPreferences",
+       Json{{"hints", Json::array({Json{{"name", "model-a"}, {"x-hint", 1}}})},
+            {"x-preferences", true}}},
+      {"toolChoice", Json{{"mode", "auto"}, {"x-choice", true}}},
+      {"x-sampling", "request"}};
+  const auto sampling =
+      mcp::protocol::create_message_params_from_json(sampling_json);
+  require(sampling.has_value(), "sampling params with extension should parse");
+  require(sampling->extensions.at("x-sampling") == "request",
+          "sampling params extension should be preserved");
+  require(sampling->messages.front().extensions.at("x-message") == "sample",
+          "sampling message extension should be preserved");
+  require(sampling->messages.front().contents.front().tool_use->extensions.at(
+              "x-tool-use"),
+          "sampling tool_use extension should be preserved");
+  require(
+      sampling->model_preferences->hints.front().extensions.at("x-hint") == 1,
+      "sampling model hint extension should be preserved");
+  require(sampling->model_preferences->extensions.at("x-preferences"),
+          "sampling model preferences extension should be preserved");
+  require(sampling->tool_choice->extensions.at("x-choice"),
+          "sampling toolChoice extension should be preserved");
+  require(mcp::protocol::create_message_params_to_json(*sampling)
+                  .at("messages")
+                  .front()
+                  .at("x-message") == "sample",
+          "sampling message extension should serialize");
+
+  const Json elicitation_json = Json{
+      {"message", "Need details"},
+      {"mode", "form"},
+      {"requestedSchema",
+       Json{{"type", "object"},
+            {"properties", Json{{"email", Json{{"type", "string"},
+                                               {"format", "email"},
+                                               {"x-property", "primary"}}}}},
+            {"required", Json::array({"email"})},
+            {"x-schema", true}}},
+      {"x-elicitation", "form"}};
+  const auto elicitation =
+      mcp::protocol::create_elicitation_request_param_from_json(
+          elicitation_json);
+  require(elicitation.has_value(),
+          "elicitation request with extension should parse");
+  require(elicitation->extensions.at("x-elicitation") == "form",
+          "elicitation request extension should be preserved");
+  require(elicitation->requested_schema.extensions.at("x-schema"),
+          "elicitation schema extension should be preserved");
+  const auto& email_schema = std::get<mcp::protocol::StringSchema>(
+      elicitation->requested_schema.properties.at("email"));
+  require(email_schema.extensions.at("x-property") == "primary",
+          "elicitation property extension should be preserved");
+  require(mcp::protocol::create_elicitation_request_param_to_json(*elicitation)
+                  .at("requestedSchema")
+                  .at("properties")
+                  .at("email")
+                  .at("x-property") == "primary",
+          "elicitation property extension should serialize");
+
+  const Json task_json = Json{{"taskId", "task-1"},
+                              {"status", "working"},
+                              {"createdAt", "2026-05-26T00:00:00Z"},
+                              {"lastUpdatedAt", "2026-05-26T00:00:01Z"},
+                              {"x-task", Json{{"owner", "test"}}}};
+  const auto task_list = mcp::protocol::task_list_result_from_json(
+      Json{{"tasks", Json::array({task_json})}, {"x-task-list", true}});
+  require(task_list.has_value(), "task list with extension should parse");
+  require(
+      task_list->tasks.front().extensions.at("x-task").at("owner") == "test",
+      "task extension should be preserved");
+  require(task_list->extensions.at("x-task-list"),
+          "task list extension should be preserved");
+  require(mcp::protocol::task_list_result_to_json(*task_list)
+                  .at("tasks")
+                  .front()
+                  .at("x-task")
+                  .at("owner") == "test",
+          "task extension should serialize");
 }
 
 void test_notification_helpers_round_trip() {

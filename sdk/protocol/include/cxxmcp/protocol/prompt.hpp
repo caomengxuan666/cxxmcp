@@ -65,6 +65,8 @@ struct PromptsListResult {
   std::optional<std::string> next_cursor;
   /// Optional `_meta` extension object preserved on the wire.
   std::optional<Json> meta;
+  /// Unknown JSON members preserved for forward-compatible round trips.
+  Json extensions = Json::object();
 };
 
 /// @brief Parameters for `prompts/get`.
@@ -75,6 +77,8 @@ struct PromptsGetParams {
   Json arguments = Json::object();
   /// Optional `_meta` extension object preserved on the wire.
   std::optional<Json> meta;
+  /// Unknown JSON members preserved for forward-compatible round trips.
+  Json extensions = Json::object();
 };
 
 /// @brief One rendered prompt message.
@@ -97,6 +101,8 @@ struct PromptsGetResult {
   std::vector<PromptMessage> messages;
   /// Optional `_meta` extension object preserved on the wire.
   std::optional<Json> meta;
+  /// Unknown JSON members preserved for forward-compatible round trips.
+  Json extensions = Json::object();
 };
 
 /// @brief Builds an InvalidRequest error for prompt JSON validation failures.
@@ -289,6 +295,7 @@ inline Json prompts_list_result_to_json(const PromptsListResult& result) {
   if (result.meta.has_value()) {
     json["_meta"] = *result.meta;
   }
+  append_json_extensions(json, result.extensions);
   return json;
 }
 
@@ -327,6 +334,8 @@ inline core::Result<PromptsListResult> prompts_list_result_from_json(
     }
     result.meta = json.at("_meta");
   }
+  result.extensions =
+      collect_json_extensions(json, {"prompts", "nextCursor", "_meta"});
   return result;
 }
 
@@ -340,6 +349,7 @@ inline Json prompts_get_params_to_json(const PromptsGetParams& params) {
   if (params.meta.has_value()) {
     json["_meta"] = *params.meta;
   }
+  append_json_extensions(json, params.extensions);
   return json;
 }
 
@@ -372,6 +382,8 @@ inline core::Result<PromptsGetParams> prompts_get_params_from_json(
     }
     params.meta = json.at("_meta");
   }
+  params.extensions =
+      collect_json_extensions(json, {"name", "arguments", "_meta"});
   return params;
 }
 
@@ -436,6 +448,7 @@ inline Json prompts_get_result_to_json(const PromptsGetResult& result) {
   if (result.meta.has_value()) {
     json["_meta"] = *result.meta;
   }
+  append_json_extensions(json, result.extensions);
   return json;
 }
 
@@ -474,6 +487,8 @@ inline core::Result<PromptsGetResult> prompts_get_result_from_json(
     }
     result.meta = json.at("_meta");
   }
+  result.extensions =
+      collect_json_extensions(json, {"description", "messages", "_meta"});
   return result;
 }
 

@@ -306,6 +306,8 @@ struct ToolsListResult {
   std::optional<std::string> next_cursor;
   /// Optional `_meta` extension object preserved on the wire.
   std::optional<Json> meta;
+  /// Unknown JSON members preserved for forward-compatible round trips.
+  Json extensions = Json::object();
 };
 
 /// @brief Result object for `tools/call`.
@@ -642,6 +644,7 @@ inline Json tools_list_result_to_json(const ToolsListResult& result) {
   if (result.meta.has_value()) {
     json["_meta"] = *result.meta;
   }
+  append_json_extensions(json, result.extensions);
   return json;
 }
 
@@ -680,6 +683,8 @@ inline core::Result<ToolsListResult> tools_list_result_from_json(
     }
     result.meta = json.at("_meta");
   }
+  result.extensions =
+      collect_json_extensions(json, {"tools", "nextCursor", "_meta"});
   return result;
 }
 

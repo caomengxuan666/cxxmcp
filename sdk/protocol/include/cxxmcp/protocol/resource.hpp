@@ -52,6 +52,8 @@ struct ResourcesListResult {
   std::optional<std::string> next_cursor;
   /// Optional `_meta` extension object preserved on the wire.
   std::optional<Json> meta;
+  /// Unknown JSON members preserved for forward-compatible round trips.
+  Json extensions = Json::object();
 };
 
 /// @brief URI template advertised by `resources/templates/list`.
@@ -86,6 +88,8 @@ struct ResourceTemplatesListResult {
   std::optional<std::string> next_cursor;
   /// Optional `_meta` extension object preserved on the wire.
   std::optional<Json> meta;
+  /// Unknown JSON members preserved for forward-compatible round trips.
+  Json extensions = Json::object();
 };
 
 /// @brief Parameters for `resources/read`.
@@ -94,6 +98,8 @@ struct ResourcesReadParams {
   std::string uri;
   /// Optional `_meta` extension object preserved on the wire.
   std::optional<Json> meta;
+  /// Unknown JSON members preserved for forward-compatible round trips.
+  Json extensions = Json::object();
 };
 
 /// @brief Parameters for `resources/subscribe`.
@@ -102,6 +108,8 @@ struct ResourcesSubscribeParams {
   std::string uri;
   /// Optional `_meta` extension object preserved on the wire.
   std::optional<Json> meta;
+  /// Unknown JSON members preserved for forward-compatible round trips.
+  Json extensions = Json::object();
 };
 
 /// @brief Parameters for `resources/unsubscribe`.
@@ -129,6 +137,8 @@ struct ResourcesReadResult {
   std::vector<ResourceContents> contents;
   /// Optional `_meta` extension object preserved on the wire.
   std::optional<Json> meta;
+  /// Unknown JSON members preserved for forward-compatible round trips.
+  Json extensions = Json::object();
 };
 
 /// @brief Builds an InvalidRequest error for resource JSON validation failures.
@@ -366,6 +376,7 @@ inline Json resources_list_result_to_json(const ResourcesListResult& result) {
   if (result.meta.has_value()) {
     json["_meta"] = *result.meta;
   }
+  append_json_extensions(json, result.extensions);
   return json;
 }
 
@@ -404,6 +415,8 @@ inline core::Result<ResourcesListResult> resources_list_result_from_json(
     }
     result.meta = json.at("_meta");
   }
+  result.extensions =
+      collect_json_extensions(json, {"resources", "nextCursor", "_meta"});
   return result;
 }
 
@@ -422,6 +435,7 @@ inline Json resource_templates_list_result_to_json(
   if (result.meta.has_value()) {
     json["_meta"] = *result.meta;
   }
+  append_json_extensions(json, result.extensions);
   return json;
 }
 
@@ -461,6 +475,8 @@ resource_templates_list_result_from_json(const Json& json) {
     }
     result.meta = json.at("_meta");
   }
+  result.extensions = collect_json_extensions(
+      json, {"resourceTemplates", "nextCursor", "_meta"});
   return result;
 }
 
@@ -470,6 +486,7 @@ inline Json resources_read_params_to_json(const ResourcesReadParams& params) {
   if (params.meta.has_value()) {
     json["_meta"] = *params.meta;
   }
+  append_json_extensions(json, params.extensions);
   return json;
 }
 
@@ -494,6 +511,7 @@ inline core::Result<ResourcesReadParams> resources_read_params_from_json(
     }
     params.meta = json.at("_meta");
   }
+  params.extensions = collect_json_extensions(json, {"uri", "_meta"});
   return params;
 }
 
@@ -504,6 +522,7 @@ inline Json resources_subscribe_params_to_json(
   if (params.meta.has_value()) {
     json["_meta"] = *params.meta;
   }
+  append_json_extensions(json, params.extensions);
   return json;
 }
 
@@ -528,6 +547,7 @@ resources_subscribe_params_from_json(const Json& json) {
     }
     params.meta = json.at("_meta");
   }
+  params.extensions = collect_json_extensions(json, {"uri", "_meta"});
   return params;
 }
 
@@ -627,6 +647,7 @@ inline Json resources_read_result_to_json(const ResourcesReadResult& result) {
   if (result.meta.has_value()) {
     json["_meta"] = *result.meta;
   }
+  append_json_extensions(json, result.extensions);
   return json;
 }
 
@@ -658,6 +679,7 @@ inline core::Result<ResourcesReadResult> resources_read_result_from_json(
     }
     result.meta = json.at("_meta");
   }
+  result.extensions = collect_json_extensions(json, {"contents", "_meta"});
   return result;
 }
 

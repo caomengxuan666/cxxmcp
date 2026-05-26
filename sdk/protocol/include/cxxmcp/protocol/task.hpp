@@ -101,6 +101,8 @@ struct Task {
   std::optional<std::int64_t> poll_interval;
   /// Last update timestamp as a protocol string.
   std::string last_updated_at;
+  /// Unknown JSON members preserved for forward-compatible round trips.
+  Json extensions = Json::object();
 };
 
 /// @brief Parameters for `tasks/list`.
@@ -109,6 +111,8 @@ struct TaskListParams {
   std::optional<std::string> cursor;
   /// Optional `_meta` extension object preserved on the wire.
   std::optional<Json> meta;
+  /// Unknown JSON members preserved for forward-compatible round trips.
+  Json extensions = Json::object();
 };
 
 /// @brief Parameters for `tasks/get`.
@@ -117,6 +121,8 @@ struct TaskGetParams {
   std::string task_id;
   /// Optional `_meta` extension object preserved on the wire.
   std::optional<Json> meta;
+  /// Unknown JSON members preserved for forward-compatible round trips.
+  Json extensions = Json::object();
 };
 
 /// @brief Parameters for `tasks/result`.
@@ -128,6 +134,8 @@ struct TaskCancelParams {
   std::string task_id;
   /// Optional `_meta` extension object preserved on the wire.
   std::optional<Json> meta;
+  /// Unknown JSON members preserved for forward-compatible round trips.
+  Json extensions = Json::object();
 };
 
 /// @brief Result object for `tasks/list`.
@@ -138,6 +146,8 @@ struct TaskListResult {
   std::optional<std::string> next_cursor;
   /// Optional `_meta` extension object preserved on the wire.
   std::optional<Json> meta;
+  /// Unknown JSON members preserved for forward-compatible round trips.
+  Json extensions = Json::object();
 };
 
 /// @brief Result wrapper returned when a feature request creates a task.
@@ -146,6 +156,8 @@ struct CreateTaskResult {
   Task task;
   /// Optional `_meta` extension object preserved on the wire.
   std::optional<Json> meta;
+  /// Unknown JSON members preserved for forward-compatible round trips.
+  Json extensions = Json::object();
 };
 
 /// @brief Builds an InvalidRequest error for task JSON validation failures.
@@ -223,6 +235,7 @@ inline Json task_to_json(const Task& task) {
   if (task.poll_interval.has_value()) {
     json["pollInterval"] = *task.poll_interval;
   }
+  append_json_extensions(json, task.extensions);
   return json;
 }
 
@@ -279,6 +292,9 @@ inline core::Result<Task> task_from_json(const Json& json) {
     }
     task.poll_interval = json.at("pollInterval").get<std::int64_t>();
   }
+  task.extensions = collect_json_extensions(
+      json, {"taskId", "status", "statusMessage", "createdAt", "ttl",
+             "pollInterval", "lastUpdatedAt"});
   return task;
 }
 
@@ -291,6 +307,7 @@ inline Json task_list_params_to_json(const TaskListParams& params) {
   if (params.meta.has_value()) {
     json["_meta"] = *params.meta;
   }
+  append_json_extensions(json, params.extensions);
   return json;
 }
 
@@ -317,6 +334,7 @@ inline core::Result<TaskListParams> task_list_params_from_json(
     }
     params.meta = json.at("_meta");
   }
+  params.extensions = collect_json_extensions(json, {"cursor", "_meta"});
   return params;
 }
 
@@ -326,6 +344,7 @@ inline Json task_get_params_to_json(const TaskGetParams& params) {
   if (params.meta.has_value()) {
     json["_meta"] = *params.meta;
   }
+  append_json_extensions(json, params.extensions);
   return json;
 }
 
@@ -348,6 +367,7 @@ inline core::Result<TaskGetParams> task_get_params_from_json(const Json& json) {
     }
     params.meta = json.at("_meta");
   }
+  params.extensions = collect_json_extensions(json, {"taskId", "_meta"});
   return params;
 }
 
@@ -357,6 +377,7 @@ inline Json task_cancel_params_to_json(const TaskCancelParams& params) {
   if (params.meta.has_value()) {
     json["_meta"] = *params.meta;
   }
+  append_json_extensions(json, params.extensions);
   return json;
 }
 
@@ -381,6 +402,7 @@ inline core::Result<TaskCancelParams> task_cancel_params_from_json(
     }
     params.meta = json.at("_meta");
   }
+  params.extensions = collect_json_extensions(json, {"taskId", "_meta"});
   return params;
 }
 
@@ -409,6 +431,7 @@ inline Json task_list_result_to_json(const TaskListResult& result) {
   if (result.meta.has_value()) {
     json["_meta"] = *result.meta;
   }
+  append_json_extensions(json, result.extensions);
   return json;
 }
 
@@ -447,6 +470,8 @@ inline core::Result<TaskListResult> task_list_result_from_json(
     }
     result.meta = json.at("_meta");
   }
+  result.extensions =
+      collect_json_extensions(json, {"tasks", "nextCursor", "_meta"});
   return result;
 }
 
@@ -457,6 +482,7 @@ inline Json create_task_result_to_json(const CreateTaskResult& result) {
   if (result.meta.has_value()) {
     json["_meta"] = *result.meta;
   }
+  append_json_extensions(json, result.extensions);
   return json;
 }
 
@@ -482,6 +508,7 @@ inline core::Result<CreateTaskResult> create_task_result_from_json(
   if (json.contains("_meta")) {
     result.meta = json.at("_meta");
   }
+  result.extensions = collect_json_extensions(json, {"task", "_meta"});
   return result;
 }
 

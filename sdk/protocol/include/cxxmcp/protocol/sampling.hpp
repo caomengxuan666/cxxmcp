@@ -36,6 +36,8 @@ enum class ToolChoiceMode {
 struct ToolChoice {
   /// Optional selection mode. Missing preserves an empty object if present.
   std::optional<ToolChoiceMode> mode;
+  /// Unknown JSON members preserved for forward-compatible round trips.
+  Json extensions = Json::object();
 
   /// @brief Lets the model decide whether to use tools.
   static ToolChoice auto_choice() { return ToolChoice{ToolChoiceMode::Auto}; }
@@ -57,6 +59,8 @@ struct ToolUseContent {
   Json input = Json::object();
   /// Optional `_meta` extension object preserved on the wire.
   std::optional<Json> meta;
+  /// Unknown JSON members preserved for forward-compatible round trips.
+  Json extensions = Json::object();
 };
 
 /// @brief User-side result for a prior sampling tool call.
@@ -71,6 +75,8 @@ struct ToolResultContent {
   std::optional<bool> is_error;
   /// Optional `_meta` extension object preserved on the wire.
   std::optional<Json> meta;
+  /// Unknown JSON members preserved for forward-compatible round trips.
+  Json extensions = Json::object();
 };
 
 /// @brief One sampling message content item.
@@ -133,12 +139,16 @@ struct SamplingMessage {
   std::vector<SamplingMessageContent> contents;
   /// Optional `_meta` extension object preserved on the wire.
   std::optional<Json> meta;
+  /// Unknown JSON members preserved for forward-compatible round trips.
+  Json extensions = Json::object();
 };
 
 /// @brief Soft model name hint for sampling.
 struct ModelHint {
   /// Model family, name, or alias preferred by the requester.
   std::string name;
+  /// Unknown JSON members preserved for forward-compatible round trips.
+  Json extensions = Json::object();
 };
 
 /// @brief Preferences used by the client when choosing a model.
@@ -151,6 +161,8 @@ struct ModelPreferences {
   std::optional<double> speed_priority;
   /// Optional priority for model capability, typically normalized by the peer.
   std::optional<double> intelligence_priority;
+  /// Unknown JSON members preserved for forward-compatible round trips.
+  Json extensions = Json::object();
 };
 
 /// @brief Parameters for `sampling/createMessage`.
@@ -179,6 +191,8 @@ struct CreateMessageParams {
   std::vector<ToolDefinition> tools;
   /// Optional tool selection behavior.
   std::optional<ToolChoice> tool_choice;
+  /// Unknown JSON members preserved for forward-compatible round trips.
+  Json extensions = Json::object();
 };
 
 /// @brief Result object for `sampling/createMessage`.
@@ -195,6 +209,8 @@ struct CreateMessageResult {
   std::string stop_reason;
   /// Optional `_meta` extension object preserved on the wire.
   std::optional<Json> meta;
+  /// Unknown JSON members preserved for forward-compatible round trips.
+  Json extensions = Json::object();
 };
 
 /// @brief Builds an InvalidRequest error for sampling JSON validation failures.
@@ -237,6 +253,7 @@ inline Json tool_choice_to_json(const ToolChoice& choice) {
   if (choice.mode.has_value()) {
     json["mode"] = tool_choice_mode_to_string(*choice.mode);
   }
+  append_json_extensions(json, choice.extensions);
   return json;
 }
 
@@ -259,6 +276,7 @@ inline core::Result<ToolChoice> tool_choice_from_json(const Json& json) {
     }
     choice.mode = *mode;
   }
+  choice.extensions = collect_json_extensions(json, {"mode"});
   return choice;
 }
 
@@ -272,6 +290,7 @@ inline Json tool_use_content_to_json(const ToolUseContent& content) {
   if (content.meta.has_value()) {
     json["_meta"] = *content.meta;
   }
+  append_json_extensions(json, content.extensions);
   return json;
 }
 
@@ -305,6 +324,8 @@ inline core::Result<ToolUseContent> tool_use_content_from_json(
     }
     content.meta = json.at("_meta");
   }
+  content.extensions =
+      collect_json_extensions(json, {"type", "id", "name", "input", "_meta"});
   return content;
 }
 
@@ -328,6 +349,7 @@ inline Json tool_result_content_to_json(const ToolResultContent& content) {
   if (content.meta.has_value()) {
     json["_meta"] = *content.meta;
   }
+  append_json_extensions(json, content.extensions);
   return json;
 }
 
@@ -378,6 +400,9 @@ inline core::Result<ToolResultContent> tool_result_content_from_json(
     }
     content.meta = json.at("_meta");
   }
+  content.extensions =
+      collect_json_extensions(json, {"type", "toolUseId", "content",
+                                     "structuredContent", "isError", "_meta"});
   return content;
 }
 
@@ -441,6 +466,7 @@ inline Json sampling_message_to_json(const SamplingMessage& message) {
   if (message.meta.has_value()) {
     json["_meta"] = *message.meta;
   }
+  append_json_extensions(json, message.extensions);
   return json;
 }
 
@@ -487,6 +513,8 @@ inline core::Result<SamplingMessage> sampling_message_from_json(
     }
     message.meta = json.at("_meta");
   }
+  message.extensions =
+      collect_json_extensions(json, {"role", "content", "_meta"});
   return message;
 }
 
@@ -496,6 +524,7 @@ inline Json model_hint_to_json(const ModelHint& hint) {
   if (!hint.name.empty()) {
     json["name"] = hint.name;
   }
+  append_json_extensions(json, hint.extensions);
   return json;
 }
 
@@ -513,6 +542,7 @@ inline core::Result<ModelHint> model_hint_from_json(const Json& json) {
     }
     hint.name = json.at("name").get<std::string>();
   }
+  hint.extensions = collect_json_extensions(json, {"name"});
   return hint;
 }
 
@@ -534,6 +564,7 @@ inline Json model_preferences_to_json(const ModelPreferences& preferences) {
   if (preferences.intelligence_priority.has_value()) {
     json["intelligencePriority"] = *preferences.intelligence_priority;
   }
+  append_json_extensions(json, preferences.extensions);
   return json;
 }
 
@@ -586,6 +617,8 @@ inline core::Result<ModelPreferences> model_preferences_from_json(
       !ok) {
     return std::unexpected(ok.error());
   }
+  preferences.extensions = collect_json_extensions(
+      json, {"hints", "costPriority", "speedPriority", "intelligencePriority"});
   return preferences;
 }
 
@@ -631,6 +664,7 @@ inline Json create_message_params_to_json(const CreateMessageParams& params) {
   if (params.tool_choice.has_value()) {
     json["toolChoice"] = tool_choice_to_json(*params.tool_choice);
   }
+  append_json_extensions(json, params.extensions);
   return json;
 }
 
@@ -744,6 +778,10 @@ inline core::Result<CreateMessageParams> create_message_params_from_json(
     }
     params.tool_choice = *tool_choice;
   }
+  params.extensions = collect_json_extensions(
+      json, {"messages", "modelPreferences", "systemPrompt", "includeContext",
+             "temperature", "maxTokens", "stopSequences", "metadata", "task",
+             "_meta", "tools", "toolChoice"});
   return params;
 }
 
@@ -771,6 +809,7 @@ inline Json create_message_result_to_json(const CreateMessageResult& result) {
   if (result.meta.has_value()) {
     json["_meta"] = *result.meta;
   }
+  append_json_extensions(json, result.extensions);
   return json;
 }
 
@@ -829,6 +868,8 @@ inline core::Result<CreateMessageResult> create_message_result_from_json(
     }
     result.meta = json.at("_meta");
   }
+  result.extensions = collect_json_extensions(
+      json, {"role", "content", "model", "stopReason", "_meta"});
   return result;
 }
 

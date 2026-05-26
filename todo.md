@@ -444,9 +444,9 @@ true:
 ## P1: Protocol Model Completeness
 
 - [ ] Audit all model structs against the pinned MCP/RMCP snapshot.
-- [ ] Add `_meta` support where the spec expects it, not only on generic
+- [x] Add `_meta` support where the spec expects it, not only on generic
   JSON-RPC envelopes.
-- [ ] Ensure `_meta` round-trips symmetrically.
+- [x] Ensure `_meta` round-trips symmetrically.
 - [x] Audit annotations support for tools, prompts, prompt arguments,
   resources, resource templates, and content blocks.
 - [x] Audit icon support for tools, prompts, resources, and templates.
@@ -455,8 +455,8 @@ true:
 - [x] Audit resource size support.
 - [x] Audit content variants: text, image, audio, embedded resource, resource
   link, and future extension handling.
-- [ ] Add extension bags where RMCP/spec provides them.
-- [ ] Ensure raw JSON extension data is preserved even when typed helpers do not
+- [x] Add extension bags where RMCP/spec provides them.
+- [x] Ensure raw JSON extension data is preserved even when typed helpers do not
   understand it.
 - [ ] Make serialization/deserialization exhaustive and symmetric.
 - [ ] Add round-trip fixture tests for every protocol family.

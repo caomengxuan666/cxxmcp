@@ -53,6 +53,8 @@ struct StringSchema {
   std::optional<std::string> format;
   /// Optional default string value.
   std::optional<std::string> default_value;
+  /// Unknown JSON members preserved for forward-compatible round trips.
+  Json extensions = Json::object();
 };
 
 /// @brief Primitive number property schema for form elicitation.
@@ -67,6 +69,8 @@ struct NumberSchema {
   std::optional<double> maximum;
   /// Optional default numeric value.
   std::optional<double> default_value;
+  /// Unknown JSON members preserved for forward-compatible round trips.
+  Json extensions = Json::object();
 };
 
 /// @brief Primitive integer property schema for form elicitation.
@@ -81,6 +85,8 @@ struct IntegerSchema {
   std::optional<std::int64_t> maximum;
   /// Optional default integer value.
   std::optional<std::int64_t> default_value;
+  /// Unknown JSON members preserved for forward-compatible round trips.
+  Json extensions = Json::object();
 };
 
 /// @brief Primitive boolean property schema for form elicitation.
@@ -91,6 +97,8 @@ struct BooleanSchema {
   std::optional<std::string> description;
   /// Optional default boolean value.
   std::optional<bool> default_value;
+  /// Unknown JSON members preserved for forward-compatible round trips.
+  Json extensions = Json::object();
 };
 
 /// @brief Primitive string enum property schema for form elicitation.
@@ -103,6 +111,8 @@ struct EnumSchema {
   std::vector<std::string> values;
   /// Optional default enum value.
   std::optional<std::string> default_value;
+  /// Unknown JSON members preserved for forward-compatible round trips.
+  Json extensions = Json::object();
 };
 
 /// @brief Variant over primitive schema shapes supported by elicitation forms.
@@ -119,6 +129,8 @@ struct ElicitationSchema {
   std::map<std::string, PrimitiveSchema> properties;
   /// Names of required properties.
   std::vector<std::string> required;
+  /// Unknown JSON members preserved for forward-compatible round trips.
+  Json extensions = Json::object();
 
   /// @brief Fluent builder for valid elicitation object schemas.
   ///
@@ -228,6 +240,8 @@ struct CreateElicitationRequestParam {
   std::optional<TaskRequestParameters> task;
   /// Optional `_meta` extension object preserved on the wire.
   std::optional<Json> meta;
+  /// Unknown JSON members preserved for forward-compatible round trips.
+  Json extensions = Json::object();
 };
 
 /// @brief Result object for `elicitation/create`.
@@ -238,6 +252,8 @@ struct CreateElicitationResult {
   std::optional<Json> content;
   /// Optional `_meta` extension object preserved on the wire.
   std::optional<Json> meta;
+  /// Unknown JSON members preserved for forward-compatible round trips.
+  Json extensions = Json::object();
 };
 
 /// @brief Parameters for `notifications/elicitation/complete`.
@@ -246,6 +262,8 @@ struct ElicitationCompleteNotificationParams {
   std::string elicitation_id;
   /// Optional `_meta` extension object preserved on the wire.
   std::optional<Json> meta;
+  /// Unknown JSON members preserved for forward-compatible round trips.
+  Json extensions = Json::object();
 };
 
 /// @brief Converts an elicitation action to its MCP string value.
@@ -317,6 +335,7 @@ inline Json string_schema_to_json(const StringSchema& schema) {
   if (schema.default_value.has_value()) {
     json["default"] = *schema.default_value;
   }
+  append_json_extensions(json, schema.extensions);
   return json;
 }
 
@@ -339,6 +358,7 @@ inline Json number_schema_to_json(const NumberSchema& schema) {
   if (schema.default_value.has_value()) {
     json["default"] = *schema.default_value;
   }
+  append_json_extensions(json, schema.extensions);
   return json;
 }
 
@@ -361,6 +381,7 @@ inline Json integer_schema_to_json(const IntegerSchema& schema) {
   if (schema.default_value.has_value()) {
     json["default"] = *schema.default_value;
   }
+  append_json_extensions(json, schema.extensions);
   return json;
 }
 
@@ -377,6 +398,7 @@ inline Json boolean_schema_to_json(const BooleanSchema& schema) {
   if (schema.default_value.has_value()) {
     json["default"] = *schema.default_value;
   }
+  append_json_extensions(json, schema.extensions);
   return json;
 }
 
@@ -397,6 +419,7 @@ inline Json enum_schema_to_json(const EnumSchema& schema) {
   if (schema.default_value.has_value()) {
     json["default"] = *schema.default_value;
   }
+  append_json_extensions(json, schema.extensions);
   return json;
 }
 
@@ -420,6 +443,7 @@ inline Json elicitation_schema_to_json(const ElicitationSchema& schema) {
   if (!schema.required.empty()) {
     json["required"] = schema.required;
   }
+  append_json_extensions(json, schema.extensions);
   return json;
 }
 
@@ -488,6 +512,8 @@ inline core::Result<ElicitationSchema> elicitation_schema_from_json(
       schema.required.push_back(item.get<std::string>());
     }
   }
+  schema.extensions = collect_json_extensions(
+      json, {"type", "title", "description", "properties", "required"});
   return schema;
 }
 
@@ -508,6 +534,7 @@ inline Json create_elicitation_request_param_to_json(
   if (request.meta.has_value()) {
     json["_meta"] = *request.meta;
   }
+  append_json_extensions(json, request.extensions);
 
   if (request.mode == ElicitationMode::Url) {
     if (request.elicitation_id.has_value()) {
@@ -572,6 +599,9 @@ create_elicitation_request_param_from_json(const Json& json) {
     }
     request.meta = json.at("_meta");
   }
+  request.extensions = collect_json_extensions(
+      json, {"message", "mode", "elicitationId", "url", "requestedSchema",
+             "requested_schema", "requestState", "task", "_meta"});
 
   if (mode == ElicitationMode::Url) {
     if (!json.contains("elicitationId") ||
@@ -613,6 +643,7 @@ inline Json create_elicitation_result_to_json(
   if (result.meta.has_value()) {
     json["_meta"] = *result.meta;
   }
+  append_json_extensions(json, result.extensions);
   return json;
 }
 
@@ -648,6 +679,8 @@ create_elicitation_result_from_json(const Json& json) {
     }
     result.meta = json.at("_meta");
   }
+  result.extensions =
+      collect_json_extensions(json, {"action", "content", "_meta"});
   return result;
 }
 
@@ -658,6 +691,7 @@ inline Json elicitation_complete_notification_params_to_json(
   if (params.meta.has_value()) {
     json["_meta"] = *params.meta;
   }
+  append_json_extensions(json, params.extensions);
   return json;
 }
 
@@ -683,6 +717,7 @@ elicitation_complete_notification_params_from_json(const Json& json) {
     }
     params.meta = json.at("_meta");
   }
+  params.extensions = collect_json_extensions(json, {"elicitationId", "_meta"});
   return params;
 }
 
@@ -925,6 +960,8 @@ inline core::Result<PrimitiveSchema> primitive_schema_from_json(
       }
       schema.default_value = json.at("default").get<std::string>();
     }
+    schema.extensions = collect_json_extensions(
+        json, {"type", "title", "description", "enum", "default"});
     return schema;
   }
 
@@ -958,6 +995,8 @@ inline core::Result<PrimitiveSchema> primitive_schema_from_json(
       }
       schema.default_value = json.at("default").get<std::string>();
     }
+    schema.extensions = collect_json_extensions(
+        json, {"type", "title", "description", "format", "default"});
     return schema;
   }
   if (type == "number") {
@@ -997,6 +1036,9 @@ inline core::Result<PrimitiveSchema> primitive_schema_from_json(
       }
       schema.default_value = json.at("default").get<double>();
     }
+    schema.extensions = collect_json_extensions(
+        json,
+        {"type", "title", "description", "minimum", "maximum", "default"});
     return schema;
   }
   if (type == "integer") {
@@ -1036,6 +1078,9 @@ inline core::Result<PrimitiveSchema> primitive_schema_from_json(
       }
       schema.default_value = json.at("default").get<std::int64_t>();
     }
+    schema.extensions = collect_json_extensions(
+        json,
+        {"type", "title", "description", "minimum", "maximum", "default"});
     return schema;
   }
   if (type == "boolean") {
@@ -1061,6 +1106,8 @@ inline core::Result<PrimitiveSchema> primitive_schema_from_json(
       }
       schema.default_value = json.at("default").get<bool>();
     }
+    schema.extensions = collect_json_extensions(
+        json, {"type", "title", "description", "default"});
     return schema;
   }
 
