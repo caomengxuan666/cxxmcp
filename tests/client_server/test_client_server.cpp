@@ -2387,7 +2387,7 @@ void test_server_tool_task_support_validation() {
   require(forbidden_task->error.has_value(),
           "forbidden task request should fail");
   require(forbidden_task->error->code ==
-              static_cast<int>(mcp::protocol::ErrorCode::InvalidRequest),
+              static_cast<int>(mcp::protocol::ErrorCode::InvalidParams),
           "forbidden task error code mismatch");
   require(forbidden_calls == 0, "forbidden task should not call handler");
 
@@ -2447,7 +2447,7 @@ void test_server_tool_task_support_validation() {
   require(invalid_task_params->error.has_value(),
           "invalid task params should fail");
   require(invalid_task_params->error->code ==
-              static_cast<int>(mcp::protocol::ErrorCode::InvalidRequest),
+              static_cast<int>(mcp::protocol::ErrorCode::InvalidParams),
           "invalid task params error code mismatch");
   require(optional_calls == optional_calls_before_invalid,
           "invalid task params should not call handler");
@@ -2465,7 +2465,7 @@ void test_server_tool_task_support_validation() {
           "negative task ttl should produce a response");
   require(negative_ttl->error.has_value(), "negative task ttl should fail");
   require(negative_ttl->error->code ==
-              static_cast<int>(mcp::protocol::ErrorCode::InvalidRequest),
+              static_cast<int>(mcp::protocol::ErrorCode::InvalidParams),
           "negative task ttl error code mismatch");
   require(negative_ttl->error->message == "task ttl must be non-negative",
           "negative task ttl error message mismatch");
@@ -3289,6 +3289,36 @@ void test_server_app_builder_registers_parity_surface() {
       context);
   require(logging.has_value(), "facade logging failed");
   require(logging_calls == 1, "facade logging callback mismatch");
+
+  const auto invalid_tool_get = server.handle_request(
+      mcp::protocol::JsonRpcRequest{
+          .method = std::string(mcp::protocol::ToolsGetMethod),
+          .params = Json{{"name", 7}},
+          .id = std::int64_t{80},
+      },
+      context);
+  require(invalid_tool_get.has_value(),
+          "invalid tools/get params should produce a response");
+  require(invalid_tool_get->error.has_value(),
+          "invalid tools/get params should fail");
+  require(invalid_tool_get->error->code ==
+              static_cast<int>(mcp::protocol::ErrorCode::InvalidParams),
+          "invalid tools/get params error code mismatch");
+
+  const auto invalid_logging = server.handle_request(
+      mcp::protocol::JsonRpcRequest{
+          .method = "logging/setLevel",
+          .params = Json{{"level", 7}},
+          .id = std::int64_t{81},
+      },
+      context);
+  require(invalid_logging.has_value(),
+          "invalid logging params should produce a response");
+  require(invalid_logging->error.has_value(),
+          "invalid logging params should fail");
+  require(invalid_logging->error->code ==
+              static_cast<int>(mcp::protocol::ErrorCode::InvalidParams),
+          "invalid logging params error code mismatch");
 
   const auto raw = server.handle_request(
       mcp::protocol::JsonRpcRequest{

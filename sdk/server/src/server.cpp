@@ -81,6 +81,19 @@ core::Result<protocol::JsonRpcResponse> make_error_response(
                                : std::optional<protocol::Json>{detail}));
 }
 
+int method_params_error_code(const core::Error& error) {
+  if (error.code == static_cast<int>(protocol::ErrorCode::InvalidRequest)) {
+    return static_cast<int>(protocol::ErrorCode::InvalidParams);
+  }
+  return error.code;
+}
+
+core::Result<protocol::JsonRpcResponse> make_params_error_response(
+    const protocol::JsonRpcRequest& request, const core::Error& error) {
+  return make_error_response(request, method_params_error_code(error),
+                             error.message, error.detail);
+}
+
 std::string request_cancellation_key(const protocol::RequestId& request_id) {
   return protocol::request_id_to_json(request_id).dump();
 }
@@ -337,8 +350,7 @@ core::Result<protocol::JsonRpcResponse> Server::handle_request(
 
     const auto params = protocol::task_list_params_from_json(request.params);
     if (!params) {
-      return make_error_response(request, params.error().code,
-                                 params.error().message, params.error().detail);
+      return make_params_error_response(request, params.error());
     }
 
     const auto result = task_list_handler_
@@ -362,8 +374,7 @@ core::Result<protocol::JsonRpcResponse> Server::handle_request(
 
     const auto params = protocol::task_get_params_from_json(request.params);
     if (!params) {
-      return make_error_response(request, params.error().code,
-                                 params.error().message, params.error().detail);
+      return make_params_error_response(request, params.error());
     }
 
     const auto result = task_get_handler_ ? task_get_handler_(*params, context)
@@ -388,8 +399,7 @@ core::Result<protocol::JsonRpcResponse> Server::handle_request(
 
     const auto params = protocol::task_cancel_params_from_json(request.params);
     if (!params) {
-      return make_error_response(request, params.error().code,
-                                 params.error().message, params.error().detail);
+      return make_params_error_response(request, params.error());
     }
 
     const auto result = task_cancel_handler_
@@ -416,8 +426,7 @@ core::Result<protocol::JsonRpcResponse> Server::handle_request(
 
     const auto params = protocol::task_result_params_from_json(request.params);
     if (!params) {
-      return make_error_response(request, params.error().code,
-                                 params.error().message, params.error().detail);
+      return make_params_error_response(request, params.error());
     }
 
     const auto result = task_result_handler_
@@ -444,7 +453,7 @@ core::Result<protocol::JsonRpcResponse> Server::handle_request(
     if (!request.params.is_object() || !request.params.contains("name") ||
         !request.params.at("name").is_string()) {
       return make_error_response(
-          request, static_cast<int>(protocol::ErrorCode::InvalidRequest),
+          request, static_cast<int>(protocol::ErrorCode::InvalidParams),
           "tools/get requires a string name");
     }
 
@@ -466,15 +475,13 @@ core::Result<protocol::JsonRpcResponse> Server::handle_request(
   if (request.method == protocol::ToolsCallMethod) {
     const auto call = protocol::tool_call_from_json(request.params);
     if (!call) {
-      return make_error_response(request, call.error().code,
-                                 call.error().message, call.error().detail);
+      return make_params_error_response(request, call.error());
     }
 
     if (call->task.has_value()) {
       const auto valid = tools_.validate(*call);
       if (!valid) {
-        return make_error_response(request, valid.error().code,
-                                   valid.error().message, valid.error().detail);
+        return make_params_error_response(request, valid.error());
       }
       if (!task_processor_) {
         return make_error_response(
@@ -484,8 +491,7 @@ core::Result<protocol::JsonRpcResponse> Server::handle_request(
       const auto task =
           task_processor_->submit_tool_call(tools_, *call, context);
       if (!task) {
-        return make_error_response(request, task.error().code,
-                                   task.error().message, task.error().detail);
+        return make_params_error_response(request, task.error());
       }
       return protocol::make_response(
           request.id, protocol::create_task_result_to_json(*task));
@@ -516,8 +522,7 @@ core::Result<protocol::JsonRpcResponse> Server::handle_request(
   if (request.method == "prompts/get") {
     const auto params = protocol::prompts_get_params_from_json(request.params);
     if (!params) {
-      return make_error_response(request, params.error().code,
-                                 params.error().message, params.error().detail);
+      return make_params_error_response(request, params.error());
     }
 
     const auto result = prompts_.get(params->name, params->arguments, context);
@@ -546,8 +551,7 @@ core::Result<protocol::JsonRpcResponse> Server::handle_request(
     const auto params =
         protocol::resources_read_params_from_json(request.params);
     if (!params) {
-      return make_error_response(request, params.error().code,
-                                 params.error().message, params.error().detail);
+      return make_params_error_response(request, params.error());
     }
 
     const auto result = resources_.read(params->uri, request.params, context);
@@ -582,7 +586,7 @@ core::Result<protocol::JsonRpcResponse> Server::handle_request(
     if (!request.params.is_object() || !request.params.contains("uri") ||
         !request.params.at("uri").is_string()) {
       return make_error_response(
-          request, static_cast<int>(protocol::ErrorCode::InvalidRequest),
+          request, static_cast<int>(protocol::ErrorCode::InvalidParams),
           "resource subscription requires a string uri");
     }
     const auto subscription = set_resource_subscription(
@@ -628,7 +632,7 @@ core::Result<protocol::JsonRpcResponse> Server::handle_request(
     if (!request.params.is_object() || !request.params.contains("level") ||
         !request.params.at("level").is_string()) {
       return make_error_response(
-          request, static_cast<int>(protocol::ErrorCode::InvalidRequest),
+          request, static_cast<int>(protocol::ErrorCode::InvalidParams),
           "logging/setLevel requires a string level");
     }
     if (logging_handler_) {
