@@ -488,6 +488,10 @@ true:
   supported `type` values and object-only annotations/meta.
 - [x] Reject resource and resource_link content at the sampling message content
   boundary, matching RMCP sampling content variants.
+- [x] Preserve explicit `required=false` on prompt arguments without changing
+  the existing bool convenience field.
+- [x] Enforce completion reference tagged-union constraints for prompt and
+  resource references.
 - [ ] Add negative parse tests for every required field and type constraint.
 - [x] Add cross-family required-field negative parse regression coverage for
   tools, prompts, resources, roots, completion, sampling, elicitation, and

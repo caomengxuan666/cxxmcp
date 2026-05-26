@@ -29,6 +29,8 @@ struct PromptArgument {
   std::string description;
   /// Whether the caller must provide this argument.
   bool required = false;
+  /// Whether `required` was explicitly present on the wire or configured.
+  bool required_present = false;
   /// Optional annotations for model or client presentation.
   Json annotations = Json::object();
   /// Optional `_meta` extension object preserved on the wire.
@@ -129,8 +131,8 @@ inline Json prompt_argument_to_json(const PromptArgument& argument) {
   if (!argument.description.empty()) {
     json["description"] = argument.description;
   }
-  if (argument.required) {
-    json["required"] = true;
+  if (argument.required_present || argument.required) {
+    json["required"] = argument.required;
   }
   if (!argument.annotations.empty()) {
     json["annotations"] = argument.annotations;
@@ -179,6 +181,7 @@ inline core::Result<PromptArgument> prompt_argument_from_json(
           prompt_json_error("prompt argument required must be a boolean"));
     }
     argument.required = json.at("required").get<bool>();
+    argument.required_present = true;
   }
   if (json.contains("annotations")) {
     argument.annotations = json.at("annotations");

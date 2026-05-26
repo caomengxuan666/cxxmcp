@@ -1393,6 +1393,18 @@ void test_prompt_protocol_round_trips() {
   require(mcp::protocol::prompts_list_result_to_json(*parsed_list) == list_json,
           "prompts/list round-trip mismatch");
 
+  const auto optional_false_argument = mcp::protocol::prompt_argument_from_json(
+      Json{{"name", "tone"}, {"required", false}});
+  require(optional_false_argument.has_value(),
+          "prompt argument required=false should parse");
+  require(!optional_false_argument->required,
+          "prompt argument required=false value mismatch");
+  require(optional_false_argument->required_present,
+          "prompt argument required=false presence mismatch");
+  require(mcp::protocol::prompt_argument_to_json(*optional_false_argument)
+                  .at("required") == false,
+          "prompt argument required=false should round trip");
+
   const mcp::protocol::PromptsGetParams params{
       .name = "summarize",
       .arguments = Json{{"text", "hello"}},
@@ -2834,6 +2846,24 @@ void test_protocol_required_fields_are_rejected() {
   require_parse_failure(mcp::protocol::completion_reference_from_json(
                             Json{{"type", "ref/prompt"}}),
                         "completion ref without name or uri should fail");
+  require_parse_failure(mcp::protocol::completion_reference_from_json(
+                            Json{{"type", "ref/unknown"}, {"name", "x"}}),
+                        "completion ref unknown type should fail");
+  require_parse_failure(mcp::protocol::completion_reference_from_json(
+                            Json{{"type", "ref/prompt"},
+                                 {"name", "prompt"},
+                                 {"uri", "file:///tmp/template"}}),
+                        "completion prompt ref with uri should fail");
+  require_parse_failure(mcp::protocol::completion_reference_from_json(
+                            Json{{"type", "ref/resource"},
+                                 {"uri", "file:///tmp/{name}"},
+                                 {"name", "template"}}),
+                        "completion resource ref with name should fail");
+  require_parse_failure(mcp::protocol::completion_reference_from_json(
+                            Json{{"type", "ref/resource"},
+                                 {"uri", "file:///tmp/{name}"},
+                                 {"title", "Template"}}),
+                        "completion resource ref with title should fail");
   require_parse_failure(
       mcp::protocol::completion_argument_from_json(Json{{"name", "value"}}),
       "completion argument without value should fail");
@@ -3047,6 +3077,9 @@ void test_protocol_type_constraints_are_rejected() {
   require_parse_failure(mcp::protocol::completion_reference_from_json(
                             Json{{"type", 7}, {"name", "prompt"}}),
                         "completion ref non-string type should fail");
+  require_parse_failure(mcp::protocol::completion_reference_from_json(
+                            Json{{"type", "ref/resource"}, {"uri", 7}}),
+                        "completion resource ref non-string uri should fail");
   require_parse_failure(mcp::protocol::completion_argument_from_json(
                             Json{{"name", "arg"}, {"value", 7}}),
                         "completion argument non-string value should fail");

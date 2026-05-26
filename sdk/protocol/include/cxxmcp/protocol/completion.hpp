@@ -138,30 +138,37 @@ inline core::Result<CompletionReference> completion_reference_from_json(
     return std::unexpected(
         completion_json_error("completion ref requires a string type"));
   }
-  if (!json.contains("name") && !json.contains("uri")) {
-    return std::unexpected(
-        completion_json_error("completion ref requires a string name or uri"));
-  }
   CompletionReference ref;
   ref.type = json.at("type").get<std::string>();
-  if (json.contains("name")) {
-    if (!json.at("name").is_string()) {
+  if (ref.type == "ref/prompt") {
+    if (!json.contains("name") || !json.at("name").is_string()) {
       return std::unexpected(
-          completion_json_error("completion ref name must be a string"));
+          completion_json_error("completion prompt ref requires string name"));
     }
     ref.name = json.at("name").get<std::string>();
-  }
-  if (json.contains("uri")) {
-    if (!json.at("uri").is_string()) {
+    if (json.contains("uri")) {
       return std::unexpected(
-          completion_json_error("completion ref uri must be a string"));
+          completion_json_error("completion prompt ref must not contain uri"));
+    }
+  } else if (ref.type == "ref/resource") {
+    if (!json.contains("uri") || !json.at("uri").is_string()) {
+      return std::unexpected(
+          completion_json_error("completion resource ref requires string uri"));
     }
     ref.uri = json.at("uri").get<std::string>();
-    if (ref.name.empty()) {
-      ref.name = *ref.uri;
+    if (json.contains("name")) {
+      return std::unexpected(completion_json_error(
+          "completion resource ref must not contain name"));
     }
+  } else {
+    return std::unexpected(
+        completion_json_error("completion ref type is not supported"));
   }
   if (json.contains("title")) {
+    if (ref.type != "ref/prompt") {
+      return std::unexpected(completion_json_error(
+          "completion resource ref must not contain title"));
+    }
     if (!json.at("title").is_string()) {
       return std::unexpected(
           completion_json_error("completion ref title must be a string"));
