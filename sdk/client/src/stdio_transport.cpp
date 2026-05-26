@@ -52,6 +52,20 @@ core::Result<core::Unit> write_response(
   return core::Unit{};
 }
 
+core::Result<protocol::JsonRpcResponse> require_matching_response(
+    const protocol::JsonRpcRequest& request,
+    const protocol::JsonRpcResponse& response) {
+  if (response.id.has_value() && *response.id == request.id) {
+    return response;
+  }
+
+  return std::unexpected(make_transport_error(
+      static_cast<int>(protocol::ErrorCode::InvalidRequest),
+      "stdio transport received an unexpected response",
+      response.id.has_value() ? request_id_to_string(*response.id)
+                              : std::string{}));
+}
+
 }  // namespace
 
 StdioTransport::StdioTransport() : StdioTransport(std::cin, std::cout) {}
@@ -97,7 +111,11 @@ core::Result<protocol::JsonRpcResponse> StdioTransport::send(
           "failed to read stdio response"));
     }
 
-    return protocol::parse_response(line);
+    const auto response = protocol::parse_response(line);
+    if (!response) {
+      return std::unexpected(response.error());
+    }
+    return require_matching_response(request, *response);
   }
 
   std::string line;
@@ -170,14 +188,7 @@ core::Result<protocol::JsonRpcResponse> StdioTransport::send(
           "stdio transport received an unknown message"));
     }
 
-    if (response->id.has_value() && *response->id == request.id) {
-      return *response;
-    }
-    return std::unexpected(make_transport_error(
-        static_cast<int>(protocol::ErrorCode::InvalidRequest),
-        "stdio transport received an unexpected response",
-        response->id.has_value() ? request_id_to_string(*response->id)
-                                 : std::string{}));
+    return require_matching_response(request, *response);
   }
 
   return std::unexpected(
