@@ -534,8 +534,8 @@ true:
 - [x] Add server peer helpers for typed elicitation flows.
 - [x] Add client-side default decline behavior if no handler is installed.
 - [x] Add URL elicitation completion notification tests.
-- [ ] Add form elicitation success/decline/cancel tests.
-- [ ] Add URL elicitation success/decline/cancel tests.
+- [x] Add form elicitation success/decline/cancel tests.
+- [x] Add URL elicitation success/decline/cancel tests.
 - [x] Add raw elicitation escape-hatch tests.
 - [x] Document which elicitation pieces are stable, optional, or experimental.
 

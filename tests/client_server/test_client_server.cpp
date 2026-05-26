@@ -4222,6 +4222,18 @@ void test_client_request_callbacks() {
           [&](const mcp::protocol::CreateElicitationRequestParam& request)
               -> mcp::core::Result<mcp::protocol::CreateElicitationResult> {
             elicitation_message = request.message;
+            if (request.message == "decline" ||
+                request.message == "decline-url") {
+              return mcp::protocol::CreateElicitationResult{
+                  .action = mcp::protocol::ElicitationAction::Decline,
+              };
+            }
+            if (request.message == "cancel" ||
+                request.message == "cancel-url") {
+              return mcp::protocol::CreateElicitationResult{
+                  .action = mcp::protocol::ElicitationAction::Cancel,
+              };
+            }
             if (request.mode == mcp::protocol::ElicitationMode::Url) {
               elicitation_url = request.url.value_or("");
               return mcp::protocol::CreateElicitationResult{
@@ -4281,16 +4293,16 @@ void test_client_request_callbacks() {
           "sampling response content mismatch");
   require(sampling_prompt == "hi", "sampling request handler mismatch");
 
+  const Json form_schema =
+      Json{{"type", "object"},
+           {"properties", Json{{"name", Json{{"type", "string"}}}}}};
+
   const auto elicited = client.handle_request(mcp::protocol::JsonRpcRequest{
       .method = std::string(mcp::protocol::ElicitationCreateMethod),
       .params =
           Json{
               {"message", "choose"},
-              {"requestedSchema",
-               Json{
-                   {"type", "object"},
-                   {"properties", Json{{"name", Json{{"type", "string"}}}}},
-               }},
+              {"requestedSchema", form_schema},
           },
       .id = std::int64_t{3},
   });
@@ -4299,6 +4311,24 @@ void test_client_request_callbacks() {
           "elicitation response action mismatch");
   require(elicitation_message == "choose",
           "elicitation request handler mismatch");
+
+  const auto declined = client.handle_request(mcp::protocol::JsonRpcRequest{
+      .method = std::string(mcp::protocol::ElicitationCreateMethod),
+      .params = Json{{"message", "decline"}, {"requestedSchema", form_schema}},
+      .id = std::int64_t{4},
+  });
+  require(declined.has_value(), "form elicitation decline request failed");
+  require(declined->result->at("action") == "decline",
+          "form elicitation decline action mismatch");
+
+  const auto cancelled = client.handle_request(mcp::protocol::JsonRpcRequest{
+      .method = std::string(mcp::protocol::ElicitationCreateMethod),
+      .params = Json{{"message", "cancel"}, {"requestedSchema", form_schema}},
+      .id = std::int64_t{5},
+  });
+  require(cancelled.has_value(), "form elicitation cancel request failed");
+  require(cancelled->result->at("action") == "cancel",
+          "form elicitation cancel action mismatch");
 
   const auto url_elicited = client.handle_request(mcp::protocol::JsonRpcRequest{
       .method = std::string(mcp::protocol::ElicitationCreateMethod),
@@ -4310,7 +4340,7 @@ void test_client_request_callbacks() {
               {"url", "https://example.test/elicitation/1"},
               {"requestState", Json{{"step", 1}}},
           },
-      .id = std::int64_t{4},
+      .id = std::int64_t{6},
   });
   require(url_elicited.has_value(), "url elicitation/create request failed");
   require(url_elicited->result->at("action") == "accept",
@@ -4318,10 +4348,41 @@ void test_client_request_callbacks() {
   require(elicitation_url == "https://example.test/elicitation/1",
           "url elicitation request handler mismatch");
 
+  const auto url_declined = client.handle_request(mcp::protocol::JsonRpcRequest{
+      .method = std::string(mcp::protocol::ElicitationCreateMethod),
+      .params =
+          Json{
+              {"message", "decline-url"},
+              {"mode", "url"},
+              {"elicitationId", "elicitation-2"},
+              {"url", "https://example.test/elicitation/2"},
+          },
+      .id = std::int64_t{7},
+  });
+  require(url_declined.has_value(), "url elicitation decline request failed");
+  require(url_declined->result->at("action") == "decline",
+          "url elicitation decline action mismatch");
+
+  const auto url_cancelled =
+      client.handle_request(mcp::protocol::JsonRpcRequest{
+          .method = std::string(mcp::protocol::ElicitationCreateMethod),
+          .params =
+              Json{
+                  {"message", "cancel-url"},
+                  {"mode", "url"},
+                  {"elicitationId", "elicitation-3"},
+                  {"url", "https://example.test/elicitation/3"},
+              },
+          .id = std::int64_t{8},
+      });
+  require(url_cancelled.has_value(), "url elicitation cancel request failed");
+  require(url_cancelled->result->at("action") == "cancel",
+          "url elicitation cancel action mismatch");
+
   const auto custom = client.handle_request(mcp::protocol::JsonRpcRequest{
       .method = "custom/echo",
       .params = Json::object(),
-      .id = std::int64_t{5},
+      .id = std::int64_t{9},
   });
   require(custom.has_value(), "custom request should return a response");
   require(custom->result->at("ok") == true, "custom request result mismatch");
