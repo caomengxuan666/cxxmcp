@@ -591,11 +591,11 @@ true:
 
 ## P1: Handler And Authoring Ergonomics
 
-- [ ] Keep `ClientHandler` and `ServerHandler` as explicit application
+- [x] Keep `ClientHandler` and `ServerHandler` as explicit application
   contracts.
-- [ ] Keep aggregate handlers for ergonomic setup.
-- [ ] Keep interface-based handlers for durable application code.
-- [ ] Route events through explicit handler objects where possible.
+- [x] Keep aggregate handlers for ergonomic setup.
+- [x] Keep interface-based handlers for durable application code.
+- [x] Route events through explicit handler objects where possible.
 - [ ] Reduce public mutable callback setter state over time.
 - [ ] Keep registries as convenience wrappers over server handlers.
 - [ ] Deepen typed tool registration helpers.

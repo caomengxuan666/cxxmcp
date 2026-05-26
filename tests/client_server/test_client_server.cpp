@@ -1965,6 +1965,28 @@ void test_contract_handlers_override_client_and_server_requests() {
       client_response->result->at("roots").front().at("name") == "workspace",
       "contract client roots result mismatch");
 
+  mcp::ClientPeer client_peer(std::make_unique<RecordingTransport>());
+  client_peer.set_handler(client_handler);
+  const auto peer_client_message = client_peer.dispatch_message(
+      mcp::protocol::JsonRpcMessage{mcp::protocol::JsonRpcRequest{
+          .method = std::string(mcp::protocol::RootsListMethod),
+          .params = mcp::protocol::Json::object(),
+          .id = std::int64_t{102},
+      }});
+  require(peer_client_message.has_value(),
+          "contract client peer roots dispatch should succeed");
+  require(peer_client_message->has_value(),
+          "contract client peer roots response missing");
+  const auto* peer_client_response =
+      std::get_if<mcp::protocol::JsonRpcResponse>(&**peer_client_message);
+  require(peer_client_response != nullptr,
+          "contract client peer roots response type mismatch");
+  require(peer_client_response->result.has_value(),
+          "contract client peer roots result missing");
+  require(peer_client_response->result->at("roots").front().at("name") ==
+              "workspace",
+          "contract client peer roots result mismatch");
+
   struct ContractServerHandler final : mcp::server::ServerHandlerInterface {
     std::optional<mcp::core::Result<mcp::protocol::Json>> on_completion(
         const mcp::protocol::Json&) const override {
@@ -1996,6 +2018,28 @@ void test_contract_handlers_override_client_and_server_requests() {
           "contract server completion result missing");
   require(server_response->result->at("values").front() == "hello",
           "contract server completion result mismatch");
+
+  mcp::ServerPeer server_peer(mcp::server::ServerOptions{});
+  server_peer.set_handler(server_handler);
+  const auto peer_server_response = server_peer.handle_request(
+      mcp::protocol::JsonRpcRequest{
+          .method = std::string(mcp::protocol::CompletionCompleteMethod),
+          .params =
+              mcp::protocol::Json{
+                  {"ref", mcp::protocol::Json{{"type", "ref/prompt"},
+                                              {"name", "summarize"}}},
+                  {"argument",
+                   mcp::protocol::Json{{"name", "text"}, {"value", "he"}}},
+              },
+          .id = std::int64_t{103},
+      },
+      mcp::server::SessionContext{.session_id = "session-1"});
+  require(peer_server_response.has_value(),
+          "contract server peer completion request should succeed");
+  require(peer_server_response->result.has_value(),
+          "contract server peer completion result missing");
+  require(peer_server_response->result->at("values").front() == "hello",
+          "contract server peer completion result mismatch");
 }
 
 void test_server_notification_facade_round_trip() {
