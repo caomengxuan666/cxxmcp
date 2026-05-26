@@ -2293,8 +2293,10 @@ class Peer<RoleServer> {
       if (!result) {
         return detail::peer_error_response(request, result.error());
       }
-      return protocol::make_response(request.id,
-                                     protocol::task_to_json(*result));
+      return protocol::make_response(
+          request.id, protocol::task_get_result_to_json(protocol::TaskGetResult{
+                          .task = *result,
+                      }));
     }
 
     if (request.method == protocol::TasksCancelMethod && task_cancel_handler_) {
@@ -2307,8 +2309,11 @@ class Peer<RoleServer> {
       if (!result) {
         return detail::peer_error_response(request, result.error());
       }
-      return protocol::make_response(request.id,
-                                     protocol::task_to_json(*result));
+      return protocol::make_response(
+          request.id,
+          protocol::task_cancel_result_to_json(protocol::TaskCancelResult{
+              .task = *result,
+          }));
     }
 
     if (request.method == protocol::TasksResultMethod && task_result_handler_) {

@@ -524,6 +524,8 @@ true:
   explicitly document why only cooperative cancellation is supported.
 - [ ] Add richer typed operation result transport beyond raw JSON payload
   storage where RMCP/spec expects it.
+- [x] Add flattened `tasks/get` and `tasks/cancel` result models plus
+  `tasks/list.total`, aligned with RMCP task result shapes.
 - [x] Add tests for task-aware `tools/call` success.
 - [x] Add tests for missing/invalid task params.
 - [x] Add tests for task timeout.

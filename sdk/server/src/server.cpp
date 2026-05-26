@@ -373,7 +373,10 @@ core::Result<protocol::JsonRpcResponse> Server::handle_request(
                                  result.error().message, result.error().detail);
     }
 
-    return protocol::make_response(request.id, protocol::task_to_json(*result));
+    return protocol::make_response(
+        request.id, protocol::task_get_result_to_json(protocol::TaskGetResult{
+                        .task = *result,
+                    }));
   }
 
   if (request.method == protocol::TasksCancelMethod) {
@@ -397,7 +400,11 @@ core::Result<protocol::JsonRpcResponse> Server::handle_request(
                                  result.error().message, result.error().detail);
     }
 
-    return protocol::make_response(request.id, protocol::task_to_json(*result));
+    return protocol::make_response(
+        request.id,
+        protocol::task_cancel_result_to_json(protocol::TaskCancelResult{
+            .task = *result,
+        }));
   }
 
   if (request.method == protocol::TasksResultMethod) {

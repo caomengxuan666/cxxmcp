@@ -279,6 +279,7 @@ core::Result<protocol::TaskListResult> TaskOperationProcessor::list_tasks(
       result.tasks.push_back(record->task);
     }
   }
+  result.total = static_cast<std::int64_t>(result.tasks.size());
   return result;
 }
 

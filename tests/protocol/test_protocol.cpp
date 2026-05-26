@@ -746,6 +746,7 @@ void test_task_protocol_round_trips() {
   const mcp::protocol::TaskListResult list_result{
       .tasks = {task},
       .next_cursor = std::string("cursor-task"),
+      .total = std::int64_t{1},
   };
   const auto list_json = mcp::protocol::task_list_result_to_json(list_result);
   const auto parsed_list = mcp::protocol::task_list_result_from_json(list_json);
@@ -753,6 +754,37 @@ void test_task_protocol_round_trips() {
   require(parsed_list->tasks.size() == 1, "tasks/list task count mismatch");
   require(parsed_list->tasks.front().task_id == "task-1",
           "tasks/list task id mismatch");
+  require(parsed_list->total == 1, "tasks/list total mismatch");
+
+  const mcp::protocol::TaskGetResult get_result{
+      .task = task,
+      .meta = Json{{"source", "get"}},
+      .extensions = Json{{"x-task", "get"}},
+  };
+  const auto get_json = mcp::protocol::task_get_result_to_json(get_result);
+  require(get_json.contains("taskId") && !get_json.contains("task"),
+          "tasks/get result should flatten task fields");
+  const auto parsed_get = mcp::protocol::task_get_result_from_json(get_json);
+  require(parsed_get.has_value(), "tasks/get result should parse");
+  require(parsed_get->task.task_id == "task-1",
+          "tasks/get result task id mismatch");
+  require(
+      parsed_get->meta.has_value() && parsed_get->meta->at("source") == "get",
+      "tasks/get result meta mismatch");
+  require(parsed_get->extensions.at("x-task") == "get",
+          "tasks/get result extension mismatch");
+
+  const mcp::protocol::TaskCancelResult cancel_result{
+      .task = task,
+      .meta = Json{{"source", "cancel"}},
+  };
+  const auto cancel_json =
+      mcp::protocol::task_cancel_result_to_json(cancel_result);
+  const auto parsed_cancel =
+      mcp::protocol::task_cancel_result_from_json(cancel_json);
+  require(parsed_cancel.has_value(), "tasks/cancel result should parse");
+  require(parsed_cancel->task.task_id == "task-1",
+          "tasks/cancel result task id mismatch");
 
   const mcp::protocol::CreateTaskResult create_result{
       .task = task,
@@ -2562,6 +2594,16 @@ void test_protocol_required_fields_are_rejected() {
       mcp::protocol::task_list_result_from_json(Json::object()),
       "tasks/list without tasks should fail");
   require_parse_failure(
+      mcp::protocol::task_get_result_from_json(Json{{"task", Json::object()}}),
+      "tasks/get nested task result should fail");
+  require_parse_failure(mcp::protocol::task_cancel_result_from_json(
+                            Json{{"taskId", "task-1"},
+                                 {"status", "cancelled"},
+                                 {"createdAt", "2025-01-01T00:00:00Z"},
+                                 {"lastUpdatedAt", "2025-01-01T00:00:01Z"},
+                                 {"_meta", Json::array()}}),
+                        "tasks/cancel non-object result meta should fail");
+  require_parse_failure(
       mcp::protocol::create_task_result_from_json(Json::object()),
       "create task result without task should fail");
 
@@ -2820,6 +2862,12 @@ void test_protocol_type_constraints_are_rejected() {
   require_parse_failure(mcp::protocol::task_list_result_from_json(
                             Json{{"tasks", Json::object()}}),
                         "tasks/list non-array tasks should fail");
+  require_parse_failure(mcp::protocol::task_list_result_from_json(
+                            Json{{"tasks", Json::array()}, {"total", -1}}),
+                        "tasks/list negative total should fail");
+  require_parse_failure(mcp::protocol::task_list_result_from_json(
+                            Json{{"tasks", Json::array()}, {"total", "1"}}),
+                        "tasks/list non-integer total should fail");
 
   require_parse_failure(
       mcp::protocol::create_elicitation_request_param_from_json(
