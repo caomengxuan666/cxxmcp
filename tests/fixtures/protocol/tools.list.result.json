@@ -1,0 +1,24 @@
+{
+  "tools": [
+    {
+      "name": "echo",
+      "description": "Echo text",
+      "inputSchema": {
+        "type": "object"
+      },
+      "streaming": false,
+      "annotations": {
+        "category": "fixture"
+      },
+      "_meta": {
+        "source": "fixture"
+      },
+      "x-tool": true
+    }
+  ],
+  "nextCursor": "tools-next",
+  "_meta": {
+    "page": 1
+  },
+  "x-list": "tools"
+}

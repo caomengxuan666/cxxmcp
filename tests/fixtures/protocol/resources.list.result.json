@@ -1,0 +1,18 @@
+{
+  "resources": [
+    {
+      "uri": "file:///fixture.txt",
+      "name": "fixture.txt",
+      "description": "Fixture resource",
+      "mimeType": "text/plain",
+      "size": 128,
+      "_meta": {
+        "source": "fixture"
+      }
+    }
+  ],
+  "nextCursor": "resources-next",
+  "_meta": {
+    "page": 1
+  }
+}

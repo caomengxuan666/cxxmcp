@@ -1,0 +1,23 @@
+{
+  "prompts": [
+    {
+      "name": "summarize",
+      "description": "Summarize text",
+      "arguments": [
+        {
+          "name": "text",
+          "description": "Input text",
+          "required": true,
+          "_meta": {
+            "source": "fixture"
+          }
+        }
+      ],
+      "x-prompt": true
+    }
+  ],
+  "nextCursor": "prompts-next",
+  "_meta": {
+    "page": 1
+  }
+}

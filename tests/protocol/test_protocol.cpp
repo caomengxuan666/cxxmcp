@@ -201,6 +201,96 @@ void test_response_round_trips() {
   require(response->error->message == "boom", "error message mismatch");
 }
 
+void test_protocol_family_fixture_round_trips() {
+  {
+    const auto fixture = load_fixture_json("tools.list.result.json");
+    const auto parsed = mcp::protocol::tools_list_result_from_json(fixture);
+    require(parsed.has_value(), "tools fixture should parse");
+    require(mcp::protocol::tools_list_result_to_json(*parsed) == fixture,
+            "tools fixture should round trip");
+  }
+  {
+    const auto fixture = load_fixture_json("prompts.list.result.json");
+    const auto parsed = mcp::protocol::prompts_list_result_from_json(fixture);
+    require(parsed.has_value(), "prompts fixture should parse");
+    require(mcp::protocol::prompts_list_result_to_json(*parsed) == fixture,
+            "prompts fixture should round trip");
+  }
+  {
+    const auto fixture = load_fixture_json("resources.list.result.json");
+    const auto parsed = mcp::protocol::resources_list_result_from_json(fixture);
+    require(parsed.has_value(), "resources fixture should parse");
+    require(mcp::protocol::resources_list_result_to_json(*parsed) == fixture,
+            "resources fixture should round trip");
+  }
+  {
+    const auto fixture = load_fixture_json("roots.list.result.json");
+    const auto parsed = mcp::protocol::roots_list_result_from_json(fixture);
+    require(parsed.has_value(), "roots fixture should parse");
+    require(mcp::protocol::roots_list_result_to_json(*parsed) == fixture,
+            "roots fixture should round trip");
+  }
+  {
+    const auto fixture = load_fixture_json("completion.complete.params.json");
+    const auto parsed = mcp::protocol::complete_params_from_json(fixture);
+    require(parsed.has_value(), "completion fixture should parse");
+    require(mcp::protocol::complete_params_to_json(*parsed) == fixture,
+            "completion fixture should round trip");
+  }
+  {
+    const auto fixture = load_fixture_json("logging.set_level.params.json");
+    const auto parsed =
+        mcp::protocol::logging_set_level_params_from_json(fixture);
+    require(parsed.has_value(), "logging fixture should parse");
+    require(mcp::protocol::logging_set_level_params_to_json(*parsed) == fixture,
+            "logging fixture should round trip");
+  }
+  {
+    const auto fixture =
+        load_fixture_json("sampling.create_message.params.json");
+    const auto parsed = mcp::protocol::create_message_params_from_json(fixture);
+    require(parsed.has_value(), "sampling fixture should parse");
+    require(mcp::protocol::create_message_params_to_json(*parsed) == fixture,
+            "sampling fixture should round trip");
+  }
+  {
+    const auto fixture =
+        load_fixture_json("elicitation.create.form.params.json");
+    const auto parsed =
+        mcp::protocol::create_elicitation_request_param_from_json(fixture);
+    require(parsed.has_value(), "elicitation fixture should parse");
+    require(mcp::protocol::create_elicitation_request_param_to_json(*parsed) ==
+                fixture,
+            "elicitation fixture should round trip");
+  }
+  {
+    const auto fixture = load_fixture_json("tasks.list.result.json");
+    const auto parsed = mcp::protocol::task_list_result_from_json(fixture);
+    require(parsed.has_value(), "tasks fixture should parse");
+    require(mcp::protocol::task_list_result_to_json(*parsed) == fixture,
+            "tasks fixture should round trip");
+  }
+  {
+    const auto fixture =
+        load_fixture_json("cancelled.notification.params.json");
+    const auto parsed =
+        mcp::protocol::cancelled_notification_params_from_json(fixture);
+    require(parsed.has_value(), "cancellation fixture should parse");
+    require(mcp::protocol::cancelled_notification_params_to_json(*parsed) ==
+                fixture,
+            "cancellation fixture should round trip");
+  }
+  {
+    const auto fixture = load_fixture_json("progress.notification.params.json");
+    const auto parsed =
+        mcp::protocol::progress_notification_params_from_json(fixture);
+    require(parsed.has_value(), "progress fixture should parse");
+    require(
+        mcp::protocol::progress_notification_params_to_json(*parsed) == fixture,
+        "progress fixture should round trip");
+  }
+}
+
 void test_tool_protocol_round_trips() {
   require(mcp::protocol::ToolsListMethod == "tools/list",
           "tools/list method mismatch");
@@ -2158,6 +2248,8 @@ int main() {
        test_supported_protocol_versions_are_explicit},
       {"ping request round trip", test_ping_request_round_trip},
       {"response round trips", test_response_round_trips},
+      {"protocol family fixture round trips",
+       test_protocol_family_fixture_round_trips},
       {"tool protocol round trips", test_tool_protocol_round_trips},
       {"schema and tool definition builders",
        test_schema_and_tool_definition_builders},

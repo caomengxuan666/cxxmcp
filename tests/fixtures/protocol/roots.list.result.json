@@ -1,0 +1,14 @@
+{
+  "roots": [
+    {
+      "uri": "file:///workspace",
+      "name": "workspace",
+      "_meta": {
+        "source": "fixture"
+      }
+    }
+  ],
+  "_meta": {
+    "page": 1
+  }
+}
