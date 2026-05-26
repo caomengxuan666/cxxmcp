@@ -2085,6 +2085,121 @@ void test_contract_handlers_override_client_and_server_requests() {
           "contract server peer completion result mismatch");
 }
 
+void test_contract_task_handlers_receive_session_context() {
+  struct ContractTaskHandler final : mcp::server::ServerHandlerInterface {
+    mutable std::vector<std::string> sessions;
+
+    std::optional<mcp::core::Result<mcp::protocol::TaskListResult>>
+    on_task_list(const mcp::protocol::TaskListParams& params,
+                 const mcp::server::SessionContext& context) const override {
+      sessions.push_back(context.session_id);
+      require(params.cursor == "page-1", "contract task list cursor mismatch");
+      return mcp::protocol::TaskListResult{
+          .tasks = {mcp::protocol::Task{
+              .task_id = "task-1",
+              .status = mcp::protocol::TaskStatus::Working,
+              .created_at = "2026-05-24T00:00:00Z",
+              .ttl = std::monostate{},
+              .last_updated_at = "2026-05-24T00:00:05Z",
+          }},
+      };
+    }
+
+    std::optional<mcp::core::Result<mcp::protocol::Task>> on_task_get(
+        const mcp::protocol::TaskGetParams& params,
+        const mcp::server::SessionContext& context) const override {
+      sessions.push_back(context.session_id);
+      require(params.task_id == "task-1", "contract task get id mismatch");
+      return mcp::protocol::Task{
+          .task_id = params.task_id,
+          .status = mcp::protocol::TaskStatus::Working,
+          .created_at = "2026-05-24T00:00:00Z",
+          .ttl = std::monostate{},
+          .last_updated_at = "2026-05-24T00:00:05Z",
+      };
+    }
+
+    std::optional<mcp::core::Result<mcp::protocol::Task>> on_task_cancel(
+        const mcp::protocol::TaskCancelParams& params,
+        const mcp::server::SessionContext& context) const override {
+      sessions.push_back(context.session_id);
+      require(params.task_id == "task-1", "contract task cancel id mismatch");
+      return mcp::protocol::Task{
+          .task_id = params.task_id,
+          .status = mcp::protocol::TaskStatus::Cancelled,
+          .created_at = "2026-05-24T00:00:00Z",
+          .ttl = std::monostate{},
+          .last_updated_at = "2026-05-24T00:00:10Z",
+      };
+    }
+
+    std::optional<mcp::core::Result<mcp::protocol::Json>> on_task_result(
+        const mcp::protocol::TaskResultParams& params,
+        const mcp::server::SessionContext& context) const override {
+      sessions.push_back(context.session_id);
+      require(params.task_id == "task-1", "contract task result id mismatch");
+      return Json{{"value", context.remote_address}};
+    }
+  } handler;
+
+  auto server = make_server();
+  server.set_handler(handler);
+
+  const mcp::server::SessionContext context{
+      .session_id = "session-1",
+      .remote_address = "127.0.0.1",
+  };
+
+  const auto list_response = server.handle_request(
+      mcp::protocol::JsonRpcRequest{
+          .method = std::string(mcp::protocol::TasksListMethod),
+          .params = Json{{"cursor", "page-1"}},
+          .id = std::int64_t{201},
+      },
+      context);
+  require(list_response.has_value(), "contract task list failed");
+  require(list_response->result.has_value(), "contract task list missing");
+
+  const auto get_response = server.handle_request(
+      mcp::protocol::JsonRpcRequest{
+          .method = std::string(mcp::protocol::TasksGetMethod),
+          .params = Json{{"taskId", "task-1"}},
+          .id = std::int64_t{202},
+      },
+      context);
+  require(get_response.has_value(), "contract task get failed");
+  require(get_response->result.has_value(), "contract task get missing");
+
+  const auto cancel_response = server.handle_request(
+      mcp::protocol::JsonRpcRequest{
+          .method = std::string(mcp::protocol::TasksCancelMethod),
+          .params = Json{{"taskId", "task-1"}},
+          .id = std::int64_t{203},
+      },
+      context);
+  require(cancel_response.has_value(), "contract task cancel failed");
+  require(cancel_response->result.has_value(), "contract task cancel missing");
+
+  const auto result_response = server.handle_request(
+      mcp::protocol::JsonRpcRequest{
+          .method = std::string(mcp::protocol::TasksResultMethod),
+          .params = Json{{"taskId", "task-1"}},
+          .id = std::int64_t{204},
+      },
+      context);
+  require(result_response.has_value(), "contract task result failed");
+  require(result_response->result.has_value(), "contract task result missing");
+  require(result_response->result->at("value") == "127.0.0.1",
+          "contract task result context mismatch");
+
+  require(handler.sessions.size() == 4, "contract task session count mismatch");
+  require(std::all_of(handler.sessions.begin(), handler.sessions.end(),
+                      [](const std::string& session) {
+                        return session == "session-1";
+                      }),
+          "contract task session context mismatch");
+}
+
 void test_server_notification_facade_round_trip() {
   auto server = make_server();
 
@@ -5075,6 +5190,8 @@ int main() {
        test_server_non_task_tool_observes_cancelled_notification},
       {"contract handlers override client and server requests",
        test_contract_handlers_override_client_and_server_requests},
+      {"contract task handlers receive session context",
+       test_contract_task_handlers_receive_session_context},
       {"server notification facade round trip",
        test_server_notification_facade_round_trip},
       {"server notify facade broadcasts notifications",

@@ -79,40 +79,95 @@ struct ServerHandlerInterface {
       const protocol::TaskListParams&) const {
     return std::nullopt;
   }
+  virtual std::optional<core::Result<protocol::TaskListResult>> on_task_list(
+      const protocol::TaskListParams& params,
+      const SessionContext& context) const {
+    (void)context;
+    return on_task_list(params);
+  }
   virtual std::optional<core::Result<protocol::Task>> on_task_get(
       const protocol::TaskGetParams&) const {
     return std::nullopt;
+  }
+  virtual std::optional<core::Result<protocol::Task>> on_task_get(
+      const protocol::TaskGetParams& params,
+      const SessionContext& context) const {
+    (void)context;
+    return on_task_get(params);
   }
   virtual std::optional<core::Result<protocol::Task>> on_task_cancel(
       const protocol::TaskCancelParams&) const {
     return std::nullopt;
   }
+  virtual std::optional<core::Result<protocol::Task>> on_task_cancel(
+      const protocol::TaskCancelParams& params,
+      const SessionContext& context) const {
+    (void)context;
+    return on_task_cancel(params);
+  }
   virtual std::optional<core::Result<protocol::Json>> on_task_result(
       const protocol::TaskResultParams&) const {
     return std::nullopt;
+  }
+  virtual std::optional<core::Result<protocol::Json>> on_task_result(
+      const protocol::TaskResultParams& params,
+      const SessionContext& context) const {
+    (void)context;
+    return on_task_result(params);
   }
   virtual std::optional<core::Result<core::Unit>> on_progress(
       const protocol::ProgressNotificationParams&) const {
     return std::nullopt;
   }
+  virtual std::optional<core::Result<core::Unit>> on_progress(
+      const protocol::ProgressNotificationParams& params,
+      const SessionContext& context) const {
+    (void)context;
+    return on_progress(params);
+  }
   virtual std::optional<core::Result<core::Unit>> on_roots_list_changed()
       const {
     return std::nullopt;
   }
+  virtual std::optional<core::Result<core::Unit>> on_roots_list_changed(
+      const SessionContext& context) const {
+    (void)context;
+    return on_roots_list_changed();
+  }
   virtual std::optional<core::Result<core::Unit>> on_tool_list_changed() const {
     return std::nullopt;
+  }
+  virtual std::optional<core::Result<core::Unit>> on_tool_list_changed(
+      const SessionContext& context) const {
+    (void)context;
+    return on_tool_list_changed();
   }
   virtual std::optional<core::Result<core::Unit>> on_prompt_list_changed()
       const {
     return std::nullopt;
   }
+  virtual std::optional<core::Result<core::Unit>> on_prompt_list_changed(
+      const SessionContext& context) const {
+    (void)context;
+    return on_prompt_list_changed();
+  }
   virtual std::optional<core::Result<core::Unit>> on_resource_list_changed()
       const {
     return std::nullopt;
   }
+  virtual std::optional<core::Result<core::Unit>> on_resource_list_changed(
+      const SessionContext& context) const {
+    (void)context;
+    return on_resource_list_changed();
+  }
   virtual std::optional<core::Result<core::Unit>> on_resource_updated(
       const std::string&) const {
     return std::nullopt;
+  }
+  virtual std::optional<core::Result<core::Unit>> on_resource_updated(
+      const std::string& uri, const SessionContext& context) const {
+    (void)context;
+    return on_resource_updated(uri);
   }
 };
 
@@ -302,81 +357,81 @@ inline Server& Server::set_handler(const ServerHandlerInterface& handler) {
         return core::Unit{};
       });
   set_task_list_handler([&handler](const protocol::TaskListParams& params,
-                                   const SessionContext&)
+                                   const SessionContext& context)
                             -> core::Result<protocol::TaskListResult> {
-    const auto response = handler.on_task_list(params);
+    const auto response = handler.on_task_list(params, context);
     if (response.has_value()) {
       return std::move(*response);
     }
     return std::unexpected(
         handler_method_not_found("server handler does not handle task list"));
   });
-  set_task_get_handler(
-      [&handler](const protocol::TaskGetParams& params,
-                 const SessionContext&) -> core::Result<protocol::Task> {
-        const auto response = handler.on_task_get(params);
-        if (response.has_value()) {
-          return std::move(*response);
-        }
-        return std::unexpected(handler_method_not_found(
-            "server handler does not handle task get"));
-      });
-  set_task_cancel_handler(
-      [&handler](const protocol::TaskCancelParams& params,
-                 const SessionContext&) -> core::Result<protocol::Task> {
-        const auto response = handler.on_task_cancel(params);
-        if (response.has_value()) {
-          return std::move(*response);
-        }
-        return std::unexpected(handler_method_not_found(
-            "server handler does not handle task cancel"));
-      });
-  set_task_result_handler(
-      [&handler](const protocol::TaskResultParams& params,
-                 const SessionContext&) -> core::Result<protocol::Json> {
-        const auto response = handler.on_task_result(params);
-        if (response.has_value()) {
-          return std::move(*response);
-        }
-        return std::unexpected(handler_method_not_found(
-            "server handler does not handle task result"));
-      });
+  set_task_get_handler([&handler](const protocol::TaskGetParams& params,
+                                  const SessionContext& context)
+                           -> core::Result<protocol::Task> {
+    const auto response = handler.on_task_get(params, context);
+    if (response.has_value()) {
+      return std::move(*response);
+    }
+    return std::unexpected(
+        handler_method_not_found("server handler does not handle task get"));
+  });
+  set_task_cancel_handler([&handler](const protocol::TaskCancelParams& params,
+                                     const SessionContext& context)
+                              -> core::Result<protocol::Task> {
+    const auto response = handler.on_task_cancel(params, context);
+    if (response.has_value()) {
+      return std::move(*response);
+    }
+    return std::unexpected(
+        handler_method_not_found("server handler does not handle task cancel"));
+  });
+  set_task_result_handler([&handler](const protocol::TaskResultParams& params,
+                                     const SessionContext& context)
+                              -> core::Result<protocol::Json> {
+    const auto response = handler.on_task_result(params, context);
+    if (response.has_value()) {
+      return std::move(*response);
+    }
+    return std::unexpected(
+        handler_method_not_found("server handler does not handle task result"));
+  });
   set_progress_handler(
       [&handler](const protocol::ProgressNotificationParams& params,
-                 const SessionContext&) -> core::Result<core::Unit> {
-        const auto response = handler.on_progress(params);
+                 const SessionContext& context) -> core::Result<core::Unit> {
+        const auto response = handler.on_progress(params, context);
         if (response.has_value()) {
           return std::move(*response);
         }
         return core::Unit{};
       });
   set_roots_list_changed_handler(
-      [&handler](const SessionContext&) -> core::Result<core::Unit> {
-        const auto response = handler.on_roots_list_changed();
+      [&handler](const SessionContext& context) -> core::Result<core::Unit> {
+        const auto response = handler.on_roots_list_changed(context);
         if (response.has_value()) {
           return std::move(*response);
         }
         return core::Unit{};
       });
   set_tool_list_changed_handler(
-      [&handler](const SessionContext&) -> core::Result<core::Unit> {
-        const auto response = handler.on_tool_list_changed();
+      [&handler](const SessionContext& context) -> core::Result<core::Unit> {
+        const auto response = handler.on_tool_list_changed(context);
         if (response.has_value()) {
           return std::move(*response);
         }
         return core::Unit{};
       });
   set_prompt_list_changed_handler(
-      [&handler](const SessionContext&) -> core::Result<core::Unit> {
-        const auto response = handler.on_prompt_list_changed();
+      [&handler](const SessionContext& context) -> core::Result<core::Unit> {
+        const auto response = handler.on_prompt_list_changed(context);
         if (response.has_value()) {
           return std::move(*response);
         }
         return core::Unit{};
       });
   set_resource_list_changed_handler(
-      [&handler](const SessionContext&) -> core::Result<core::Unit> {
-        const auto response = handler.on_resource_list_changed();
+      [&handler](const SessionContext& context) -> core::Result<core::Unit> {
+        const auto response = handler.on_resource_list_changed(context);
         if (response.has_value()) {
           return std::move(*response);
         }
@@ -384,8 +439,8 @@ inline Server& Server::set_handler(const ServerHandlerInterface& handler) {
       });
   set_resource_updated_handler(
       [&handler](const std::string& uri,
-                 const SessionContext&) -> core::Result<core::Unit> {
-        const auto response = handler.on_resource_updated(uri);
+                 const SessionContext& context) -> core::Result<core::Unit> {
+        const auto response = handler.on_resource_updated(uri, context);
         if (response.has_value()) {
           return std::move(*response);
         }
