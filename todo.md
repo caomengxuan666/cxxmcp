@@ -498,14 +498,14 @@ true:
 
 ## P1: Task Lifecycle
 
-- [ ] Keep task models in the SDK protocol layer.
-- [ ] Keep runtime task management separate from SDK core task protocol.
-- [ ] Complete server-side task lifecycle documentation.
-- [ ] Define task negotiation rules.
-- [ ] Define task timeout semantics.
-- [ ] Define task cancellation semantics.
-- [ ] Define terminal task retention and TTL semantics.
-- [ ] Add hard-cancellation strategy for non-cooperative running handlers or
+- [x] Keep task models in the SDK protocol layer.
+- [x] Keep runtime task management separate from SDK core task protocol.
+- [x] Complete server-side task lifecycle documentation.
+- [x] Define task negotiation rules.
+- [x] Define task timeout semantics.
+- [x] Define task cancellation semantics.
+- [x] Define terminal task retention and TTL semantics.
+- [x] Add hard-cancellation strategy for non-cooperative running handlers or
   explicitly document why only cooperative cancellation is supported.
 - [ ] Add richer typed operation result transport beyond raw JSON payload
   storage where RMCP/spec expects it.

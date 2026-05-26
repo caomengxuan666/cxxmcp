@@ -351,7 +351,8 @@ optional feature families. A milestone that targets core MCP parity must not
 force applications to implement task or elicitation handlers unless that
 milestone explicitly covers those capabilities. Capability negotiation and raw
 JSON-RPC escape hatches remain the compatibility path for partial or future
-feature support.
+feature support. Server-side task lifecycle semantics are documented in
+[Task lifecycle](docs/task_lifecycle.md).
 
 ## Capability Classification
 

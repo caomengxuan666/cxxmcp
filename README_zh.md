@@ -336,7 +336,8 @@ contract 上的兼容 adapter 完成，而不是扩展协议本身。
 task 和 elicitation 已作为 typed SDK capability 暴露，但它们仍然是可选能力族。
 只要求 core MCP parity 的 milestone 不应强制应用实现 task 或 elicitation handler，
 除非该 milestone 明确覆盖这些能力。capability negotiation 和 raw JSON-RPC escape
-hatch 是部分实现或未来能力的兼容路径。
+hatch 是部分实现或未来能力的兼容路径。server-side task lifecycle 语义记录在
+[Task lifecycle](docs/task_lifecycle.md)。
 
 ## 能力分类
 
