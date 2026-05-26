@@ -442,9 +442,23 @@ class Peer<RoleClient> {
     return *this;
   }
 
+  Peer& on_list_roots_request(
+      client::Client::RootsListRequestCancellationHandler handler) {
+    roots_list_request_cancellation_handler_ = handler;
+    client_.on_list_roots_request(std::move(handler));
+    return *this;
+  }
+
   Peer& on_create_message_request(
       client::Client::CreateMessageRequestHandler handler) {
     sampling_request_handler_ = handler;
+    client_.on_create_message_request(std::move(handler));
+    return *this;
+  }
+
+  Peer& on_create_message_request(
+      client::Client::SamplingRequestCancellationHandler handler) {
+    sampling_request_cancellation_handler_ = handler;
     client_.on_create_message_request(std::move(handler));
     return *this;
   }
@@ -456,8 +470,22 @@ class Peer<RoleClient> {
     return *this;
   }
 
+  Peer& on_create_elicitation_request(
+      client::Client::ElicitationRequestCancellationHandler handler) {
+    elicitation_request_cancellation_handler_ = handler;
+    client_.on_create_elicitation_request(std::move(handler));
+    return *this;
+  }
+
   Peer& on_custom_request(client::Client::CustomRequestHandler handler) {
     custom_request_handler_ = handler;
+    client_.on_custom_request(std::move(handler));
+    return *this;
+  }
+
+  Peer& on_custom_request(
+      client::Client::CustomRequestCancellationHandler handler) {
+    custom_request_cancellation_handler_ = handler;
     client_.on_custom_request(std::move(handler));
     return *this;
   }
@@ -505,23 +533,47 @@ class Peer<RoleClient> {
     if (handler.on_list_roots_request) {
       on_list_roots_request(handler.on_list_roots_request);
     }
+    if (handler.on_list_roots_request_with_cancellation) {
+      on_list_roots_request(handler.on_list_roots_request_with_cancellation);
+    }
     if (handler.on_create_message_request) {
       on_create_message_request(handler.on_create_message_request);
+    }
+    if (handler.on_create_message_request_with_cancellation) {
+      on_create_message_request(
+          handler.on_create_message_request_with_cancellation);
     }
     if (handler.on_create_elicitation_request) {
       on_create_elicitation_request(handler.on_create_elicitation_request);
     }
+    if (handler.on_create_elicitation_request_with_cancellation) {
+      on_create_elicitation_request(
+          handler.on_create_elicitation_request_with_cancellation);
+    }
     if (handler.on_custom_request) {
       on_custom_request(handler.on_custom_request);
+    }
+    if (handler.on_custom_request_with_cancellation) {
+      on_custom_request(handler.on_custom_request_with_cancellation);
     }
     if (handler.on_roots_list_request) {
       on_list_roots_request(handler.on_roots_list_request);
     }
+    if (handler.on_roots_list_request_with_cancellation) {
+      on_list_roots_request(handler.on_roots_list_request_with_cancellation);
+    }
     if (handler.on_sampling_request) {
       on_create_message_request(handler.on_sampling_request);
     }
+    if (handler.on_sampling_request_with_cancellation) {
+      on_create_message_request(handler.on_sampling_request_with_cancellation);
+    }
     if (handler.on_elicitation_request) {
       on_create_elicitation_request(handler.on_elicitation_request);
+    }
+    if (handler.on_elicitation_request_with_cancellation) {
+      on_create_elicitation_request(
+          handler.on_elicitation_request_with_cancellation);
     }
     if (handler.on_raw_notification) {
       on_raw_notification(handler.on_raw_notification);
@@ -559,19 +611,21 @@ class Peer<RoleClient> {
       handler.on_task_status(task);
     });
     on_roots_list_changed([&handler]() { handler.on_roots_list_changed(); });
-    on_list_roots_request(
-        [&handler]() -> core::Result<protocol::RootsListResult> {
-          const auto response = handler.on_list_roots_request();
-          if (response.has_value()) {
-            return std::move(*response);
-          }
-          return std::unexpected(client::handler_method_not_found(
-              "client handler does not handle list_roots"));
-        });
+    on_list_roots_request([&handler](CancellationToken cancellation)
+                              -> core::Result<protocol::RootsListResult> {
+      const auto response = handler.on_list_roots_request(cancellation);
+      if (response.has_value()) {
+        return std::move(*response);
+      }
+      return std::unexpected(client::handler_method_not_found(
+          "client handler does not handle list_roots"));
+    });
     on_create_message_request(
-        [&handler](const protocol::CreateMessageParams& params)
+        [&handler](const protocol::CreateMessageParams& params,
+                   CancellationToken cancellation)
             -> core::Result<protocol::CreateMessageResult> {
-          const auto response = handler.on_create_message_request(params);
+          const auto response =
+              handler.on_create_message_request(params, cancellation);
           if (response.has_value()) {
             return std::move(*response);
           }
@@ -579,18 +633,21 @@ class Peer<RoleClient> {
               "client handler does not handle create_message"));
         });
     on_create_elicitation_request(
-        [&handler](const protocol::CreateElicitationRequestParam& params)
+        [&handler](const protocol::CreateElicitationRequestParam& params,
+                   CancellationToken cancellation)
             -> core::Result<protocol::CreateElicitationResult> {
-          const auto response = handler.on_create_elicitation_request(params);
+          const auto response =
+              handler.on_create_elicitation_request(params, cancellation);
           if (response.has_value()) {
             return std::move(*response);
           }
           return std::unexpected(client::handler_method_not_found(
               "client handler does not handle elicitation"));
         });
-    on_custom_request([&handler](const protocol::JsonRpcRequest& request)
+    on_custom_request([&handler](const protocol::JsonRpcRequest& request,
+                                 CancellationToken cancellation)
                           -> core::Result<protocol::Json> {
-      const auto response = handler.on_custom_request(request);
+      const auto response = handler.on_custom_request(request, cancellation);
       if (response.has_value()) {
         return std::move(*response);
       }
@@ -1457,14 +1514,39 @@ class Peer<RoleClient> {
                            : std::optional<protocol::Json>{std::move(detail)}));
   }
 
+  CancellationToken begin_client_request_cancellation(
+      const protocol::RequestId& request_id) {
+    CancellationSource source;
+    auto token = source.token();
+    std::lock_guard lock(*client_request_cancellations_mutex_);
+    (*client_request_cancellations_)[detail::peer_request_cancellation_key(
+        request_id)] = std::move(source);
+    return token;
+  }
+
+  void end_client_request_cancellation(
+      const protocol::RequestId& request_id) noexcept {
+    std::lock_guard lock(*client_request_cancellations_mutex_);
+    client_request_cancellations_->erase(
+        detail::peer_request_cancellation_key(request_id));
+  }
+
+  void cancel_client_request(const protocol::RequestId& request_id) noexcept {
+    std::lock_guard lock(*client_request_cancellations_mutex_);
+    const auto it = client_request_cancellations_->find(
+        detail::peer_request_cancellation_key(request_id));
+    if (it != client_request_cancellations_->end()) {
+      it->second.cancel();
+    }
+  }
+
   core::Result<core::Unit> handle_native_notification(
       const protocol::JsonRpcNotification& notification) try {
     if (notification.method == std::string(protocol::InitializedMethod) &&
         initialized_handler_) {
       initialized_handler_();
     } else if (notification.method ==
-                   std::string(protocol::CancelledNotificationMethod) &&
-               cancelled_handler_) {
+               std::string(protocol::CancelledNotificationMethod)) {
       const auto params = protocol::cancelled_notification_params_from_json(
           notification.params);
       if (!params) {
@@ -1472,8 +1554,11 @@ class Peer<RoleClient> {
             errors::make(protocol::ErrorCode::InvalidParams,
                          "cancelled notification requires a requestId"));
       }
-      cancelled_handler_(params->request_id,
-                         params->reason.value_or(std::string{}));
+      cancel_client_request(params->request_id);
+      if (cancelled_handler_) {
+        cancelled_handler_(params->request_id,
+                           params->reason.value_or(std::string{}));
+      }
     } else if (notification.method ==
                    std::string(protocol::LoggingMessageNotificationMethod) &&
                logging_message_handler_) {
@@ -1575,7 +1660,23 @@ class Peer<RoleClient> {
       return protocol::make_response(request.id, protocol::Json::object());
     }
 
+    const auto request_cancellation =
+        begin_client_request_cancellation(request.id);
+    const std::shared_ptr<void> request_cancellation_cleanup(
+        nullptr, [this, request_id = request.id](void*) noexcept {
+          end_client_request_cancellation(request_id);
+        });
+
     if (request.method == std::string(protocol::RootsListMethod)) {
+      if (roots_list_request_cancellation_handler_) {
+        const auto roots =
+            roots_list_request_cancellation_handler_(request_cancellation);
+        if (!roots) {
+          return native_error_response(request, roots.error());
+        }
+        return protocol::make_response(
+            request.id, protocol::roots_list_result_to_json(*roots));
+      }
       if (roots_list_request_handler_) {
         const auto roots = roots_list_request_handler_();
         if (!roots) {
@@ -1592,7 +1693,8 @@ class Peer<RoleClient> {
     }
 
     if (request.method == std::string(protocol::SamplingCreateMessageMethod)) {
-      if (!sampling_request_handler_) {
+      if (!sampling_request_handler_ &&
+          !sampling_request_cancellation_handler_) {
         return native_error_response(
             request, protocol::ErrorCode::MethodNotFound,
             "sampling request handler is not configured");
@@ -1602,7 +1704,10 @@ class Peer<RoleClient> {
       if (!params) {
         return detail::peer_params_error_response(request, params.error());
       }
-      const auto result = sampling_request_handler_(*params);
+      const auto result = sampling_request_cancellation_handler_
+                              ? sampling_request_cancellation_handler_(
+                                    *params, request_cancellation)
+                              : sampling_request_handler_(*params);
       if (!result) {
         return native_error_response(request, result.error());
       }
@@ -1616,14 +1721,18 @@ class Peer<RoleClient> {
       if (!params) {
         return detail::peer_params_error_response(request, params.error());
       }
-      if (!elicitation_request_handler_) {
+      if (!elicitation_request_handler_ &&
+          !elicitation_request_cancellation_handler_) {
         return protocol::make_response(
             request.id, protocol::create_elicitation_result_to_json(
                             protocol::CreateElicitationResult{
                                 .action = protocol::ElicitationAction::Decline,
                             }));
       }
-      const auto result = elicitation_request_handler_(*params);
+      const auto result = elicitation_request_cancellation_handler_
+                              ? elicitation_request_cancellation_handler_(
+                                    *params, request_cancellation)
+                              : elicitation_request_handler_(*params);
       if (!result) {
         return native_error_response(request, result.error());
       }
@@ -1645,8 +1754,11 @@ class Peer<RoleClient> {
           request.id, protocol::create_elicitation_result_to_json(*result));
     }
 
-    if (custom_request_handler_) {
-      const auto result = custom_request_handler_(request);
+    if (custom_request_cancellation_handler_ || custom_request_handler_) {
+      const auto result = custom_request_cancellation_handler_
+                              ? custom_request_cancellation_handler_(
+                                    request, request_cancellation)
+                              : custom_request_handler_(request);
       if (!result) {
         return native_error_response(request, result.error());
       }
@@ -1828,10 +1940,23 @@ class Peer<RoleClient> {
   client::Client::TaskStatusHandler task_status_handler_;
   client::Client::ListChangedHandler roots_list_changed_handler_;
   client::Client::RootsListRequestHandler roots_list_request_handler_;
+  client::Client::RootsListRequestCancellationHandler
+      roots_list_request_cancellation_handler_;
   client::Client::SamplingRequestHandler sampling_request_handler_;
+  client::Client::SamplingRequestCancellationHandler
+      sampling_request_cancellation_handler_;
   client::Client::ElicitationRequestHandler elicitation_request_handler_;
+  client::Client::ElicitationRequestCancellationHandler
+      elicitation_request_cancellation_handler_;
   client::Client::CustomRequestHandler custom_request_handler_;
+  client::Client::CustomRequestCancellationHandler
+      custom_request_cancellation_handler_;
   client::Client::RawNotificationHandler raw_notification_handler_;
+  std::shared_ptr<std::mutex> client_request_cancellations_mutex_ =
+      std::make_shared<std::mutex>();
+  std::shared_ptr<std::unordered_map<std::string, CancellationSource>>
+      client_request_cancellations_ = std::make_shared<
+          std::unordered_map<std::string, CancellationSource>>();
   client::Client client_;
 };
 

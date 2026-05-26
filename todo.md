@@ -628,7 +628,7 @@ true:
     prompt, and resource facades.
   - [x] Pass `SessionContext` through contract-style task handlers.
   - [x] Pass `SessionContext` through contract-style notification handlers.
-- [ ] Support cooperative cancellation token injection where meaningful.
+- [x] Support cooperative cancellation token injection where meaningful.
   - [x] Pass cancellation tokens into prompt contexts and typed prompt helpers.
   - [x] Pass cancellation tokens into resource contexts and typed resource
     helpers.
@@ -637,6 +637,8 @@ true:
     handlers.
   - [x] Pass cancellation tokens through direct server and server-peer tool,
     prompt, and resource facades.
+  - [x] Pass cancellation tokens into client-side inbound roots, sampling,
+    elicitation, and custom request handlers.
 - [x] Keep `SchemaTraits<T>` and `schema_for<T>()` customization stable.
 - [x] Add optional JSON Schema validator integration.
 - [x] Validate tool input schemas where configured.

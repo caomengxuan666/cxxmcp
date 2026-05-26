@@ -97,6 +97,10 @@ core::Result<protocol::JsonRpcResponse> make_params_error_response(
                              error.message, error.detail);
 }
 
+std::string request_cancellation_key(const protocol::RequestId& request_id) {
+  return protocol::request_id_to_json(request_id).dump();
+}
+
 protocol::Json cursor_params(const std::optional<std::string>& cursor) {
   protocol::Json params = protocol::Json::object();
   if (cursor.has_value()) {
@@ -175,11 +179,30 @@ Client::Client(Client&& other) noexcept
       task_status_handler_(std::move(other.task_status_handler_)),
       roots_list_changed_handler_(std::move(other.roots_list_changed_handler_)),
       roots_list_request_handler_(std::move(other.roots_list_request_handler_)),
+      roots_list_request_cancellation_handler_(
+          std::move(other.roots_list_request_cancellation_handler_)),
       sampling_request_handler_(std::move(other.sampling_request_handler_)),
+      sampling_request_cancellation_handler_(
+          std::move(other.sampling_request_cancellation_handler_)),
       elicitation_request_handler_(
           std::move(other.elicitation_request_handler_)),
+      elicitation_request_cancellation_handler_(
+          std::move(other.elicitation_request_cancellation_handler_)),
       custom_request_handler_(std::move(other.custom_request_handler_)),
-      raw_notification_handler_(std::move(other.raw_notification_handler_)) {
+      custom_request_cancellation_handler_(
+          std::move(other.custom_request_cancellation_handler_)),
+      raw_notification_handler_(std::move(other.raw_notification_handler_)),
+      active_request_cancellations_mutex_(
+          std::move(other.active_request_cancellations_mutex_)),
+      active_request_cancellations_(
+          std::move(other.active_request_cancellations_)) {
+  if (!active_request_cancellations_mutex_) {
+    active_request_cancellations_mutex_ = std::make_shared<std::mutex>();
+  }
+  if (!active_request_cancellations_) {
+    active_request_cancellations_ =
+        std::make_shared<std::unordered_map<std::string, CancellationSource>>();
+  }
   other.transport_started_ = false;
 }
 
@@ -209,11 +232,30 @@ Client& Client::operator=(Client&& other) noexcept {
     task_status_handler_ = std::move(other.task_status_handler_);
     roots_list_changed_handler_ = std::move(other.roots_list_changed_handler_);
     roots_list_request_handler_ = std::move(other.roots_list_request_handler_);
+    roots_list_request_cancellation_handler_ =
+        std::move(other.roots_list_request_cancellation_handler_);
     sampling_request_handler_ = std::move(other.sampling_request_handler_);
+    sampling_request_cancellation_handler_ =
+        std::move(other.sampling_request_cancellation_handler_);
     elicitation_request_handler_ =
         std::move(other.elicitation_request_handler_);
+    elicitation_request_cancellation_handler_ =
+        std::move(other.elicitation_request_cancellation_handler_);
     custom_request_handler_ = std::move(other.custom_request_handler_);
+    custom_request_cancellation_handler_ =
+        std::move(other.custom_request_cancellation_handler_);
     raw_notification_handler_ = std::move(other.raw_notification_handler_);
+    active_request_cancellations_mutex_ =
+        std::move(other.active_request_cancellations_mutex_);
+    active_request_cancellations_ =
+        std::move(other.active_request_cancellations_);
+    if (!active_request_cancellations_mutex_) {
+      active_request_cancellations_mutex_ = std::make_shared<std::mutex>();
+    }
+    if (!active_request_cancellations_) {
+      active_request_cancellations_ = std::make_shared<
+          std::unordered_map<std::string, CancellationSource>>();
+    }
     other.transport_started_ = false;
   }
   return *this;
@@ -1187,8 +1229,20 @@ Client& Client::on_list_roots_request(ListRootsRequestHandler handler) {
   return *this;
 }
 
+Client& Client::on_list_roots_request(
+    RootsListRequestCancellationHandler handler) {
+  roots_list_request_cancellation_handler_ = std::move(handler);
+  return *this;
+}
+
 Client& Client::on_create_message_request(CreateMessageRequestHandler handler) {
   sampling_request_handler_ = std::move(handler);
+  return *this;
+}
+
+Client& Client::on_create_message_request(
+    SamplingRequestCancellationHandler handler) {
+  sampling_request_cancellation_handler_ = std::move(handler);
   return *this;
 }
 
@@ -1198,8 +1252,19 @@ Client& Client::on_create_elicitation_request(
   return *this;
 }
 
+Client& Client::on_create_elicitation_request(
+    ElicitationRequestCancellationHandler handler) {
+  elicitation_request_cancellation_handler_ = std::move(handler);
+  return *this;
+}
+
 Client& Client::on_custom_request(CustomRequestHandler handler) {
   custom_request_handler_ = std::move(handler);
+  return *this;
+}
+
+Client& Client::on_custom_request(CustomRequestCancellationHandler handler) {
+  custom_request_cancellation_handler_ = std::move(handler);
   return *this;
 }
 
@@ -1207,11 +1272,26 @@ Client& Client::on_roots_list_request(RootsListRequestHandler handler) {
   return on_list_roots_request(std::move(handler));
 }
 
+Client& Client::on_roots_list_request(
+    RootsListRequestCancellationHandler handler) {
+  return on_list_roots_request(std::move(handler));
+}
+
 Client& Client::on_sampling_request(SamplingRequestHandler handler) {
   return on_create_message_request(std::move(handler));
 }
 
+Client& Client::on_sampling_request(
+    SamplingRequestCancellationHandler handler) {
+  return on_create_message_request(std::move(handler));
+}
+
 Client& Client::on_elicitation_request(ElicitationRequestHandler handler) {
+  return on_create_elicitation_request(std::move(handler));
+}
+
+Client& Client::on_elicitation_request(
+    ElicitationRequestCancellationHandler handler) {
   return on_create_elicitation_request(std::move(handler));
 }
 
@@ -1224,14 +1304,38 @@ Client& Client::on_custom_notification(RawNotificationHandler handler) {
   return on_raw_notification(std::move(handler));
 }
 
+CancellationToken Client::begin_request_cancellation(
+    const protocol::RequestId& request_id) {
+  CancellationSource source;
+  auto token = source.token();
+  std::lock_guard lock(*active_request_cancellations_mutex_);
+  (*active_request_cancellations_)[request_cancellation_key(request_id)] =
+      std::move(source);
+  return token;
+}
+
+void Client::end_request_cancellation(
+    const protocol::RequestId& request_id) noexcept {
+  std::lock_guard lock(*active_request_cancellations_mutex_);
+  active_request_cancellations_->erase(request_cancellation_key(request_id));
+}
+
+void Client::cancel_request(const protocol::RequestId& request_id) noexcept {
+  std::lock_guard lock(*active_request_cancellations_mutex_);
+  const auto it =
+      active_request_cancellations_->find(request_cancellation_key(request_id));
+  if (it != active_request_cancellations_->end()) {
+    it->second.cancel();
+  }
+}
+
 core::Result<core::Unit> Client::handle_notification(
     const protocol::JsonRpcNotification& notification) try {
   if (notification.method == std::string(protocol::InitializedMethod) &&
       initialized_handler_) {
     initialized_handler_();
   } else if (notification.method ==
-                 std::string(protocol::CancelledNotificationMethod) &&
-             cancelled_handler_) {
+             std::string(protocol::CancelledNotificationMethod)) {
     const auto params =
         protocol::cancelled_notification_params_from_json(notification.params);
     if (!params) {
@@ -1239,8 +1343,11 @@ core::Result<core::Unit> Client::handle_notification(
           static_cast<int>(protocol::ErrorCode::InvalidParams),
           "cancelled notification requires a requestId"));
     }
-    cancelled_handler_(params->request_id,
-                       params->reason.value_or(std::string{}));
+    cancel_request(params->request_id);
+    if (cancelled_handler_) {
+      cancelled_handler_(params->request_id,
+                         params->reason.value_or(std::string{}));
+    }
   } else if (notification.method == "notifications/message" &&
              logging_message_handler_) {
     std::string level;
@@ -1332,7 +1439,23 @@ core::Result<protocol::JsonRpcResponse> Client::handle_request(
     return protocol::make_response(request.id, protocol::Json::object());
   }
 
+  const auto request_cancellation = begin_request_cancellation(request.id);
+  const std::shared_ptr<void> request_cancellation_cleanup(
+      nullptr, [this, request_id = request.id](void*) noexcept {
+        end_request_cancellation(request_id);
+      });
+
   if (request.method == std::string(protocol::RootsListMethod)) {
+    if (roots_list_request_cancellation_handler_) {
+      const auto roots =
+          roots_list_request_cancellation_handler_(request_cancellation);
+      if (!roots) {
+        return make_error_response(request, roots.error().code,
+                                   roots.error().message, roots.error().detail);
+      }
+      return protocol::make_response(
+          request.id, protocol::roots_list_result_to_json(*roots));
+    }
     if (roots_list_request_handler_) {
       const auto roots = roots_list_request_handler_();
       if (!roots) {
@@ -1350,7 +1473,7 @@ core::Result<protocol::JsonRpcResponse> Client::handle_request(
   }
 
   if (request.method == std::string(protocol::SamplingCreateMessageMethod)) {
-    if (!sampling_request_handler_) {
+    if (!sampling_request_handler_ && !sampling_request_cancellation_handler_) {
       return make_error_response(
           request, static_cast<int>(protocol::ErrorCode::MethodNotFound),
           "sampling request handler is not configured");
@@ -1362,7 +1485,10 @@ core::Result<protocol::JsonRpcResponse> Client::handle_request(
       return make_params_error_response(request, params.error());
     }
 
-    const auto result = sampling_request_handler_(*params);
+    const auto result = sampling_request_cancellation_handler_
+                            ? sampling_request_cancellation_handler_(
+                                  *params, request_cancellation)
+                            : sampling_request_handler_(*params);
     if (!result) {
       return make_error_response(request, result.error().code,
                                  result.error().message, result.error().detail);
@@ -1379,14 +1505,18 @@ core::Result<protocol::JsonRpcResponse> Client::handle_request(
       return make_params_error_response(request, params.error());
     }
 
-    if (!elicitation_request_handler_) {
+    if (!elicitation_request_handler_ &&
+        !elicitation_request_cancellation_handler_) {
       protocol::CreateElicitationResult declined;
       declined.action = protocol::ElicitationAction::Decline;
       return protocol::make_response(
           request.id, protocol::create_elicitation_result_to_json(declined));
     }
 
-    const auto result = elicitation_request_handler_(*params);
+    const auto result = elicitation_request_cancellation_handler_
+                            ? elicitation_request_cancellation_handler_(
+                                  *params, request_cancellation)
+                            : elicitation_request_handler_(*params);
     if (!result) {
       return make_error_response(request, result.error().code,
                                  result.error().message, result.error().detail);
@@ -1408,8 +1538,11 @@ core::Result<protocol::JsonRpcResponse> Client::handle_request(
         request.id, protocol::create_elicitation_result_to_json(*result));
   }
 
-  if (custom_request_handler_) {
-    const auto result = custom_request_handler_(request);
+  if (custom_request_cancellation_handler_ || custom_request_handler_) {
+    const auto result = custom_request_cancellation_handler_
+                            ? custom_request_cancellation_handler_(
+                                  request, request_cancellation)
+                            : custom_request_handler_(request);
     if (!result) {
       return make_error_response(request, result.error().code,
                                  result.error().message, result.error().detail);

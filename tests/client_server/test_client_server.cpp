@@ -5812,6 +5812,118 @@ void test_client_request_callbacks() {
   require(custom->result->at("ok") == true, "custom request result mismatch");
 }
 
+void test_client_inbound_request_handlers_observe_cancellation_token() {
+  auto sampling_request = [] {
+    return mcp::protocol::JsonRpcRequest{
+        .method = std::string(mcp::protocol::SamplingCreateMessageMethod),
+        .params =
+            Json{
+                {"messages",
+                 Json::array({Json{
+                     {"role", "user"},
+                     {"content", Json{{"type", "text"}, {"text", "hi"}}}}})},
+                {"maxTokens", 16},
+            },
+        .id = std::int64_t{72},
+    };
+  };
+  auto cancel_notification = [] {
+    return mcp::protocol::JsonRpcNotification{
+        .method = std::string(mcp::protocol::CancelledNotificationMethod),
+        .params = mcp::protocol::cancelled_notification_params_to_json(
+            mcp::protocol::CancelledNotificationParams{
+                .request_id = std::int64_t{72},
+                .reason = std::string("no longer needed"),
+            }),
+    };
+  };
+
+  {
+    mcp::client::Client client(std::make_unique<RecordingTransport>());
+    std::atomic_bool started{false};
+    std::atomic_bool observed_cancelled{false};
+    client.on_create_message_request(
+        [&](const mcp::protocol::CreateMessageParams&,
+            mcp::CancellationToken cancellation)
+            -> mcp::core::Result<mcp::protocol::CreateMessageResult> {
+          started.store(true);
+          wait_until([&] { return cancellation.cancelled(); },
+                     "client sampling handler should be cancelled");
+          observed_cancelled.store(cancellation.cancelled());
+          return mcp::protocol::CreateMessageResult{
+              .role = "assistant",
+              .content = mcp::protocol::ContentBlock::text_content("sampled"),
+              .model = "test-model",
+          };
+        });
+
+    std::optional<mcp::core::Result<mcp::protocol::JsonRpcResponse>> response;
+    std::thread request_thread(
+        [&] { response = client.handle_request(sampling_request()); });
+    wait_until([&] { return started.load(); },
+               "client sampling handler should start");
+    const auto cancelled = client.handle_notification(cancel_notification());
+    require(cancelled.has_value(), "client cancel notification failed");
+    if (request_thread.joinable()) {
+      request_thread.join();
+    }
+    require(response.has_value(), "client sampling response missing");
+    require(response->has_value(), "client sampling request failed");
+    require((*response)->result.has_value(), "client sampling result missing");
+    require(observed_cancelled.load(),
+            "client sampling handler did not observe cancellation");
+  }
+
+  {
+    mcp::ClientPeer peer(std::make_unique<RecordingTransport>());
+    std::atomic_bool started{false};
+    std::atomic_bool observed_cancelled{false};
+    peer.on_create_message_request(
+        [&](const mcp::protocol::CreateMessageParams&,
+            mcp::CancellationToken cancellation)
+            -> mcp::core::Result<mcp::protocol::CreateMessageResult> {
+          started.store(true);
+          wait_until([&] { return cancellation.cancelled(); },
+                     "client peer sampling handler should be cancelled");
+          observed_cancelled.store(cancellation.cancelled());
+          return mcp::protocol::CreateMessageResult{
+              .role = "assistant",
+              .content = mcp::protocol::ContentBlock::text_content("sampled"),
+              .model = "test-model",
+          };
+        });
+
+    std::optional<
+        mcp::core::Result<std::optional<mcp::protocol::JsonRpcMessage>>>
+        response;
+    std::thread request_thread([&] {
+      response = peer.dispatch_message(
+          mcp::protocol::JsonRpcMessage{sampling_request()});
+    });
+    wait_until([&] { return started.load(); },
+               "client peer sampling handler should start");
+    const auto cancelled = peer.dispatch_message(
+        mcp::protocol::JsonRpcMessage{cancel_notification()});
+    require(cancelled.has_value(), "client peer cancel notification failed");
+    require(!cancelled->has_value(),
+            "client peer cancel notification should not respond");
+    if (request_thread.joinable()) {
+      request_thread.join();
+    }
+    require(response.has_value(), "client peer sampling response missing");
+    require(response->has_value(), "client peer sampling dispatch failed");
+    require((*response)->has_value(), "client peer sampling message missing");
+    const auto* rpc_response =
+        std::get_if<mcp::protocol::JsonRpcResponse>(&(*response)->value());
+    require(rpc_response != nullptr,
+            "client peer sampling response type mismatch");
+    require(rpc_response->result.has_value(),
+            "client peer sampling result missing");
+    require(observed_cancelled.load(),
+            "client peer sampling handler did not observe cancellation");
+  }
+}
+
 void test_client_session_discover_prompts_uses_client_list_prompts() {
   auto transport = std::make_unique<RecordingTransport>();
   auto* recording = transport.get();
@@ -6026,6 +6138,8 @@ int main() {
       {"client elicitation defaults to decline without handler",
        test_client_elicitation_defaults_to_decline_without_handler},
       {"client request callbacks", test_client_request_callbacks},
+      {"client inbound request handlers observe cancellation token",
+       test_client_inbound_request_handlers_observe_cancellation_token},
   };
 
   std::size_t failures = 0;
