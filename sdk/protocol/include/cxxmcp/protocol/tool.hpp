@@ -322,6 +322,20 @@ struct ToolResult {
   std::optional<Json> meta;
   /// Unknown JSON members preserved for forward-compatible round trips.
   Json extensions = Json::object();
+
+  /// @brief Creates a successful text-only tool result.
+  static ToolResult text(std::string value) {
+    ToolResult result;
+    result.content.push_back(ContentBlock::text_content(std::move(value)));
+    return result;
+  }
+
+  /// @brief Creates an error text-only tool result.
+  static ToolResult error_text(std::string value) {
+    ToolResult result = text(std::move(value));
+    result.is_error = true;
+    return result;
+  }
 };
 
 /// @brief Builds an InvalidRequest error for tool JSON validation failures.

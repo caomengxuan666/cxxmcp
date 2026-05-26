@@ -141,6 +141,14 @@ struct SamplingMessage {
   std::optional<Json> meta;
   /// Unknown JSON members preserved for forward-compatible round trips.
   Json extensions = Json::object();
+
+  /// @brief Creates a text-only sampling message for the given role.
+  static SamplingMessage text(std::string role, std::string value) {
+    SamplingMessage message;
+    message.role = std::move(role);
+    message.content = ContentBlock::text_content(std::move(value));
+    return message;
+  }
 };
 
 /// @brief Soft model name hint for sampling.
@@ -211,6 +219,16 @@ struct CreateMessageResult {
   std::optional<Json> meta;
   /// Unknown JSON members preserved for forward-compatible round trips.
   Json extensions = Json::object();
+
+  /// @brief Creates a text-only sampling result for the given role and model.
+  static CreateMessageResult text(std::string role, std::string value,
+                                  std::string model = {}) {
+    CreateMessageResult result;
+    result.role = std::move(role);
+    result.content = ContentBlock::text_content(std::move(value));
+    result.model = std::move(model);
+    return result;
+  }
 };
 
 /// @brief Builds an InvalidRequest error for sampling JSON validation failures.

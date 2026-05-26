@@ -91,6 +91,14 @@ struct PromptMessage {
   std::optional<Json> meta;
   /// Unknown JSON members preserved for forward-compatible round trips.
   Json extensions = Json::object();
+
+  /// @brief Creates a text-only prompt message for the given role.
+  static PromptMessage text(std::string role, std::string value) {
+    PromptMessage message;
+    message.role = std::move(role);
+    message.content = ContentBlock::text_content(std::move(value));
+    return message;
+  }
 };
 
 /// @brief Result object for `prompts/get`.

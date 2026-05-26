@@ -552,6 +552,57 @@ void test_content_block_variants_round_trip() {
   }
 }
 
+void test_text_helper_constructors_round_trip() {
+  const auto tool_result = mcp::protocol::ToolResult::text("ok");
+  require(tool_result.content.size() == 1, "tool text helper content missing");
+  require(tool_result.content.front().as_text().value() == "ok",
+          "tool text helper text mismatch");
+  const auto parsed_tool_result = mcp::protocol::tool_result_from_json(
+      mcp::protocol::tool_result_to_json(tool_result));
+  require(parsed_tool_result.has_value(), "tool text helper should parse");
+  require(!parsed_tool_result->is_error,
+          "tool text helper should not mark error");
+
+  const auto tool_error = mcp::protocol::ToolResult::error_text("failed");
+  const auto parsed_tool_error = mcp::protocol::tool_result_from_json(
+      mcp::protocol::tool_result_to_json(tool_error));
+  require(parsed_tool_error.has_value(), "tool error helper should parse");
+  require(parsed_tool_error->is_error, "tool error helper should mark error");
+
+  const auto prompt_message = mcp::protocol::PromptMessage::text("user", "hi");
+  const auto parsed_prompt_message = mcp::protocol::prompt_message_from_json(
+      mcp::protocol::prompt_message_to_json(prompt_message));
+  require(parsed_prompt_message.has_value(), "prompt text helper should parse");
+  require(parsed_prompt_message->role == "user",
+          "prompt text helper role mismatch");
+  require(parsed_prompt_message->content.as_text().value() == "hi",
+          "prompt text helper content mismatch");
+
+  const auto sampling_message =
+      mcp::protocol::SamplingMessage::text("user", "sample me");
+  const auto parsed_sampling_message =
+      mcp::protocol::sampling_message_from_json(
+          mcp::protocol::sampling_message_to_json(sampling_message));
+  require(parsed_sampling_message.has_value(),
+          "sampling text helper should parse");
+  require(parsed_sampling_message->role == "user",
+          "sampling text helper role mismatch");
+  require(parsed_sampling_message->content.as_text().value() == "sample me",
+          "sampling text helper content mismatch");
+
+  const auto create_message_result =
+      mcp::protocol::CreateMessageResult::text("assistant", "done", "model-1");
+  const auto parsed_create_message_result =
+      mcp::protocol::create_message_result_from_json(
+          mcp::protocol::create_message_result_to_json(create_message_result));
+  require(parsed_create_message_result.has_value(),
+          "sampling result text helper should parse");
+  require(parsed_create_message_result->model == "model-1",
+          "sampling result text helper model mismatch");
+  require(parsed_create_message_result->content.as_text().value() == "done",
+          "sampling result text helper content mismatch");
+}
+
 void test_task_protocol_round_trips() {
   const mcp::protocol::Task task{
       .task_id = "task-1",
@@ -2255,6 +2306,8 @@ int main() {
        test_schema_and_tool_definition_builders},
       {"content block variants round trip",
        test_content_block_variants_round_trip},
+      {"text helper constructors round trip",
+       test_text_helper_constructors_round_trip},
       {"task protocol round trips", test_task_protocol_round_trips},
       {"client capability wire shape", test_client_capability_wire_shape},
       {"server capability wire shape", test_server_capability_wire_shape},
