@@ -164,6 +164,20 @@ inline protocol::PromptsGetResult value_to_prompt_result(std::string text) {
   return result;
 }
 
+inline protocol::PromptsGetResult value_to_prompt_result(
+    protocol::PromptMessage message) {
+  protocol::PromptsGetResult result;
+  result.messages.push_back(std::move(message));
+  return result;
+}
+
+inline protocol::PromptsGetResult value_to_prompt_result(
+    std::vector<protocol::PromptMessage> messages) {
+  protocol::PromptsGetResult result;
+  result.messages = std::move(messages);
+  return result;
+}
+
 inline protocol::ResourcesReadResult value_to_resource_read_result(
     protocol::ResourcesReadResult result, std::string_view) {
   return result;
@@ -173,6 +187,13 @@ inline protocol::ResourcesReadResult value_to_resource_read_result(
     protocol::ResourceContents contents, std::string_view) {
   protocol::ResourcesReadResult result;
   result.contents.push_back(std::move(contents));
+  return result;
+}
+
+inline protocol::ResourcesReadResult value_to_resource_read_result(
+    std::vector<protocol::ResourceContents> contents, std::string_view) {
+  protocol::ResourcesReadResult result;
+  result.contents = std::move(contents);
   return result;
 }
 
@@ -286,6 +307,35 @@ decltype(auto) invoke_tool_handler(Handler& handler, Args&& args,
                   "tool handler must accept Args, Args+ToolContext, "
                   "ToolContext+Args, Args+CancellationToken, "
                   "CancellationToken+Args, ToolContext, or no arguments");
+  }
+}
+
+template <class Handler, class Args, class Context>
+decltype(auto) invoke_typed_context_handler(Handler& handler, Args&& args,
+                                            const Context& context) {
+  using Arg = std::decay_t<Args>;
+  if constexpr (std::is_invocable_v<Handler&, Arg, const Context&>) {
+    return handler(std::forward<Args>(args), context);
+  } else if constexpr (std::is_invocable_v<Handler&, const Context&, Arg>) {
+    return handler(context, std::forward<Args>(args));
+  } else if constexpr (std::is_invocable_v<Handler&, Arg, CancellationToken>) {
+    return handler(std::forward<Args>(args), context.cancellation);
+  } else if constexpr (std::is_invocable_v<Handler&, CancellationToken, Arg>) {
+    return handler(context.cancellation, std::forward<Args>(args));
+  } else if constexpr (std::is_invocable_v<Handler&, Arg>) {
+    return handler(std::forward<Args>(args));
+  } else if constexpr (std::is_invocable_v<Handler&, const Context&>) {
+    return handler(context);
+  } else if constexpr (std::is_invocable_v<Handler&, CancellationToken>) {
+    return handler(context.cancellation);
+  } else if constexpr (std::is_invocable_v<Handler&>) {
+    return handler();
+  } else {
+    static_assert(always_false_v<Handler>,
+                  "typed handler must accept Args, Args+Context, "
+                  "Context+Args, Args+CancellationToken, "
+                  "CancellationToken+Args, Context, CancellationToken, "
+                  "or no arguments");
   }
 }
 
@@ -1201,6 +1251,9 @@ class App {
     /// prompt text/result or core::Result of either. CancellationToken may be
     /// accepted directly with Json/string where cooperative cancellation is
     /// useful.
+    template <class Args, class Handler>
+    Builder& prompt(std::string name, Handler handler);
+
     template <class Handler>
     Builder& prompt(std::string name, Handler handler);
 
@@ -1215,6 +1268,9 @@ class App {
     /// protocol::Resource metadata, or core::Result of these. CancellationToken
     /// may be accepted directly with Json/string where cooperative
     /// cancellation is useful.
+    template <class Args, class Handler>
+    Builder& resource(std::string name, Handler handler);
+
     template <class Handler>
     Builder& resource(std::string name, Handler handler);
 
@@ -1317,6 +1373,37 @@ App::Builder& App::Builder::tool(
                             std::move(registration.handler));
 }
 
+template <class Args, class Handler>
+App::Builder& App::Builder::prompt(std::string name, Handler handler) {
+  detail::require_callable(handler, "prompt");
+  protocol::Prompt prompt;
+  prompt.name = std::move(name);
+  return this->prompt(
+      std::move(prompt),
+      [handler = std::move(handler)](const PromptContext& context)
+          -> core::Result<protocol::PromptsGetResult> {
+        try {
+          auto args = context.arguments.get<Args>();
+          auto handled = detail::invoke_typed_context_handler(
+              handler, std::move(args), context);
+          if constexpr (detail::is_result<decltype(handled)>::value) {
+            if (!handled) {
+              return std::unexpected(handled.error());
+            }
+            return detail::value_to_prompt_result(*handled);
+          } else {
+            return detail::value_to_prompt_result(std::move(handled));
+          }
+        } catch (const std::exception& exception) {
+          return std::unexpected(core::Error{
+              static_cast<int>(protocol::ErrorCode::InvalidParams),
+              "failed to decode prompt arguments",
+              exception.what(),
+          });
+        }
+      });
+}
+
 template <class Handler>
 App::Builder& App::Builder::prompt(std::string name, Handler handler) {
   detail::require_callable(handler, "prompt");
@@ -1340,6 +1427,39 @@ App::Builder& App::Builder::prompt(std::string name, Handler handler) {
           return std::unexpected(core::Error{
               static_cast<int>(protocol::ErrorCode::InvalidParams),
               "failed to run prompt handler",
+              exception.what(),
+          });
+        }
+      });
+}
+
+template <class Args, class Handler>
+App::Builder& App::Builder::resource(std::string name, Handler handler) {
+  detail::require_callable(handler, "resource");
+  protocol::Resource resource;
+  resource.uri = std::move(name);
+  resource.name = resource.uri;
+  return this->resource(
+      std::move(resource),
+      [handler = std::move(handler)](const ResourceContext& context)
+          -> core::Result<protocol::ResourcesReadResult> {
+        try {
+          auto args = context.params.get<Args>();
+          auto handled = detail::invoke_typed_context_handler(
+              handler, std::move(args), context);
+          if constexpr (detail::is_result<decltype(handled)>::value) {
+            if (!handled) {
+              return std::unexpected(handled.error());
+            }
+            return detail::value_to_resource_read_result(*handled, context.uri);
+          } else {
+            return detail::value_to_resource_read_result(std::move(handled),
+                                                         context.uri);
+          }
+        } catch (const std::exception& exception) {
+          return std::unexpected(core::Error{
+              static_cast<int>(protocol::ErrorCode::InvalidParams),
+              "failed to decode resource parameters",
               exception.what(),
           });
         }

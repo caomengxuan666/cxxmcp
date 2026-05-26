@@ -37,9 +37,25 @@ struct SumResult {
   int sum = 0;
 };
 
+struct PromptArgs {
+  std::string text;
+};
+
+struct ResourceArgs {
+  std::string section;
+};
+
 void from_json(const mcp::protocol::Json& json, SumArgs& args) {
   args.a = json.at("a").get<int>();
   args.b = json.at("b").get<int>();
+}
+
+void from_json(const mcp::protocol::Json& json, PromptArgs& args) {
+  args.text = json.at("text").get<std::string>();
+}
+
+void from_json(const mcp::protocol::Json& json, ResourceArgs& args) {
+  args.section = json.at("section").get<std::string>();
 }
 
 void to_json(mcp::protocol::Json& json, const SumResult& result) {
@@ -3520,6 +3536,90 @@ void test_server_app_builder_registers_typed_completion() {
           "invalid typed completion code mismatch");
 }
 
+void test_server_app_builder_registers_typed_prompt_and_resource() {
+  using typed_tool_fixture::PromptArgs;
+  using typed_tool_fixture::ResourceArgs;
+
+  auto built =
+      mcp::server::App::builder()
+          .prompt<PromptArgs>(
+              "typed-summary",
+              [](PromptArgs args, const mcp::server::PromptContext& context) {
+                return mcp::protocol::PromptMessage::text(
+                    "user", context.session_id + ":" + args.text);
+              })
+          .resource<ResourceArgs>(
+              "file:///tmp/typed.txt",
+              [](ResourceArgs args,
+                 const mcp::server::ResourceContext& context) {
+                mcp::protocol::ResourceContents contents;
+                contents.uri = context.uri;
+                contents.mime_type = "text/plain";
+                contents.text = context.session_id + ":" + args.section;
+                return contents;
+              })
+          .build();
+  require(built.has_value(), "typed prompt/resource server should build");
+
+  const auto prompt = (*built)->handle_request(
+      mcp::protocol::JsonRpcRequest{
+          .method = std::string(mcp::protocol::PromptsGetMethod),
+          .params = Json{{"name", "typed-summary"},
+                         {"arguments", Json{{"text", "hello"}}}},
+          .id = std::int64_t{1},
+      },
+      mcp::server::SessionContext{.session_id = "typed"});
+  require(prompt.has_value(), "typed prompt request should succeed");
+  require(prompt->result.has_value(), "typed prompt result missing");
+  require(prompt->result->at("messages").at(0).at("content").at("text") ==
+              "typed:hello",
+          "typed prompt result mismatch");
+
+  const auto resource = (*built)->handle_request(
+      mcp::protocol::JsonRpcRequest{
+          .method = std::string(mcp::protocol::ResourcesReadMethod),
+          .params =
+              Json{{"uri", "file:///tmp/typed.txt"}, {"section", "intro"}},
+          .id = std::int64_t{2},
+      },
+      mcp::server::SessionContext{.session_id = "typed"});
+  require(resource.has_value(), "typed resource request should succeed");
+  require(resource->result.has_value(), "typed resource result missing");
+  require(resource->result->at("contents").at(0).at("text") == "typed:intro",
+          "typed resource result mismatch");
+
+  const auto invalid_prompt = (*built)->handle_request(
+      mcp::protocol::JsonRpcRequest{
+          .method = std::string(mcp::protocol::PromptsGetMethod),
+          .params =
+              Json{{"name", "typed-summary"}, {"arguments", Json{{"text", 7}}}},
+          .id = std::int64_t{3},
+      },
+      {});
+  require(invalid_prompt.has_value(), "invalid typed prompt should respond");
+  require(invalid_prompt->error.has_value(),
+          "invalid typed prompt should fail");
+  require(invalid_prompt->error->code ==
+              static_cast<int>(mcp::protocol::ErrorCode::InvalidParams),
+          "invalid typed prompt code mismatch");
+
+  const auto invalid_resource = (*built)->handle_request(
+      mcp::protocol::JsonRpcRequest{
+          .method = std::string(mcp::protocol::ResourcesReadMethod),
+          .params = Json{{"uri", "file:///tmp/typed.txt"},
+                         {"section", Json::array()}},
+          .id = std::int64_t{4},
+      },
+      {});
+  require(invalid_resource.has_value(),
+          "invalid typed resource should respond");
+  require(invalid_resource->error.has_value(),
+          "invalid typed resource should fail");
+  require(invalid_resource->error->code ==
+              static_cast<int>(mcp::protocol::ErrorCode::InvalidParams),
+          "invalid typed resource code mismatch");
+}
+
 void test_server_app_builder_registers_typed_tool() {
   using typed_tool_fixture::SumArgs;
   using typed_tool_fixture::SumResult;
@@ -4801,6 +4901,8 @@ int main() {
        test_server_app_builder_registers_parity_surface},
       {"server app builder registers typed completion",
        test_server_app_builder_registers_typed_completion},
+      {"server app builder registers typed prompt and resource",
+       test_server_app_builder_registers_typed_prompt_and_resource},
       {"server app builder registers typed tool",
        test_server_app_builder_registers_typed_tool},
       {"server app builder typed scalar tool rejects empty args",
