@@ -29,10 +29,10 @@ Each release-gate artifact must contain `CMakeCache.txt`, CTest JUnit XML, and
 CTest logs. The source artifact must contain `SHA256SUMS.txt`. The release
 evidence artifact must contain the README, README_zh, changelog, contribution
 guide, security policy, code of conduct, compatibility policy, dependency
-policy, release process, Peer/Service migration guide, release gates, release
-candidate checklist, release notes template, request lifecycle notes, TODO, the
-external consumer template, and example source files used for the canonical SDK
-path review.
+policy, protocol model audit, release process, Peer/Service migration guide,
+release gates, release candidate checklist, release notes template, request
+lifecycle notes, TODO, the external consumer template, and example source files
+used for the canonical SDK path review.
 
 ## Gate Review
 
@@ -54,6 +54,7 @@ path review.
 
 ## Public Surface Review
 
+- [ ] Protocol model audit matches the pinned MCP/RMCP reference versions.
 - [ ] Public headers under `sdk/**/include/cxxmcp` were reviewed for accidental
       runtime, gateway, policy, discovery, profile, or transport-backend leaks.
 - [ ] Public target list still matches README and CMake package exports.

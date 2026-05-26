@@ -45,6 +45,7 @@ def check_source_tree(source: Path) -> None:
         "todo.md",
         "docs/compatibility_policy.md",
         "docs/dependency_policy.md",
+        "docs/protocol_model_audit.md",
         "docs/release_process.md",
         "docs/release_gates.md",
         "docs/release_candidate_checklist.md",
@@ -78,6 +79,22 @@ def check_source_tree(source: Path) -> None:
     require_contains(compatibility, "canonical SDK path")
     require_contains(compatibility, "compatibility or convenience APIs")
     require_contains(compatibility, "release evidence")
+
+    protocol_audit = source / "docs/protocol_model_audit.md"
+    require_contains(protocol_audit, "c330fede90e4729c234f8e87fdbc5ea27a1dd10c")
+    require_contains(protocol_audit, "2025-11-25")
+    for family in [
+        "capabilities.hpp",
+        "tool.hpp",
+        "prompt.hpp",
+        "resource.hpp",
+        "completion.hpp",
+        "logging.hpp",
+        "sampling.hpp",
+        "elicitation.hpp",
+        "task.hpp",
+    ]:
+        require_contains(protocol_audit, family)
 
     release_notes = source / "docs/release_notes_template.md"
     require_contains(release_notes, "Canonical SDK Path")
@@ -161,6 +178,7 @@ def check_evidence_dir(evidence: Path) -> None:
         "MANIFEST.txt",
         "docs/compatibility_policy.md",
         "docs/dependency_policy.md",
+        "docs/protocol_model_audit.md",
         "docs/release_process.md",
         "docs/release_gates.md",
         "docs/release_candidate_checklist.md",

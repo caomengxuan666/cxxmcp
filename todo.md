@@ -443,7 +443,7 @@ true:
 
 ## P1: Protocol Model Completeness
 
-- [ ] Audit all model structs against the pinned MCP/RMCP snapshot.
+- [x] Audit all model structs against the pinned MCP/RMCP snapshot.
 - [x] Add `_meta` support where the spec expects it, not only on generic
   JSON-RPC envelopes.
 - [x] Ensure `_meta` round-trips symmetrically.
