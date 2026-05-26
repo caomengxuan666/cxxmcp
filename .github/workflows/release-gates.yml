@@ -279,9 +279,18 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p release-evidence/docs release-evidence/examples
-          cp README.md README_zh.md CHANGELOG.md todo.md release-evidence/
+          cp \
+            README.md \
+            README_zh.md \
+            CHANGELOG.md \
+            CONTRIBUTING.md \
+            SECURITY.md \
+            CODE_OF_CONDUCT.md \
+            todo.md \
+            release-evidence/
           cp \
             docs/compatibility_policy.md \
+            docs/dependency_policy.md \
             docs/release_gates.md \
             docs/release_candidate_checklist.md \
             docs/release_notes_template.md \

@@ -27,10 +27,11 @@ Attach or link all artifacts from `.github/workflows/release-gates.yml`:
 
 Each release-gate artifact must contain `CMakeCache.txt`, CTest JUnit XML, and
 CTest logs. The source artifact must contain `SHA256SUMS.txt`. The release
-evidence artifact must contain the README, README_zh, changelog,
-compatibility policy, Peer/Service migration guide, release gates, release
-candidate checklist, release notes template, request lifecycle notes, TODO, and
-example source files used for the canonical SDK path review.
+evidence artifact must contain the README, README_zh, changelog, contribution
+guide, security policy, code of conduct, compatibility policy, dependency
+policy, Peer/Service migration guide, release gates, release candidate
+checklist, release notes template, request lifecycle notes, TODO, and example
+source files used for the canonical SDK path review.
 
 ## Gate Review
 

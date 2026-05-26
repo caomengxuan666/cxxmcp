@@ -728,19 +728,19 @@ true:
 
 ## P1: Governance And Project Trust
 
-- [ ] Add `CONTRIBUTING.md`.
-- [ ] Add `SECURITY.md`.
-- [ ] Add a code of conduct if the project expects outside contributors.
-- [ ] Add issue templates for bug reports, feature requests, and protocol
+- [x] Add `CONTRIBUTING.md`.
+- [x] Add `SECURITY.md`.
+- [x] Add a code of conduct if the project expects outside contributors.
+- [x] Add issue templates for bug reports, feature requests, and protocol
   compatibility reports.
-- [ ] Add PR template with testing and public API checklist.
-- [ ] Require design notes/RFCs for breaking public API changes.
-- [ ] Require every new public surface to state core, optional, or experimental
+- [x] Add PR template with testing and public API checklist.
+- [x] Require design notes/RFCs for breaking public API changes.
+- [x] Require every new public surface to state core, optional, or experimental
   status.
-- [ ] Require every runtime/gateway concern in SDK headers to be justified.
-- [ ] Require every naming change to include migration docs.
-- [ ] Track pinned MCP/RMCP reference versions.
-- [ ] Track dependency versions and update cadence.
+- [x] Require every runtime/gateway concern in SDK headers to be justified.
+- [x] Require every naming change to include migration docs.
+- [x] Track pinned MCP/RMCP reference versions.
+- [x] Track dependency versions and update cadence.
 
 ## P2: Developer Experience Polish
 

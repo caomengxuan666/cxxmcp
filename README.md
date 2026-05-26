@@ -529,7 +529,10 @@ fixtures for RMCP, TypeScript SDK, and Python SDK clients.
 
 - [GitHub Pages documentation](https://caomengxuan666.github.io/cxxmcp/)
 - [Fact-standard TODO](todo.md)
+- [Contributing](CONTRIBUTING.md)
+- [Security policy](SECURITY.md)
 - [Compatibility policy](docs/compatibility_policy.md)
+- [Dependency and reference policy](docs/dependency_policy.md)
 - [Release gates](docs/release_gates.md)
 - [Release candidate checklist](docs/release_candidate_checklist.md)
 - [Release notes template](docs/release_notes_template.md)

@@ -91,7 +91,8 @@ The same workflow uploads:
 - `cxxmcp-source`: a source archive with recursive submodule contents and a
   `SHA256SUMS.txt` file.
 - `cxxmcp-release-evidence`: the README, Chinese README, changelog,
-  compatibility policy, Peer/Service migration guide, release gates, release
+  contribution guide, security policy, code of conduct, compatibility policy,
+  dependency policy, Peer/Service migration guide, release gates, release
   candidate checklist, release notes template, request lifecycle notes, TODO,
   and example source files used for the release decision.
 
