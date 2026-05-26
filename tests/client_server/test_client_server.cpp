@@ -1458,6 +1458,29 @@ void test_request_handle_errors_are_stable_and_structured() {
           "unknown throwing request task detail mismatch");
 }
 
+void test_request_executor_can_be_configured_before_first_use() {
+  const auto configured = mcp::configure_request_executor(
+      mcp::RequestExecutorOptions{.worker_count = 8, .max_queue_size = 256});
+  require(configured.has_value(),
+          "request executor should configure before first use");
+
+  auto handle = mcp::RequestHandle<Json>::spawn(
+      std::int64_t{410}, std::nullopt, std::nullopt, {},
+      []() -> mcp::core::Result<Json> { return Json{{"configured", true}}; });
+  const auto response = handle.await_response();
+  require(response.has_value(), "configured request executor handle failed");
+  require(response->at("configured") == true,
+          "configured request executor response mismatch");
+
+  const auto reconfigured = mcp::configure_request_executor(
+      mcp::RequestExecutorOptions{.worker_count = 3, .max_queue_size = 8});
+  require(!reconfigured.has_value(),
+          "live request executor reconfiguration should fail");
+  require(
+      reconfigured.error().message == "request executor is already initialized",
+      "live request executor reconfiguration error mismatch");
+}
+
 void test_client_peer_cancel_timeout_race_stress() {
   for (int iteration = 0; iteration < 24; ++iteration) {
     auto transport = std::make_unique<BlockingRequestClientTransport>();
@@ -4158,6 +4181,8 @@ void test_client_session_read_resource_uses_client_resources_read() {
 
 int main() {
   const std::vector<std::pair<std::string_view, void (*)()>> tests = {
+      {"request executor can be configured before first use",
+       test_request_executor_can_be_configured_before_first_use},
       {"list tools round trip", test_list_tools_round_trip},
       {"get tool round trip", test_get_tool_round_trip},
       {"server direct facade round trip", test_server_direct_facade_round_trip},

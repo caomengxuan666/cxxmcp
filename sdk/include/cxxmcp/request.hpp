@@ -7,6 +7,7 @@
 
 #include <algorithm>
 #include <chrono>
+#include <cstddef>
 #include <exception>
 #include <functional>
 #include <future>
@@ -24,11 +25,43 @@
 
 namespace mcp {
 
+/// @brief Configuration for the bounded background request executor.
+///
+/// The executor is used by RequestHandle::spawn() and by async request helpers
+/// that wrap blocking request paths in a background task. Defaults are tuned
+/// for local stdio/process-stdio MCP workloads.
+struct RequestExecutorOptions {
+  std::size_t worker_count = 4;
+  std::size_t max_queue_size = 64;
+};
+
 namespace detail {
 
+struct RequestExecutorState {
+  std::mutex mutex;
+  RequestExecutorOptions options;
+  std::unique_ptr<core::BoundedExecutor> executor;
+};
+
+inline RequestExecutorState& request_executor_state() {
+  static RequestExecutorState state;
+  return state;
+}
+
+inline core::Error request_executor_error(std::string message,
+                                          std::string detail = {}) {
+  return core::Error{static_cast<int>(protocol::ErrorCode::InternalError),
+                     std::move(message), std::move(detail), "request"};
+}
+
 inline core::BoundedExecutor& request_executor() {
-  static core::BoundedExecutor executor;
-  return executor;
+  auto& state = request_executor_state();
+  std::lock_guard lock(state.mutex);
+  if (!state.executor) {
+    state.executor = std::make_unique<core::BoundedExecutor>(
+        state.options.worker_count, state.options.max_queue_size);
+  }
+  return *state.executor;
 }
 
 struct RequestHandleControl {
@@ -38,6 +71,32 @@ struct RequestHandleControl {
 };
 
 }  // namespace detail
+
+/// @brief Configures the process-wide background request executor.
+///
+/// This function must be called before the first RequestHandle::spawn() or
+/// async request helper initializes the executor. Reconfiguring a live executor
+/// is rejected so in-flight request semantics remain stable.
+inline core::Result<core::Unit> configure_request_executor(
+    RequestExecutorOptions options) {
+  if (options.worker_count == 0) {
+    return std::unexpected(detail::request_executor_error(
+        "request executor worker_count must be greater than zero"));
+  }
+  if (options.max_queue_size == 0) {
+    return std::unexpected(detail::request_executor_error(
+        "request executor max_queue_size must be greater than zero"));
+  }
+
+  auto& state = detail::request_executor_state();
+  std::lock_guard lock(state.mutex);
+  if (state.executor) {
+    return std::unexpected(detail::request_executor_error(
+        "request executor is already initialized"));
+  }
+  state.options = options;
+  return core::Unit{};
+}
 
 /// @brief Options for an outbound SDK request.
 struct RequestOptions {
