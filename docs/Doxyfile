@@ -1,18 +1,33 @@
 PROJECT_NAME           = "cxxmcp"
-PROJECT_NUMBER         = 2.0.0
+PROJECT_NUMBER         = 2.0.2
 PROJECT_BRIEF          = "C++ MCP SDK"
 
 OUTPUT_DIRECTORY       = docs/doxygen
 HTML_OUTPUT            = html
 
 INPUT                  = README.md \
+                         README_zh.md \
                          CHANGELOG.md \
+                         CONTRIBUTING.md \
+                         SECURITY.md \
+                         docs/auth_design.md \
                          docs/compatibility_policy.md \
+                         docs/dependency_policy.md \
+                         docs/elicitation_lifecycle.md \
+                         docs/official_sdk_candidate_process.md \
+                         docs/package_consumption.md \
+                         docs/package_consumption_zh.md \
+                         docs/protocol_model_audit.md \
+                         docs/release_process.md \
                          docs/release_gates.md \
                          docs/release_candidate_checklist.md \
                          docs/release_notes_template.md \
+                         docs/request_lifecycle.md \
+                         docs/sdk_peer_service_migration.md \
+                         docs/task_lifecycle.md \
                          todo.md \
                          sdk/include \
+                         sdk/auth/include \
                          sdk/core/include \
                          sdk/protocol/include \
                          sdk/transport/include \
@@ -54,6 +69,7 @@ EXCLUDE_PATTERNS       = */.cache/* \
                          */third_party/*
 
 MARKDOWN_SUPPORT       = YES
+MARKDOWN_ID_STYLE      = GITHUB
 TOC_INCLUDE_HEADINGS   = 5
 JAVADOC_AUTOBRIEF      = YES
 QT_AUTOBRIEF           = YES

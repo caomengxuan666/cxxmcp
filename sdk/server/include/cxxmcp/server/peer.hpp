@@ -39,6 +39,7 @@ class ClientPeer {
  public:
   /// @brief Construct a peer from a borrowed transport pointer.
   /// @param transport Transport used for outbound messages; may be nullptr.
+  /// @param session_id Session identifier used for capability lookup.
   explicit ClientPeer(Transport* transport = nullptr,
                       std::string session_id = {}) noexcept
       : transport_(transport), session_id_(std::move(session_id)) {}

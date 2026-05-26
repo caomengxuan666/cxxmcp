@@ -1,5 +1,20 @@
 # Changelog
 
+## 2.0.2
+
+- Added explicit protocol-version coverage for the `2025-11-25` MCP snapshot
+  and closed the P1 protocol model evidence gaps for required-field,
+  type-constraint, and object-presence capability behavior.
+- Added a lightweight default `WWW-Authenticate` parser to the optional
+  `cxxmcp::auth` public surface, including support for quoted parameters,
+  escaped strings, token68 payloads, case-insensitive parameter lookup, and
+  focused auth tests.
+- Changed the default in-memory token store to keep entries separated by the
+  complete resource/issuer/client token key instead of overwriting unrelated
+  credentials.
+- Documented the external `cxxmcp-examples` auth-lite coverage and kept the
+  examples path aligned with `Peer` / `Service` as the canonical SDK entry.
+
 ## 2.0.0
 
 - Reframed the public SDK around `Peer` / `Service` entry points.
