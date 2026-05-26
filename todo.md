@@ -506,9 +506,11 @@ true:
   tasks.
 - [x] Add initialize payload required-field negative parse coverage for
   implementation info, initialize params, and initialize result.
+- [x] Add resource subscription required-field negative parse coverage.
 - [x] Add cross-family type-constraint negative parse regression coverage for
   tools, prompts, resources, roots, completion, logging, sampling,
   elicitation, and tasks.
+- [x] Add resource subscription URI type-constraint negative parse coverage.
 - [x] Add nested negative parse coverage for sampling tool use/tool result,
   tool choice, model preferences, elicitation primitive schemas, and
   elicitation completion notifications.

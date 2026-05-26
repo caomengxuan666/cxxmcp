@@ -3397,6 +3397,12 @@ void test_protocol_required_fields_are_rejected() {
       mcp::protocol::resources_read_params_from_json(Json::object()),
       "resources/read without uri should fail");
   require_parse_failure(
+      mcp::protocol::resources_subscribe_params_from_json(Json::object()),
+      "resources/subscribe without uri should fail");
+  require_parse_failure(
+      mcp::protocol::resources_unsubscribe_params_from_json(Json::object()),
+      "resources/unsubscribe without uri should fail");
+  require_parse_failure(
       mcp::protocol::resources_list_result_from_json(Json::object()),
       "resources/list without resources should fail");
   require_parse_failure(
@@ -3690,6 +3696,12 @@ void test_protocol_type_constraints_are_rejected() {
   require_parse_failure(
       mcp::protocol::resources_read_params_from_json(Json{{"uri", 3}}),
       "resources/read non-string uri should fail");
+  require_parse_failure(
+      mcp::protocol::resources_subscribe_params_from_json(Json{{"uri", 3}}),
+      "resources/subscribe non-string uri should fail");
+  require_parse_failure(
+      mcp::protocol::resources_unsubscribe_params_from_json(Json{{"uri", 3}}),
+      "resources/unsubscribe non-string uri should fail");
   require_parse_failure(mcp::protocol::resources_list_result_from_json(
                             Json{{"resources", Json::object()}}),
                         "resources/list non-array resources should fail");
