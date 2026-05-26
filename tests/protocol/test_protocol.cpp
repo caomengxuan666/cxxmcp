@@ -871,6 +871,277 @@ void test_text_helper_constructors_round_trip() {
           "sampling result text helper content mismatch");
 }
 
+void test_protocol_direct_helper_round_trips() {
+  const auto string_request_id = mcp::protocol::request_id_from_json(
+      mcp::protocol::request_id_to_json(RequestId{std::string("req-1")}));
+  require(string_request_id.has_value(),
+          "string request id helper should parse");
+  require(std::get<std::string>(*string_request_id) == "req-1",
+          "string request id helper mismatch");
+  const auto integer_request_id = mcp::protocol::request_id_from_json(
+      mcp::protocol::request_id_to_json(RequestId{std::int64_t{42}}));
+  require(integer_request_id.has_value(),
+          "integer request id helper should parse");
+  require(std::get<std::int64_t>(*integer_request_id) == 42,
+          "integer request id helper mismatch");
+
+  const auto progress_token = mcp::protocol::progress_token_from_json(
+      mcp::protocol::progress_token_to_json(
+          mcp::protocol::ProgressToken{std::string("progress-1")}));
+  require(progress_token.has_value(), "progress token helper should parse");
+  require(std::get<std::string>(*progress_token) == "progress-1",
+          "progress token helper mismatch");
+
+  const auto task_capabilities_json =
+      mcp::protocol::task_capabilities_to_json(mcp::protocol::TaskCapabilities{
+          .list = true,
+          .cancel = true,
+          .tools_call = true,
+          .sampling_create_message = true,
+          .elicitation_create = true,
+          .raw = Json{{"x-task-capability", true}},
+      });
+  const auto parsed_task_capabilities =
+      mcp::protocol::task_capabilities_from_json(task_capabilities_json);
+  require(mcp::protocol::task_capabilities_to_json(parsed_task_capabilities) ==
+              task_capabilities_json,
+          "task capabilities helper should round trip");
+
+  const auto icon_json = mcp::protocol::icon_to_json(
+      mcp::protocol::Icon::from_src("https://example.com/icon.png")
+          .with_mime_type("image/png")
+          .with_sizes({"16x16", "32x32"})
+          .with_theme(mcp::protocol::IconTheme::Dark));
+  const auto parsed_icon = mcp::protocol::icon_from_json(icon_json);
+  require(parsed_icon.has_value(), "icon helper should parse");
+  require(mcp::protocol::icon_to_json(*parsed_icon) == icon_json,
+          "icon helper should round trip");
+
+  const mcp::protocol::CompletionReference completion_reference{
+      .type = "ref/prompt",
+      .name = "prompt",
+      .extensions = Json{{"x-ref", true}},
+  };
+  const auto completion_reference_json =
+      mcp::protocol::completion_reference_to_json(completion_reference);
+  const auto parsed_completion_reference =
+      mcp::protocol::completion_reference_from_json(completion_reference_json);
+  require(parsed_completion_reference.has_value(),
+          "completion reference helper should parse");
+  require(mcp::protocol::completion_reference_to_json(
+              *parsed_completion_reference) == completion_reference_json,
+          "completion reference helper should round trip");
+
+  const mcp::protocol::CompletionArgument completion_argument{
+      .name = "arg",
+      .value = "prefix",
+      .extensions = Json{{"x-arg", true}},
+  };
+  const auto completion_argument_json =
+      mcp::protocol::completion_argument_to_json(completion_argument);
+  const auto parsed_completion_argument =
+      mcp::protocol::completion_argument_from_json(completion_argument_json);
+  require(parsed_completion_argument.has_value(),
+          "completion argument helper should parse");
+  require(mcp::protocol::completion_argument_to_json(
+              *parsed_completion_argument) == completion_argument_json,
+          "completion argument helper should round trip");
+
+  const mcp::protocol::Root root{
+      .uri = "file:///workspace",
+      .name = "workspace",
+      .meta = Json{{"root", true}},
+      .extensions = Json{{"x-root", true}},
+  };
+  const auto root_json = mcp::protocol::root_to_json(root);
+  const auto parsed_root = mcp::protocol::root_from_json(root_json);
+  require(parsed_root.has_value(), "root helper should parse");
+  require(mcp::protocol::root_to_json(*parsed_root) == root_json,
+          "root helper should round trip");
+
+  const auto resource_template_json =
+      mcp::protocol::resource_template_to_json(mcp::protocol::ResourceTemplate{
+          .uri_template = "file:///workspace/{name}",
+          .name = "workspace-file",
+          .description = "Workspace file",
+          .mime_type = "text/plain",
+          .size = std::int64_t{8},
+          .extensions = Json{{"x-template", true}},
+      });
+  const auto parsed_resource_template =
+      mcp::protocol::resource_template_from_json(resource_template_json);
+  require(parsed_resource_template.has_value(),
+          "resource template helper should parse");
+  require(mcp::protocol::resource_template_to_json(*parsed_resource_template) ==
+              resource_template_json,
+          "resource template helper should round trip");
+
+  const auto unsubscribe_json =
+      mcp::protocol::resources_unsubscribe_params_to_json(
+          mcp::protocol::ResourcesSubscribeParams{
+              .uri = "file:///workspace/readme.md",
+              .meta = Json{{"unsubscribe", true}},
+              .extensions = Json{{"x-unsubscribe", true}},
+          });
+  const auto parsed_unsubscribe =
+      mcp::protocol::resources_unsubscribe_params_from_json(unsubscribe_json);
+  require(parsed_unsubscribe.has_value(),
+          "resources/unsubscribe params helper should parse");
+  require(mcp::protocol::resources_unsubscribe_params_to_json(
+              *parsed_unsubscribe) == unsubscribe_json,
+          "resources/unsubscribe helper should round trip");
+
+  const auto task_list_params_json =
+      mcp::protocol::task_list_params_to_json(mcp::protocol::TaskListParams{
+          .cursor = std::string("cursor-1"),
+          .meta = Json{{"page", true}},
+          .extensions = Json{{"x-task-list", true}},
+      });
+  const auto parsed_task_list_params =
+      mcp::protocol::task_list_params_from_json(task_list_params_json);
+  require(parsed_task_list_params.has_value(),
+          "tasks/list params helper should parse");
+  require(mcp::protocol::task_list_params_to_json(*parsed_task_list_params) ==
+              task_list_params_json,
+          "tasks/list params helper should round trip");
+
+  const auto task_get_params_json =
+      mcp::protocol::task_get_params_to_json(mcp::protocol::TaskGetParams{
+          .task_id = "task-1",
+          .meta = Json{{"get", true}},
+          .extensions = Json{{"x-task-get", true}},
+      });
+  const auto parsed_task_get_params =
+      mcp::protocol::task_get_params_from_json(task_get_params_json);
+  require(parsed_task_get_params.has_value(),
+          "tasks/get params helper should parse");
+  require(mcp::protocol::task_get_params_to_json(*parsed_task_get_params) ==
+              task_get_params_json,
+          "tasks/get params helper should round trip");
+
+  const auto task_cancel_params_json =
+      mcp::protocol::task_cancel_params_to_json(mcp::protocol::TaskCancelParams{
+          .task_id = "task-1",
+          .meta = Json{{"cancel", true}},
+          .extensions = Json{{"x-task-cancel", true}},
+      });
+  const auto parsed_task_cancel_params =
+      mcp::protocol::task_cancel_params_from_json(task_cancel_params_json);
+  require(parsed_task_cancel_params.has_value(),
+          "tasks/cancel params helper should parse");
+  require(mcp::protocol::task_cancel_params_to_json(
+              *parsed_task_cancel_params) == task_cancel_params_json,
+          "tasks/cancel params helper should round trip");
+
+  const auto tool_execution_json = mcp::protocol::tool_execution_to_json(
+      mcp::protocol::ToolExecution{}.with_task_support(
+          mcp::protocol::TaskSupport::Optional));
+  const auto parsed_tool_execution =
+      mcp::protocol::tool_execution_from_json(tool_execution_json);
+  require(parsed_tool_execution.has_value(),
+          "tool execution helper should parse");
+  require(mcp::protocol::tool_execution_to_json(*parsed_tool_execution) ==
+              tool_execution_json,
+          "tool execution helper should round trip");
+
+  const mcp::protocol::ToolUseContent tool_use{
+      .id = "use-1",
+      .name = "lookup",
+      .input = Json{{"query", "value"}},
+      .extensions = Json{{"x-tool-use", true}},
+  };
+  const auto tool_use_json = mcp::protocol::tool_use_content_to_json(tool_use);
+  const auto parsed_tool_use =
+      mcp::protocol::tool_use_content_from_json(tool_use_json);
+  require(parsed_tool_use.has_value(), "tool_use helper should parse");
+  require(mcp::protocol::tool_use_content_to_json(*parsed_tool_use) ==
+              tool_use_json,
+          "tool_use helper should round trip");
+
+  const mcp::protocol::ToolResultContent tool_result_content{
+      .tool_use_id = "use-1",
+      .content = {mcp::protocol::ContentBlock::text_content("ok")},
+      .structured_content = Json{{"ok", true}},
+      .is_error = false,
+      .extensions = Json{{"x-tool-result", true}},
+  };
+  const auto tool_result_content_json =
+      mcp::protocol::tool_result_content_to_json(tool_result_content);
+  const auto parsed_tool_result_content =
+      mcp::protocol::tool_result_content_from_json(tool_result_content_json);
+  require(parsed_tool_result_content.has_value(),
+          "tool_result helper should parse");
+  require(mcp::protocol::tool_result_content_to_json(
+              *parsed_tool_result_content) == tool_result_content_json,
+          "tool_result helper should round trip");
+
+  const auto sampling_content_json =
+      mcp::protocol::sampling_message_content_to_json(
+          mcp::protocol::SamplingMessageContent{
+              .content = mcp::protocol::ContentBlock::text_content("sample"),
+          });
+  const auto parsed_sampling_content =
+      mcp::protocol::sampling_message_content_from_json(sampling_content_json);
+  require(parsed_sampling_content.has_value(),
+          "sampling message content helper should parse");
+  require(mcp::protocol::sampling_message_content_to_json(
+              *parsed_sampling_content) == sampling_content_json,
+          "sampling message content helper should round trip");
+
+  const auto tool_choice_json =
+      mcp::protocol::tool_choice_to_json(mcp::protocol::ToolChoice{
+          .mode = mcp::protocol::ToolChoiceMode::Required,
+      });
+  const auto parsed_tool_choice =
+      mcp::protocol::tool_choice_from_json(tool_choice_json);
+  require(parsed_tool_choice.has_value(), "tool choice helper should parse");
+  require(mcp::protocol::tool_choice_to_json(*parsed_tool_choice) ==
+              tool_choice_json,
+          "tool choice helper should round trip");
+
+  const auto preferences_json =
+      mcp::protocol::model_preferences_to_json(mcp::protocol::ModelPreferences{
+          .hints = {mcp::protocol::ModelHint{
+              .name = "model-a",
+              .extensions = Json{{"x-model", true}},
+          }},
+          .cost_priority = 0.2,
+          .speed_priority = 0.3,
+          .intelligence_priority = 0.4,
+      });
+  const auto model_hint_json = mcp::protocol::model_hint_to_json(
+      mcp::protocol::ModelHint{.name = "model-a"});
+  const auto parsed_model_hint =
+      mcp::protocol::model_hint_from_json(model_hint_json);
+  require(parsed_model_hint.has_value(), "model hint helper should parse");
+  require(
+      mcp::protocol::model_hint_to_json(*parsed_model_hint) == model_hint_json,
+      "model hint helper should round trip");
+  const auto parsed_preferences =
+      mcp::protocol::model_preferences_from_json(preferences_json);
+  require(parsed_preferences.has_value(),
+          "model preferences helper should parse");
+  require(mcp::protocol::model_preferences_to_json(*parsed_preferences) ==
+              preferences_json,
+          "model preferences helper should round trip");
+
+  const auto elicitation_schema_json =
+      mcp::protocol::elicitation_schema_to_json(
+          mcp::protocol::ElicitationSchema{
+              .properties = {{"name",
+                              mcp::protocol::PrimitiveSchema{
+                                  mcp::protocol::StringSchema{}}}},
+              .required = {"name"},
+          });
+  const auto parsed_elicitation_schema =
+      mcp::protocol::elicitation_schema_from_json(elicitation_schema_json);
+  require(parsed_elicitation_schema.has_value(),
+          "elicitation schema helper should parse");
+  require(mcp::protocol::elicitation_schema_to_json(
+              *parsed_elicitation_schema) == elicitation_schema_json,
+          "elicitation schema helper should round trip");
+}
+
 void test_task_protocol_round_trips() {
   const mcp::protocol::Task task{
       .task_id = "task-1",
@@ -3730,6 +4001,8 @@ int main() {
        test_content_block_variants_round_trip},
       {"text helper constructors round trip",
        test_text_helper_constructors_round_trip},
+      {"protocol direct helper round trips",
+       test_protocol_direct_helper_round_trips},
       {"task protocol round trips", test_task_protocol_round_trips},
       {"client capability wire shape", test_client_capability_wire_shape},
       {"server capability wire shape", test_server_capability_wire_shape},

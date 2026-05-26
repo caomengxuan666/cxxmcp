@@ -458,7 +458,7 @@ true:
 - [x] Add extension bags where RMCP/spec provides them.
 - [x] Ensure raw JSON extension data is preserved even when typed helpers do not
   understand it.
-- [ ] Make serialization/deserialization exhaustive and symmetric.
+- [x] Make serialization/deserialization exhaustive and symmetric.
 - [x] Add round-trip fixture tests for every protocol family.
 - [x] Add typed initialize payload models for implementation info,
   initialize params, and initialize result, aligned with RMCP initialize
