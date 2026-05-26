@@ -1175,11 +1175,6 @@ class StreamableHttpServerTransport::Impl {
   }
 
   core::Result<core::Unit> send(protocol::JsonRpcMessage message) {
-    const auto started = ensure_started();
-    if (!started) {
-      return std::unexpected(started.error());
-    }
-
     if (auto* response = std::get_if<protocol::JsonRpcResponse>(&message)) {
       if (!response->id.has_value()) {
         return std::unexpected(
@@ -1188,6 +1183,11 @@ class StreamableHttpServerTransport::Impl {
                                           "cannot send response without id"));
       }
       return complete_client_request(std::move(*response));
+    }
+
+    const auto started = ensure_started();
+    if (!started) {
+      return std::unexpected(started.error());
     }
 
     if (auto* notification =

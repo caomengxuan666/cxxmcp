@@ -51,6 +51,10 @@ std::string request_id_to_string(const protocol::RequestId& request_id) {
       request_id);
 }
 
+bool is_http_timeout_error(httplib::Error error) {
+  return error == httplib::Error::Timeout || error == httplib::Error::Read;
+}
+
 std::optional<std::string> header_name_from_request(
     const protocol::JsonRpcRequest& request) {
   if (!request.params.is_object()) {
@@ -280,6 +284,13 @@ struct HttpTransport::Impl {
       const auto response =
           client.Post(path, headers, *serialized, "application/json");
       if (!response) {
+        if (options.timeout.count() > 0 &&
+            is_http_timeout_error(response.error())) {
+          return std::unexpected(make_transport_error(
+              static_cast<int>(protocol::ErrorCode::InternalError),
+              "http transport request timed out",
+              httplib::to_string(response.error())));
+        }
         return std::unexpected(make_transport_error(
             static_cast<int>(protocol::ErrorCode::InternalError),
             "http transport request failed",
