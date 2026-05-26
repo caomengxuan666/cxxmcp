@@ -239,6 +239,74 @@ void test_ping_request_round_trip() {
                             "ping round-trip mismatch");
 }
 
+void test_json_rpc_request_notification_meta_is_in_params() {
+  const mcp::protocol::JsonRpcRequest request{
+      .method = std::string(mcp::protocol::PingMethod),
+      .params = Json::object(),
+      .id = RequestId{std::string("ping-2")},
+      .meta = Json{{"traceId", "request-1"}},
+  };
+  const auto request_json =
+      mcp::protocol::serialize_message(JsonRpcMessage{request});
+  require(request_json.has_value(), "request with _meta should serialize");
+  const auto request_document = Json::parse(*request_json);
+  require(!request_document.contains("_meta"),
+          "request _meta must not be top-level");
+  require(request_document.contains("params"),
+          "request _meta should force params object");
+  require(
+      request_document.at("params").at("_meta").at("traceId") == "request-1",
+      "request params _meta mismatch");
+  const auto parsed_request = mcp::protocol::parse_message(*request_json);
+  require(parsed_request.has_value(), "request with params _meta should parse");
+  const auto* reparsed_request = std::get_if<JsonRpcRequest>(&*parsed_request);
+  require(reparsed_request != nullptr, "parsed _meta request type mismatch");
+  require(reparsed_request->meta.has_value(),
+          "parsed request _meta should be exposed");
+  require(reparsed_request->meta->at("traceId") == "request-1",
+          "parsed request _meta mismatch");
+
+  const mcp::protocol::JsonRpcNotification notification{
+      .method = std::string(mcp::protocol::InitializedMethod),
+      .params = Json::object(),
+      .meta = Json{{"traceId", "notification-1"}},
+  };
+  const auto notification_json =
+      mcp::protocol::serialize_message(JsonRpcMessage{notification});
+  require(notification_json.has_value(),
+          "notification with _meta should serialize");
+  const auto notification_document = Json::parse(*notification_json);
+  require(!notification_document.contains("_meta"),
+          "notification _meta must not be top-level");
+  require(notification_document.contains("params"),
+          "notification _meta should force params object");
+  require(notification_document.at("params").at("_meta").at("traceId") ==
+              "notification-1",
+          "notification params _meta mismatch");
+  const auto parsed_notification =
+      mcp::protocol::parse_message(*notification_json);
+  require(parsed_notification.has_value(),
+          "notification with params _meta should parse");
+  const auto* reparsed_notification =
+      std::get_if<JsonRpcNotification>(&*parsed_notification);
+  require(reparsed_notification != nullptr,
+          "parsed _meta notification type mismatch");
+  require(reparsed_notification->meta.has_value(),
+          "parsed notification _meta should be exposed");
+  require(reparsed_notification->meta->at("traceId") == "notification-1",
+          "parsed notification _meta mismatch");
+
+  require_parse_failure(
+      mcp::protocol::serialize_message(
+          JsonRpcMessage{mcp::protocol::JsonRpcRequest{
+              .method = std::string(mcp::protocol::PingMethod),
+              .params = Json::array(),
+              .id = RequestId{std::int64_t{1}},
+              .meta = Json{{"traceId", "bad"}},
+          }}),
+      "request meta with non-object params should fail");
+}
+
 void test_response_round_trips() {
   const auto success = mcp::protocol::make_response(
       RequestId{std::string("req-1")}, Json{{"ok", true}});
@@ -3139,6 +3207,8 @@ int main() {
       {"supported protocol versions are explicit",
        test_supported_protocol_versions_are_explicit},
       {"ping request round trip", test_ping_request_round_trip},
+      {"json-rpc request notification meta is in params",
+       test_json_rpc_request_notification_meta_is_in_params},
       {"response round trips", test_response_round_trips},
       {"protocol family fixture round trips",
        test_protocol_family_fixture_round_trips},

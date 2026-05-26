@@ -477,6 +477,8 @@ true:
 - [x] Align elicitation enum schema wire shapes with RMCP, including
   `enumNames`, titled `oneOf`, multi-select `items.enum`, and titled
   multi-select `items.anyOf`/`items.oneOf` alias parsing.
+- [x] Align JSON-RPC request/notification `_meta` placement with MCP params
+  metadata and omit empty no-param `params` members.
 - [ ] Add negative parse tests for every required field and type constraint.
 - [x] Add cross-family required-field negative parse regression coverage for
   tools, prompts, resources, roots, completion, sampling, elicitation, and
