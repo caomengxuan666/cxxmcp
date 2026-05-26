@@ -1403,6 +1403,247 @@ void test_server_peer_task_handlers_dispatch_on_peer_boundary() {
           "tasks/result should preserve session context");
 }
 
+void test_server_builder_peer_canonical_authoring_surface() {
+  int logging_calls = 0;
+  mcp::server::ServerBuilder builder;
+  builder.name("canonical-sdk-server")
+      .version("2.0.0")
+      .instructions("canonical peer/service server")
+      .add_tool(
+          mcp::protocol::ToolDefinition{
+              .name = "echo-json",
+              .description = "Echo JSON arguments",
+              .input_schema = Json{{"type", "object"}},
+          },
+          [](const mcp::server::ToolContext& context)
+              -> mcp::core::Result<mcp::protocol::ToolResult> {
+            mcp::protocol::ToolResult result;
+            result.structured_content = context.arguments;
+            result.content.push_back(mcp::protocol::ContentBlock{
+                .type = "text",
+                .text = context.session_id + ":" + context.arguments.dump(),
+                .data = Json::object(),
+            });
+            return result;
+          })
+      .add_prompt(
+          mcp::protocol::Prompt{
+              .name = "summarize",
+              .description = "Summarize text",
+          },
+          [](const mcp::server::PromptContext& context)
+              -> mcp::core::Result<mcp::protocol::PromptsGetResult> {
+            mcp::protocol::PromptsGetResult result;
+            result.messages.push_back(mcp::protocol::PromptMessage{
+                .role = "user",
+                .content =
+                    mcp::protocol::ContentBlock{
+                        .type = "text",
+                        .text = context.session_id + ":" +
+                                context.arguments.at("text").get<std::string>(),
+                    },
+            });
+            return result;
+          })
+      .add_resource(
+          mcp::protocol::Resource{
+              .uri = "file:///tmp/readme.txt",
+              .name = "Readme",
+              .mime_type = "text/plain",
+          },
+          [](const mcp::server::ResourceContext& context)
+              -> mcp::core::Result<mcp::protocol::ResourcesReadResult> {
+            mcp::protocol::ResourcesReadResult result;
+            result.contents.push_back(mcp::protocol::ResourceContents{
+                .uri = context.uri,
+                .mime_type = "text/plain",
+                .text = context.session_id + ":readme",
+            });
+            return result;
+          })
+      .add_resource_template(mcp::protocol::ResourceTemplate{
+          .uri_template = "file:///tmp/{name}.txt",
+          .name = "Tmp file",
+          .mime_type = "text/plain",
+      })
+      .on_completion([](const Json& params,
+                        const mcp::server::SessionContext& context,
+                        mcp::server::CancellationToken cancellation)
+                         -> mcp::core::Result<Json> {
+        require(!cancellation.cancelled(),
+                "canonical completion token should start active");
+        return Json{
+            {"completion",
+             Json{{"values",
+                   Json::array(
+                       {context.session_id + ":" +
+                        params.at("argument").at("value").get<std::string>() +
+                        "llo"})}}}};
+      })
+      .on_sampling(
+          [](const Json& params, const mcp::server::SessionContext& context)
+              -> mcp::core::Result<Json> {
+            return Json{
+                {"role", "assistant"},
+                {"content",
+                 Json{{"type", "text"},
+                      {"text", context.session_id + ":" +
+                                   params.at("prompt").get<std::string>()}}}};
+          })
+      .on_logging([&](std::string_view level, std::string_view message) {
+        require(level == "debug", "canonical logging level mismatch");
+        require(message == "logging level changed",
+                "canonical logging message mismatch");
+        ++logging_calls;
+      })
+      .on_raw_request([](const mcp::protocol::JsonRpcRequest& request,
+                         const mcp::server::SessionContext& context)
+                          -> std::optional<mcp::protocol::JsonRpcResponse> {
+        if (request.method != "custom/echo") {
+          return std::nullopt;
+        }
+        return mcp::protocol::make_response(
+            request.id, Json{{"session", context.session_id}});
+      });
+
+  auto server = builder.build();
+  require(server.has_value(), "canonical server builder failed");
+  mcp::ServerPeer peer(std::move(*server));
+  const mcp::server::SessionContext context{.session_id = "canonical"};
+
+  const auto initialized = peer.handle_request(
+      mcp::protocol::JsonRpcRequest{
+          .method = "initialize",
+          .params =
+              Json{
+                  {"protocolVersion",
+                   std::string(mcp::protocol::McpProtocolVersion)},
+                  {"capabilities", Json::object()},
+                  {"clientInfo", Json{{"name", "tester"}, {"version", "1"}}},
+              },
+          .id = std::int64_t{70},
+      },
+      context);
+  require(initialized.has_value(), "canonical initialize failed");
+  require(initialized->result->at("serverInfo").at("name") ==
+              "canonical-sdk-server",
+          "canonical initialize server info mismatch");
+  require(initialized->result->at("instructions") ==
+              "canonical peer/service server",
+          "canonical initialize instructions mismatch");
+  require(initialized->result->at("capabilities").contains("tools"),
+          "canonical tools capability missing");
+  require(initialized->result->at("capabilities").contains("prompts"),
+          "canonical prompts capability missing");
+  require(initialized->result->at("capabilities").contains("resources"),
+          "canonical resources capability missing");
+  require(initialized->result->at("capabilities").contains("completions"),
+          "canonical completions capability missing");
+  require(initialized->result->at("capabilities").contains("logging"),
+          "canonical logging capability missing");
+
+  const auto tool = peer.handle_request(
+      mcp::protocol::JsonRpcRequest{
+          .method = std::string(mcp::protocol::ToolsCallMethod),
+          .params =
+              Json{{"name", "echo-json"}, {"arguments", Json{{"value", 7}}}},
+          .id = std::int64_t{71},
+      },
+      context);
+  require(tool.has_value(), "canonical tool call failed");
+  require(tool->result->at("structuredContent").at("value") == 7,
+          "canonical tool structured content mismatch");
+  require(
+      tool->result->at("content").at(0).at("text") == "canonical:{\"value\":7}",
+      "canonical tool text mismatch");
+
+  const auto prompt = peer.handle_request(
+      mcp::protocol::JsonRpcRequest{
+          .method = std::string(mcp::protocol::PromptsGetMethod),
+          .params = Json{{"name", "summarize"},
+                         {"arguments", Json{{"text", "hello"}}}},
+          .id = std::int64_t{72},
+      },
+      context);
+  require(prompt.has_value(), "canonical prompt get failed");
+  require(prompt->result->at("messages").at(0).at("content").at("text") ==
+              "canonical:hello",
+          "canonical prompt context mismatch");
+
+  const auto resource = peer.handle_request(
+      mcp::protocol::JsonRpcRequest{
+          .method = std::string(mcp::protocol::ResourcesReadMethod),
+          .params = Json{{"uri", "file:///tmp/readme.txt"}},
+          .id = std::int64_t{73},
+      },
+      context);
+  require(resource.has_value(), "canonical resource read failed");
+  require(
+      resource->result->at("contents").at(0).at("text") == "canonical:readme",
+      "canonical resource context mismatch");
+
+  const auto templates = peer.handle_request(
+      mcp::protocol::JsonRpcRequest{
+          .method = std::string(mcp::protocol::ResourcesTemplatesListMethod),
+          .params = Json::object(),
+          .id = std::int64_t{74},
+      },
+      context);
+  require(templates.has_value(), "canonical resource templates list failed");
+  require(templates->result->at("resourceTemplates").at(0).at("uriTemplate") ==
+              "file:///tmp/{name}.txt",
+          "canonical resource template mismatch");
+
+  const auto completion = peer.handle_request(
+      mcp::protocol::JsonRpcRequest{
+          .method = std::string(mcp::protocol::CompletionCompleteMethod),
+          .params =
+              Json{
+                  {"ref", Json{{"type", "ref/prompt"}, {"name", "summarize"}}},
+                  {"argument", Json{{"name", "text"}, {"value", "he"}}},
+              },
+          .id = std::int64_t{75},
+      },
+      context);
+  require(completion.has_value(), "canonical completion failed");
+  require(completion->result->at("completion").at("values").at(0) ==
+              "canonical:hello",
+          "canonical completion result mismatch");
+
+  const auto sampling = peer.handle_request(
+      mcp::protocol::JsonRpcRequest{
+          .method = std::string(mcp::protocol::SamplingCreateMessageMethod),
+          .params = Json{{"prompt", "sample"}},
+          .id = std::int64_t{76},
+      },
+      context);
+  require(sampling.has_value(), "canonical sampling failed");
+  require(sampling->result->at("content").at("text") == "canonical:sample",
+          "canonical sampling result mismatch");
+
+  const auto logging = peer.handle_request(
+      mcp::protocol::JsonRpcRequest{
+          .method = std::string(mcp::protocol::LoggingSetLevelMethod),
+          .params = Json{{"level", "debug"}},
+          .id = std::int64_t{77},
+      },
+      context);
+  require(logging.has_value(), "canonical logging failed");
+  require(logging->result.has_value(), "canonical logging result missing");
+  require(logging_calls == 1, "canonical logging handler call count mismatch");
+
+  const auto custom = peer.handle_request(
+      mcp::protocol::JsonRpcRequest{
+          .method = "custom/echo",
+          .params = Json::object(),
+          .id = std::int64_t{78},
+      },
+      context);
+  require(custom.has_value(), "canonical raw request failed");
+  require(custom->result->at("session") == "canonical",
+          "canonical raw request context mismatch");
+}
+
 void test_server_client_peer_gates_helpers_on_client_capabilities() {
   CapabilityClientPeerTransport unsupported_transport(
       mcp::protocol::ClientCapabilities{});
@@ -2185,6 +2426,7 @@ int main() {
     test_server_peer_resource_subscriptions_use_native_transport_identity();
     test_server_peer_handler_requests_dispatch_on_peer_boundary();
     test_server_peer_task_handlers_dispatch_on_peer_boundary();
+    test_server_builder_peer_canonical_authoring_surface();
     test_server_client_peer_gates_helpers_on_client_capabilities();
     test_client_helpers_gate_on_server_capabilities();
     test_client_peer_native_raw_request_dispatches_interleaved_messages();
