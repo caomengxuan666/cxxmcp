@@ -604,6 +604,8 @@ true:
 - [ ] Deepen typed completion helper templates.
 - [ ] Support context injection consistently for tool, prompt, resource,
   completion, sampling, elicitation, and task handlers.
+  - [x] Pass `SessionContext` through server and peer completion handlers.
+  - [x] Pass `SessionContext` through server and peer sampling handlers.
 - [ ] Support cooperative cancellation token injection where meaningful.
 - [ ] Keep `SchemaTraits<T>` and `schema_for<T>()` customization stable.
 - [ ] Add optional JSON Schema validator integration.

@@ -1856,12 +1856,38 @@ class Peer<RoleServer> {
   }
 
   Peer& set_completion_handler(server::Server::JsonHandler handler) {
+    if (handler) {
+      completion_handler_ = [handler](const protocol::Json& params,
+                                      const server::SessionContext&) mutable {
+        return handler(params);
+      };
+    } else {
+      completion_handler_ = {};
+    }
+    server_->set_completion_handler(std::move(handler));
+    return *this;
+  }
+
+  Peer& set_completion_handler(server::Server::JsonContextHandler handler) {
     completion_handler_ = handler;
     server_->set_completion_handler(std::move(handler));
     return *this;
   }
 
   Peer& set_sampling_handler(server::Server::JsonHandler handler) {
+    if (handler) {
+      sampling_handler_ = [handler](const protocol::Json& params,
+                                    const server::SessionContext&) mutable {
+        return handler(params);
+      };
+    } else {
+      sampling_handler_ = {};
+    }
+    server_->set_sampling_handler(std::move(handler));
+    return *this;
+  }
+
+  Peer& set_sampling_handler(server::Server::JsonContextHandler handler) {
     sampling_handler_ = handler;
     server_->set_sampling_handler(std::move(handler));
     return *this;
@@ -2023,6 +2049,12 @@ class Peer<RoleServer> {
     }
     if (handler.on_resource_updated) {
       set_resource_updated_handler(handler.on_resource_updated);
+    }
+    if (handler.on_completion_with_context) {
+      set_completion_handler(handler.on_completion_with_context);
+    }
+    if (handler.on_sampling_with_context) {
+      set_sampling_handler(handler.on_sampling_with_context);
     }
     return *this;
   }
@@ -2255,7 +2287,7 @@ class Peer<RoleServer> {
 
     if (request.method == protocol::CompletionCompleteMethod &&
         completion_handler_) {
-      const auto result = completion_handler_(request.params);
+      const auto result = completion_handler_(request.params, context);
       if (!result) {
         return detail::peer_error_response(request, result.error());
       }
@@ -2264,7 +2296,7 @@ class Peer<RoleServer> {
 
     if (request.method == protocol::SamplingCreateMessageMethod &&
         sampling_handler_) {
-      const auto result = sampling_handler_(request.params);
+      const auto result = sampling_handler_(request.params, context);
       if (!result) {
         return detail::peer_error_response(request, result.error());
       }
@@ -2660,8 +2692,8 @@ class Peer<RoleServer> {
           std::unordered_map<std::string, CancellationSource>>();
   bool native_notification_state_ = false;
   server::Server::RawRequestHandler raw_request_handler_;
-  server::Server::JsonHandler completion_handler_;
-  server::Server::JsonHandler sampling_handler_;
+  server::Server::JsonContextHandler completion_handler_;
+  server::Server::JsonContextHandler sampling_handler_;
   server::Server::LoggingHandler logging_handler_;
   server::Server::TaskListHandler task_list_handler_;
   server::Server::TaskGetHandler task_get_handler_;

@@ -346,6 +346,31 @@ decltype(auto) invoke_resource_handler(Handler& handler,
   }
 }
 
+template <class Handler>
+decltype(auto) invoke_json_extension_handler(Handler& handler,
+                                             const protocol::Json& request,
+                                             const SessionContext& context) {
+  using Json = protocol::Json;
+  if constexpr (std::is_invocable_v<Handler&, const Json&,
+                                    const SessionContext&>) {
+    return handler(request, context);
+  } else if constexpr (std::is_invocable_v<Handler&, const SessionContext&,
+                                           const Json&>) {
+    return handler(context, request);
+  } else if constexpr (std::is_invocable_v<Handler&, const Json&>) {
+    return handler(request);
+  } else if constexpr (std::is_invocable_v<Handler&, const SessionContext&>) {
+    return handler(context);
+  } else if constexpr (std::is_invocable_v<Handler&>) {
+    return handler();
+  } else {
+    static_assert(always_false_v<Handler>,
+                  "JSON extension handler must accept Json, "
+                  "Json+SessionContext, SessionContext+Json, "
+                  "SessionContext, or no arguments");
+  }
+}
+
 }  // namespace detail
 
 /// @brief Configuration used to construct a Server.
@@ -570,6 +595,8 @@ class Server {
   /// sampling.
   using JsonHandler =
       std::function<core::Result<protocol::Json>(const protocol::Json&)>;
+  using JsonContextHandler = std::function<core::Result<protocol::Json>(
+      const protocol::Json&, const SessionContext&)>;
 
   /// @brief Handles logging messages from clients.
   using LoggingHandler =
@@ -620,9 +647,11 @@ class Server {
 
   /// @brief Registers the completion request handler.
   void set_completion_handler(JsonHandler handler);
+  void set_completion_handler(JsonContextHandler handler);
 
   /// @brief Registers the sampling request handler.
   void set_sampling_handler(JsonHandler handler);
+  void set_sampling_handler(JsonContextHandler handler);
 
   /// @brief Registers the logging notification handler.
   void set_logging_handler(LoggingHandler handler);
@@ -690,8 +719,8 @@ class Server {
   std::unique_ptr<AuthProvider> auth_provider_;
   std::unique_ptr<RateLimiter> rate_limiter_;
   std::vector<std::unique_ptr<Transport>> transports_;
-  JsonHandler completion_handler_;
-  JsonHandler sampling_handler_;
+  JsonContextHandler completion_handler_;
+  JsonContextHandler sampling_handler_;
   LoggingHandler logging_handler_;
   RawRequestHandler raw_request_handler_;
   RawNotificationHandler raw_notification_handler_;
@@ -790,9 +819,11 @@ class ServerBuilder {
 
   /// @brief Sets the completion request handler.
   ServerBuilder& on_completion(Server::JsonHandler handler);
+  ServerBuilder& on_completion(Server::JsonContextHandler handler);
 
   /// @brief Sets the sampling request handler.
   ServerBuilder& on_sampling(Server::JsonHandler handler);
+  ServerBuilder& on_sampling(Server::JsonContextHandler handler);
 
   /// @brief Sets the logging notification handler.
   ServerBuilder& on_logging(Server::LoggingHandler handler);
@@ -853,8 +884,8 @@ class ServerBuilder {
   std::shared_ptr<TaskOperationProcessor> task_processor_;
   std::vector<std::unique_ptr<Transport>> transports_;
   std::vector<ServerRegistration> registrations_;
-  Server::JsonHandler completion_handler_;
-  Server::JsonHandler sampling_handler_;
+  Server::JsonContextHandler completion_handler_;
+  Server::JsonContextHandler sampling_handler_;
   Server::LoggingHandler logging_handler_;
   Server::RawRequestHandler raw_request_handler_;
   Server::RawNotificationHandler raw_notification_handler_;
@@ -1241,12 +1272,15 @@ template <class Handler>
 App::Builder& App::Builder::completion(Handler handler) {
   detail::require_callable(handler, "completion");
   builder_.on_completion(
-      [handler = std::move(handler)](
-          const protocol::Json& request) -> core::Result<protocol::Json> {
-        if constexpr (detail::is_result<decltype(handler(request))>::value) {
-          return handler(request);
+      [handler = std::move(handler)](const protocol::Json& request,
+                                     const SessionContext& context) mutable
+          -> core::Result<protocol::Json> {
+        auto handled =
+            detail::invoke_json_extension_handler(handler, request, context);
+        if constexpr (detail::is_result<decltype(handled)>::value) {
+          return handled;
         } else {
-          return detail::value_to_json(handler(request));
+          return detail::value_to_json(std::move(handled));
         }
       });
   return *this;
@@ -1256,12 +1290,15 @@ template <class Handler>
 App::Builder& App::Builder::sampling(Handler handler) {
   detail::require_callable(handler, "sampling");
   builder_.on_sampling(
-      [handler = std::move(handler)](
-          const protocol::Json& request) -> core::Result<protocol::Json> {
-        if constexpr (detail::is_result<decltype(handler(request))>::value) {
-          return handler(request);
+      [handler = std::move(handler)](const protocol::Json& request,
+                                     const SessionContext& context) mutable
+          -> core::Result<protocol::Json> {
+        auto handled =
+            detail::invoke_json_extension_handler(handler, request, context);
+        if constexpr (detail::is_result<decltype(handled)>::value) {
+          return handled;
         } else {
-          return detail::value_to_json(handler(request));
+          return detail::value_to_json(std::move(handled));
         }
       });
   return *this;

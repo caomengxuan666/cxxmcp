@@ -384,10 +384,10 @@ core::Result<protocol::JsonRpcResponse> Server::handle_request(
                                  result.error().message, result.error().detail);
     }
 
-    return protocol::make_response(
-        request.id, protocol::task_get_result_to_json(protocol::TaskGetResult{
-                        .task = *result,
-                    }));
+    protocol::TaskGetResult response;
+    response.task = *result;
+    return protocol::make_response(request.id,
+                                   protocol::task_get_result_to_json(response));
   }
 
   if (request.method == protocol::TasksCancelMethod) {
@@ -410,11 +410,10 @@ core::Result<protocol::JsonRpcResponse> Server::handle_request(
                                  result.error().message, result.error().detail);
     }
 
+    protocol::TaskCancelResult response;
+    response.task = *result;
     return protocol::make_response(
-        request.id,
-        protocol::task_cancel_result_to_json(protocol::TaskCancelResult{
-            .task = *result,
-        }));
+        request.id, protocol::task_cancel_result_to_json(response));
   }
 
   if (request.method == protocol::TasksResultMethod) {
@@ -606,7 +605,7 @@ core::Result<protocol::JsonRpcResponse> Server::handle_request(
           request, static_cast<int>(protocol::ErrorCode::MethodNotFound),
           "completion handler is not configured");
     }
-    const auto result = completion_handler_(request.params);
+    const auto result = completion_handler_(request.params, context);
     if (!result) {
       return make_error_response(request, result.error().code,
                                  result.error().message, result.error().detail);
@@ -620,7 +619,7 @@ core::Result<protocol::JsonRpcResponse> Server::handle_request(
           request, static_cast<int>(protocol::ErrorCode::MethodNotFound),
           "sampling handler is not configured");
     }
-    const auto result = sampling_handler_(request.params);
+    const auto result = sampling_handler_(request.params, context);
     if (!result) {
       return make_error_response(request, result.error().code,
                                  result.error().message, result.error().detail);
@@ -937,6 +936,18 @@ void Server::stop() noexcept {
 }
 
 void Server::set_completion_handler(JsonHandler handler) {
+  if (!handler) {
+    completion_handler_ = {};
+    return;
+  }
+  set_completion_handler(
+      [handler = std::move(handler)](const protocol::Json& params,
+                                     const SessionContext&) mutable {
+        return handler(params);
+      });
+}
+
+void Server::set_completion_handler(JsonContextHandler handler) {
   if (handler) {
     options_.capabilities.completions.enabled = true;
   }
@@ -944,6 +955,18 @@ void Server::set_completion_handler(JsonHandler handler) {
 }
 
 void Server::set_sampling_handler(JsonHandler handler) {
+  if (!handler) {
+    sampling_handler_ = {};
+    return;
+  }
+  set_sampling_handler(
+      [handler = std::move(handler)](const protocol::Json& params,
+                                     const SessionContext&) mutable {
+        return handler(params);
+      });
+}
+
+void Server::set_sampling_handler(JsonContextHandler handler) {
   sampling_handler_ = std::move(handler);
 }
 
@@ -1117,11 +1140,36 @@ ServerBuilder& ServerBuilder::add_resource_template(
 }
 
 ServerBuilder& ServerBuilder::on_completion(Server::JsonHandler handler) {
+  if (!handler) {
+    completion_handler_ = {};
+    return *this;
+  }
+  return on_completion(
+      [handler = std::move(handler)](const protocol::Json& params,
+                                     const SessionContext&) mutable {
+        return handler(params);
+      });
+}
+
+ServerBuilder& ServerBuilder::on_completion(
+    Server::JsonContextHandler handler) {
   completion_handler_ = std::move(handler);
   return *this;
 }
 
 ServerBuilder& ServerBuilder::on_sampling(Server::JsonHandler handler) {
+  if (!handler) {
+    sampling_handler_ = {};
+    return *this;
+  }
+  return on_sampling(
+      [handler = std::move(handler)](const protocol::Json& params,
+                                     const SessionContext&) mutable {
+        return handler(params);
+      });
+}
+
+ServerBuilder& ServerBuilder::on_sampling(Server::JsonContextHandler handler) {
   sampling_handler_ = std::move(handler);
   return *this;
 }

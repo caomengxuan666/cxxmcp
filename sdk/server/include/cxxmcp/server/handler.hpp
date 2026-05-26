@@ -23,6 +23,7 @@ inline core::Error handler_method_not_found(std::string_view message) {
 /// @brief Contract-style server handler interface.
 struct ServerHandlerInterface {
   using JsonHandler = Server::JsonHandler;
+  using JsonContextHandler = Server::JsonContextHandler;
   using LoggingHandler = Server::LoggingHandler;
   using RawRequestHandler = Server::RawRequestHandler;
   using RawNotificationHandler = Server::RawNotificationHandler;
@@ -41,9 +42,19 @@ struct ServerHandlerInterface {
       const protocol::Json&) const {
     return std::nullopt;
   }
+  virtual std::optional<core::Result<protocol::Json>> on_completion(
+      const protocol::Json& params, const SessionContext& context) const {
+    (void)context;
+    return on_completion(params);
+  }
   virtual std::optional<core::Result<protocol::Json>> on_sampling(
       const protocol::Json&) const {
     return std::nullopt;
+  }
+  virtual std::optional<core::Result<protocol::Json>> on_sampling(
+      const protocol::Json& params, const SessionContext& context) const {
+    (void)context;
+    return on_sampling(params);
   }
   virtual void on_logging(std::string_view, std::string_view) const {}
   virtual std::optional<protocol::JsonRpcResponse> on_raw_request(
@@ -112,6 +123,7 @@ struct ServerHandlerInterface {
 /// any existing callback on the target Server unchanged.
 struct ServerHandler {
   using JsonHandler = Server::JsonHandler;
+  using JsonContextHandler = Server::JsonContextHandler;
   using LoggingHandler = Server::LoggingHandler;
   using RawRequestHandler = Server::RawRequestHandler;
   using RawNotificationHandler = Server::RawNotificationHandler;
@@ -158,6 +170,10 @@ struct ServerHandler {
   ListChangedHandler on_resource_list_changed;
   /// Handles resource-updated notifications from clients.
   ResourceUpdatedHandler on_resource_updated;
+  /// Handles completion requests with session context.
+  JsonContextHandler on_completion_with_context;
+  /// Handles sampling requests with session context.
+  JsonContextHandler on_sampling_with_context;
 
   /// @brief Applies all non-empty callbacks to a server.
   /// @param server Server to configure.
@@ -213,6 +229,12 @@ struct ServerHandler {
     if (on_resource_updated) {
       server.set_resource_updated_handler(on_resource_updated);
     }
+    if (on_completion_with_context) {
+      server.set_completion_handler(on_completion_with_context);
+    }
+    if (on_sampling_with_context) {
+      server.set_sampling_handler(on_sampling_with_context);
+    }
   }
 };
 
@@ -225,18 +247,20 @@ inline Server& Server::set_handler(const ServerHandler& handler) {
 
 /// @brief Installs callbacks from a contract-style server handler.
 inline Server& Server::set_handler(const ServerHandlerInterface& handler) {
-  set_completion_handler([&handler](const protocol::Json& request)
+  set_completion_handler([&handler](const protocol::Json& request,
+                                    const SessionContext& context)
                              -> core::Result<protocol::Json> {
-    const auto response = handler.on_completion(request);
+    const auto response = handler.on_completion(request, context);
     if (response.has_value()) {
       return std::move(*response);
     }
     return std::unexpected(
         handler_method_not_found("server handler does not handle completion"));
   });
-  set_sampling_handler([&handler](const protocol::Json& request)
+  set_sampling_handler([&handler](const protocol::Json& request,
+                                  const SessionContext& context)
                            -> core::Result<protocol::Json> {
-    const auto response = handler.on_sampling(request);
+    const auto response = handler.on_sampling(request, context);
     if (response.has_value()) {
       return std::move(*response);
     }

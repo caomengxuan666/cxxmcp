@@ -3161,12 +3161,17 @@ void test_server_app_builder_registers_parity_surface() {
               .description = "A tmp file",
               .mime_type = "text/plain",
           })
-          .completion([](const Json& request) {
+          .completion([](const Json& request,
+                         const mcp::server::SessionContext& context) {
             return Json{{"completion",
-                         request.at("prefix").get<std::string>() + "llo"}};
+                         context.session_id + ":" +
+                             request.at("prefix").get<std::string>() + "llo"}};
           })
-          .sampling([](const Json& request) {
-            return Json{{"sample", request.at("prompt").get<std::string>()}};
+          .sampling([](const mcp::server::SessionContext& context,
+                       const Json& request) {
+            return Json{
+                {"sample", context.session_id + ":" +
+                               request.at("prompt").get<std::string>()}};
           })
           .logging([&](std::string_view level, std::string_view message) {
             require(level == "debug", "logging level mismatch");
@@ -3310,7 +3315,7 @@ void test_server_app_builder_registers_parity_surface() {
       },
       context);
   require(completion.has_value(), "facade completion failed");
-  require(completion->result->at("completion") == "hello",
+  require(completion->result->at("completion") == "facade:hello",
           "facade completion mismatch");
 
   const auto sampling = server.handle_request(
@@ -3321,7 +3326,7 @@ void test_server_app_builder_registers_parity_surface() {
       },
       context);
   require(sampling.has_value(), "facade sampling failed");
-  require(sampling->result->at("sample") == "write",
+  require(sampling->result->at("sample") == "facade:write",
           "facade sampling mismatch");
 
   const auto logging = server.handle_request(

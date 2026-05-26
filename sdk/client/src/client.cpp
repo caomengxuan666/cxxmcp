@@ -1379,11 +1379,10 @@ core::Result<protocol::JsonRpcResponse> Client::handle_request(
     }
 
     if (!elicitation_request_handler_) {
+      protocol::CreateElicitationResult declined;
+      declined.action = protocol::ElicitationAction::Decline;
       return protocol::make_response(
-          request.id, protocol::create_elicitation_result_to_json(
-                          protocol::CreateElicitationResult{
-                              .action = protocol::ElicitationAction::Decline,
-                          }));
+          request.id, protocol::create_elicitation_result_to_json(declined));
     }
 
     const auto result = elicitation_request_handler_(*params);

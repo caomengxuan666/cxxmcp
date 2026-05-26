@@ -1242,14 +1242,18 @@ void test_server_peer_resource_subscriptions_use_native_transport_identity() {
 void test_server_peer_handler_requests_dispatch_on_peer_boundary() {
   mcp::ServerPeer peer;
   std::string logged_level;
-  peer.set_completion_handler([](const Json& params) {
+  peer.set_completion_handler([](const Json& params,
+                                 const mcp::server::SessionContext& context) {
         return mcp::core::Result<Json>{Json{
-            {"completion", params.value("prefix", std::string{}) + "llo"}}};
+            {"completion", context.session_id + ":" +
+                               params.value("prefix", std::string{}) + "llo"}}};
       })
-      .set_sampling_handler([](const Json& params) {
-        return mcp::core::Result<Json>{
-            Json{{"sampled", params.at("messages").size()}}};
-      })
+      .set_sampling_handler(
+          [](const Json& params, const mcp::server::SessionContext& context) {
+            return mcp::core::Result<Json>{Json{
+                {"sampled", context.session_id + ":" +
+                                std::to_string(params.at("messages").size())}}};
+          })
       .set_logging_handler(
           [&](std::string_view level, std::string_view reason) {
             logged_level = std::string(level) + ":" + std::string(reason);
@@ -1272,7 +1276,8 @@ void test_server_peer_handler_requests_dispatch_on_peer_boundary() {
       .id = mcp::protocol::RequestId{std::int64_t{32}},
   });
 
-  const auto served = peer.serve_transport(transport);
+  const auto served = peer.serve_transport(
+      transport, mcp::server::SessionContext{.session_id = "peer-session"});
   require(served.has_value(),
           "server peer handler request dispatch should succeed");
   require(transport.sent.size() == 3,
@@ -1281,13 +1286,14 @@ void test_server_peer_handler_requests_dispatch_on_peer_boundary() {
   const auto* completion =
       std::get_if<mcp::protocol::JsonRpcResponse>(&transport.sent.at(0));
   require(completion != nullptr, "completion response missing");
-  require(completion->result->at("completion") == "hello",
+  require(completion->result->at("completion") == "peer-session:hello",
           "completion result mismatch");
 
   const auto* sampling =
       std::get_if<mcp::protocol::JsonRpcResponse>(&transport.sent.at(1));
   require(sampling != nullptr, "sampling response missing");
-  require(sampling->result->at("sampled") == 1, "sampling result mismatch");
+  require(sampling->result->at("sampled") == "peer-session:1",
+          "sampling result mismatch");
 
   const auto* logging =
       std::get_if<mcp::protocol::JsonRpcResponse>(&transport.sent.at(2));
