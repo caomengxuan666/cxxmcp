@@ -2988,6 +2988,21 @@ void test_invalid_json_is_rejected() {
 }
 
 void test_invalid_messages_are_rejected() {
+  const std::vector<std::string> invalid_envelopes = {
+      "[]",
+      R"({"jsonrpc":"2.0","id":1})",
+      R"({"jsonrpc":"2.0","method":7,"id":1})",
+      R"({"jsonrpc":"2.0","method":"ping","id":{"bad":1}})",
+      R"({"jsonrpc":"2.0","result":{},"error":{"code":-32603,"message":"bad"},"id":1})",
+  };
+  for (const auto& envelope : invalid_envelopes) {
+    require_error_code(mcp::protocol::parse_message(envelope),
+                       ErrorCode::InvalidRequest,
+                       std::string("invalid JSON-RPC envelope should be "
+                                   "InvalidRequest: ") +
+                           envelope);
+  }
+
   const auto missing_method = mcp::protocol::parse_message(
       load_fixture_text("invalid.missing_method.json"));
   require_error_code(missing_method, ErrorCode::InvalidRequest,

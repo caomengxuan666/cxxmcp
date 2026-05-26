@@ -3115,6 +3115,18 @@ void test_server_initialize_rejects_invalid_protocol_versions() {
               static_cast<int>(mcp::protocol::ErrorCode::InvalidParams),
           "non-string initialize protocolVersion error code mismatch");
 
+  auto non_object_params = base_request();
+  non_object_params.params = Json::array();
+  const auto non_object_response =
+      server.handle_request(non_object_params, mcp::server::SessionContext{});
+  require(non_object_response.has_value(),
+          "non-object initialize params should produce response");
+  require(non_object_response->error.has_value(),
+          "non-object initialize params should be rejected");
+  require(non_object_response->error->code ==
+              static_cast<int>(mcp::protocol::ErrorCode::InvalidParams),
+          "non-object initialize params error code mismatch");
+
   auto unknown = base_request();
   unknown.params["protocolVersion"] = "1900-01-01";
   const auto unknown_response =

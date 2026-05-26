@@ -624,7 +624,7 @@ true:
 
 - [x] Keep typed error model in the protocol/core layer.
 - [x] Map parse errors to JSON-RPC parse errors.
-- [ ] Map invalid envelope and validation failures to invalid request or invalid
+- [x] Map invalid envelope and validation failures to invalid request or invalid
   params consistently.
 - [x] Map server-side known-method parameter parse and parameter validation
   failures to `InvalidParams` while preserving envelope failures as
