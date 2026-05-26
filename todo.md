@@ -500,7 +500,7 @@ true:
   shapes.
 - [x] Preserve raw capability object payloads for RMCP `JsonObject` capability
   members while keeping the existing convenience bool accessors.
-- [ ] Add negative parse tests for every required field and type constraint.
+- [x] Add negative parse tests for every required field and type constraint.
 - [x] Add cross-family required-field negative parse regression coverage for
   tools, prompts, resources, roots, completion, sampling, elicitation, and
   tasks.
@@ -521,7 +521,7 @@ true:
 - [x] Add shared icon, pageable `nextCursor`, and create-task result `_meta`
   type-constraint negative coverage.
 - [x] Keep helper constructors for common text-only flows.
-- [ ] Avoid bool-heavy shortcuts when the wire shape expects object presence.
+- [x] Avoid bool-heavy shortcuts when the wire shape expects object presence.
   - [x] Preserve client sampling raw object payloads without requiring
         `sampling.enabled`.
   - [x] Preserve explicit `false` task capability members across client and
