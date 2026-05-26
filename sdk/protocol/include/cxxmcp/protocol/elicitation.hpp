@@ -11,6 +11,7 @@
 /// notification. Task request parameters may be included when supported.
 
 #include <algorithm>
+#include <cstddef>
 #include <cstdint>
 #include <map>
 #include <optional>
@@ -52,6 +53,10 @@ struct StringSchema {
   std::optional<std::string> description;
   /// Optional JSON Schema string format, such as `email`.
   std::optional<std::string> format;
+  /// Optional minimum string length.
+  std::optional<std::int64_t> min_length;
+  /// Optional maximum string length.
+  std::optional<std::int64_t> max_length;
   /// Optional default string value.
   std::optional<std::string> default_value;
   /// Unknown JSON members preserved for forward-compatible round trips.
@@ -320,6 +325,14 @@ inline std::optional<ElicitationMode> elicitation_mode_from_string(
   return std::nullopt;
 }
 
+/// @brief Returns true for string formats allowed by the MCP elicitation
+/// schema.
+inline bool elicitation_string_format_is_supported(
+    const std::string& value) noexcept {
+  return value == "email" || value == "uri" || value == "date" ||
+         value == "date-time";
+}
+
 /// @brief Serializes a string property schema.
 inline Json string_schema_to_json(const StringSchema& schema) {
   Json json = Json::object();
@@ -332,6 +345,12 @@ inline Json string_schema_to_json(const StringSchema& schema) {
   }
   if (schema.format.has_value()) {
     json["format"] = *schema.format;
+  }
+  if (schema.min_length.has_value()) {
+    json["minLength"] = *schema.min_length;
+  }
+  if (schema.max_length.has_value()) {
+    json["maxLength"] = *schema.max_length;
   }
   if (schema.default_value.has_value()) {
     json["default"] = *schema.default_value;
@@ -696,6 +715,21 @@ inline core::Result<core::Unit> validate_elicitation_content_property(
           if (!value.is_string()) {
             return std::unexpected(elicitation_json_error(
                 "elicitation content field '" + name + "' must be a string"));
+          }
+          const auto string_value = value.get<std::string>();
+          if (property.min_length.has_value() &&
+              string_value.size() <
+                  static_cast<std::size_t>(*property.min_length)) {
+            return std::unexpected(
+                elicitation_json_error("elicitation content field '" + name +
+                                       "' is shorter than minLength"));
+          }
+          if (property.max_length.has_value() &&
+              string_value.size() >
+                  static_cast<std::size_t>(*property.max_length)) {
+            return std::unexpected(
+                elicitation_json_error("elicitation content field '" + name +
+                                       "' is longer than maxLength"));
           }
         } else if constexpr (std::is_same_v<Property, NumberSchema>) {
           if (!value.is_number()) {
@@ -1079,6 +1113,11 @@ inline core::Result<PrimitiveSchema> primitive_schema_from_json(
             "elicitation enum default must be a string"));
       }
       schema.default_value = json.at("default").get<std::string>();
+      if (std::find(schema.values.begin(), schema.values.end(),
+                    *schema.default_value) == schema.values.end()) {
+        return std::unexpected(elicitation_json_error(
+            "elicitation enum default must match an enum value"));
+      }
     }
     schema.extensions = collect_json_extensions(
         json, {"type", "title", "description", "enum", "default"});
@@ -1107,6 +1146,37 @@ inline core::Result<PrimitiveSchema> primitive_schema_from_json(
             "elicitation string format must be a string"));
       }
       schema.format = json.at("format").get<std::string>();
+      if (!elicitation_string_format_is_supported(*schema.format)) {
+        return std::unexpected(elicitation_json_error(
+            "elicitation string format is not supported"));
+      }
+    }
+    if (json.contains("minLength")) {
+      if (!json.at("minLength").is_number_integer()) {
+        return std::unexpected(elicitation_json_error(
+            "elicitation string minLength must be an integer"));
+      }
+      schema.min_length = json.at("minLength").get<std::int64_t>();
+      if (*schema.min_length < 0) {
+        return std::unexpected(elicitation_json_error(
+            "elicitation string minLength must be non-negative"));
+      }
+    }
+    if (json.contains("maxLength")) {
+      if (!json.at("maxLength").is_number_integer()) {
+        return std::unexpected(elicitation_json_error(
+            "elicitation string maxLength must be an integer"));
+      }
+      schema.max_length = json.at("maxLength").get<std::int64_t>();
+      if (*schema.max_length < 0) {
+        return std::unexpected(elicitation_json_error(
+            "elicitation string maxLength must be non-negative"));
+      }
+    }
+    if (schema.min_length.has_value() && schema.max_length.has_value() &&
+        *schema.min_length > *schema.max_length) {
+      return std::unexpected(elicitation_json_error(
+          "elicitation string minLength must be <= maxLength"));
     }
     if (json.contains("default")) {
       if (!json.at("default").is_string()) {
@@ -1115,8 +1185,9 @@ inline core::Result<PrimitiveSchema> primitive_schema_from_json(
       }
       schema.default_value = json.at("default").get<std::string>();
     }
-    schema.extensions = collect_json_extensions(
-        json, {"type", "title", "description", "format", "default"});
+    schema.extensions =
+        collect_json_extensions(json, {"type", "title", "description", "format",
+                                       "minLength", "maxLength", "default"});
     return schema;
   }
   if (type == "number") {

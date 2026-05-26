@@ -1681,6 +1681,26 @@ void test_elicitation_content_validation() {
                           .build();
   require(schema.has_value(), "elicitation validation schema build failed");
 
+  const Json length_schema_json = Json{{"type", "string"},
+                                       {"format", "uri"},
+                                       {"minLength", 2},
+                                       {"maxLength", 6},
+                                       {"default", "https:"}};
+  const auto parsed_length_schema =
+      mcp::protocol::primitive_schema_from_json(length_schema_json);
+  require(parsed_length_schema.has_value(),
+          "elicitation string length schema should parse");
+  require(mcp::protocol::primitive_schema_to_json(*parsed_length_schema) ==
+              length_schema_json,
+          "elicitation string length schema should round trip");
+
+  auto length_schema = *schema;
+  mcp::protocol::StringSchema code_schema;
+  code_schema.min_length = 2;
+  code_schema.max_length = 6;
+  length_schema.properties["code"] = code_schema;
+  length_schema.required.push_back("code");
+
   const Json valid_content = Json{{"email", "user@example.test"},
                                   {"remember", true},
                                   {"age", 42},
@@ -1690,6 +1710,12 @@ void test_elicitation_content_validation() {
   require(mcp::protocol::validate_elicitation_content(*schema, valid_content)
               .has_value(),
           "valid elicitation content should pass");
+  require(
+      mcp::protocol::validate_elicitation_content(
+          length_schema,
+          Json{{"email", "user@example.test"}, {"age", 42}, {"code", "abc"}})
+          .has_value(),
+      "valid elicitation string length should pass");
   mcp::protocol::CreateElicitationResult accepted_result;
   accepted_result.action = mcp::protocol::ElicitationAction::Accept;
   accepted_result.content = valid_content;
@@ -1731,6 +1757,16 @@ void test_elicitation_content_validation() {
                                           {"age", 42},
                                           {"tier", "enterprise"}}),
                         "elicitation enum value should fail");
+  require_parse_failure(
+      mcp::protocol::validate_elicitation_content(
+          length_schema,
+          Json{{"email", "user@example.test"}, {"age", 42}, {"code", "a"}}),
+      "elicitation string minLength should fail");
+  require_parse_failure(mcp::protocol::validate_elicitation_content(
+                            length_schema, Json{{"email", "user@example.test"},
+                                                {"age", 42},
+                                                {"code", "abcdefg"}}),
+                        "elicitation string maxLength should fail");
   require_parse_failure(
       mcp::protocol::validate_elicitation_result_content(
           *schema,
@@ -2893,6 +2929,16 @@ void test_protocol_type_constraints_are_rejected() {
                             Json{{"type", "string"}, {"default", 7}}),
                         "elicitation string default type should fail");
   require_parse_failure(mcp::protocol::primitive_schema_from_json(
+                            Json{{"type", "string"}, {"format", "uuid"}}),
+                        "elicitation unsupported string format should fail");
+  require_parse_failure(mcp::protocol::primitive_schema_from_json(
+                            Json{{"type", "string"}, {"minLength", -1}}),
+                        "elicitation string negative minLength should fail");
+  require_parse_failure(
+      mcp::protocol::primitive_schema_from_json(
+          Json{{"type", "string"}, {"minLength", 5}, {"maxLength", 2}}),
+      "elicitation string minLength above maxLength should fail");
+  require_parse_failure(mcp::protocol::primitive_schema_from_json(
                             Json{{"type", "number"}, {"minimum", "low"}}),
                         "elicitation number minimum type should fail");
   require_parse_failure(mcp::protocol::primitive_schema_from_json(
@@ -2904,6 +2950,11 @@ void test_protocol_type_constraints_are_rejected() {
   require_parse_failure(mcp::protocol::primitive_schema_from_json(Json{
                             {"type", "string"}, {"enum", Json::array({1, 2})}}),
                         "elicitation enum values type should fail");
+  require_parse_failure(mcp::protocol::primitive_schema_from_json(
+                            Json{{"type", "string"},
+                                 {"enum", Json::array({"a", "b"})},
+                                 {"default", "c"}}),
+                        "elicitation enum default outside values should fail");
   require_parse_failure(
       mcp::protocol::elicitation_complete_notification_params_from_json(
           Json{{"elicitationId", 7}}),

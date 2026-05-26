@@ -472,6 +472,8 @@ true:
   reject empty untagged tool-result objects.
 - [x] Enforce RMCP sampling role/includeContext enums plus SEP-1577
   tool_use/tool_result role and balance constraints.
+- [x] Align elicitation string schema `minLength`/`maxLength` and restricted
+  string `format` parsing with RMCP, including content validation.
 - [ ] Add negative parse tests for every required field and type constraint.
 - [x] Add cross-family required-field negative parse regression coverage for
   tools, prompts, resources, roots, completion, sampling, elicitation, and
