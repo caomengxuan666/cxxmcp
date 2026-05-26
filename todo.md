@@ -463,6 +463,7 @@ true:
 - [x] Add typed initialize payload models for implementation info,
   initialize params, and initialize result, aligned with RMCP initialize
   payload shape.
+- [x] Add typed resource updated notification payload and tests.
 - [ ] Add negative parse tests for every required field and type constraint.
 - [x] Add cross-family required-field negative parse regression coverage for
   tools, prompts, resources, roots, completion, sampling, elicitation, and

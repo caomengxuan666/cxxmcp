@@ -2274,6 +2274,26 @@ void test_notification_helpers_round_trip() {
   require(parsed_completion->elicitation_id == "elicitation-1",
           "elicitation completion id mismatch");
 
+  const mcp::protocol::ResourceUpdatedNotificationParams resource_updated{
+      .uri = "file:///workspace/readme.md",
+      .extensions = Json{{"x-reason", "changed"}},
+  };
+  const auto resource_updated_json =
+      mcp::protocol::resource_updated_notification_params_to_json(
+          resource_updated);
+  const auto parsed_resource_updated =
+      mcp::protocol::resource_updated_notification_params_from_json(
+          resource_updated_json);
+  require(parsed_resource_updated.has_value(),
+          "resource updated notification params should parse");
+  require(parsed_resource_updated->uri == "file:///workspace/readme.md",
+          "resource updated uri mismatch");
+  require(parsed_resource_updated->extensions.at("x-reason") == "changed",
+          "resource updated extension mismatch");
+  require(mcp::protocol::resource_updated_notification_params_to_json(
+              *parsed_resource_updated) == resource_updated_json,
+          "resource updated params round-trip mismatch");
+
   const mcp::protocol::LoggingMessageNotificationParams log_message{
       .level = mcp::protocol::LoggingLevel::Info,
       .logger = "test",
@@ -2380,6 +2400,10 @@ void test_protocol_required_fields_are_rejected() {
   require_parse_failure(
       mcp::protocol::resources_list_result_from_json(Json::object()),
       "resources/list without resources should fail");
+  require_parse_failure(
+      mcp::protocol::resource_updated_notification_params_from_json(
+          Json::object()),
+      "resource updated notification without uri should fail");
 
   require_parse_failure(mcp::protocol::root_from_json(Json::object()),
                         "root without uri should fail");
@@ -2523,6 +2547,10 @@ void test_protocol_type_constraints_are_rejected() {
   require_parse_failure(mcp::protocol::resources_list_result_from_json(
                             Json{{"resources", Json::object()}}),
                         "resources/list non-array resources should fail");
+  require_parse_failure(
+      mcp::protocol::resource_updated_notification_params_from_json(
+          Json{{"uri", 7}}),
+      "resource updated notification non-string uri should fail");
 
   require_parse_failure(mcp::protocol::root_from_json(
                             Json{{"uri", "file:///workspace"}, {"name", 3}}),

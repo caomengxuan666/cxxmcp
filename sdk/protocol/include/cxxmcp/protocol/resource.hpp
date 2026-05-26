@@ -141,6 +141,14 @@ struct ResourcesReadResult {
   Json extensions = Json::object();
 };
 
+/// @brief Parameters for `notifications/resources/updated`.
+struct ResourceUpdatedNotificationParams {
+  /// URI of the resource that was updated.
+  std::string uri;
+  /// Unknown JSON members preserved for forward-compatible round trips.
+  Json extensions = Json::object();
+};
+
 /// @brief Builds an InvalidRequest error for resource JSON validation failures.
 inline core::Error resource_json_error(std::string message) {
   return core::Error{
@@ -681,6 +689,31 @@ inline core::Result<ResourcesReadResult> resources_read_result_from_json(
   }
   result.extensions = collect_json_extensions(json, {"contents", "_meta"});
   return result;
+}
+
+/// @brief Serializes `notifications/resources/updated` params.
+inline Json resource_updated_notification_params_to_json(
+    const ResourceUpdatedNotificationParams& params) {
+  Json json = Json{{"uri", params.uri}};
+  append_json_extensions(json, params.extensions);
+  return json;
+}
+
+/// @brief Parses `notifications/resources/updated` params.
+inline core::Result<ResourceUpdatedNotificationParams>
+resource_updated_notification_params_from_json(const Json& json) {
+  if (!json.is_object()) {
+    return std::unexpected(
+        resource_json_error("resource updated params must be an object"));
+  }
+  if (!json.contains("uri") || !json.at("uri").is_string()) {
+    return std::unexpected(
+        resource_json_error("resource updated params require a string uri"));
+  }
+  ResourceUpdatedNotificationParams params;
+  params.uri = json.at("uri").get<std::string>();
+  params.extensions = collect_json_extensions(json, {"uri"});
+  return params;
 }
 
 }  // namespace mcp::protocol
