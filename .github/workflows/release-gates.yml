@@ -131,14 +131,10 @@ jobs:
 
       - name: Run release-blocking tests
         shell: pwsh
-        env:
-          ALL_PROXY: ""
-          HTTPS_PROXY: ""
-          HTTP_PROXY: ""
-          all_proxy: ""
-          https_proxy: ""
-          http_proxy: ""
         run: |
+          foreach ($name in @("ALL_PROXY", "HTTPS_PROXY", "HTTP_PROXY", "all_proxy", "https_proxy", "http_proxy")) {
+            Remove-Item "Env:$name" -ErrorAction SilentlyContinue
+          }
           New-Item -ItemType Directory -Force -Path "build-release-gates/test-results" | Out-Null
           $ctestArgs = @(
             "--test-dir", "build-release-gates",
