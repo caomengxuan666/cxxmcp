@@ -2243,6 +2243,25 @@ void test_notification_helpers_round_trip() {
           "cancelled notification params should parse");
   require(std::get<std::string>(parsed_cancelled->request_id) == "request-1",
           "cancelled request id mismatch");
+  require(parsed_cancelled->reason.has_value() &&
+              *parsed_cancelled->reason == "no longer needed",
+          "cancelled reason mismatch");
+  const auto cancelled_without_reason =
+      mcp::protocol::cancelled_notification_params_to_json(
+          mcp::protocol::CancelledNotificationParams{
+              .request_id = RequestId{std::int64_t{7}},
+          });
+  require(!cancelled_without_reason.contains("reason"),
+          "missing cancellation reason should remain absent");
+  const auto cancelled_with_empty_reason =
+      mcp::protocol::cancelled_notification_params_to_json(
+          mcp::protocol::CancelledNotificationParams{
+              .request_id = RequestId{std::int64_t{8}},
+              .reason = std::string{},
+          });
+  require(cancelled_with_empty_reason.contains("reason") &&
+              cancelled_with_empty_reason.at("reason") == "",
+          "explicit empty cancellation reason should round-trip");
 
   const mcp::protocol::ProgressNotificationParams progress{
       .progress_token = mcp::protocol::ProgressToken{std::string("token-1")},
@@ -2259,6 +2278,27 @@ void test_notification_helpers_round_trip() {
   require(std::get<std::string>(parsed_progress->progress_token) == "token-1",
           "progress token mismatch");
   require(parsed_progress->total == 4.0, "progress total mismatch");
+  require(parsed_progress->message.has_value() &&
+              *parsed_progress->message == "halfway",
+          "progress message mismatch");
+  const auto progress_without_message =
+      mcp::protocol::progress_notification_params_to_json(
+          mcp::protocol::ProgressNotificationParams{
+              .progress_token = mcp::protocol::ProgressToken{std::int64_t{1}},
+              .progress = 1.0,
+          });
+  require(!progress_without_message.contains("message"),
+          "missing progress message should remain absent");
+  const auto progress_with_empty_message =
+      mcp::protocol::progress_notification_params_to_json(
+          mcp::protocol::ProgressNotificationParams{
+              .progress_token = mcp::protocol::ProgressToken{std::int64_t{2}},
+              .progress = 1.0,
+              .message = std::string{},
+          });
+  require(progress_with_empty_message.contains("message") &&
+              progress_with_empty_message.at("message") == "",
+          "explicit empty progress message should round-trip");
 
   const mcp::protocol::ElicitationCompleteNotificationParams completion{
       .elicitation_id = "elicitation-1",
@@ -2306,8 +2346,27 @@ void test_notification_helpers_round_trip() {
           log_message_json);
   require(parsed_log_message.has_value(),
           "logging message notification params should parse");
-  require(parsed_log_message->logger == "test",
+  require(parsed_log_message->logger.has_value() &&
+              *parsed_log_message->logger == "test",
           "logging message logger mismatch");
+  const auto log_without_logger =
+      mcp::protocol::logging_message_notification_params_to_json(
+          mcp::protocol::LoggingMessageNotificationParams{
+              .level = mcp::protocol::LoggingLevel::Info,
+              .data = Json{{"message", "hello"}},
+          });
+  require(!log_without_logger.contains("logger"),
+          "missing logger should remain absent");
+  const auto log_with_empty_logger =
+      mcp::protocol::logging_message_notification_params_to_json(
+          mcp::protocol::LoggingMessageNotificationParams{
+              .level = mcp::protocol::LoggingLevel::Info,
+              .logger = std::string{},
+              .data = Json{{"message", "hello"}},
+          });
+  require(log_with_empty_logger.contains("logger") &&
+              log_with_empty_logger.at("logger") == "",
+          "explicit empty logger should round-trip");
 
   const auto notification = mcp::protocol::make_notification(
       std::string(mcp::protocol::ProgressNotificationMethod), progress_json);

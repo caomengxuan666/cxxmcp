@@ -304,7 +304,9 @@ class Peer<RoleClient> {
                                             std::string reason = {}) {
     protocol::CancelledNotificationParams params;
     params.request_id = std::move(request_id);
-    params.reason = std::move(reason);
+    if (!reason.empty()) {
+      params.reason = std::move(reason);
+    }
     return raw_notification(protocol::make_notification(
         std::string(protocol::CancelledNotificationMethod),
         protocol::cancelled_notification_params_to_json(params)));
@@ -317,7 +319,9 @@ class Peer<RoleClient> {
     params.progress_token = std::move(progress_token);
     params.progress = progress;
     params.total = total;
-    params.message = std::move(message);
+    if (!message.empty()) {
+      params.message = std::move(message);
+    }
     return raw_notification(protocol::make_notification(
         std::string(protocol::ProgressNotificationMethod),
         protocol::progress_notification_params_to_json(params)));
@@ -1456,7 +1460,8 @@ class Peer<RoleClient> {
             errors::make(protocol::ErrorCode::InvalidParams,
                          "cancelled notification requires a requestId"));
       }
-      cancelled_handler_(params->request_id, params->reason);
+      cancelled_handler_(params->request_id,
+                         params->reason.value_or(std::string{}));
     } else if (notification.method ==
                    std::string(protocol::LoggingMessageNotificationMethod) &&
                logging_message_handler_) {

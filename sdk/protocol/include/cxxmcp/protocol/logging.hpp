@@ -53,7 +53,7 @@ struct LoggingMessageNotificationParams {
   /// Severity of this log message.
   LoggingLevel level = LoggingLevel::Info;
   /// Optional logger name or category.
-  std::string logger;
+  std::optional<std::string> logger;
   /// Structured log payload.
   Json data;
   /// Optional `_meta` extension object preserved on the wire.
@@ -169,8 +169,8 @@ inline Json logging_message_notification_params_to_json(
     const LoggingMessageNotificationParams& params) {
   Json json = Json::object();
   json["level"] = logging_level_to_string(params.level);
-  if (!params.logger.empty()) {
-    json["logger"] = params.logger;
+  if (params.logger.has_value()) {
+    json["logger"] = *params.logger;
   }
   json["data"] = params.data;
   if (params.meta.has_value()) {

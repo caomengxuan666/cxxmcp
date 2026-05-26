@@ -469,7 +469,9 @@ core::Result<core::Unit> Client::notify_cancelled(
     protocol::RequestId request_id, std::string reason) {
   protocol::CancelledNotificationParams params;
   params.request_id = std::move(request_id);
-  params.reason = std::move(reason);
+  if (!reason.empty()) {
+    params.reason = std::move(reason);
+  }
   return raw_notification(protocol::make_notification(
       "notifications/cancelled",
       protocol::cancelled_notification_params_to_json(params)));
@@ -482,7 +484,9 @@ core::Result<core::Unit> Client::notify_progress(
   params.progress_token = std::move(progress_token);
   params.progress = progress;
   params.total = total;
-  params.message = std::move(message);
+  if (!message.empty()) {
+    params.message = std::move(message);
+  }
   return raw_notification(protocol::make_notification(
       "notifications/progress",
       protocol::progress_notification_params_to_json(params)));
@@ -1221,7 +1225,8 @@ core::Result<core::Unit> Client::handle_notification(
           static_cast<int>(protocol::ErrorCode::InvalidParams),
           "cancelled notification requires a requestId"));
     }
-    cancelled_handler_(params->request_id, params->reason);
+    cancelled_handler_(params->request_id,
+                       params->reason.value_or(std::string{}));
   } else if (notification.method == "notifications/message" &&
              logging_message_handler_) {
     std::string level;

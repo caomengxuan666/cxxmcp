@@ -196,7 +196,7 @@ struct CancelledNotificationParams {
   /// Id of the JSON-RPC request being cancelled.
   RequestId request_id;
   /// Optional human-readable cancellation reason.
-  std::string reason;
+  std::optional<std::string> reason;
 };
 
 /// @brief Parameters for `notifications/progress`.
@@ -208,7 +208,7 @@ struct ProgressNotificationParams {
   /// Optional total value using the same unit as `progress`.
   std::optional<double> total;
   /// Optional human-readable status text.
-  std::string message;
+  std::optional<std::string> message;
 };
 
 /// @brief Converts a RequestId to the JSON scalar used by JSON-RPC.
@@ -417,8 +417,8 @@ inline Json cancelled_notification_params_to_json(
     const CancelledNotificationParams& params) {
   Json json = Json::object();
   json["requestId"] = request_id_to_json(params.request_id);
-  if (!params.reason.empty()) {
-    json["reason"] = params.reason;
+  if (params.reason.has_value()) {
+    json["reason"] = *params.reason;
   }
   return json;
 }
@@ -457,8 +457,8 @@ inline Json progress_notification_params_to_json(
   if (params.total.has_value()) {
     json["total"] = *params.total;
   }
-  if (!params.message.empty()) {
-    json["message"] = params.message;
+  if (params.message.has_value()) {
+    json["message"] = *params.message;
   }
   return json;
 }

@@ -120,7 +120,9 @@ class ClientPeer {
     }
     protocol::CancelledNotificationParams params;
     params.request_id = std::move(request_id);
-    params.reason = std::move(reason);
+    if (!reason.empty()) {
+      params.reason = std::move(reason);
+    }
     protocol::JsonRpcNotification notification;
     notification.method = std::string(protocol::CancelledNotificationMethod);
     notification.params =
