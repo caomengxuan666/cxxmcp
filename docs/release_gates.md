@@ -92,8 +92,8 @@ The same workflow uploads:
   `SHA256SUMS.txt` file.
 - `cxxmcp-release-evidence`: the README, Chinese README, changelog,
   compatibility policy, Peer/Service migration guide, release gates, release
-  candidate checklist, release notes template, TODO, and example source files
-  used for the release decision.
+  candidate checklist, release notes template, request lifecycle notes, TODO,
+  and example source files used for the release decision.
 
 Release candidates must attach the source, documentation, and release evidence
 artifacts, or replace them with equivalent versioned artifacts built from the

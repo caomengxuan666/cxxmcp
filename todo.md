@@ -658,7 +658,7 @@ true:
 - [x] Document legacy SSE as compatibility-only.
 - [x] Document raw JSON-RPC escape hatches.
 - [x] Document migration from old concrete APIs to peer/service APIs.
-- [ ] Document timeout, cancellation, progress, and shutdown semantics.
+- [x] Document timeout, cancellation, progress, and shutdown semantics.
 - [x] Document task lifecycle and retention semantics.
 - [x] Document elicitation lifecycle and capability requirements.
 - [x] Document package consumption with `find_package(cxxmcp CONFIG REQUIRED)`.

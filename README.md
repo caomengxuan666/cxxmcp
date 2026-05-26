@@ -354,7 +354,9 @@ JSON-RPC escape hatches remain the compatibility path for partial or future
 feature support. Server-side task lifecycle semantics are documented in
 [Task lifecycle](docs/task_lifecycle.md). Elicitation lifecycle and capability
 semantics are documented in
-[Elicitation lifecycle](docs/elicitation_lifecycle.md).
+[Elicitation lifecycle](docs/elicitation_lifecycle.md). Request timeout,
+cancellation, progress, and shutdown semantics are documented in
+[Request lifecycle](docs/request_lifecycle.md).
 
 ## Capability Classification
 
@@ -532,6 +534,7 @@ fixtures for RMCP, TypeScript SDK, and Python SDK clients.
 - [Release candidate checklist](docs/release_candidate_checklist.md)
 - [Release notes template](docs/release_notes_template.md)
 - [Official SDK candidate process](docs/official_sdk_candidate_process.md)
+- [Request lifecycle](docs/request_lifecycle.md)
 - [Peer/Service migration guide](docs/sdk_peer_service_migration.md)
 - [Changelog](CHANGELOG.md)
 
