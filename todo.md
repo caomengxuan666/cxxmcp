@@ -524,20 +524,20 @@ true:
 
 ## P1: Elicitation Lifecycle
 
-- [ ] Keep elicitation optional/feature-gated in public docs.
-- [ ] Split or clarify form and URL elicitation types if the spec/RMCP shape
+- [x] Keep elicitation optional/feature-gated in public docs.
+- [x] Split or clarify form and URL elicitation types if the spec/RMCP shape
   requires deeper structure.
 - [ ] Add stronger schema integration for form elicitation.
 - [ ] Add schema validation for elicitation content.
-- [ ] Add capability checks for form elicitation.
-- [ ] Add capability checks for URL elicitation.
-- [ ] Add server peer helpers for typed elicitation flows.
-- [ ] Add client-side default decline behavior if no handler is installed.
-- [ ] Add URL elicitation completion notification tests.
+- [x] Add capability checks for form elicitation.
+- [x] Add capability checks for URL elicitation.
+- [x] Add server peer helpers for typed elicitation flows.
+- [x] Add client-side default decline behavior if no handler is installed.
+- [x] Add URL elicitation completion notification tests.
 - [ ] Add form elicitation success/decline/cancel tests.
 - [ ] Add URL elicitation success/decline/cancel tests.
-- [ ] Add raw elicitation escape-hatch tests.
-- [ ] Document which elicitation pieces are stable, optional, or experimental.
+- [x] Add raw elicitation escape-hatch tests.
+- [x] Document which elicitation pieces are stable, optional, or experimental.
 
 ## P1: Handler And Authoring Ergonomics
 

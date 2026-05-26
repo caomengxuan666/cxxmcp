@@ -4133,6 +4133,56 @@ void test_client_roots_and_notification_callbacks() {
   require(raw_notifications == 9, "raw notification callback count mismatch");
 }
 
+void test_client_elicitation_defaults_to_decline_without_handler() {
+  const Json form_request =
+      Json{{"message", "choose"},
+           {"requestedSchema",
+            Json{{"type", "object"},
+                 {"properties", Json{{"name", Json{{"type", "string"}}}}}}}};
+
+  mcp::client::Client client(std::make_unique<RecordingTransport>());
+  const auto response = client.handle_request(mcp::protocol::JsonRpcRequest{
+      .method = std::string(mcp::protocol::ElicitationCreateMethod),
+      .params = form_request,
+      .id = std::int64_t{30},
+  });
+  require(response.has_value(),
+          "default elicitation decline should produce a response");
+  require(response->result.has_value(),
+          "default elicitation decline should return result");
+  require(response->result->at("action") == "decline",
+          "default elicitation action mismatch");
+
+  const auto invalid = client.handle_request(mcp::protocol::JsonRpcRequest{
+      .method = std::string(mcp::protocol::ElicitationCreateMethod),
+      .params = Json{{"message", "choose"}},
+      .id = std::int64_t{31},
+  });
+  require(invalid.has_value(), "invalid elicitation should produce response");
+  require(invalid->error.has_value(),
+          "invalid elicitation should still validate params before decline");
+
+  mcp::ClientPeer peer(std::make_unique<RecordingTransport>());
+  const auto peer_message = peer.dispatch_message(
+      mcp::protocol::JsonRpcMessage{mcp::protocol::JsonRpcRequest{
+          .method = std::string(mcp::protocol::ElicitationCreateMethod),
+          .params = form_request,
+          .id = std::int64_t{32},
+      }});
+  require(peer_message.has_value(),
+          "peer default elicitation decline dispatch failed");
+  require(peer_message->has_value(),
+          "peer default elicitation decline response missing");
+  const auto* peer_response =
+      std::get_if<mcp::protocol::JsonRpcResponse>(&**peer_message);
+  require(peer_response != nullptr,
+          "peer default elicitation decline response type mismatch");
+  require(peer_response->result.has_value(),
+          "peer default elicitation decline result missing");
+  require(peer_response->result->at("action") == "decline",
+          "peer default elicitation action mismatch");
+}
+
 void test_client_request_callbacks() {
   auto transport = std::make_unique<RecordingTransport>();
   mcp::client::Client client(std::move(transport));
@@ -4468,6 +4518,8 @@ int main() {
        test_client_peer_initialize_uses_explicit_capabilities_and_roots},
       {"client roots and notification callbacks",
        test_client_roots_and_notification_callbacks},
+      {"client elicitation defaults to decline without handler",
+       test_client_elicitation_defaults_to_decline_without_handler},
       {"client request callbacks", test_client_request_callbacks},
   };
 

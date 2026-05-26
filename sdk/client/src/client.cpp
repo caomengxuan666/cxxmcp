@@ -1355,17 +1355,19 @@ core::Result<protocol::JsonRpcResponse> Client::handle_request(
   }
 
   if (request.method == std::string(protocol::ElicitationCreateMethod)) {
-    if (!elicitation_request_handler_) {
-      return make_error_response(
-          request, static_cast<int>(protocol::ErrorCode::MethodNotFound),
-          "elicitation request handler is not configured");
-    }
-
     const auto params =
         protocol::create_elicitation_request_param_from_json(request.params);
     if (!params) {
       return make_error_response(request, params.error().code,
                                  params.error().message, params.error().detail);
+    }
+
+    if (!elicitation_request_handler_) {
+      return protocol::make_response(
+          request.id, protocol::create_elicitation_result_to_json(
+                          protocol::CreateElicitationResult{
+                              .action = protocol::ElicitationAction::Decline,
+                          }));
     }
 
     const auto result = elicitation_request_handler_(*params);

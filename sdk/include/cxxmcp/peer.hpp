@@ -1594,15 +1594,17 @@ class Peer<RoleClient> {
     }
 
     if (request.method == std::string(protocol::ElicitationCreateMethod)) {
-      if (!elicitation_request_handler_) {
-        return native_error_response(
-            request, protocol::ErrorCode::MethodNotFound,
-            "elicitation request handler is not configured");
-      }
       const auto params =
           protocol::create_elicitation_request_param_from_json(request.params);
       if (!params) {
         return native_error_response(request, params.error());
+      }
+      if (!elicitation_request_handler_) {
+        return protocol::make_response(
+            request.id, protocol::create_elicitation_result_to_json(
+                            protocol::CreateElicitationResult{
+                                .action = protocol::ElicitationAction::Decline,
+                            }));
       }
       const auto result = elicitation_request_handler_(*params);
       if (!result) {
