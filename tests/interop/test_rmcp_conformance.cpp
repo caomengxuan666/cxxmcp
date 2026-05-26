@@ -55,6 +55,35 @@ void set_process_env(std::string_view key, const std::string& value) {
 #endif
 }
 
+void unset_process_env(std::string_view key) {
+  const std::string key_string(key);
+#ifdef _WIN32
+  _putenv_s(key_string.c_str(), "");
+#else
+  unsetenv(key_string.c_str());
+#endif
+}
+
+std::optional<std::string> get_process_env(std::string_view key) {
+  const std::string key_string(key);
+#ifdef _WIN32
+  char* value = nullptr;
+  std::size_t size = 0;
+  if (_dupenv_s(&value, &size, key_string.c_str()) != 0 || value == nullptr) {
+    return std::nullopt;
+  }
+  std::string result(value);
+  std::free(value);
+  return result;
+#else
+  const char* value = std::getenv(key_string.c_str());
+  if (value == nullptr) {
+    return std::nullopt;
+  }
+  return std::string(value);
+#endif
+}
+
 std::filesystem::path repo_root() {
   return std::filesystem::path(MCP_TEST_SOURCE_DIR);
 }
@@ -184,7 +213,18 @@ mcp::protocol::Task make_task(std::string task_id,
 }
 
 void configure_cargo_proxy() {
-  const std::string proxy = "http://127.0.0.1:7897";
+  for (std::string_view key :
+       {"CARGO_HTTP_PROXY", "CARGO_HTTPS_PROXY", "HTTP_PROXY", "HTTPS_PROXY",
+        "ALL_PROXY", "http_proxy", "https_proxy", "all_proxy"}) {
+    unset_process_env(key);
+  }
+
+  const auto configured_proxy = get_process_env("CXXMCP_CARGO_PROXY");
+  if (!configured_proxy.has_value() || configured_proxy->empty()) {
+    return;
+  }
+
+  const std::string& proxy = *configured_proxy;
   set_process_env("CARGO_HTTP_PROXY", proxy);
   set_process_env("CARGO_HTTPS_PROXY", proxy);
   set_process_env("HTTP_PROXY", proxy);

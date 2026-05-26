@@ -41,6 +41,13 @@ tokio = { version = \"1\", features = [\"macros\", \"rt-multi-thread\", \"proces
 
 set(ENV{CARGO_TARGET_DIR} "${CARGO_TARGET_DIR}")
 
+foreach(cxxmcp_proxy_env
+        CARGO_HTTP_PROXY CARGO_HTTPS_PROXY
+        HTTP_PROXY HTTPS_PROXY ALL_PROXY
+        http_proxy https_proxy all_proxy)
+    unset(ENV{${cxxmcp_proxy_env}})
+endforeach()
+
 if(DEFINED ENV{CXXMCP_CARGO_PROXY} AND NOT "$ENV{CXXMCP_CARGO_PROXY}" STREQUAL "")
     set(ENV{CARGO_HTTP_PROXY} "$ENV{CXXMCP_CARGO_PROXY}")
     set(ENV{CARGO_HTTPS_PROXY} "$ENV{CXXMCP_CARGO_PROXY}")
