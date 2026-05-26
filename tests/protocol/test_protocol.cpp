@@ -23,6 +23,38 @@
 
 namespace fs = std::filesystem;
 
+namespace schema_fixture {
+
+struct SearchArgs {};
+
+struct SearchResult {};
+
+}  // namespace schema_fixture
+
+namespace mcp::protocol {
+
+template <>
+struct SchemaTraits<schema_fixture::SearchArgs> {
+  static Json schema() {
+    return object_schema()
+        .required_property("query", JsonSchema::string())
+        .optional_property("limit", JsonSchema::integer())
+        .additional_properties(false)
+        .build();
+  }
+};
+
+template <>
+struct SchemaTraits<schema_fixture::SearchResult> {
+  static Json schema() {
+    return object_schema()
+        .required_property("matches", JsonSchema::array(JsonSchema::string()))
+        .build();
+  }
+};
+
+}  // namespace mcp::protocol
+
 namespace {
 
 using mcp::protocol::ErrorCode;
@@ -638,6 +670,12 @@ void test_schema_and_tool_definition_builders() {
           "number schema trait mismatch");
   require(mcp::protocol::schema_for<std::string>().at("type") == "string",
           "string schema trait mismatch");
+  const auto custom_input =
+      mcp::protocol::schema_for<const schema_fixture::SearchArgs&>();
+  require(custom_input.at("properties").contains("query"),
+          "custom schema trait should support cv-ref typed helpers");
+  require(custom_input.at("additionalProperties") == false,
+          "custom schema trait should preserve object schema details");
 
   const auto output_schema =
       mcp::protocol::object_schema()
@@ -683,6 +721,17 @@ void test_schema_and_tool_definition_builders() {
           "json input schema should be unconstrained");
   require(typed_tool.output_schema.at("type") == "number",
           "typed output schema mismatch");
+
+  const auto custom_typed_tool = mcp::protocol::tool_definition("search")
+                                     .input<schema_fixture::SearchArgs>()
+                                     .output<schema_fixture::SearchResult>()
+                                     .build();
+  require(custom_typed_tool.input_schema.at("properties").contains("query"),
+          "typed tool custom input schema mismatch");
+  require(custom_typed_tool.output_schema.at("properties").contains("matches"),
+          "typed tool custom output schema mismatch");
+  require(custom_typed_tool.output_schema_present,
+          "typed tool custom output schema should mark output present");
 }
 
 void test_content_block_variants_round_trip() {

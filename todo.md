@@ -610,7 +610,7 @@ true:
   - [x] Pass cancellation tokens into prompt contexts and typed prompt helpers.
   - [x] Pass cancellation tokens into resource contexts and typed resource
     helpers.
-- [ ] Keep `SchemaTraits<T>` and `schema_for<T>()` customization stable.
+- [x] Keep `SchemaTraits<T>` and `schema_for<T>()` customization stable.
 - [x] Add optional JSON Schema validator integration.
 - [x] Validate tool input schemas where configured.
 - [x] Validate tool output schemas where configured.
