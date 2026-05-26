@@ -647,10 +647,18 @@ inline core::Result<ToolDefinition> tool_definition_from_json(
   }
 
   if (json.contains("annotations")) {
+    if (!json.at("annotations").is_object()) {
+      return std::unexpected(
+          tool_json_error("tool definition annotations must be an object"));
+    }
     definition.annotations = json.at("annotations");
   }
 
   if (json.contains("_meta")) {
+    if (!json.at("_meta").is_object()) {
+      return std::unexpected(
+          tool_json_error("tool definition _meta must be an object"));
+    }
     definition.meta = json.at("_meta");
   }
   definition.extensions = collect_json_extensions(

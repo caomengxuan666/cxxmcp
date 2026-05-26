@@ -266,9 +266,17 @@ inline core::Result<Resource> resource_from_json(const Json& json) {
     }
   }
   if (json.contains("annotations")) {
+    if (!json.at("annotations").is_object()) {
+      return std::unexpected(
+          resource_json_error("resource annotations must be an object"));
+    }
     resource.annotations = json.at("annotations");
   }
   if (json.contains("_meta")) {
+    if (!json.at("_meta").is_object()) {
+      return std::unexpected(
+          resource_json_error("resource _meta must be an object"));
+    }
     resource.meta = json.at("_meta");
   }
   resource.extensions = collect_json_extensions(
@@ -377,9 +385,17 @@ inline core::Result<ResourceTemplate> resource_template_from_json(
     }
   }
   if (json.contains("annotations")) {
+    if (!json.at("annotations").is_object()) {
+      return std::unexpected(resource_json_error(
+          "resource template annotations must be an object"));
+    }
     resource_template.annotations = json.at("annotations");
   }
   if (json.contains("_meta")) {
+    if (!json.at("_meta").is_object()) {
+      return std::unexpected(
+          resource_json_error("resource template _meta must be an object"));
+    }
     resource_template.meta = json.at("_meta");
   }
   resource_template.extensions = collect_json_extensions(

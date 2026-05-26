@@ -513,6 +513,8 @@ true:
 - [x] Add resource subscription URI type-constraint negative parse coverage.
 - [x] Add resource params/content/result metadata and scalar type-constraint
       negative parse coverage.
+- [x] Reject non-object annotations and `_meta` on tool, prompt, resource, and
+      resource-template descriptors.
 - [x] Add nested negative parse coverage for sampling tool use/tool result,
   tool choice, model preferences, elicitation primitive schemas, and
   elicitation completion notifications.

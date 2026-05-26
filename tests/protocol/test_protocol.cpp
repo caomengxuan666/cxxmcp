@@ -3577,6 +3577,16 @@ void test_protocol_type_constraints_are_rejected() {
                                  {"inputSchema", Json::object()},
                                  {"outputSchema", Json::array()}}),
                         "tool definition non-object outputSchema should fail");
+  require_parse_failure(mcp::protocol::tool_definition_from_json(
+                            Json{{"name", "tool"},
+                                 {"inputSchema", Json::object()},
+                                 {"annotations", Json::array()}}),
+                        "tool definition non-object annotations should fail");
+  require_parse_failure(mcp::protocol::tool_definition_from_json(
+                            Json{{"name", "tool"},
+                                 {"inputSchema", Json::object()},
+                                 {"_meta", Json::array()}}),
+                        "tool definition non-object meta should fail");
   require_parse_failure(mcp::protocol::tool_call_from_json(Json{
                             {"name", "tool"}, {"arguments", Json::array()}}),
                         "tools/call non-object arguments should fail");
@@ -3665,9 +3675,22 @@ void test_protocol_type_constraints_are_rejected() {
   require_parse_failure(mcp::protocol::prompt_argument_from_json(
                             Json{{"name", "arg"}, {"required", "true"}}),
                         "prompt argument non-boolean required should fail");
+  require_parse_failure(mcp::protocol::prompt_argument_from_json(Json{
+                            {"name", "arg"}, {"annotations", Json::array()}}),
+                        "prompt argument non-object annotations should fail");
+  require_parse_failure(mcp::protocol::prompt_argument_from_json(
+                            Json{{"name", "arg"}, {"_meta", Json::array()}}),
+                        "prompt argument non-object meta should fail");
   require_parse_failure(mcp::protocol::prompt_from_json(Json{
                             {"name", "prompt"}, {"arguments", Json::object()}}),
                         "prompt non-array arguments should fail");
+  require_parse_failure(
+      mcp::protocol::prompt_from_json(
+          Json{{"name", "prompt"}, {"annotations", Json::array()}}),
+      "prompt non-object annotations should fail");
+  require_parse_failure(mcp::protocol::prompt_from_json(
+                            Json{{"name", "prompt"}, {"_meta", Json::array()}}),
+                        "prompt non-object meta should fail");
   require_parse_failure(mcp::protocol::prompts_get_params_from_json(Json{
                             {"name", "prompt"}, {"arguments", Json::array()}}),
                         "prompts/get non-object arguments should fail");
@@ -3686,6 +3709,14 @@ void test_protocol_type_constraints_are_rejected() {
       mcp::protocol::resource_from_json(
           Json{{"uri", "file:///a"}, {"name", "a"}, {"size", 4294967296LL}}),
       "resource size above uint32 should fail");
+  require_parse_failure(
+      mcp::protocol::resource_from_json(Json{
+          {"uri", "file:///a"}, {"name", "a"}, {"annotations", Json::array()}}),
+      "resource non-object annotations should fail");
+  require_parse_failure(
+      mcp::protocol::resource_from_json(
+          Json{{"uri", "file:///a"}, {"name", "a"}, {"_meta", Json::array()}}),
+      "resource non-object meta should fail");
   require_parse_failure(mcp::protocol::resource_template_from_json(
                             Json{{"uriTemplate", 3}, {"name", "rt"}}),
                         "resource template non-string uriTemplate should fail");
@@ -3693,6 +3724,16 @@ void test_protocol_type_constraints_are_rejected() {
       mcp::protocol::resource_template_from_json(Json{
           {"uriTemplate", "file:///{name}"}, {"name", "rt"}, {"size", -1}}),
       "resource template negative size should fail");
+  require_parse_failure(mcp::protocol::resource_template_from_json(
+                            Json{{"uriTemplate", "file:///{name}"},
+                                 {"name", "rt"},
+                                 {"annotations", Json::array()}}),
+                        "resource template non-object annotations should fail");
+  require_parse_failure(mcp::protocol::resource_template_from_json(
+                            Json{{"uriTemplate", "file:///{name}"},
+                                 {"name", "rt"},
+                                 {"_meta", Json::array()}}),
+                        "resource template non-object meta should fail");
   require_parse_failure(
       mcp::protocol::resources_read_params_from_json(Json{{"uri", 3}}),
       "resources/read non-string uri should fail");

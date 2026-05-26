@@ -184,9 +184,17 @@ inline core::Result<PromptArgument> prompt_argument_from_json(
     argument.required_present = true;
   }
   if (json.contains("annotations")) {
+    if (!json.at("annotations").is_object()) {
+      return std::unexpected(
+          prompt_json_error("prompt argument annotations must be an object"));
+    }
     argument.annotations = json.at("annotations");
   }
   if (json.contains("_meta")) {
+    if (!json.at("_meta").is_object()) {
+      return std::unexpected(
+          prompt_json_error("prompt argument _meta must be an object"));
+    }
     argument.meta = json.at("_meta");
   }
   argument.extensions = collect_json_extensions(
@@ -282,9 +290,17 @@ inline core::Result<Prompt> prompt_from_json(const Json& json) {
     }
   }
   if (json.contains("annotations")) {
+    if (!json.at("annotations").is_object()) {
+      return std::unexpected(
+          prompt_json_error("prompt annotations must be an object"));
+    }
     prompt.annotations = json.at("annotations");
   }
   if (json.contains("_meta")) {
+    if (!json.at("_meta").is_object()) {
+      return std::unexpected(
+          prompt_json_error("prompt _meta must be an object"));
+    }
     prompt.meta = json.at("_meta");
   }
   prompt.extensions = collect_json_extensions(
