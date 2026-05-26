@@ -504,6 +504,8 @@ true:
 - [x] Add cross-family required-field negative parse regression coverage for
   tools, prompts, resources, roots, completion, sampling, elicitation, and
   tasks.
+- [x] Add initialize payload required-field negative parse coverage for
+  implementation info, initialize params, and initialize result.
 - [x] Add cross-family type-constraint negative parse regression coverage for
   tools, prompts, resources, roots, completion, logging, sampling,
   elicitation, and tasks.

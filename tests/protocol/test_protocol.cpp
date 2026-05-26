@@ -3338,6 +3338,9 @@ void test_protocol_required_fields_are_rejected() {
       mcp::protocol::implementation_info_from_json(Json{{"version", "1.0.0"}}),
       "implementation info without name should fail");
   require_parse_failure(
+      mcp::protocol::implementation_info_from_json(Json{{"name", "client"}}),
+      "implementation info without version should fail");
+  require_parse_failure(
       mcp::protocol::initialize_params_from_json(
           Json{{"capabilities", Json::object()},
                {"clientInfo", Json{{"name", "client"}, {"version", "1.0.0"}}}}),
@@ -3347,6 +3350,20 @@ void test_protocol_required_fields_are_rejected() {
           Json{{"protocolVersion", "2025-06-18"},
                {"clientInfo", Json{{"name", "client"}, {"version", "1.0.0"}}}}),
       "initialize params without capabilities should fail");
+  require_parse_failure(
+      mcp::protocol::initialize_params_from_json(Json{
+          {"protocolVersion", "2025-06-18"}, {"capabilities", Json::object()}}),
+      "initialize params without clientInfo should fail");
+  require_parse_failure(
+      mcp::protocol::initialize_result_from_json(
+          Json{{"capabilities", Json::object()},
+               {"serverInfo", Json{{"name", "server"}, {"version", "1.0.0"}}}}),
+      "initialize result without protocolVersion should fail");
+  require_parse_failure(
+      mcp::protocol::initialize_result_from_json(
+          Json{{"protocolVersion", "2025-06-18"},
+               {"serverInfo", Json{{"name", "server"}, {"version", "1.0.0"}}}}),
+      "initialize result without capabilities should fail");
   require_parse_failure(
       mcp::protocol::initialize_result_from_json(Json{
           {"protocolVersion", "2025-06-18"}, {"capabilities", Json::object()}}),
@@ -3621,6 +3638,11 @@ void test_protocol_type_constraints_are_rejected() {
                {"capabilities", Json::array()},
                {"clientInfo", Json{{"name", "client"}, {"version", "1.0.0"}}}}),
       "initialize params non-object capabilities should fail");
+  require_parse_failure(mcp::protocol::initialize_params_from_json(
+                            Json{{"protocolVersion", "2025-06-18"},
+                                 {"capabilities", Json::object()},
+                                 {"clientInfo", Json::array()}}),
+                        "initialize params non-object clientInfo should fail");
   require_parse_failure(
       mcp::protocol::initialize_result_from_json(
           Json{{"protocolVersion", "2025-06-18"},
@@ -3628,6 +3650,11 @@ void test_protocol_type_constraints_are_rejected() {
                {"serverInfo", Json{{"name", "server"}, {"version", "1.0.0"}}},
                {"instructions", 7}}),
       "initialize result non-string instructions should fail");
+  require_parse_failure(mcp::protocol::initialize_result_from_json(
+                            Json{{"protocolVersion", "2025-06-18"},
+                                 {"capabilities", Json::object()},
+                                 {"serverInfo", Json::array()}}),
+                        "initialize result non-object serverInfo should fail");
 
   require_parse_failure(mcp::protocol::prompt_argument_from_json(
                             Json{{"name", "arg"}, {"required", "true"}}),
