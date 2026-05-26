@@ -2795,6 +2795,26 @@ void test_initialize_handshake_shape() {
               .at("vendor/feature")
               .at("enabled"),
           "server extension mismatch");
+
+  auto legacy_request = mcp::protocol::JsonRpcRequest{
+      .method = std::string(mcp::protocol::InitializeMethod),
+      .params =
+          Json{
+              {"protocolVersion",
+               std::string(mcp::protocol::McpProtocolVersion2025_06_18)},
+              {"capabilities", Json::object()},
+              {"clientInfo", Json{{"name", "tester"}, {"version", "1"}}},
+          },
+      .id = std::string("init-legacy"),
+  };
+  const auto legacy_response =
+      server.handle_request(legacy_request, mcp::server::SessionContext{});
+  require(legacy_response.has_value(), "legacy initialize request failed");
+  require(legacy_response->result.has_value(),
+          "legacy initialize result missing");
+  require(legacy_response->result->at("protocolVersion") ==
+              std::string(mcp::protocol::McpProtocolVersion2025_06_18),
+          "server should echo a known client protocol version");
 }
 
 void test_server_initialize_rejects_invalid_protocol_versions() {
@@ -2837,19 +2857,17 @@ void test_server_initialize_rejects_invalid_protocol_versions() {
               static_cast<int>(mcp::protocol::ErrorCode::InvalidParams),
           "non-string initialize protocolVersion error code mismatch");
 
-  auto unsupported = base_request();
-  unsupported.params["protocolVersion"] = "2024-11-05";
-  const auto unsupported_response =
-      server.handle_request(unsupported, mcp::server::SessionContext{});
-  require(unsupported_response.has_value(),
-          "unsupported initialize protocolVersion should produce response");
-  require(unsupported_response->error.has_value(),
-          "unsupported initialize protocolVersion should be rejected");
-  require(unsupported_response->error->code ==
-              static_cast<int>(mcp::protocol::ErrorCode::InvalidParams),
-          "unsupported initialize protocolVersion error code mismatch");
-  require(unsupported_response->error->data.has_value(),
-          "unsupported initialize protocolVersion should include detail");
+  auto unknown = base_request();
+  unknown.params["protocolVersion"] = "1900-01-01";
+  const auto unknown_response =
+      server.handle_request(unknown, mcp::server::SessionContext{});
+  require(unknown_response.has_value(),
+          "unknown initialize protocolVersion should produce response");
+  require(unknown_response->result.has_value(),
+          "unknown initialize protocolVersion should fall back");
+  require(unknown_response->result->at("protocolVersion") ==
+              std::string(mcp::protocol::McpProtocolVersion),
+          "unknown initialize protocolVersion should negotiate to latest");
 }
 
 void test_default_server_initialize_omits_inactive_capabilities() {
@@ -3362,16 +3380,12 @@ void test_client_initialize_rejects_invalid_protocol_versions() {
               "initialize response requires a string protocolVersion",
           "non-string initialize protocolVersion client error mismatch");
 
-  auto unsupported_transport = std::make_unique<RecordingTransport>();
-  unsupported_transport->initialize_result["protocolVersion"] = "2024-11-05";
-  mcp::client::Client unsupported_client(std::move(unsupported_transport));
-  const auto unsupported = unsupported_client.initialize("tester", "1");
-  require(!unsupported.has_value(),
-          "client should reject unsupported initialize protocolVersion");
-  require(unsupported.error().message == "unsupported MCP protocol version",
-          "unsupported initialize protocolVersion client error mismatch");
-  require(unsupported.error().detail == "2024-11-05",
-          "unsupported initialize protocolVersion detail mismatch");
+  auto unknown_transport = std::make_unique<RecordingTransport>();
+  unknown_transport->initialize_result["protocolVersion"] = "1900-01-01";
+  mcp::client::Client unknown_client(std::move(unknown_transport));
+  const auto unknown = unknown_client.initialize("tester", "1");
+  require(unknown.has_value(),
+          "client should accept unknown string initialize protocolVersion");
 }
 
 void test_client_session_discover_tools_uses_client_list_tools() {

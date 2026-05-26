@@ -23,11 +23,17 @@ namespace mcp::protocol {
 
 /// @brief JSON-RPC protocol version string placed in message envelopes.
 inline constexpr std::string_view JsonRpcVersion = "2.0";
-/// @brief MCP protocol version advertised during initialization.
-inline constexpr std::string_view McpProtocolVersion = "2025-11-25";
+inline constexpr std::string_view McpProtocolVersion2025_11_25 = "2025-11-25";
+inline constexpr std::string_view McpProtocolVersion2025_06_18 = "2025-06-18";
+inline constexpr std::string_view McpProtocolVersion2025_03_26 = "2025-03-26";
+inline constexpr std::string_view McpProtocolVersion2024_11_05 = "2024-11-05";
+/// @brief Latest MCP protocol version advertised during initialization.
+inline constexpr std::string_view McpProtocolVersion =
+    McpProtocolVersion2025_11_25;
 /// @brief Protocol versions accepted by this SDK during initialization.
-inline constexpr std::array<std::string_view, 1> McpSupportedProtocolVersions{
-    McpProtocolVersion};
+inline constexpr std::array<std::string_view, 4> McpSupportedProtocolVersions{
+    McpProtocolVersion2024_11_05, McpProtocolVersion2025_03_26,
+    McpProtocolVersion2025_06_18, McpProtocolVersion2025_11_25};
 
 /// @brief Returns true when a peer protocol version is supported.
 inline constexpr bool is_supported_protocol_version(
@@ -38,6 +44,19 @@ inline constexpr bool is_supported_protocol_version(
     }
   }
   return false;
+}
+
+/// @brief Returns the peer-requested version when known, otherwise the
+/// fallback.
+inline constexpr std::string_view negotiate_protocol_version(
+    std::string_view requested,
+    std::string_view fallback = McpProtocolVersion) noexcept {
+  for (const auto supported : McpSupportedProtocolVersions) {
+    if (requested == supported) {
+      return supported;
+    }
+  }
+  return fallback;
 }
 
 /// @brief `initialize` request method for lifecycle negotiation.

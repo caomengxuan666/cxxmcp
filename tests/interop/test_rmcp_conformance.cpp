@@ -344,13 +344,11 @@ class RunningInteropServer {
 
       if (rpc_request->method == mcp::protocol::InitializeMethod) {
         if (!rpc_request->params.contains("protocolVersion") ||
-            !rpc_request->params.at("protocolVersion").is_string() ||
-            !mcp::protocol::is_supported_protocol_version(
-                rpc_request->params.at("protocolVersion").get<std::string>())) {
+            !rpc_request->params.at("protocolVersion").is_string()) {
           const auto error_response = mcp::protocol::make_error_response(
               rpc_request->id,
               mcp::protocol::make_error(mcp::protocol::ErrorCode::InvalidParams,
-                                        "unsupported protocol version"));
+                                        "missing protocol version"));
           const auto serialized =
               mcp::protocol::serialize_response(error_response);
           require(serialized.has_value(),
@@ -358,6 +356,8 @@ class RunningInteropServer {
           response.set_content(*serialized, "application/json");
           return;
         }
+        const auto requested_version =
+            rpc_request->params.at("protocolVersion").get<std::string>();
 
         {
           std::lock_guard lock(mutex_);
@@ -369,7 +369,8 @@ class RunningInteropServer {
             rpc_request->id,
             Json{
                 {"protocolVersion",
-                 std::string(mcp::protocol::McpProtocolVersion)},
+                 std::string(mcp::protocol::negotiate_protocol_version(
+                     requested_version))},
                 {"capabilities",
                  Json{
                      {"tools", Json::object()},
@@ -1520,14 +1521,15 @@ void test_cxxmcp_streamable_http_interop_matrix_core_methods() {
   expect_error(post_json_rpc(port, rpc_request(26, "experimental/unknown",
                                                Json::object())),
                static_cast<int>(mcp::protocol::ErrorCode::MethodNotFound));
-  expect_error(
-      post_json_rpc(
-          port, rpc_request(27, std::string(mcp::protocol::InitializeMethod),
-                            Json{{"protocolVersion", "1900-01-01"},
-                                 {"capabilities", Json::object()},
-                                 {"clientInfo", Json{{"name", "old-client"},
-                                                     {"version", "1"}}}})),
-      static_cast<int>(mcp::protocol::ErrorCode::InvalidParams));
+  const auto fallback_init = expect_result(post_json_rpc(
+      port, rpc_request(27, std::string(mcp::protocol::InitializeMethod),
+                        Json{{"protocolVersion", "1900-01-01"},
+                             {"capabilities", Json::object()},
+                             {"clientInfo", Json{{"name", "old-client"},
+                                                 {"version", "1"}}}})));
+  require(fallback_init.at("protocolVersion") ==
+              std::string(mcp::protocol::McpProtocolVersion),
+          "unknown initialize protocolVersion should negotiate to latest");
 
   httplib::Client client("127.0.0.1", port);
   const auto malformed = client.Post("/mcp", "{not json", "application/json");

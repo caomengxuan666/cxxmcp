@@ -6,6 +6,7 @@
 #include <exception>
 #include <memory>
 #include <optional>
+#include <string_view>
 #include <utility>
 
 #include "cxxmcp/error.hpp"
@@ -34,9 +35,11 @@ protocol::Json server_info_to_json(const ServerOptions& options) {
   return json;
 }
 
-protocol::Json initialize_result_to_json(const ServerOptions& options) {
+protocol::Json initialize_result_to_json(
+    const ServerOptions& options,
+    std::string_view protocol_version = protocol::McpProtocolVersion) {
   protocol::Json result = protocol::Json::object();
-  result["protocolVersion"] = std::string(protocol::McpProtocolVersion);
+  result["protocolVersion"] = std::string(protocol_version);
   result["capabilities"] =
       protocol::server_capabilities_to_json(options.capabilities);
   result["serverInfo"] = server_info_to_json(options);
@@ -61,15 +64,6 @@ core::Result<core::Unit> validate_initialize_params(
         static_cast<int>(protocol::ErrorCode::InvalidParams),
         "initialize requires a string protocolVersion",
         {},
-    });
-  }
-
-  const auto version = params.at("protocolVersion").get<std::string>();
-  if (!protocol::is_supported_protocol_version(version)) {
-    return std::unexpected(core::Error{
-        static_cast<int>(protocol::ErrorCode::InvalidParams),
-        "unsupported MCP protocol version",
-        version,
     });
   }
 
@@ -315,8 +309,12 @@ core::Result<protocol::JsonRpcResponse> Server::handle_request(
       return make_error_response(request, valid.error().code,
                                  valid.error().message, valid.error().detail);
     }
-    return protocol::make_response(request.id,
-                                   initialize_result_to_json(options_));
+    const auto requested_version =
+        request.params.at("protocolVersion").get<std::string>();
+    return protocol::make_response(
+        request.id,
+        initialize_result_to_json(
+            options_, protocol::negotiate_protocol_version(requested_version)));
   }
 
   if (request.method == protocol::PingMethod) {

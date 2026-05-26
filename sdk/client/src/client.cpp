@@ -70,13 +70,6 @@ core::Result<protocol::Json> require_initialize_payload(
         "initialize response requires a string protocolVersion"));
   }
 
-  const auto version = payload->at("protocolVersion").get<std::string>();
-  if (!protocol::is_supported_protocol_version(version)) {
-    return std::unexpected(
-        make_client_error(static_cast<int>(protocol::ErrorCode::InvalidRequest),
-                          "unsupported MCP protocol version", version));
-  }
-
   return *payload;
 }
 

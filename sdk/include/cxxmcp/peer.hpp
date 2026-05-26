@@ -175,12 +175,6 @@ inline core::Result<protocol::Json> require_peer_initialize_payload(
                      "initialize response requires a string protocolVersion",
                      {}, "protocol"));
   }
-  const auto version = payload.at("protocolVersion").get<std::string>();
-  if (!protocol::is_supported_protocol_version(version)) {
-    return std::unexpected(errors::make(protocol::ErrorCode::InvalidRequest,
-                                        "unsupported MCP protocol version",
-                                        version, "protocol"));
-  }
   return payload;
 }
 
@@ -197,21 +191,15 @@ inline core::Result<core::Unit> validate_peer_server_initialize_params(
                      "initialize requires a string protocolVersion"));
   }
 
-  const auto version = params.at("protocolVersion").get<std::string>();
-  if (!protocol::is_supported_protocol_version(version)) {
-    return std::unexpected(errors::make(protocol::ErrorCode::InvalidParams,
-                                        "unsupported MCP protocol version",
-                                        version));
-  }
-
   return core::Unit{};
 }
 
 inline protocol::Json make_peer_server_initialize_result(
     const server::ServerInfo& info,
-    const protocol::ServerCapabilities& capabilities) {
+    const protocol::ServerCapabilities& capabilities,
+    std::string_view protocol_version = protocol::McpProtocolVersion) {
   protocol::Json result = protocol::Json::object();
-  result["protocolVersion"] = std::string(protocol::McpProtocolVersion);
+  result["protocolVersion"] = std::string(protocol_version);
   result["capabilities"] = protocol::server_capabilities_to_json(capabilities);
   result["serverInfo"] = protocol::Json{
       {"name", info.name},
@@ -1920,9 +1908,13 @@ class Peer<RoleServer> {
       if (!valid) {
         return detail::peer_error_response(request, valid.error());
       }
-      return protocol::make_response(request.id,
-                                     detail::make_peer_server_initialize_result(
-                                         get_info(), capabilities()));
+      const auto requested_version =
+          request.params.at("protocolVersion").get<std::string>();
+      return protocol::make_response(
+          request.id,
+          detail::make_peer_server_initialize_result(
+              get_info(), capabilities(),
+              protocol::negotiate_protocol_version(requested_version)));
     }
     if (request.method == protocol::PingMethod) {
       return protocol::make_response(request.id, protocol::Json::object());

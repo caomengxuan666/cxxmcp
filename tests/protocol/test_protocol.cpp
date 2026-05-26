@@ -126,9 +126,24 @@ void test_supported_protocol_versions_are_explicit() {
   require(mcp::protocol::is_supported_protocol_version(
               mcp::protocol::McpProtocolVersion),
           "current MCP protocol version should be supported");
-  require(mcp::protocol::McpSupportedProtocolVersions.size() == 1,
-          "add multi-version protocol tests when a second version is enabled");
-  require(!mcp::protocol::is_supported_protocol_version("2024-11-05"),
+  require(mcp::protocol::is_supported_protocol_version(
+              mcp::protocol::McpProtocolVersion2024_11_05),
+          "2024-11-05 should be supported");
+  require(mcp::protocol::is_supported_protocol_version(
+              mcp::protocol::McpProtocolVersion2025_03_26),
+          "2025-03-26 should be supported");
+  require(mcp::protocol::is_supported_protocol_version(
+              mcp::protocol::McpProtocolVersion2025_06_18),
+          "2025-06-18 should be supported");
+  require(mcp::protocol::McpSupportedProtocolVersions.size() == 4,
+          "supported MCP protocol version set mismatch");
+  require(mcp::protocol::negotiate_protocol_version("2025-06-18") ==
+              mcp::protocol::McpProtocolVersion2025_06_18,
+          "known MCP protocol version should negotiate to itself");
+  require(mcp::protocol::negotiate_protocol_version("1900-01-01") ==
+              mcp::protocol::McpProtocolVersion,
+          "unknown MCP protocol version should negotiate to latest fallback");
+  require(!mcp::protocol::is_supported_protocol_version("1900-01-01"),
           "unknown MCP protocol version should not be supported");
 }
 

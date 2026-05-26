@@ -243,17 +243,18 @@ struct HttpTransport::Impl {
 
   void stop() noexcept {
     std::string session_id_to_terminate;
+    std::string protocol_version_to_send;
     {
       std::lock_guard lock(mutex);
       session_id_to_terminate = session_id;
+      protocol_version_to_send = protocol_version;
     }
 
     if (!session_id_to_terminate.empty() && options_error == std::nullopt) {
       auto client = make_client();
       auto headers = to_headers(options.headers);
       headers.emplace("Accept", "application/json");
-      headers.emplace("MCP-Protocol-Version",
-                      std::string(protocol::McpProtocolVersion));
+      headers.emplace("MCP-Protocol-Version", protocol_version_to_send);
       headers.emplace(std::string(SessionHeader), session_id_to_terminate);
       (void)client.Delete(path, headers);
     }
@@ -314,12 +315,21 @@ struct HttpTransport::Impl {
       if (!remembered_session) {
         return std::unexpected(remembered_session.error());
       }
-      const auto stream_started_result = ensure_stream_started();
-      if (!stream_started_result) {
-        return std::unexpected(stream_started_result.error());
+
+      auto decoded_response = decode_request_response(*response, request.id);
+      if (!decoded_response) {
+        return std::unexpected(decoded_response.error());
+      }
+      if (request.method == protocol::InitializeMethod) {
+        remember_protocol_version_from_initialize_response(*decoded_response);
       }
 
-      return decode_request_response(*response, request.id);
+      const auto stream_started = ensure_stream_started();
+      if (!stream_started) {
+        return std::unexpected(stream_started.error());
+      }
+
+      return *decoded_response;
     }
   }
 
@@ -389,6 +399,7 @@ struct HttpTransport::Impl {
       std::lock_guard lock(mutex);
       stream_started = false;
       session_id.clear();
+      protocol_version = std::string(protocol::McpProtocolVersion);
       sse_to_stop = std::move(sse_client);
       stream_client_to_stop = std::move(stream_client);
     }
@@ -421,10 +432,6 @@ struct HttpTransport::Impl {
     headers.emplace("Accept", event_stream
                                   ? "application/json, text/event-stream"
                                   : "application/json");
-    if (include_protocol_version) {
-      headers.emplace("MCP-Protocol-Version",
-                      std::string(protocol::McpProtocolVersion));
-    }
     if (method.has_value()) {
       headers.emplace(std::string(MethodHeader), std::string(*method));
     }
@@ -433,6 +440,9 @@ struct HttpTransport::Impl {
     }
 
     std::lock_guard lock(mutex);
+    if (include_protocol_version) {
+      headers.emplace("MCP-Protocol-Version", protocol_version);
+    }
     if (!session_id.empty()) {
       headers.emplace(std::string(SessionHeader), session_id);
     }
@@ -456,6 +466,20 @@ struct HttpTransport::Impl {
     return core::Unit{};
   }
 
+  void remember_protocol_version_from_initialize_response(
+      const protocol::JsonRpcResponse& response) {
+    if (!response.result.has_value() || !response.result->is_object() ||
+        !response.result->contains("protocolVersion") ||
+        !response.result->at("protocolVersion").is_string()) {
+      return;
+    }
+
+    const auto negotiated =
+        response.result->at("protocolVersion").get<std::string>();
+    std::lock_guard lock(mutex);
+    protocol_version = negotiated;
+  }
+
   core::Result<core::Unit> ensure_stream_started() {
     {
       std::lock_guard lock(mutex);
@@ -466,8 +490,7 @@ struct HttpTransport::Impl {
       apply_timeout(*stream_client, options.timeout);
       auto headers = to_headers(options.headers);
       headers.emplace("Accept", "text/event-stream");
-      headers.emplace("MCP-Protocol-Version",
-                      std::string(protocol::McpProtocolVersion));
+      headers.emplace("MCP-Protocol-Version", protocol_version);
       headers.emplace(std::string(SessionHeader), session_id);
       sse_client = std::make_unique<httplib::sse::SSEClient>(*stream_client,
                                                              path, headers);
@@ -678,6 +701,7 @@ struct HttpTransport::Impl {
   TransportNotificationHandler notification_handler;
   bool started = false;
   std::string session_id;
+  std::string protocol_version = std::string(protocol::McpProtocolVersion);
   bool stream_started = false;
   std::unique_ptr<httplib::Client> stream_client;
   std::unique_ptr<httplib::sse::SSEClient> sse_client;

@@ -236,11 +236,11 @@ core::Result<core::Unit> validate_initialize_protocol_header(
         "http transport request MCP-Protocol-Version header mismatch",
         header_value));
   }
-  if (!protocol::is_supported_protocol_version(body_value)) {
+  if (!protocol::is_supported_protocol_version(header_value)) {
     return std::unexpected(make_transport_error(
         HeaderMismatchCode,
-        "http transport initialize request protocolVersion is unsupported",
-        body_value));
+        "http transport request MCP-Protocol-Version header mismatch",
+        header_value));
   }
 
   return core::Unit{};

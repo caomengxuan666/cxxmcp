@@ -626,8 +626,8 @@ void test_server_peer_initialize_dispatches_on_peer_boundary() {
   require(response->result->at("capabilities").contains("logging"),
           "server peer initialize should advertise logging");
 
-  RecordingServerContractTransport rejected_transport;
-  rejected_transport.received.push_back(mcp::protocol::JsonRpcRequest{
+  RecordingServerContractTransport fallback_transport;
+  fallback_transport.received.push_back(mcp::protocol::JsonRpcRequest{
       .method = std::string(mcp::protocol::InitializeMethod),
       .params =
           Json{
@@ -639,27 +639,20 @@ void test_server_peer_initialize_dispatches_on_peer_boundary() {
       .id = mcp::protocol::RequestId{std::int64_t{2}},
   });
 
-  const auto rejected_served = peer.serve_transport(rejected_transport);
-  require(rejected_served.has_value(),
-          "server peer rejected initialize dispatch should succeed");
-  require(rejected_transport.sent.size() == 1,
-          "server peer rejected initialize should send one response");
-  const auto* rejected_response = std::get_if<mcp::protocol::JsonRpcResponse>(
-      &rejected_transport.sent.front());
-  require(rejected_response != nullptr,
-          "server peer rejected initialize response missing");
-  require(rejected_response->error.has_value(),
-          "server peer rejected initialize should return error");
-  require(rejected_response->error->code ==
-              static_cast<int>(mcp::protocol::ErrorCode::InvalidParams),
-          "server peer rejected initialize error code mismatch");
-  require(
-      rejected_response->error->message == "unsupported MCP protocol version",
-      "server peer rejected initialize error message mismatch");
-  require(rejected_response->error->data.has_value(),
-          "server peer rejected initialize should include detail");
-  require(*rejected_response->error->data == Json("1900-01-01"),
-          "server peer rejected initialize detail mismatch");
+  const auto fallback_served = peer.serve_transport(fallback_transport);
+  require(fallback_served.has_value(),
+          "server peer fallback initialize dispatch should succeed");
+  require(fallback_transport.sent.size() == 1,
+          "server peer fallback initialize should send one response");
+  const auto* fallback_response = std::get_if<mcp::protocol::JsonRpcResponse>(
+      &fallback_transport.sent.front());
+  require(fallback_response != nullptr,
+          "server peer fallback initialize response missing");
+  require(fallback_response->result.has_value(),
+          "server peer fallback initialize should return result");
+  require(fallback_response->result->at("protocolVersion") ==
+              std::string(mcp::protocol::McpProtocolVersion),
+          "server peer unknown protocol version should negotiate to latest");
 }
 
 void test_server_peer_tool_discovery_dispatches_on_peer_boundary() {

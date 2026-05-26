@@ -372,33 +372,33 @@ void test_http_transport_opens_get_sse_after_session_and_dispatches_notification
   std::atomic<bool> notification_seen{false};
 
   HttpServerFixture fixture;
-  fixture.server().Post(
-      "/mcp", [](const httplib::Request& request, httplib::Response& response) {
-        const auto parsed = mcp::protocol::parse_message(request.body);
-        require(parsed.has_value(), "server should parse initialize request");
-        const auto* rpc_request =
-            std::get_if<mcp::protocol::JsonRpcRequest>(&*parsed);
-        require(rpc_request != nullptr, "server should receive request");
-        require(rpc_request->method == mcp::protocol::InitializeMethod,
-                "server should receive initialize");
-        require(!request.has_header("MCP-Protocol-Version"),
-                "initialize should not include MCP-Protocol-Version");
+  fixture.server().Post("/mcp", [](const httplib::Request& request,
+                                   httplib::Response& response) {
+    const auto parsed = mcp::protocol::parse_message(request.body);
+    require(parsed.has_value(), "server should parse initialize request");
+    const auto* rpc_request =
+        std::get_if<mcp::protocol::JsonRpcRequest>(&*parsed);
+    require(rpc_request != nullptr, "server should receive request");
+    require(rpc_request->method == mcp::protocol::InitializeMethod,
+            "server should receive initialize");
+    require(!request.has_header("MCP-Protocol-Version"),
+            "initialize should not include MCP-Protocol-Version");
 
-        response.set_header("Mcp-Session-Id", "test-session");
-        response.set_content(
-            serialize_test_response(mcp::protocol::JsonRpcResponse{
-                .id = rpc_request->id,
-                .result =
-                    Json{
-                        {"protocolVersion",
-                         std::string(mcp::protocol::McpProtocolVersion)},
-                        {"capabilities", Json::object()},
-                        {"serverInfo",
-                         Json{{"name", "sse-test"}, {"version", "1"}}},
-                    },
-            }),
-            "application/json");
-      });
+    response.set_header("Mcp-Session-Id", "test-session");
+    response.set_content(
+        serialize_test_response(mcp::protocol::JsonRpcResponse{
+            .id = rpc_request->id,
+            .result =
+                Json{
+                    {"protocolVersion",
+                     std::string(mcp::protocol::McpProtocolVersion2025_06_18)},
+                    {"capabilities", Json::object()},
+                    {"serverInfo",
+                     Json{{"name", "sse-test"}, {"version", "1"}}},
+                },
+        }),
+        "application/json");
+  });
   fixture.server().Get("/mcp", [&](const httplib::Request& request,
                                    httplib::Response& response) {
     require(request.has_header("Mcp-Session-Id"),
@@ -408,8 +408,8 @@ void test_http_transport_opens_get_sse_after_session_and_dispatches_notification
     require(request.has_header("MCP-Protocol-Version"),
             "sse get should include protocol version");
     require(request.get_header_value("MCP-Protocol-Version") ==
-                std::string(mcp::protocol::McpProtocolVersion),
-            "sse get protocol version mismatch");
+                std::string(mcp::protocol::McpProtocolVersion2025_06_18),
+            "sse get should use negotiated protocol version");
     get_seen.store(true);
 
     const auto notification =
@@ -1463,14 +1463,14 @@ void test_server_http_transport_rejects_initialize_protocol_version_mismatch() {
   require(!handler_called.load(),
           "mismatched initialize should not reach handler");
 
-  initialize_params["protocolVersion"] = "2024-11-05";
+  initialize_params["protocolVersion"] = "1900-01-01";
   const auto unsupported = http_client.Post(
       kPath,
       httplib::Headers{
           {"Accept", "application/json"},
           {"Content-Type", "application/json"},
           {"Mcp-Method", std::string(mcp::protocol::InitializeMethod)},
-          {"MCP-Protocol-Version", "2024-11-05"},
+          {"MCP-Protocol-Version", "1900-01-01"},
       },
       serialize_test_request(mcp::protocol::JsonRpcRequest{
           .method = std::string(mcp::protocol::InitializeMethod),
