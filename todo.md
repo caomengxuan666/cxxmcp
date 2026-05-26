@@ -664,7 +664,7 @@ true:
 - [x] Document package consumption with `find_package(cxxmcp CONFIG REQUIRED)`.
 - [x] Publish generated Doxygen docs for releases.
 - [ ] Keep README, README_zh, examples, Doxygen, and release notes in sync.
-- [ ] Add a minimal external consumer template.
+- [x] Add a minimal external consumer template.
 
 ## P1: CI And Release Gates
 
@@ -772,7 +772,7 @@ true:
 - [ ] Keep multi-profile hosting out of SDK core.
 - [ ] Make gateway depend on SDK targets, not the other way around.
 - [ ] Keep CLI defaults out of public SDK APIs.
-- [ ] Add tests that SDK package consumption does not require runtime/gateway
+- [x] Add tests that SDK package consumption does not require runtime/gateway
   targets unless explicitly linked.
 
 ## P2: Security And Auth
