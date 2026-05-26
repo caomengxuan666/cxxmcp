@@ -527,8 +527,8 @@ true:
 - [x] Keep elicitation optional/feature-gated in public docs.
 - [x] Split or clarify form and URL elicitation types if the spec/RMCP shape
   requires deeper structure.
-- [ ] Add stronger schema integration for form elicitation.
-- [ ] Add schema validation for elicitation content.
+- [x] Add stronger schema integration for form elicitation.
+- [x] Add schema validation for elicitation content.
 - [x] Add capability checks for form elicitation.
 - [x] Add capability checks for URL elicitation.
 - [x] Add server peer helpers for typed elicitation flows.

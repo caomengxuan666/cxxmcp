@@ -55,10 +55,18 @@ the completion notification to signal that the external flow has finished.
 ## Schema Validation
 
 The protocol layer validates the shape of elicitation schemas and primitive
-property schemas when parsing. It does not yet validate a returned form
-`content` object against the requested schema. That stricter content validation
-is a separate P1 item because it needs a reusable JSON Schema validation
-dependency or a deliberately small SDK-scoped validator.
+property schemas when parsing.
+
+Applications can call `validate_elicitation_content(schema, content)` to check
+returned form content against the SDK's constrained schema model. The validator
+checks required fields, primitive JSON types, numeric bounds, and enum values.
+`validate_elicitation_result_content(schema, result)` applies the same rules to
+accepted elicitation results and treats `decline` / `cancel` results as not
+requiring content.
+
+This is intentionally narrower than a complete JSON Schema implementation.
+Unknown content members are allowed because the SDK schema model does not expose
+`additionalProperties`.
 
 ## Stability
 

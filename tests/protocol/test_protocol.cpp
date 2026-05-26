@@ -1528,6 +1528,75 @@ void test_elicitation_protocol_round_trips() {
           "elicitation completion id mismatch");
 }
 
+void test_elicitation_content_validation() {
+  const auto schema = mcp::protocol::ElicitationSchema::Builder()
+                          .required_email("email")
+                          .optional_bool("remember")
+                          .required_integer("age", 18, 120)
+                          .optional_number("score", 0.0, 1.0)
+                          .optional_enum("tier", {"free", "pro"})
+                          .build();
+  require(schema.has_value(), "elicitation validation schema build failed");
+
+  const Json valid_content = Json{{"email", "user@example.test"},
+                                  {"remember", true},
+                                  {"age", 42},
+                                  {"score", 0.75},
+                                  {"tier", "pro"},
+                                  {"extra", "allowed"}};
+  require(mcp::protocol::validate_elicitation_content(*schema, valid_content)
+              .has_value(),
+          "valid elicitation content should pass");
+  mcp::protocol::CreateElicitationResult accepted_result;
+  accepted_result.action = mcp::protocol::ElicitationAction::Accept;
+  accepted_result.content = valid_content;
+  require(mcp::protocol::validate_elicitation_result_content(*schema,
+                                                             accepted_result)
+              .has_value(),
+          "accepted elicitation result content should pass");
+  require(mcp::protocol::validate_elicitation_result_content(
+              *schema,
+              mcp::protocol::CreateElicitationResult{
+                  .action = mcp::protocol::ElicitationAction::Decline,
+              })
+              .has_value(),
+          "declined elicitation result should not require content");
+
+  require_parse_failure(
+      mcp::protocol::validate_elicitation_content(*schema, Json::array()),
+      "non-object elicitation content should fail");
+  require_parse_failure(
+      mcp::protocol::validate_elicitation_content(
+          *schema, Json{{"email", "user@example.test"}, {"age", 17}}),
+      "elicitation integer minimum should fail");
+  require_parse_failure(
+      mcp::protocol::validate_elicitation_content(
+          *schema, Json{{"email", "user@example.test"}, {"age", 42.5}}),
+      "elicitation integer type should fail");
+  require_parse_failure(mcp::protocol::validate_elicitation_content(
+                            *schema, Json{{"email", "user@example.test"},
+                                          {"age", 42},
+                                          {"remember", "yes"}}),
+                        "elicitation boolean type should fail");
+  require_parse_failure(
+      mcp::protocol::validate_elicitation_content(
+          *schema,
+          Json{{"email", "user@example.test"}, {"age", 42}, {"score", 1.5}}),
+      "elicitation number maximum should fail");
+  require_parse_failure(mcp::protocol::validate_elicitation_content(
+                            *schema, Json{{"email", "user@example.test"},
+                                          {"age", 42},
+                                          {"tier", "enterprise"}}),
+                        "elicitation enum value should fail");
+  require_parse_failure(
+      mcp::protocol::validate_elicitation_result_content(
+          *schema,
+          mcp::protocol::CreateElicitationResult{
+              .action = mcp::protocol::ElicitationAction::Accept,
+          }),
+      "accepted elicitation result without required content should fail");
+}
+
 void test_sampling_tool_use_round_trips() {
   const auto tool_use = mcp::protocol::SamplingMessageContent::tool_use_content(
       mcp::protocol::ToolUseContent{
@@ -2445,6 +2514,7 @@ int main() {
        test_roots_completion_logging_sampling_round_trips},
       {"elicitation protocol round trips",
        test_elicitation_protocol_round_trips},
+      {"elicitation content validation", test_elicitation_content_validation},
       {"sampling tool use round trips", test_sampling_tool_use_round_trips},
       {"protocol meta round trips", test_protocol_meta_round_trips},
       {"protocol extension round trips", test_protocol_extension_round_trips},

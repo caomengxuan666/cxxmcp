@@ -10,6 +10,7 @@
 /// URL mode sends the user to an external flow and reports completion by
 /// notification. Task request parameters may be included when supported.
 
+#include <algorithm>
 #include <cstdint>
 #include <map>
 #include <optional>
@@ -682,6 +683,125 @@ create_elicitation_result_from_json(const Json& json) {
   result.extensions =
       collect_json_extensions(json, {"action", "content", "_meta"});
   return result;
+}
+
+/// @brief Validates a form elicitation content object against one primitive
+/// property schema.
+inline core::Result<core::Unit> validate_elicitation_content_property(
+    const std::string& name, const PrimitiveSchema& schema, const Json& value) {
+  return std::visit(
+      [&](const auto& property) -> core::Result<core::Unit> {
+        using Property = std::decay_t<decltype(property)>;
+        if constexpr (std::is_same_v<Property, StringSchema>) {
+          if (!value.is_string()) {
+            return std::unexpected(elicitation_json_error(
+                "elicitation content field '" + name + "' must be a string"));
+          }
+        } else if constexpr (std::is_same_v<Property, NumberSchema>) {
+          if (!value.is_number()) {
+            return std::unexpected(elicitation_json_error(
+                "elicitation content field '" + name + "' must be numeric"));
+          }
+          const auto number = value.get<double>();
+          if (property.minimum.has_value() && number < *property.minimum) {
+            return std::unexpected(elicitation_json_error(
+                "elicitation content field '" + name + "' is below minimum"));
+          }
+          if (property.maximum.has_value() && number > *property.maximum) {
+            return std::unexpected(elicitation_json_error(
+                "elicitation content field '" + name + "' is above maximum"));
+          }
+        } else if constexpr (std::is_same_v<Property, IntegerSchema>) {
+          if (!value.is_number_integer()) {
+            return std::unexpected(elicitation_json_error(
+                "elicitation content field '" + name + "' must be an integer"));
+          }
+          const auto integer = value.get<std::int64_t>();
+          if (property.minimum.has_value() && integer < *property.minimum) {
+            return std::unexpected(elicitation_json_error(
+                "elicitation content field '" + name + "' is below minimum"));
+          }
+          if (property.maximum.has_value() && integer > *property.maximum) {
+            return std::unexpected(elicitation_json_error(
+                "elicitation content field '" + name + "' is above maximum"));
+          }
+        } else if constexpr (std::is_same_v<Property, BooleanSchema>) {
+          if (!value.is_boolean()) {
+            return std::unexpected(elicitation_json_error(
+                "elicitation content field '" + name + "' must be a boolean"));
+          }
+        } else {
+          if (!value.is_string()) {
+            return std::unexpected(elicitation_json_error(
+                "elicitation content field '" + name + "' must be a string"));
+          }
+          const auto enum_value = value.get<std::string>();
+          if (std::find(property.values.begin(), property.values.end(),
+                        enum_value) == property.values.end()) {
+            return std::unexpected(
+                elicitation_json_error("elicitation content field '" + name +
+                                       "' must match an enum value"));
+          }
+        }
+        return core::Unit{};
+      },
+      schema);
+}
+
+/// @brief Validates a form elicitation content object against the SDK's
+/// constrained ElicitationSchema model.
+///
+/// The SDK intentionally validates only the primitive schema subset it models:
+/// required fields, primitive JSON types, numeric bounds, and enum values.
+/// Unknown content members are allowed because the schema model does not expose
+/// JSON Schema `additionalProperties`.
+inline core::Result<core::Unit> validate_elicitation_content(
+    const ElicitationSchema& schema, const Json& content) {
+  if (!content.is_object()) {
+    return std::unexpected(
+        elicitation_json_error("elicitation content must be an object"));
+  }
+
+  for (const auto& required : schema.required) {
+    if (!content.contains(required)) {
+      return std::unexpected(elicitation_json_error(
+          "elicitation content requires field '" + required + "'"));
+    }
+  }
+
+  for (const auto& [name, property] : schema.properties) {
+    if (!content.contains(name)) {
+      continue;
+    }
+    const auto valid =
+        validate_elicitation_content_property(name, property, content.at(name));
+    if (!valid) {
+      return valid;
+    }
+  }
+
+  return core::Unit{};
+}
+
+/// @brief Validates an accepted elicitation result's content against the
+/// requested form schema.
+///
+/// Non-accept results do not require content and are treated as valid. Accept
+/// results without content are valid only when the schema has no required
+/// fields.
+inline core::Result<core::Unit> validate_elicitation_result_content(
+    const ElicitationSchema& schema, const CreateElicitationResult& result) {
+  if (result.action != ElicitationAction::Accept) {
+    return core::Unit{};
+  }
+  if (!result.content.has_value()) {
+    if (schema.required.empty()) {
+      return core::Unit{};
+    }
+    return std::unexpected(
+        elicitation_json_error("accepted elicitation result requires content"));
+  }
+  return validate_elicitation_content(schema, *result.content);
 }
 
 /// @brief Serializes URL-mode completion notification params.
