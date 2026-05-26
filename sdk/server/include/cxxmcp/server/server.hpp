@@ -1172,6 +1172,15 @@ class ServerBuilder {
   /// @brief Sets the resource-updated notification handler.
   ServerBuilder& on_resource_updated(Server::ResourceUpdatedHandler handler);
 
+  /// @brief Installs every non-empty callback from a handler aggregate.
+  ServerBuilder& with_handler(ServerHandler handler);
+
+  /// @brief Installs callbacks from a contract-style handler interface.
+  ///
+  /// The referenced handler must outlive the built server because installed
+  /// callbacks delegate to it by reference, matching Server::set_handler().
+  ServerBuilder& with_handler(const ServerHandlerInterface& handler);
+
   /// @brief Builds a configured server.
   /// @return Owned server on success, or the first registration/configuration
   /// error.

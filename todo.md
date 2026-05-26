@@ -610,7 +610,12 @@ true:
 - [x] Keep aggregate handlers for ergonomic setup.
 - [x] Keep interface-based handlers for durable application code.
 - [x] Route events through explicit handler objects where possible.
-- [ ] Reduce public mutable callback setter state over time.
+- [x] Reduce public mutable callback setter state over time.
+  - [x] Keep `Server::set_handler()` and `ServerPeer::set_handler()` as
+        aggregate/contract install paths for durable applications.
+  - [x] Add `ServerBuilder::with_handler()` so new servers can be constructed
+        from aggregate or contract handlers without a long chain of mutable
+        callback setters.
 - [x] Keep registries as convenience wrappers over server handlers.
   - [x] Route tool, prompt, resource, and resource-template discovery through
     contract-style server handlers before registry fallback.
@@ -620,7 +625,7 @@ true:
 - [x] Deepen typed prompt helper templates.
 - [x] Deepen typed resource helper templates.
 - [x] Deepen typed completion helper templates.
-- [ ] Support context injection consistently for tool, prompt, resource,
+- [x] Support context injection consistently for tool, prompt, resource,
   completion, sampling, elicitation, and task handlers.
   - [x] Pass `SessionContext` through server and peer completion handlers.
   - [x] Pass `SessionContext` through server and peer sampling handlers.

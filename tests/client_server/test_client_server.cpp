@@ -2525,6 +2525,78 @@ void test_contract_handlers_override_client_and_server_requests() {
           "contract server peer completion result mismatch");
 }
 
+void test_server_builder_installs_handler_aggregates() {
+  mcp::server::ServerHandler aggregate;
+  aggregate.on_completion_with_request_context =
+      [](const Json& params, const mcp::server::SessionContext& context,
+         mcp::CancellationToken cancellation) -> mcp::core::Result<Json> {
+    require(context.session_id == "builder-session",
+            "builder aggregate context mismatch");
+    require(!cancellation.cancelled(),
+            "builder aggregate cancellation mismatch");
+    return Json{{"echo", params.at("argument").at("value")}};
+  };
+
+  auto aggregate_server = mcp::server::ServerBuilder()
+                              .name("builder-handler")
+                              .version("0.1.0")
+                              .with_handler(std::move(aggregate))
+                              .build();
+  require(aggregate_server.has_value(),
+          "builder aggregate handler server failed to build");
+  const auto aggregate_response =
+      (*aggregate_server)
+          ->handle_request(
+              mcp::protocol::JsonRpcRequest{
+                  .method =
+                      std::string(mcp::protocol::CompletionCompleteMethod),
+                  .params =
+                      Json{{"argument", Json{{"name", "q"}, {"value", "abc"}}}},
+                  .id = std::int64_t{104},
+              },
+              mcp::server::SessionContext{.session_id = "builder-session"});
+  require(aggregate_response.has_value(),
+          "builder aggregate completion request failed");
+  require(aggregate_response->result.has_value(),
+          "builder aggregate completion result missing");
+  require(aggregate_response->result->at("echo") == "abc",
+          "builder aggregate completion result mismatch");
+
+  struct BuilderInterfaceHandler final : mcp::server::ServerHandlerInterface {
+    std::optional<mcp::core::Result<Json>> on_sampling(
+        const Json& params,
+        const mcp::server::SessionContext& context) const override {
+      require(context.session_id == "builder-interface",
+              "builder interface context mismatch");
+      return Json{{"maxTokens", params.at("maxTokens")}};
+    }
+  } interface_handler;
+
+  auto interface_server = mcp::server::ServerBuilder()
+                              .name("builder-interface-handler")
+                              .version("0.1.0")
+                              .with_handler(interface_handler)
+                              .build();
+  require(interface_server.has_value(),
+          "builder interface handler server failed to build");
+  const auto interface_response =
+      (*interface_server)
+          ->handle_request(
+              mcp::protocol::JsonRpcRequest{
+                  .method =
+                      std::string(mcp::protocol::SamplingCreateMessageMethod),
+                  .params = Json{{"maxTokens", 32}},
+                  .id = std::int64_t{105},
+              },
+              mcp::server::SessionContext{.session_id = "builder-interface"});
+  require(interface_response.has_value(),
+          "builder interface sampling request failed");
+  require(interface_response->result.has_value(),
+          "builder interface sampling result missing");
+  require(interface_response->result->at("maxTokens") == 32,
+          "builder interface sampling result mismatch");
+}
+
 void test_contract_discovery_handlers_override_registries() {
   struct ContractDiscoveryHandler final : mcp::server::ServerHandlerInterface {
     std::optional<mcp::core::Result<mcp::protocol::ToolsListResult>>
@@ -6110,6 +6182,8 @@ int main() {
        test_contract_completion_sampling_handlers_receive_cancellation_token},
       {"contract handlers override client and server requests",
        test_contract_handlers_override_client_and_server_requests},
+      {"server builder installs handler aggregates",
+       test_server_builder_installs_handler_aggregates},
       {"contract discovery handlers override registries",
        test_contract_discovery_handlers_override_registries},
       {"contract task handlers receive session context",

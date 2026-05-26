@@ -62,4 +62,7 @@
 - Added cancellation-aware client inbound handler overloads for roots,
   sampling, elicitation, and custom server-to-client requests on both
   `Client` and `ClientPeer`.
+- Added `ServerBuilder::with_handler()` so aggregate and contract-style server
+  handlers can be installed during construction instead of through a long
+  mutable setter sequence.
 - Added a dedicated SDK umbrella test for `cxxmcp/sdk.hpp`.

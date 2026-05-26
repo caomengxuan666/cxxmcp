@@ -12,6 +12,7 @@
 #include "cxxmcp/error.hpp"
 #include "cxxmcp/protocol/logging.hpp"
 #include "cxxmcp/protocol/serialization.hpp"
+#include "cxxmcp/server/handler.hpp"
 #include "cxxmcp/server/http_transport.hpp"
 #include "cxxmcp/server/stdio_transport.hpp"
 
@@ -1385,6 +1386,25 @@ ServerBuilder& ServerBuilder::on_resource_list_changed(
 ServerBuilder& ServerBuilder::on_resource_updated(
     Server::ResourceUpdatedHandler handler) {
   resource_updated_handler_ = std::move(handler);
+  return *this;
+}
+
+ServerBuilder& ServerBuilder::with_handler(ServerHandler handler) {
+  registrations_.push_back([handler = std::move(handler)](
+                               Server& server) -> core::Result<core::Unit> {
+    server.set_handler(handler);
+    return core::Unit{};
+  });
+  return *this;
+}
+
+ServerBuilder& ServerBuilder::with_handler(
+    const ServerHandlerInterface& handler) {
+  registrations_.push_back(
+      [&handler](Server& server) -> core::Result<core::Unit> {
+        server.set_handler(handler);
+        return core::Unit{};
+      });
   return *this;
 }
 
