@@ -2431,6 +2431,46 @@ void test_server_tool_task_support_validation() {
           "required task should create a task");
   wait_until([&] { return required_calls == 1; },
              "required task should call handler once");
+
+  const auto optional_calls_before_invalid = optional_calls;
+  const auto invalid_task_params = server.handle_request(
+      mcp::protocol::JsonRpcRequest{
+          .method = std::string(mcp::protocol::ToolsCallMethod),
+          .params = Json{{"name", "optional"},
+                         {"arguments", Json::object()},
+                         {"task", 42}},
+          .id = std::int64_t{4},
+      },
+      mcp::server::SessionContext{.session_id = "session-1"});
+  require(invalid_task_params.has_value(),
+          "invalid task params should produce a response");
+  require(invalid_task_params->error.has_value(),
+          "invalid task params should fail");
+  require(invalid_task_params->error->code ==
+              static_cast<int>(mcp::protocol::ErrorCode::InvalidRequest),
+          "invalid task params error code mismatch");
+  require(optional_calls == optional_calls_before_invalid,
+          "invalid task params should not call handler");
+
+  const auto negative_ttl = server.handle_request(
+      mcp::protocol::JsonRpcRequest{
+          .method = std::string(mcp::protocol::ToolsCallMethod),
+          .params = Json{{"name", "optional"},
+                         {"arguments", Json::object()},
+                         {"task", Json{{"ttl", -1}}}},
+          .id = std::int64_t{5},
+      },
+      mcp::server::SessionContext{.session_id = "session-1"});
+  require(negative_ttl.has_value(),
+          "negative task ttl should produce a response");
+  require(negative_ttl->error.has_value(), "negative task ttl should fail");
+  require(negative_ttl->error->code ==
+              static_cast<int>(mcp::protocol::ErrorCode::InvalidRequest),
+          "negative task ttl error code mismatch");
+  require(negative_ttl->error->message == "task ttl must be non-negative",
+          "negative task ttl error message mismatch");
+  require(optional_calls == optional_calls_before_invalid,
+          "negative task ttl should not call handler");
 }
 
 void test_server_task_processor_tool_call_lifecycle() {
@@ -2678,6 +2718,137 @@ void test_server_task_processor_timeout_and_retention() {
   require(!expired.has_value(), "completed task should expire after ttl");
   require(expired.error().message == "task not found",
           "expired task error mismatch");
+}
+
+void test_task_processor_cancellation_before_start() {
+  mcp::server::TaskOperationProcessor processor(
+      mcp::server::TaskOperationProcessorOptions{
+          .worker_count = 1,
+          .queue_size = 4,
+      });
+
+  std::mutex mutex;
+  std::condition_variable cv;
+  bool first_started = false;
+  bool release_first = false;
+  const auto blocker = processor.submit_operation(
+      mcp::server::TaskOperationDescriptor{
+          .name = "blocking.operation",
+          .task = mcp::protocol::TaskRequestParameters{},
+      },
+      [&](const mcp::server::CancellationToken&) -> mcp::core::Result<Json> {
+        {
+          std::lock_guard<std::mutex> lock(mutex);
+          first_started = true;
+        }
+        cv.notify_all();
+        std::unique_lock<std::mutex> lock(mutex);
+        cv.wait(lock, [&] { return release_first; });
+        return Json{{"kind", "blocking"}};
+      });
+  require(blocker.has_value(), "blocking task should be created");
+
+  wait_until(
+      [&] {
+        std::lock_guard<std::mutex> lock(mutex);
+        return first_started;
+      },
+      "blocking task should start");
+
+  std::atomic_bool queued_started{false};
+  std::atomic_bool queued_saw_cancelled{false};
+  const auto queued = processor.submit_operation(
+      mcp::server::TaskOperationDescriptor{
+          .name = "queued.operation",
+          .task = mcp::protocol::TaskRequestParameters{},
+      },
+      [&](const mcp::server::CancellationToken& cancellation)
+          -> mcp::core::Result<Json> {
+        queued_saw_cancelled = cancellation.cancelled();
+        queued_started = true;
+        return Json{{"late", true}};
+      });
+  require(queued.has_value(), "queued task should be created");
+
+  const auto cancelled = processor.cancel_task(
+      mcp::protocol::TaskCancelParams{.task_id = queued->task.task_id});
+  require(cancelled.has_value(), "queued task cancellation should succeed");
+  require(cancelled->status == mcp::protocol::TaskStatus::Cancelled,
+          "queued task should be cancelled before start");
+
+  {
+    std::lock_guard<std::mutex> lock(mutex);
+    release_first = true;
+  }
+  cv.notify_all();
+
+  wait_until([&] { return queued_started.load(); },
+             "queued task should eventually observe pre-start cancellation");
+  require(queued_saw_cancelled.load(),
+          "queued task token should be cancelled before handler body");
+
+  const auto after_handler = processor.get_task(
+      mcp::protocol::TaskGetParams{.task_id = queued->task.task_id});
+  require(after_handler.has_value(), "cancelled queued task should remain");
+  require(after_handler->status == mcp::protocol::TaskStatus::Cancelled,
+          "late queued result should not overwrite cancellation");
+
+  const auto late_result = processor.task_result(
+      mcp::protocol::TaskResultParams{.task_id = queued->task.task_id});
+  require(!late_result.has_value(), "pre-start cancelled result should fail");
+  require(late_result.error().message == "Operation cancelled",
+          "pre-start cancelled result error mismatch");
+}
+
+void test_task_processor_retention_count_limit() {
+  mcp::server::TaskOperationProcessor processor(
+      mcp::server::TaskOperationProcessorOptions{
+          .worker_count = 1,
+          .queue_size = 4,
+          .max_completed_tasks = 1,
+      });
+
+  const auto first = processor.submit_operation(
+      mcp::server::TaskOperationDescriptor{.name = "first"},
+      [](const mcp::server::CancellationToken&) -> mcp::core::Result<Json> {
+        return Json{{"value", "first"}};
+      });
+  require(first.has_value(), "first retained task should be created");
+  wait_until(
+      [&] {
+        const auto task = processor.get_task(
+            mcp::protocol::TaskGetParams{.task_id = first->task.task_id});
+        return task.has_value() &&
+               task->status == mcp::protocol::TaskStatus::Completed;
+      },
+      "first retained task should complete");
+
+  const auto second = processor.submit_operation(
+      mcp::server::TaskOperationDescriptor{.name = "second"},
+      [](const mcp::server::CancellationToken&) -> mcp::core::Result<Json> {
+        return Json{{"value", "second"}};
+      });
+  require(second.has_value(), "second retained task should be created");
+  wait_until(
+      [&] {
+        const auto task = processor.get_task(
+            mcp::protocol::TaskGetParams{.task_id = second->task.task_id});
+        return task.has_value() &&
+               task->status == mcp::protocol::TaskStatus::Completed;
+      },
+      "second retained task should complete");
+
+  const auto trimmed = processor.get_task(
+      mcp::protocol::TaskGetParams{.task_id = first->task.task_id});
+  require(!trimmed.has_value(), "oldest completed task should be trimmed");
+  require(trimmed.error().message == "task not found",
+          "trimmed task error mismatch");
+
+  const auto retained = processor.task_result(
+      mcp::protocol::TaskResultParams{.task_id = second->task.task_id});
+  require(retained.has_value(), "newest completed task should be retained");
+  require(retained->at("value") == "second",
+          "newest retained task result mismatch");
 }
 
 void test_task_processor_generic_operation() {
@@ -4246,6 +4417,10 @@ int main() {
        test_server_task_processor_failed_and_cancelled_tasks},
       {"server task processor timeout and retention",
        test_server_task_processor_timeout_and_retention},
+      {"task processor cancellation before start",
+       test_task_processor_cancellation_before_start},
+      {"task processor retention count limit",
+       test_task_processor_retention_count_limit},
       {"task processor generic operation",
        test_task_processor_generic_operation},
       {"ping raw request", test_ping_raw_request},

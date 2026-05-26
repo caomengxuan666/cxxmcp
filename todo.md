@@ -509,18 +509,18 @@ true:
   explicitly document why only cooperative cancellation is supported.
 - [ ] Add richer typed operation result transport beyond raw JSON payload
   storage where RMCP/spec expects it.
-- [ ] Add tests for task-aware `tools/call` success.
-- [ ] Add tests for missing/invalid task params.
-- [ ] Add tests for task timeout.
-- [ ] Add tests for task cancellation before start.
-- [ ] Add tests for task cancellation during execution.
-- [ ] Add tests for late result suppression after cancellation/timeout.
-- [ ] Add tests for task status notifications.
-- [ ] Add tests for task result retrieval.
-- [ ] Add tests for failed task result retrieval.
-- [ ] Add tests for retention count limits.
-- [ ] Add tests for completed task TTL cleanup.
-- [ ] Add examples for task-aware server tools.
+- [x] Add tests for task-aware `tools/call` success.
+- [x] Add tests for missing/invalid task params.
+- [x] Add tests for task timeout.
+- [x] Add tests for task cancellation before start.
+- [x] Add tests for task cancellation during execution.
+- [x] Add tests for late result suppression after cancellation/timeout.
+- [x] Add tests for task status notifications.
+- [x] Add tests for task result retrieval.
+- [x] Add tests for failed task result retrieval.
+- [x] Add tests for retention count limits.
+- [x] Add tests for completed task TTL cleanup.
+- [x] Add examples for task-aware server tools.
 
 ## P1: Elicitation Lifecycle
 
