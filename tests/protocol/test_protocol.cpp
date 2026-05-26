@@ -3072,6 +3072,12 @@ void test_protocol_required_fields_are_rejected() {
       mcp::protocol::prompt_message_from_json(
           Json{{"content", Json{{"type", "text"}, {"text", "hello"}}}}),
       "prompt message without role should fail");
+  require_parse_failure(
+      mcp::protocol::prompts_list_result_from_json(Json::object()),
+      "prompts/list without prompts should fail");
+  require_parse_failure(
+      mcp::protocol::prompts_get_result_from_json(Json::object()),
+      "prompts/get result without messages should fail");
 
   require_parse_failure(mcp::protocol::resource_from_json(Json{{"name", "r"}}),
                         "resource without uri should fail");
@@ -3084,6 +3090,15 @@ void test_protocol_required_fields_are_rejected() {
   require_parse_failure(
       mcp::protocol::resources_list_result_from_json(Json::object()),
       "resources/list without resources should fail");
+  require_parse_failure(
+      mcp::protocol::resource_templates_list_result_from_json(Json::object()),
+      "resources/templates/list without resourceTemplates should fail");
+  require_parse_failure(mcp::protocol::resource_contents_from_json(
+                            Json{{"uri", "file:///workspace/readme.md"}}),
+                        "resource contents without text or blob should fail");
+  require_parse_failure(
+      mcp::protocol::resources_read_result_from_json(Json::object()),
+      "resources/read result without contents should fail");
   require_parse_failure(
       mcp::protocol::resource_updated_notification_params_from_json(
           Json::object()),
@@ -3123,10 +3138,31 @@ void test_protocol_required_fields_are_rejected() {
       mcp::protocol::complete_params_from_json(
           Json{{"ref", Json{{"type", "ref/prompt"}, {"name", "prompt"}}}}),
       "completion params without argument should fail");
+  require_parse_failure(
+      mcp::protocol::completion_result_from_json(Json::object()),
+      "completion payload without values should fail");
+  require_parse_failure(
+      mcp::protocol::complete_result_from_json(Json::object()),
+      "completion result without completion should fail");
+
+  require_parse_failure(
+      mcp::protocol::logging_set_level_params_from_json(Json::object()),
+      "logging/setLevel without level should fail");
+  require_parse_failure(
+      mcp::protocol::logging_message_notification_params_from_json(
+          Json{{"data", Json::object()}}),
+      "logging message without level should fail");
+  require_parse_failure(
+      mcp::protocol::logging_message_notification_params_from_json(
+          Json{{"level", "info"}}),
+      "logging message without data should fail");
 
   require_parse_failure(
       mcp::protocol::sampling_message_from_json(Json{{"role", "user"}}),
       "sampling message without content should fail");
+  require_parse_failure(
+      mcp::protocol::create_message_params_from_json(Json{{"maxTokens", 64}}),
+      "sampling params without messages should fail");
   require_parse_failure(mcp::protocol::create_message_params_from_json(
                             Json{{"messages", Json::array()}}),
                         "sampling params without maxTokens should fail");
@@ -3194,6 +3230,19 @@ void test_protocol_required_fields_are_rejected() {
       mcp::protocol::elicitation_complete_notification_params_from_json(
           Json::object()),
       "elicitation completion without id should fail");
+
+  require(
+      !mcp::protocol::cancelled_notification_params_from_json(Json::object())
+           .has_value(),
+      "cancelled notification without requestId should fail");
+  require(!mcp::protocol::progress_notification_params_from_json(
+               Json{{"progress", 1.0}, {"progressToken", Json::object()}})
+               .has_value(),
+          "progress notification invalid token should fail");
+  require(!mcp::protocol::progress_notification_params_from_json(
+               Json{{"progressToken", "token-1"}})
+               .has_value(),
+          "progress notification without progress should fail");
 }
 
 void test_protocol_type_constraints_are_rejected() {
@@ -3374,6 +3423,24 @@ void test_protocol_type_constraints_are_rejected() {
   require_parse_failure(mcp::protocol::logging_set_level_params_from_json(
                             Json{{"level", "not-a-level"}}),
                         "logging setLevel unsupported level should fail");
+  require_parse_failure(
+      mcp::protocol::logging_message_notification_params_from_json(
+          Json{{"level", 7}, {"data", Json::object()}}),
+      "logging message non-string level should fail");
+  require_parse_failure(
+      mcp::protocol::logging_message_notification_params_from_json(
+          Json{{"level", "not-a-level"}, {"data", Json::object()}}),
+      "logging message unsupported level should fail");
+  require_parse_failure(
+      mcp::protocol::logging_message_notification_params_from_json(
+          Json{{"level", "info"}, {"logger", 7}, {"data", Json::object()}}),
+      "logging message non-string logger should fail");
+  require_parse_failure(
+      mcp::protocol::logging_message_notification_params_from_json(
+          Json{{"level", "info"},
+               {"data", Json::object()},
+               {"_meta", Json::array()}}),
+      "logging message non-object meta should fail");
 
   require_parse_failure(
       mcp::protocol::sampling_message_from_json(Json{
@@ -3616,6 +3683,27 @@ void test_protocol_type_constraints_are_rejected() {
       mcp::protocol::elicitation_complete_notification_params_from_json(
           Json{{"elicitationId", 7}}),
       "elicitation completion non-string id should fail");
+
+  require(!mcp::protocol::cancelled_notification_params_from_json(
+               Json{{"requestId", "request-1"}, {"reason", 7}})
+               .has_value(),
+          "cancelled notification non-string reason should fail");
+  require(!mcp::protocol::progress_notification_params_from_json(
+               Json{{"progressToken", "token-1"}, {"progress", "1"}})
+               .has_value(),
+          "progress notification non-number progress should fail");
+  require(
+      !mcp::protocol::progress_notification_params_from_json(
+           Json{
+               {"progressToken", "token-1"}, {"progress", 1.0}, {"total", "2"}})
+           .has_value(),
+      "progress notification non-number total should fail");
+  require(
+      !mcp::protocol::progress_notification_params_from_json(
+           Json{
+               {"progressToken", "token-1"}, {"progress", 1.0}, {"message", 7}})
+           .has_value(),
+      "progress notification non-string message should fail");
 }
 
 }  // namespace
