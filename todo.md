@@ -461,6 +461,9 @@ true:
 - [ ] Make serialization/deserialization exhaustive and symmetric.
 - [ ] Add round-trip fixture tests for every protocol family.
 - [ ] Add negative parse tests for every required field and type constraint.
+- [x] Add cross-family required-field negative parse regression coverage for
+  tools, prompts, resources, roots, completion, sampling, elicitation, and
+  tasks.
 - [ ] Keep helper constructors for common text-only flows.
 - [ ] Avoid bool-heavy shortcuts when the wire shape expects object presence.
 

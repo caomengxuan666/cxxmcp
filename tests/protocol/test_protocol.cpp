@@ -44,6 +44,12 @@ void require_error_code(const mcp::core::Result<JsonRpcMessage>& result,
   require(result.error().code == static_cast<int>(expected), context);
 }
 
+template <class T>
+void require_parse_failure(const mcp::core::Result<T>& result,
+                           std::string_view context) {
+  require(!result.has_value(), context);
+}
+
 fs::path fixture_path(std::string_view name) {
   return fs::path(MCP_TEST_SOURCE_DIR) / "tests" / "fixtures" / "protocol" /
          std::string(name);
@@ -2042,6 +2048,105 @@ void test_invalid_messages_are_rejected() {
                      "response with both payloads should be rejected");
 }
 
+void test_protocol_required_fields_are_rejected() {
+  require_parse_failure(mcp::protocol::tool_definition_from_json(
+                            Json{{"description", "missing name"}}),
+                        "tool definition without name should fail");
+  require_parse_failure(mcp::protocol::tool_call_from_json(Json::object()),
+                        "tools/call without name should fail");
+  require_parse_failure(
+      mcp::protocol::tools_list_result_from_json(Json::object()),
+      "tools/list without tools should fail");
+
+  require_parse_failure(
+      mcp::protocol::prompt_argument_from_json(Json{{"description", "arg"}}),
+      "prompt argument without name should fail");
+  require_parse_failure(mcp::protocol::prompt_from_json(Json::object()),
+                        "prompt without name should fail");
+  require_parse_failure(mcp::protocol::prompts_get_params_from_json(
+                            Json{{"arguments", Json::object()}}),
+                        "prompts/get without name should fail");
+  require_parse_failure(
+      mcp::protocol::prompt_message_from_json(
+          Json{{"content", Json{{"type", "text"}, {"text", "hello"}}}}),
+      "prompt message without role should fail");
+
+  require_parse_failure(mcp::protocol::resource_from_json(Json{{"name", "r"}}),
+                        "resource without uri should fail");
+  require_parse_failure(
+      mcp::protocol::resource_template_from_json(Json{{"name", "rt"}}),
+      "resource template without uriTemplate should fail");
+  require_parse_failure(
+      mcp::protocol::resources_read_params_from_json(Json::object()),
+      "resources/read without uri should fail");
+  require_parse_failure(
+      mcp::protocol::resources_list_result_from_json(Json::object()),
+      "resources/list without resources should fail");
+
+  require_parse_failure(mcp::protocol::root_from_json(Json::object()),
+                        "root without uri should fail");
+  require_parse_failure(
+      mcp::protocol::roots_list_result_from_json(Json::object()),
+      "roots/list without roots should fail");
+
+  require_parse_failure(mcp::protocol::completion_reference_from_json(
+                            Json{{"type", "ref/prompt"}}),
+                        "completion ref without name or uri should fail");
+  require_parse_failure(
+      mcp::protocol::completion_argument_from_json(Json{{"name", "value"}}),
+      "completion argument without value should fail");
+  require_parse_failure(
+      mcp::protocol::complete_params_from_json(
+          Json{{"ref", Json{{"type", "ref/prompt"}, {"name", "prompt"}}}}),
+      "completion params without argument should fail");
+
+  require_parse_failure(
+      mcp::protocol::sampling_message_from_json(Json{{"role", "user"}}),
+      "sampling message without content should fail");
+  require_parse_failure(mcp::protocol::create_message_params_from_json(
+                            Json{{"messages", Json::array()}}),
+                        "sampling params without maxTokens should fail");
+  require_parse_failure(mcp::protocol::create_message_result_from_json(
+                            Json{{"role", "assistant"}}),
+                        "sampling result without content should fail");
+
+  require_parse_failure(mcp::protocol::task_from_json(
+                            Json{{"taskId", "task-1"},
+                                 {"status", "working"},
+                                 {"createdAt", "2025-01-01T00:00:00Z"}}),
+                        "task without lastUpdatedAt should fail");
+  require_parse_failure(
+      mcp::protocol::task_get_params_from_json(Json::object()),
+      "tasks/get without taskId should fail");
+  require_parse_failure(
+      mcp::protocol::task_cancel_params_from_json(Json::object()),
+      "tasks/cancel without taskId should fail");
+  require_parse_failure(
+      mcp::protocol::task_result_params_from_json(Json::object()),
+      "tasks/result without taskId should fail");
+  require_parse_failure(
+      mcp::protocol::task_list_result_from_json(Json::object()),
+      "tasks/list without tasks should fail");
+  require_parse_failure(
+      mcp::protocol::create_task_result_from_json(Json::object()),
+      "create task result without task should fail");
+
+  require_parse_failure(
+      mcp::protocol::create_elicitation_request_param_from_json(Json::object()),
+      "elicitation request without message should fail");
+  require_parse_failure(
+      mcp::protocol::create_elicitation_request_param_from_json(
+          Json{{"message", "need input"}, {"mode", "form"}}),
+      "form elicitation request without requestedSchema should fail");
+  require_parse_failure(
+      mcp::protocol::create_elicitation_request_param_from_json(Json{
+          {"message", "open"}, {"mode", "url"}, {"elicitationId", "elicit-1"}}),
+      "url elicitation request without url should fail");
+  require_parse_failure(
+      mcp::protocol::create_elicitation_result_from_json(Json::object()),
+      "elicitation result without action should fail");
+}
+
 }  // namespace
 
 int main() {
@@ -2075,6 +2180,8 @@ int main() {
       {"notification helpers round trip", test_notification_helpers_round_trip},
       {"invalid json is rejected", test_invalid_json_is_rejected},
       {"invalid messages are rejected", test_invalid_messages_are_rejected},
+      {"protocol required fields are rejected",
+       test_protocol_required_fields_are_rejected},
   };
 
   std::size_t failures = 0;
