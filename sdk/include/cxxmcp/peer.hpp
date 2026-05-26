@@ -275,10 +275,24 @@ class Peer<RoleClient> {
       if (!payload) {
         return std::unexpected(payload.error());
       }
-      return detail::require_peer_initialize_payload(*payload);
+      auto checked = detail::require_peer_initialize_payload(*payload);
+      if (!checked) {
+        return std::unexpected(checked.error());
+      }
+      auto recorded = record_server_capabilities(*checked);
+      if (!recorded) {
+        return std::unexpected(recorded.error());
+      }
+      return *checked;
     }
     return client_.initialize(std::move(client_name),
                               std::move(client_version));
+  }
+
+  const std::optional<protocol::ServerCapabilities>& server_capabilities()
+      const noexcept {
+    return native_transport_ ? server_capabilities_
+                             : client_.server_capabilities();
   }
 
   core::Result<core::Unit> notify_initialized() {
@@ -615,6 +629,10 @@ class Peer<RoleClient> {
           protocol::ErrorCode::InvalidRequest,
           "task-aware tool call requires task parameters", {}, "protocol"));
     }
+    if (!supports_server_task_tool_call()) {
+      return std::unexpected(unsupported_server_capability(
+          "server does not support task-aware tool calls"));
+    }
     auto payload = request_json(std::string(protocol::ToolsCallMethod),
                                 protocol::tool_call_to_json(call));
     if (!payload) {
@@ -749,6 +767,10 @@ class Peer<RoleClient> {
 
   core::Result<protocol::CompleteResult> complete(
       const protocol::CompleteParams& request) {
+    if (!supports_server_completion()) {
+      return std::unexpected(
+          unsupported_server_capability("server does not support completion"));
+    }
     auto payload = request_json(std::string(protocol::CompletionCompleteMethod),
                                 protocol::complete_params_to_json(request));
     if (!payload) {
@@ -758,6 +780,10 @@ class Peer<RoleClient> {
   }
 
   core::Result<protocol::Json> complete(const protocol::Json& request) {
+    if (!supports_server_completion()) {
+      return std::unexpected(
+          unsupported_server_capability("server does not support completion"));
+    }
     return request_json(std::string(protocol::CompletionCompleteMethod),
                         request);
   }
@@ -860,6 +886,10 @@ class Peer<RoleClient> {
   }
 
   core::Result<std::vector<protocol::Task>> list_tasks() {
+    if (!supports_server_task_list()) {
+      return std::unexpected(unsupported_server_capability(
+          "server does not support task listing"));
+    }
     auto payload = request_json(std::string(protocol::TasksListMethod),
                                 protocol::Json::object());
     if (!payload) {
@@ -873,6 +903,10 @@ class Peer<RoleClient> {
   }
 
   core::Result<std::vector<protocol::Task>> list_all_tasks() {
+    if (!supports_server_task_list()) {
+      return std::unexpected(unsupported_server_capability(
+          "server does not support task listing"));
+    }
     return list_all_pages<protocol::Task>(
         std::string(protocol::TasksListMethod),
         [](const protocol::Json& payload) {
@@ -885,6 +919,10 @@ class Peer<RoleClient> {
   }
 
   core::Result<protocol::Task> get_task(std::string_view task_id) {
+    if (!supports_server_tasks()) {
+      return std::unexpected(
+          unsupported_server_capability("server does not support tasks"));
+    }
     protocol::TaskGetParams params;
     params.task_id = std::string(task_id);
     auto payload = request_json(std::string(protocol::TasksGetMethod),
@@ -896,6 +934,10 @@ class Peer<RoleClient> {
   }
 
   core::Result<protocol::Task> cancel_task(std::string_view task_id) {
+    if (!supports_server_task_cancel()) {
+      return std::unexpected(unsupported_server_capability(
+          "server does not support task cancellation"));
+    }
     protocol::TaskCancelParams params;
     params.task_id = std::string(task_id);
     auto payload = request_json(std::string(protocol::TasksCancelMethod),
@@ -907,6 +949,10 @@ class Peer<RoleClient> {
   }
 
   core::Result<protocol::Json> task_result(std::string_view task_id) {
+    if (!supports_server_tasks()) {
+      return std::unexpected(
+          unsupported_server_capability("server does not support tasks"));
+    }
     protocol::TaskResultParams params;
     params.task_id = std::string(task_id);
     return request_json(std::string(protocol::TasksResultMethod),
@@ -920,6 +966,10 @@ class Peer<RoleClient> {
                                           "logging/setLevel level is invalid",
                                           {}, "protocol"));
     }
+    if (!supports_server_logging()) {
+      return std::unexpected(
+          unsupported_server_capability("server does not support logging"));
+    }
     protocol::LoggingSetLevelParams params;
     params.level = *parsed;
     return request_unit(std::string(protocol::LoggingSetLevelMethod),
@@ -927,6 +977,10 @@ class Peer<RoleClient> {
   }
 
   core::Result<core::Unit> subscribe(std::string_view uri) {
+    if (!supports_server_resource_subscribe()) {
+      return std::unexpected(unsupported_server_capability(
+          "server does not support resource subscriptions"));
+    }
     protocol::ResourcesSubscribeParams params;
     params.uri = std::string(uri);
     return request_unit(std::string(protocol::ResourcesSubscribeMethod),
@@ -934,6 +988,10 @@ class Peer<RoleClient> {
   }
 
   core::Result<core::Unit> unsubscribe(std::string_view uri) {
+    if (!supports_server_resource_subscribe()) {
+      return std::unexpected(unsupported_server_capability(
+          "server does not support resource subscriptions"));
+    }
     protocol::ResourcesUnsubscribeParams params;
     params.uri = std::string(uri);
     return request_unit(std::string(protocol::ResourcesUnsubscribeMethod),
@@ -1099,6 +1157,12 @@ class Peer<RoleClient> {
                            "task-aware tool call requires task parameters", {},
                            "protocol")));
     }
+    if (!supports_server_task_tool_call()) {
+      return RequestHandle<protocol::CreateTaskResult>::ready(
+          next_peer_request_id(),
+          std::unexpected(unsupported_server_capability(
+              "server does not support task-aware tool calls")));
+    }
 
     return request_async<protocol::CreateTaskResult>(
         std::string(protocol::ToolsCallMethod),
@@ -1150,6 +1214,11 @@ class Peer<RoleClient> {
 
   RequestHandle<protocol::CompleteResult> complete_async(
       const protocol::CompleteParams& request, RequestOptions options = {}) {
+    if (!supports_server_completion()) {
+      return RequestHandle<protocol::CompleteResult>::ready(
+          next_peer_request_id(), std::unexpected(unsupported_server_capability(
+                                      "server does not support completion")));
+    }
     return request_async<protocol::CompleteResult>(
         std::string(protocol::CompletionCompleteMethod),
         protocol::complete_params_to_json(request),
@@ -1161,6 +1230,11 @@ class Peer<RoleClient> {
 
   RequestHandle<protocol::Json> complete_async(const protocol::Json& request,
                                                RequestOptions options = {}) {
+    if (!supports_server_completion()) {
+      return RequestHandle<protocol::Json>::ready(
+          next_peer_request_id(), std::unexpected(unsupported_server_capability(
+                                      "server does not support completion")));
+    }
     return request_async(std::string(protocol::CompletionCompleteMethod),
                          request, std::move(options));
   }
@@ -1203,6 +1277,11 @@ class Peer<RoleClient> {
 
   RequestHandle<std::vector<protocol::Task>> list_tasks_async(
       RequestOptions options = {}) {
+    if (!supports_server_task_list()) {
+      return RequestHandle<std::vector<protocol::Task>>::ready(
+          next_peer_request_id(), std::unexpected(unsupported_server_capability(
+                                      "server does not support task listing")));
+    }
     return request_async<std::vector<protocol::Task>>(
         std::string(protocol::TasksListMethod), protocol::Json::object(),
         [](const protocol::Json& payload)
@@ -1218,6 +1297,11 @@ class Peer<RoleClient> {
 
   RequestHandle<protocol::Task> get_task_async(
       const protocol::TaskGetParams& request, RequestOptions options = {}) {
+    if (!supports_server_tasks()) {
+      return RequestHandle<protocol::Task>::ready(
+          next_peer_request_id(), std::unexpected(unsupported_server_capability(
+                                      "server does not support tasks")));
+    }
     return request_async<protocol::Task>(
         std::string(protocol::TasksGetMethod),
         protocol::task_get_params_to_json(request),
@@ -1236,6 +1320,12 @@ class Peer<RoleClient> {
 
   RequestHandle<protocol::Task> cancel_task_async(
       const protocol::TaskCancelParams& request, RequestOptions options = {}) {
+    if (!supports_server_task_cancel()) {
+      return RequestHandle<protocol::Task>::ready(
+          next_peer_request_id(),
+          std::unexpected(unsupported_server_capability(
+              "server does not support task cancellation")));
+    }
     return request_async<protocol::Task>(
         std::string(protocol::TasksCancelMethod),
         protocol::task_cancel_params_to_json(request),
@@ -1254,6 +1344,11 @@ class Peer<RoleClient> {
 
   RequestHandle<protocol::Json> task_result_async(
       const protocol::TaskResultParams& request, RequestOptions options = {}) {
+    if (!supports_server_tasks()) {
+      return RequestHandle<protocol::Json>::ready(
+          next_peer_request_id(), std::unexpected(unsupported_server_capability(
+                                      "server does not support tasks")));
+    }
     return request_async(std::string(protocol::TasksResultMethod),
                          protocol::task_result_params_to_json(request),
                          std::move(options));
@@ -1533,6 +1628,72 @@ class Peer<RoleClient> {
     return native_error_response(request, errors::handler_unknown_exception());
   }
 
+  static core::Error unsupported_server_capability(std::string message) {
+    return errors::make(protocol::ErrorCode::MethodNotFound, std::move(message),
+                        {}, "protocol");
+  }
+
+  core::Result<core::Unit> record_server_capabilities(
+      const protocol::Json& initialize_payload) {
+    if (!initialize_payload.is_object()) {
+      return std::unexpected(errors::make(
+          protocol::ErrorCode::InvalidRequest,
+          "initialize response must be an object", {}, "protocol"));
+    }
+    if (!initialize_payload.contains("capabilities")) {
+      server_capabilities_ = protocol::ServerCapabilities{};
+      return core::Unit{};
+    }
+    const auto parsed = protocol::server_capabilities_from_json(
+        initialize_payload.at("capabilities"));
+    if (!parsed.has_value()) {
+      return std::unexpected(errors::make(
+          protocol::ErrorCode::InvalidRequest,
+          "initialize response contains invalid server capabilities", {},
+          "protocol"));
+    }
+    server_capabilities_ = *parsed;
+    return core::Unit{};
+  }
+
+  bool supports_server_completion() const noexcept {
+    const auto& capabilities = server_capabilities();
+    return !capabilities.has_value() || capabilities->completions.enabled;
+  }
+
+  bool supports_server_logging() const noexcept {
+    const auto& capabilities = server_capabilities();
+    return !capabilities.has_value() || capabilities->logging.enabled;
+  }
+
+  bool supports_server_resource_subscribe() const noexcept {
+    const auto& capabilities = server_capabilities();
+    return !capabilities.has_value() || capabilities->resources.subscribe;
+  }
+
+  bool supports_server_task_list() const noexcept {
+    const auto& capabilities = server_capabilities();
+    return !capabilities.has_value() ||
+           (capabilities->tasks.has_value() && capabilities->tasks->list);
+  }
+
+  bool supports_server_task_cancel() const noexcept {
+    const auto& capabilities = server_capabilities();
+    return !capabilities.has_value() ||
+           (capabilities->tasks.has_value() && capabilities->tasks->cancel);
+  }
+
+  bool supports_server_tasks() const noexcept {
+    const auto& capabilities = server_capabilities();
+    return !capabilities.has_value() || capabilities->tasks.has_value();
+  }
+
+  bool supports_server_task_tool_call() const noexcept {
+    const auto& capabilities = server_capabilities();
+    return !capabilities.has_value() ||
+           (capabilities->tasks.has_value() && capabilities->tasks->tools_call);
+  }
+
   core::Result<protocol::Json> request_json(std::string method,
                                             protocol::Json params) {
     return raw_request(protocol::make_request(
@@ -1620,6 +1781,7 @@ class Peer<RoleClient> {
   std::shared_ptr<std::atomic<std::int64_t>> next_request_id_ =
       std::make_shared<std::atomic<std::int64_t>>(1);
   std::optional<protocol::ClientCapabilities> client_capabilities_;
+  std::optional<protocol::ServerCapabilities> server_capabilities_;
   std::vector<protocol::Root> roots_;
   client::Client::InitializedHandler initialized_handler_;
   client::Client::CancelledHandler cancelled_handler_;

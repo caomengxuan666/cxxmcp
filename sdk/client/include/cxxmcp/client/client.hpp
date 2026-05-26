@@ -270,6 +270,10 @@ class Client {
   core::Result<protocol::Json> initialize(std::string client_name = "cxxmcp",
                                           std::string client_version = "0");
 
+  /// @brief Returns server capabilities learned from initialize(), if known.
+  const std::optional<protocol::ServerCapabilities>& server_capabilities()
+      const noexcept;
+
   /// @brief Sends the initialized notification after a successful initialize
   /// exchange.
   core::Result<core::Unit> notify_initialized();
@@ -699,6 +703,16 @@ class Client {
   core::Result<protocol::JsonRpcResponse> send_rpc_request(
       protocol::JsonRpcRequest request);
   core::Result<core::Unit> ensure_transport_started();
+  core::Result<core::Unit> record_server_capabilities(
+      const protocol::Json& initialize_payload);
+  bool server_capabilities_known() const noexcept;
+  bool supports_server_completion() const noexcept;
+  bool supports_server_logging() const noexcept;
+  bool supports_server_resource_subscribe() const noexcept;
+  bool supports_server_task_list() const noexcept;
+  bool supports_server_task_cancel() const noexcept;
+  bool supports_server_tasks() const noexcept;
+  bool supports_server_task_tool_call() const noexcept;
   std::int64_t next_request_id() noexcept {
     return next_request_id_.fetch_add(1, std::memory_order_relaxed);
   }
@@ -709,6 +723,7 @@ class Client {
   std::vector<protocol::Root> roots_;
   std::optional<protocol::Json> last_initialize_params_;
   std::optional<protocol::ClientCapabilities> capabilities_;
+  std::optional<protocol::ServerCapabilities> server_capabilities_;
   InitializedHandler initialized_handler_;
   CancelledHandler cancelled_handler_;
   LoggingMessageHandler logging_message_handler_;

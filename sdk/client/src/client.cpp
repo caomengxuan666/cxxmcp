@@ -145,6 +145,7 @@ Client::Client(Client&& other) noexcept
       roots_(std::move(other.roots_)),
       last_initialize_params_(std::move(other.last_initialize_params_)),
       capabilities_(std::move(other.capabilities_)),
+      server_capabilities_(std::move(other.server_capabilities_)),
       initialized_handler_(std::move(other.initialized_handler_)),
       cancelled_handler_(std::move(other.cancelled_handler_)),
       logging_message_handler_(std::move(other.logging_message_handler_)),
@@ -178,6 +179,7 @@ Client& Client::operator=(Client&& other) noexcept {
     roots_ = std::move(other.roots_);
     last_initialize_params_ = std::move(other.last_initialize_params_);
     capabilities_ = std::move(other.capabilities_);
+    server_capabilities_ = std::move(other.server_capabilities_);
     initialized_handler_ = std::move(other.initialized_handler_);
     cancelled_handler_ = std::move(other.cancelled_handler_);
     logging_message_handler_ = std::move(other.logging_message_handler_);
@@ -226,6 +228,77 @@ core::Result<core::Unit> Client::ensure_transport_started() {
 
   transport_started_ = true;
   return core::Unit{};
+}
+
+const std::optional<protocol::ServerCapabilities>& Client::server_capabilities()
+    const noexcept {
+  return server_capabilities_;
+}
+
+core::Result<core::Unit> Client::record_server_capabilities(
+    const protocol::Json& initialize_payload) {
+  if (!initialize_payload.is_object()) {
+    return std::unexpected(
+        make_client_error(static_cast<int>(protocol::ErrorCode::InvalidRequest),
+                          "initialize response must be an object"));
+  }
+
+  if (!initialize_payload.contains("capabilities")) {
+    server_capabilities_ = protocol::ServerCapabilities{};
+    return core::Unit{};
+  }
+
+  const auto parsed = protocol::server_capabilities_from_json(
+      initialize_payload.at("capabilities"));
+  if (!parsed.has_value()) {
+    return std::unexpected(make_client_error(
+        static_cast<int>(protocol::ErrorCode::InvalidRequest),
+        "initialize response contains invalid server capabilities"));
+  }
+
+  server_capabilities_ = *parsed;
+  return core::Unit{};
+}
+
+bool Client::server_capabilities_known() const noexcept {
+  return server_capabilities_.has_value();
+}
+
+bool Client::supports_server_completion() const noexcept {
+  return !server_capabilities_known() ||
+         server_capabilities_->completions.enabled;
+}
+
+bool Client::supports_server_logging() const noexcept {
+  return !server_capabilities_known() || server_capabilities_->logging.enabled;
+}
+
+bool Client::supports_server_resource_subscribe() const noexcept {
+  return !server_capabilities_known() ||
+         server_capabilities_->resources.subscribe;
+}
+
+bool Client::supports_server_task_list() const noexcept {
+  return !server_capabilities_known() ||
+         (server_capabilities_->tasks.has_value() &&
+          server_capabilities_->tasks->list);
+}
+
+bool Client::supports_server_task_cancel() const noexcept {
+  return !server_capabilities_known() ||
+         (server_capabilities_->tasks.has_value() &&
+          server_capabilities_->tasks->cancel);
+}
+
+bool Client::supports_server_tasks() const noexcept {
+  return !server_capabilities_known() ||
+         server_capabilities_->tasks.has_value();
+}
+
+bool Client::supports_server_task_tool_call() const noexcept {
+  return !server_capabilities_known() ||
+         (server_capabilities_->tasks.has_value() &&
+          server_capabilities_->tasks->tools_call);
 }
 
 Client Client::connect_streamable_http(StreamableHttpEndpoint endpoint) {
@@ -303,6 +376,10 @@ core::Result<protocol::JsonRpcResponse> Client::send_rpc_request(
     if (!initialized_payload) {
       return std::unexpected(initialized_payload.error());
     }
+    const auto recorded = record_server_capabilities(*initialized_payload);
+    if (!recorded) {
+      return std::unexpected(recorded.error());
+    }
   }
 
   bool retried_after_session_reset = false;
@@ -330,6 +407,11 @@ core::Result<protocol::JsonRpcResponse> Client::send_rpc_request(
           if (!initialized_payload) {
             return std::unexpected(initialized_payload.error());
           }
+          const auto recorded =
+              record_server_capabilities(*initialized_payload);
+          if (!recorded) {
+            return std::unexpected(recorded.error());
+          }
         }
         continue;
       }
@@ -352,7 +434,15 @@ core::Result<protocol::Json> Client::initialize(std::string client_name,
   if (!response) {
     return std::unexpected(response.error());
   }
-  return require_initialize_payload(*response);
+  const auto payload = require_initialize_payload(*response);
+  if (!payload) {
+    return std::unexpected(payload.error());
+  }
+  const auto recorded = record_server_capabilities(*payload);
+  if (!recorded) {
+    return std::unexpected(recorded.error());
+  }
+  return *payload;
 }
 
 core::Result<core::Unit> Client::notify_initialized() {
@@ -674,6 +764,11 @@ core::Result<protocol::CreateTaskResult> Client::call_tool_task(
         make_client_error(static_cast<int>(protocol::ErrorCode::InvalidRequest),
                           "task-aware tool call requires task parameters"));
   }
+  if (!supports_server_task_tool_call()) {
+    return std::unexpected(
+        make_client_error(static_cast<int>(protocol::ErrorCode::MethodNotFound),
+                          "server does not support task-aware tool calls"));
+  }
 
   const auto response = send_rpc_request(protocol::make_request(
       std::string(protocol::ToolsCallMethod), next_request_id(),
@@ -704,6 +799,11 @@ core::Result<protocol::ToolResult> Client::call_raw(
 
 core::Result<protocol::CompleteResult> Client::complete(
     const protocol::CompleteParams& request) {
+  if (!supports_server_completion()) {
+    return std::unexpected(
+        make_client_error(static_cast<int>(protocol::ErrorCode::MethodNotFound),
+                          "server does not support completion"));
+  }
   const auto payload =
       send_request(std::string(protocol::CompletionCompleteMethod),
                    protocol::complete_params_to_json(request));
@@ -719,6 +819,11 @@ core::Result<protocol::CompleteResult> Client::complete(
 }
 
 core::Result<protocol::Json> Client::complete(const protocol::Json& request) {
+  if (!supports_server_completion()) {
+    return std::unexpected(
+        make_client_error(static_cast<int>(protocol::ErrorCode::MethodNotFound),
+                          "server does not support completion"));
+  }
   return send_request("completion/complete", request);
 }
 
@@ -823,6 +928,11 @@ core::Result<protocol::Json> Client::create_elicitation(
 }
 
 core::Result<std::vector<protocol::Task>> Client::list_tasks() {
+  if (!supports_server_task_list()) {
+    return std::unexpected(
+        make_client_error(static_cast<int>(protocol::ErrorCode::MethodNotFound),
+                          "server does not support task listing"));
+  }
   const auto payload = send_request(std::string(protocol::TasksListMethod),
                                     protocol::Json::object());
   if (!payload) {
@@ -838,6 +948,11 @@ core::Result<std::vector<protocol::Task>> Client::list_tasks() {
 }
 
 core::Result<std::vector<protocol::Task>> Client::list_all_tasks() {
+  if (!supports_server_task_list()) {
+    return std::unexpected(
+        make_client_error(static_cast<int>(protocol::ErrorCode::MethodNotFound),
+                          "server does not support task listing"));
+  }
   std::vector<protocol::Task> all;
   std::optional<std::string> cursor;
   do {
@@ -858,6 +973,11 @@ core::Result<std::vector<protocol::Task>> Client::list_all_tasks() {
 
 core::Result<protocol::Task> Client::get_task(
     const protocol::TaskGetParams& request) {
+  if (!supports_server_tasks()) {
+    return std::unexpected(
+        make_client_error(static_cast<int>(protocol::ErrorCode::MethodNotFound),
+                          "server does not support tasks"));
+  }
   const auto payload = send_request(std::string(protocol::TasksGetMethod),
                                     protocol::task_get_params_to_json(request));
   if (!payload) {
@@ -880,6 +1000,11 @@ core::Result<protocol::Task> Client::get_task(std::string_view task_id) {
 
 core::Result<protocol::Task> Client::cancel_task(
     const protocol::TaskCancelParams& request) {
+  if (!supports_server_task_cancel()) {
+    return std::unexpected(
+        make_client_error(static_cast<int>(protocol::ErrorCode::MethodNotFound),
+                          "server does not support task cancellation"));
+  }
   const auto payload =
       send_request(std::string(protocol::TasksCancelMethod),
                    protocol::task_cancel_params_to_json(request));
@@ -903,6 +1028,11 @@ core::Result<protocol::Task> Client::cancel_task(std::string_view task_id) {
 
 core::Result<protocol::Json> Client::task_result(
     const protocol::TaskResultParams& request) {
+  if (!supports_server_tasks()) {
+    return std::unexpected(
+        make_client_error(static_cast<int>(protocol::ErrorCode::MethodNotFound),
+                          "server does not support tasks"));
+  }
   return send_request(std::string(protocol::TasksResultMethod),
                       protocol::task_result_params_to_json(request));
 }
@@ -915,6 +1045,11 @@ core::Result<protocol::Json> Client::task_result(std::string_view task_id) {
 
 core::Result<core::Unit> Client::set_level(
     const protocol::LoggingSetLevelParams& params) {
+  if (!supports_server_logging()) {
+    return std::unexpected(
+        make_client_error(static_cast<int>(protocol::ErrorCode::MethodNotFound),
+                          "server does not support logging"));
+  }
   const auto result =
       send_request(std::string(protocol::LoggingSetLevelMethod),
                    protocol::logging_set_level_params_to_json(params));
@@ -937,6 +1072,11 @@ core::Result<core::Unit> Client::set_level(std::string_view level) {
 }
 
 core::Result<core::Unit> Client::subscribe(std::string_view uri) {
+  if (!supports_server_resource_subscribe()) {
+    return std::unexpected(
+        make_client_error(static_cast<int>(protocol::ErrorCode::MethodNotFound),
+                          "server does not support resource subscriptions"));
+  }
   const auto result = send_request("resources/subscribe",
                                    protocol::Json{{"uri", std::string(uri)}});
   if (!result) {
@@ -946,6 +1086,11 @@ core::Result<core::Unit> Client::subscribe(std::string_view uri) {
 }
 
 core::Result<core::Unit> Client::unsubscribe(std::string_view uri) {
+  if (!supports_server_resource_subscribe()) {
+    return std::unexpected(
+        make_client_error(static_cast<int>(protocol::ErrorCode::MethodNotFound),
+                          "server does not support resource subscriptions"));
+  }
   const auto result = send_request("resources/unsubscribe",
                                    protocol::Json{{"uri", std::string(uri)}});
   if (!result) {
@@ -1410,6 +1555,13 @@ RequestHandle<protocol::CreateTaskResult> Client::call_tool_task_async(
             static_cast<int>(protocol::ErrorCode::InvalidRequest),
             "task-aware tool call requires task parameters")));
   }
+  if (!supports_server_task_tool_call()) {
+    return RequestHandle<protocol::CreateTaskResult>::ready(
+        next_request_id(),
+        std::unexpected(make_client_error(
+            static_cast<int>(protocol::ErrorCode::MethodNotFound),
+            "server does not support task-aware tool calls")));
+  }
 
   return request_async<protocol::CreateTaskResult>(
       std::string(protocol::ToolsCallMethod), protocol::tool_call_to_json(call),
@@ -1421,6 +1573,13 @@ RequestHandle<protocol::CreateTaskResult> Client::call_tool_task_async(
 
 RequestHandle<protocol::CompleteResult> Client::complete_async(
     const protocol::CompleteParams& request, RequestOptions options) {
+  if (!supports_server_completion()) {
+    return RequestHandle<protocol::CompleteResult>::ready(
+        next_request_id(),
+        std::unexpected(make_client_error(
+            static_cast<int>(protocol::ErrorCode::MethodNotFound),
+            "server does not support completion")));
+  }
   return request_async<protocol::CompleteResult>(
       std::string(protocol::CompletionCompleteMethod),
       protocol::complete_params_to_json(request),
@@ -1432,6 +1591,13 @@ RequestHandle<protocol::CompleteResult> Client::complete_async(
 
 RequestHandle<protocol::Json> Client::complete_async(
     const protocol::Json& request, RequestOptions options) {
+  if (!supports_server_completion()) {
+    return RequestHandle<protocol::Json>::ready(
+        next_request_id(),
+        std::unexpected(make_client_error(
+            static_cast<int>(protocol::ErrorCode::MethodNotFound),
+            "server does not support completion")));
+  }
   return request_async(std::string(protocol::CompletionCompleteMethod), request,
                        std::move(options));
 }
@@ -1474,6 +1640,13 @@ RequestHandle<protocol::Json> Client::create_elicitation_async(
 
 RequestHandle<std::vector<protocol::Task>> Client::list_tasks_async(
     RequestOptions options) {
+  if (!supports_server_task_list()) {
+    return RequestHandle<std::vector<protocol::Task>>::ready(
+        next_request_id(),
+        std::unexpected(make_client_error(
+            static_cast<int>(protocol::ErrorCode::MethodNotFound),
+            "server does not support task listing")));
+  }
   return request_async<std::vector<protocol::Task>>(
       std::string(protocol::TasksListMethod), protocol::Json::object(),
       [](const protocol::Json& payload)
@@ -1489,6 +1662,13 @@ RequestHandle<std::vector<protocol::Task>> Client::list_tasks_async(
 
 RequestHandle<protocol::Task> Client::get_task_async(
     const protocol::TaskGetParams& request, RequestOptions options) {
+  if (!supports_server_tasks()) {
+    return RequestHandle<protocol::Task>::ready(
+        next_request_id(),
+        std::unexpected(make_client_error(
+            static_cast<int>(protocol::ErrorCode::MethodNotFound),
+            "server does not support tasks")));
+  }
   return request_async<protocol::Task>(
       std::string(protocol::TasksGetMethod),
       protocol::task_get_params_to_json(request),
@@ -1507,6 +1687,13 @@ RequestHandle<protocol::Task> Client::get_task_async(std::string_view task_id,
 
 RequestHandle<protocol::Task> Client::cancel_task_async(
     const protocol::TaskCancelParams& request, RequestOptions options) {
+  if (!supports_server_task_cancel()) {
+    return RequestHandle<protocol::Task>::ready(
+        next_request_id(),
+        std::unexpected(make_client_error(
+            static_cast<int>(protocol::ErrorCode::MethodNotFound),
+            "server does not support task cancellation")));
+  }
   return request_async<protocol::Task>(
       std::string(protocol::TasksCancelMethod),
       protocol::task_cancel_params_to_json(request),
@@ -1525,6 +1712,13 @@ RequestHandle<protocol::Task> Client::cancel_task_async(
 
 RequestHandle<protocol::Json> Client::task_result_async(
     const protocol::TaskResultParams& request, RequestOptions options) {
+  if (!supports_server_tasks()) {
+    return RequestHandle<protocol::Json>::ready(
+        next_request_id(),
+        std::unexpected(make_client_error(
+            static_cast<int>(protocol::ErrorCode::MethodNotFound),
+            "server does not support tasks")));
+  }
   return request_async(std::string(protocol::TasksResultMethod),
                        protocol::task_result_params_to_json(request),
                        std::move(options));

@@ -30,6 +30,20 @@ void require(bool condition, std::string_view message) {
   }
 }
 
+Json full_server_capabilities_json() {
+  mcp::protocol::TaskCapabilities tasks;
+  tasks.list = true;
+  tasks.cancel = true;
+  tasks.tools_call = true;
+  const auto capabilities = mcp::protocol::server_capabilities()
+                                .logging()
+                                .completions()
+                                .resources(false, true)
+                                .tasks(tasks)
+                                .build();
+  return mcp::protocol::server_capabilities_to_json(capabilities);
+}
+
 class RecordingClientTransport final : public mcp::client::Transport {
  public:
   mcp::core::Result<mcp::protocol::JsonRpcResponse> send(
@@ -42,7 +56,7 @@ class RecordingClientTransport final : public mcp::client::Transport {
               Json{
                   {"protocolVersion",
                    std::string(mcp::protocol::McpProtocolVersion)},
-                  {"capabilities", Json::object()},
+                  {"capabilities", server_capabilities},
                   {"serverInfo",
                    Json{{"name", "sdk-test-server"}, {"version", "1"}}},
               },
@@ -71,6 +85,17 @@ class RecordingClientTransport final : public mcp::client::Transport {
       };
     }
     if (request.method == "tools/call") {
+      if (request.params.is_object() && request.params.contains("task")) {
+        mcp::protocol::CreateTaskResult task;
+        task.task.task_id = "recorded-task";
+        task.task.status = mcp::protocol::TaskStatus::Working;
+        task.task.created_at = "2025-01-01T00:00:00Z";
+        task.task.last_updated_at = "2025-01-01T00:00:00Z";
+        return mcp::protocol::JsonRpcResponse{
+            .id = request.id,
+            .result = mcp::protocol::create_task_result_to_json(task),
+        };
+      }
       const auto arguments = request.params.value("arguments", Json::object());
       mcp::protocol::ToolResult result;
       result.content.push_back(mcp::protocol::ContentBlock{
@@ -81,6 +106,58 @@ class RecordingClientTransport final : public mcp::client::Transport {
       return mcp::protocol::JsonRpcResponse{
           .id = request.id,
           .result = mcp::protocol::tool_result_to_json(result),
+      };
+    }
+    if (request.method == std::string(mcp::protocol::LoggingSetLevelMethod) ||
+        request.method ==
+            std::string(mcp::protocol::ResourcesSubscribeMethod) ||
+        request.method ==
+            std::string(mcp::protocol::ResourcesUnsubscribeMethod)) {
+      return mcp::protocol::JsonRpcResponse{
+          .id = request.id,
+          .result = Json::object(),
+      };
+    }
+    if (request.method ==
+        std::string(mcp::protocol::CompletionCompleteMethod)) {
+      return mcp::protocol::JsonRpcResponse{
+          .id = request.id,
+          .result = Json{{"completion", Json{{"values", Json::array({"ok"})}}}},
+      };
+    }
+    if (request.method == std::string(mcp::protocol::TasksListMethod)) {
+      return mcp::protocol::JsonRpcResponse{
+          .id = request.id,
+          .result =
+              Json{{"tasks", Json::array({Json{
+                                 {"taskId", "recorded-task"},
+                                 {"status", "working"},
+                                 {"createdAt", "2025-01-01T00:00:00Z"},
+                                 {"lastUpdatedAt", "2025-01-01T00:00:00Z"},
+                                 {"ttl", nullptr},
+                             }})}},
+      };
+    }
+    if (request.method == std::string(mcp::protocol::TasksGetMethod) ||
+        request.method == std::string(mcp::protocol::TasksCancelMethod)) {
+      return mcp::protocol::JsonRpcResponse{
+          .id = request.id,
+          .result = Json{{"taskId", request.params.at("taskId")},
+                         {"status",
+                          request.method ==
+                                  std::string(mcp::protocol::TasksCancelMethod)
+                              ? "cancelled"
+                              : "completed"},
+                         {"createdAt", "2025-01-01T00:00:00Z"},
+                         {"lastUpdatedAt", "2025-01-01T00:00:00Z"},
+                         {"ttl", nullptr}},
+      };
+    }
+    if (request.method == std::string(mcp::protocol::TasksResultMethod)) {
+      return mcp::protocol::JsonRpcResponse{
+          .id = request.id,
+          .result =
+              Json{{"taskId", request.params.at("taskId")}, {"value", 99}},
       };
     }
     return mcp::protocol::JsonRpcResponse{
@@ -102,6 +179,7 @@ class RecordingClientTransport final : public mcp::client::Transport {
   void stop() noexcept override { stopped = true; }
 
   std::vector<mcp::protocol::JsonRpcRequest> requests;
+  Json server_capabilities = Json::object();
   bool stopped = false;
 };
 
@@ -125,7 +203,7 @@ class RecordingClientContractTransport final
               Json{
                   {"protocolVersion",
                    std::string(mcp::protocol::McpProtocolVersion)},
-                  {"capabilities", Json::object()},
+                  {"capabilities", server_capabilities},
                   {"serverInfo",
                    Json{{"name", "sdk-test-server"}, {"version", "1"}}},
               },
@@ -144,6 +222,24 @@ class RecordingClientContractTransport final
       received.push_back(mcp::protocol::JsonRpcResponse{
           .id = request->id,
           .result = Json::object(),
+      });
+    } else if (request->method ==
+               std::string(mcp::protocol::CompletionCompleteMethod)) {
+      received.push_back(mcp::protocol::JsonRpcResponse{
+          .id = request->id,
+          .result = Json{{"completion", Json{{"values", Json::array({"ok"})}}}},
+      });
+    } else if (request->method == std::string(mcp::protocol::ToolsCallMethod) &&
+               request->params.is_object() &&
+               request->params.contains("task")) {
+      mcp::protocol::CreateTaskResult task;
+      task.task.task_id = "native-task";
+      task.task.status = mcp::protocol::TaskStatus::Working;
+      task.task.created_at = "2025-01-01T00:00:00Z";
+      task.task.last_updated_at = "2025-01-01T00:00:00Z";
+      received.push_back(mcp::protocol::JsonRpcResponse{
+          .id = request->id,
+          .result = mcp::protocol::create_task_result_to_json(task),
       });
     } else if (request->method == std::string(mcp::protocol::ToolsListMethod)) {
       const bool has_cursor =
@@ -245,6 +341,28 @@ class RecordingClientContractTransport final
                                 }})},
                                {"nextCursor", "page-2"}},
       });
+    } else if (request->method == std::string(mcp::protocol::TasksGetMethod) ||
+               request->method ==
+                   std::string(mcp::protocol::TasksCancelMethod)) {
+      received.push_back(mcp::protocol::JsonRpcResponse{
+          .id = request->id,
+          .result = Json{{"taskId", request->params.at("taskId")},
+                         {"status",
+                          request->method ==
+                                  std::string(mcp::protocol::TasksCancelMethod)
+                              ? "cancelled"
+                              : "completed"},
+                         {"createdAt", "2025-01-01T00:00:00Z"},
+                         {"lastUpdatedAt", "2025-01-01T00:00:01Z"},
+                         {"ttl", nullptr}},
+      });
+    } else if (request->method ==
+               std::string(mcp::protocol::TasksResultMethod)) {
+      received.push_back(mcp::protocol::JsonRpcResponse{
+          .id = request->id,
+          .result =
+              Json{{"taskId", request->params.at("taskId")}, {"value", 100}},
+      });
     }
     return mcp::core::Unit{};
   }
@@ -266,6 +384,7 @@ class RecordingClientContractTransport final
 
   std::vector<TxMessage> sent;
   std::deque<RxMessage> received;
+  Json server_capabilities = full_server_capabilities_json();
   int receive_count = 0;
   bool stopped = false;
 };
@@ -1366,6 +1485,136 @@ void test_server_client_peer_gates_helpers_on_client_capabilities() {
           "client peer helper should route through the requested session");
 }
 
+void test_client_helpers_gate_on_server_capabilities() {
+  auto make_task_call = [] {
+    mcp::protocol::ToolCall call;
+    call.name = "slow-tool";
+    call.task = mcp::protocol::TaskRequestParameters{};
+    return call;
+  };
+
+  auto concrete_transport = std::make_unique<RecordingClientTransport>();
+  auto* concrete_transport_ptr = concrete_transport.get();
+  mcp::client::Client concrete_client(std::move(concrete_transport));
+  require(concrete_client.initialize().has_value(),
+          "concrete client initialize should succeed");
+  const auto concrete_request_count = concrete_transport_ptr->requests.size();
+
+  require(!concrete_client.complete(Json::object()).has_value(),
+          "concrete client should gate completion on server capabilities");
+  require(!concrete_client.complete_async(Json::object())
+               .await_response()
+               .has_value(),
+          "concrete client should gate async completion on capabilities");
+  require(!concrete_client.set_level("debug").has_value(),
+          "concrete client should gate logging on server capabilities");
+  require(!concrete_client.subscribe("file:///x").has_value(),
+          "concrete client should gate resource subscribe capability");
+  require(!concrete_client.unsubscribe("file:///x").has_value(),
+          "concrete client should gate resource unsubscribe capability");
+  require(!concrete_client.list_tasks().has_value(),
+          "concrete client should gate task listing capability");
+  require(!concrete_client.list_tasks_async().await_response().has_value(),
+          "concrete client should gate async task listing capability");
+  require(!concrete_client.get_task("task-a").has_value(),
+          "concrete client should gate task get when tasks are absent");
+  require(!concrete_client.cancel_task("task-a").has_value(),
+          "concrete client should gate task cancel capability");
+  require(!concrete_client.task_result("task-a").has_value(),
+          "concrete client should gate task result when tasks are absent");
+  require(!concrete_client.call_tool_task(make_task_call()).has_value(),
+          "concrete client should gate task-aware tool calls");
+  require(concrete_transport_ptr->requests.size() == concrete_request_count,
+          "gated concrete client helpers should not send requests");
+
+  auto concrete_supported_transport =
+      std::make_unique<RecordingClientTransport>();
+  concrete_supported_transport->server_capabilities =
+      full_server_capabilities_json();
+  auto* concrete_supported_ptr = concrete_supported_transport.get();
+  mcp::client::Client concrete_supported(
+      std::move(concrete_supported_transport));
+  require(concrete_supported.initialize().has_value(),
+          "supported concrete client initialize should succeed");
+  require(concrete_supported.complete(Json::object()).has_value(),
+          "supported concrete client completion should send");
+  require(concrete_supported.set_level("debug").has_value(),
+          "supported concrete client logging should send");
+  require(concrete_supported.subscribe("file:///x").has_value(),
+          "supported concrete client subscribe should send");
+  require(concrete_supported.list_tasks().has_value(),
+          "supported concrete client task list should send");
+  require(concrete_supported.get_task("task-a").has_value(),
+          "supported concrete client task get should send");
+  require(concrete_supported.cancel_task("task-a").has_value(),
+          "supported concrete client task cancel should send");
+  require(concrete_supported.task_result("task-a").has_value(),
+          "supported concrete client task result should send");
+  require(concrete_supported.call_tool_task(make_task_call()).has_value(),
+          "supported concrete client task-aware tool call should send");
+  require(concrete_supported_ptr->requests.size() > 1,
+          "supported concrete client helpers should send after initialize");
+
+  auto native_transport = std::make_unique<RecordingClientContractTransport>();
+  native_transport->server_capabilities = Json::object();
+  auto* native_transport_ptr = native_transport.get();
+  mcp::ClientPeer native_peer(std::move(native_transport));
+  require(native_peer.initialize().has_value(),
+          "native client peer initialize should succeed");
+  const auto native_send_count = native_transport_ptr->sent.size();
+
+  require(!native_peer.complete(Json::object()).has_value(),
+          "native client peer should gate completion on server capabilities");
+  require(
+      !native_peer.complete_async(Json::object()).await_response().has_value(),
+      "native client peer should gate async completion on capabilities");
+  require(!native_peer.set_level("debug").has_value(),
+          "native client peer should gate logging on server capabilities");
+  require(!native_peer.subscribe("file:///x").has_value(),
+          "native client peer should gate resource subscribe capability");
+  require(!native_peer.unsubscribe("file:///x").has_value(),
+          "native client peer should gate resource unsubscribe capability");
+  require(!native_peer.list_tasks().has_value(),
+          "native client peer should gate task listing capability");
+  require(!native_peer.list_tasks_async().await_response().has_value(),
+          "native client peer should gate async task listing capability");
+  require(!native_peer.get_task("task-a").has_value(),
+          "native client peer should gate task get when tasks are absent");
+  require(!native_peer.cancel_task("task-a").has_value(),
+          "native client peer should gate task cancel capability");
+  require(!native_peer.task_result("task-a").has_value(),
+          "native client peer should gate task result when tasks are absent");
+  require(!native_peer.call_tool_task(make_task_call()).has_value(),
+          "native client peer should gate task-aware tool calls");
+  require(native_transport_ptr->sent.size() == native_send_count,
+          "gated native client peer helpers should not send requests");
+
+  auto native_supported_transport =
+      std::make_unique<RecordingClientContractTransport>();
+  auto* native_supported_ptr = native_supported_transport.get();
+  mcp::ClientPeer native_supported(std::move(native_supported_transport));
+  require(native_supported.initialize().has_value(),
+          "supported native client peer initialize should succeed");
+  require(native_supported.complete(Json::object()).has_value(),
+          "supported native client peer completion should send");
+  require(native_supported.set_level("debug").has_value(),
+          "supported native client peer logging should send");
+  require(native_supported.subscribe("file:///x").has_value(),
+          "supported native client peer subscribe should send");
+  require(native_supported.list_tasks().has_value(),
+          "supported native client peer task list should send");
+  require(native_supported.get_task("task-a").has_value(),
+          "supported native client peer task get should send");
+  require(native_supported.cancel_task("task-a").has_value(),
+          "supported native client peer task cancel should send");
+  require(native_supported.task_result("task-a").has_value(),
+          "supported native client peer task result should send");
+  require(native_supported.call_tool_task(make_task_call()).has_value(),
+          "supported native client peer task-aware tool call should send");
+  require(native_supported_ptr->sent.size() > 1,
+          "supported native client peer helpers should send after initialize");
+}
+
 void test_client_peer_native_raw_request_dispatches_interleaved_messages() {
   auto transport = std::make_unique<RecordingClientContractTransport>();
   auto* transport_ptr = transport.get();
@@ -1796,6 +2045,7 @@ int main() {
     test_server_peer_handler_requests_dispatch_on_peer_boundary();
     test_server_peer_task_handlers_dispatch_on_peer_boundary();
     test_server_client_peer_gates_helpers_on_client_capabilities();
+    test_client_helpers_gate_on_server_capabilities();
     test_client_peer_native_raw_request_dispatches_interleaved_messages();
     test_client_peer_native_raw_request_reports_transport_failures();
     test_request_handle_rejects_invalid_state();
