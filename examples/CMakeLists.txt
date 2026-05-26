@@ -21,6 +21,11 @@ if(TARGET mcp_client AND TARGET mcp_server)
     target_link_libraries(mcp_example_server_peer PRIVATE mcp_client
                                                           mcp_server)
     cxxmcp_example(mcp_example_server_peer)
+
+    add_executable(mcp_example_handler_contracts handler_contracts.cpp)
+    target_link_libraries(mcp_example_handler_contracts PRIVATE mcp_client
+                                                                mcp_server)
+    cxxmcp_example(mcp_example_handler_contracts)
 endif()
 
 if(TARGET mcp_client AND TARGET mcp_server)

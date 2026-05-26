@@ -617,7 +617,7 @@ true:
 - [x] Validate elicitation schemas where configured.
 - [ ] Keep low-boilerplate `App::Builder` helpers as convenience, not the only
   canonical API.
-- [ ] Add examples for typed registration, handler interfaces, and raw fallback
+- [x] Add examples for typed registration, handler interfaces, and raw fallback
   in the same style.
 
 ## P1: Error Model
