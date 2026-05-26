@@ -623,6 +623,8 @@ true:
   - [x] Pass cancellation tokens into resource contexts and typed resource
     helpers.
   - [x] Pass cancellation tokens into completion and sampling request handlers.
+  - [x] Pass cancellation tokens into contract-style completion and sampling
+    handlers.
 - [x] Keep `SchemaTraits<T>` and `schema_for<T>()` customization stable.
 - [x] Add optional JSON Schema validator integration.
 - [x] Validate tool input schemas where configured.

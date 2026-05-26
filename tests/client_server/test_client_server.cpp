@@ -2088,6 +2088,136 @@ void test_completion_and_sampling_handlers_observe_cancellation_token() {
   }
 }
 
+void test_contract_completion_sampling_handlers_receive_cancellation_token() {
+  struct ContractCancellationHandler final
+      : mcp::server::ServerHandlerInterface {
+    std::atomic_bool* completion_started = nullptr;
+    std::atomic_bool* completion_observed_cancelled = nullptr;
+    std::atomic_bool* sampling_started = nullptr;
+    std::atomic_bool* sampling_observed_cancelled = nullptr;
+
+    std::optional<mcp::core::Result<Json>> on_completion(
+        const Json&, const mcp::server::SessionContext& context,
+        mcp::server::CancellationToken cancellation) const override {
+      require(context.session_id == "completion-contract",
+              "contract completion session mismatch");
+      completion_started->store(true);
+      wait_until([&] { return cancellation.cancelled(); },
+                 "contract completion should observe cancellation");
+      completion_observed_cancelled->store(cancellation.cancelled());
+      return Json{{"cancelled", completion_observed_cancelled->load()}};
+    }
+
+    std::optional<mcp::core::Result<Json>> on_sampling(
+        const Json&, const mcp::server::SessionContext& context,
+        mcp::server::CancellationToken cancellation) const override {
+      require(context.session_id == "sampling-contract",
+              "contract sampling session mismatch");
+      sampling_started->store(true);
+      wait_until([&] { return cancellation.cancelled(); },
+                 "contract sampling should observe cancellation");
+      sampling_observed_cancelled->store(cancellation.cancelled());
+      return Json{{"cancelled", sampling_observed_cancelled->load()}};
+    }
+  };
+
+  std::atomic_bool completion_started{false};
+  std::atomic_bool completion_observed_cancelled{false};
+  std::atomic_bool sampling_started{false};
+  std::atomic_bool sampling_observed_cancelled{false};
+  ContractCancellationHandler handler;
+  handler.completion_started = &completion_started;
+  handler.completion_observed_cancelled = &completion_observed_cancelled;
+  handler.sampling_started = &sampling_started;
+  handler.sampling_observed_cancelled = &sampling_observed_cancelled;
+
+  {
+    auto server = make_server();
+    server.set_handler(handler);
+
+    std::optional<mcp::core::Result<mcp::protocol::JsonRpcResponse>> response;
+    std::thread worker([&] {
+      response = server.handle_request(
+          mcp::protocol::JsonRpcRequest{
+              .method = std::string(mcp::protocol::CompletionCompleteMethod),
+              .params = Json::object(),
+              .id = std::int64_t{303},
+          },
+          mcp::server::SessionContext{.session_id = "completion-contract"});
+    });
+
+    wait_until([&] { return completion_started.load(); },
+               "contract completion handler should start");
+    const auto cancelled = server.handle_notification(
+        mcp::protocol::JsonRpcNotification{
+            .method = std::string(mcp::protocol::CancelledNotificationMethod),
+            .params = mcp::protocol::cancelled_notification_params_to_json(
+                mcp::protocol::CancelledNotificationParams{
+                    .request_id = std::int64_t{303},
+                    .reason = "test",
+                }),
+        },
+        {});
+    require(cancelled.has_value(),
+            "contract completion cancellation notification failed");
+    worker.join();
+
+    require(response.has_value(),
+            "contract completion cancellation response missing");
+    require(response->has_value(),
+            "contract completion cancellation request failed");
+    require((*response)->result.has_value(),
+            "contract completion cancellation result missing");
+    require((*response)->result->at("cancelled") == true,
+            "contract completion cancellation token mismatch");
+    require(completion_observed_cancelled.load(),
+            "contract completion handler did not observe cancellation");
+  }
+
+  {
+    auto server = make_server();
+    server.set_handler(handler);
+
+    std::optional<mcp::core::Result<mcp::protocol::JsonRpcResponse>> response;
+    std::thread worker([&] {
+      response = server.handle_request(
+          mcp::protocol::JsonRpcRequest{
+              .method = std::string(mcp::protocol::SamplingCreateMessageMethod),
+              .params = Json::object(),
+              .id = std::int64_t{304},
+          },
+          mcp::server::SessionContext{.session_id = "sampling-contract"});
+    });
+
+    wait_until([&] { return sampling_started.load(); },
+               "contract sampling handler should start");
+    const auto cancelled = server.handle_notification(
+        mcp::protocol::JsonRpcNotification{
+            .method = std::string(mcp::protocol::CancelledNotificationMethod),
+            .params = mcp::protocol::cancelled_notification_params_to_json(
+                mcp::protocol::CancelledNotificationParams{
+                    .request_id = std::int64_t{304},
+                    .reason = "test",
+                }),
+        },
+        {});
+    require(cancelled.has_value(),
+            "contract sampling cancellation notification failed");
+    worker.join();
+
+    require(response.has_value(),
+            "contract sampling cancellation response missing");
+    require(response->has_value(),
+            "contract sampling cancellation request failed");
+    require((*response)->result.has_value(),
+            "contract sampling cancellation result missing");
+    require((*response)->result->at("cancelled") == true,
+            "contract sampling cancellation token mismatch");
+    require(sampling_observed_cancelled.load(),
+            "contract sampling handler did not observe cancellation");
+  }
+}
+
 void test_contract_handlers_override_client_and_server_requests() {
   struct ContractClientHandler final : mcp::client::ClientHandlerInterface {
     std::optional<mcp::core::Result<mcp::protocol::RootsListResult>>
@@ -5403,6 +5533,8 @@ int main() {
        test_server_non_task_tool_observes_cancelled_notification},
       {"completion and sampling handlers observe cancellation token",
        test_completion_and_sampling_handlers_observe_cancellation_token},
+      {"contract completion and sampling handlers receive cancellation token",
+       test_contract_completion_sampling_handlers_receive_cancellation_token},
       {"contract handlers override client and server requests",
        test_contract_handlers_override_client_and_server_requests},
       {"contract task handlers receive session context",

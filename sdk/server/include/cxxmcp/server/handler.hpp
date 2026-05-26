@@ -24,6 +24,7 @@ inline core::Error handler_method_not_found(std::string_view message) {
 struct ServerHandlerInterface {
   using JsonHandler = Server::JsonHandler;
   using JsonContextHandler = Server::JsonContextHandler;
+  using JsonRequestContextHandler = Server::JsonRequestContextHandler;
   using LoggingHandler = Server::LoggingHandler;
   using RawRequestHandler = Server::RawRequestHandler;
   using RawNotificationHandler = Server::RawNotificationHandler;
@@ -47,6 +48,12 @@ struct ServerHandlerInterface {
     (void)context;
     return on_completion(params);
   }
+  virtual std::optional<core::Result<protocol::Json>> on_completion(
+      const protocol::Json& params, const SessionContext& context,
+      CancellationToken cancellation) const {
+    (void)cancellation;
+    return on_completion(params, context);
+  }
   virtual std::optional<core::Result<protocol::Json>> on_sampling(
       const protocol::Json&) const {
     return std::nullopt;
@@ -55,6 +62,12 @@ struct ServerHandlerInterface {
       const protocol::Json& params, const SessionContext& context) const {
     (void)context;
     return on_sampling(params);
+  }
+  virtual std::optional<core::Result<protocol::Json>> on_sampling(
+      const protocol::Json& params, const SessionContext& context,
+      CancellationToken cancellation) const {
+    (void)cancellation;
+    return on_sampling(params, context);
   }
   virtual void on_logging(std::string_view, std::string_view) const {}
   virtual std::optional<protocol::JsonRpcResponse> on_raw_request(
@@ -179,6 +192,7 @@ struct ServerHandlerInterface {
 struct ServerHandler {
   using JsonHandler = Server::JsonHandler;
   using JsonContextHandler = Server::JsonContextHandler;
+  using JsonRequestContextHandler = Server::JsonRequestContextHandler;
   using LoggingHandler = Server::LoggingHandler;
   using RawRequestHandler = Server::RawRequestHandler;
   using RawNotificationHandler = Server::RawNotificationHandler;
@@ -229,6 +243,10 @@ struct ServerHandler {
   JsonContextHandler on_completion_with_context;
   /// Handles sampling requests with session context.
   JsonContextHandler on_sampling_with_context;
+  /// Handles completion requests with session context and cancellation.
+  JsonRequestContextHandler on_completion_with_request_context;
+  /// Handles sampling requests with session context and cancellation.
+  JsonRequestContextHandler on_sampling_with_request_context;
 
   /// @brief Applies all non-empty callbacks to a server.
   /// @param server Server to configure.
@@ -290,6 +308,12 @@ struct ServerHandler {
     if (on_sampling_with_context) {
       server.set_sampling_handler(on_sampling_with_context);
     }
+    if (on_completion_with_request_context) {
+      server.set_completion_handler(on_completion_with_request_context);
+    }
+    if (on_sampling_with_request_context) {
+      server.set_sampling_handler(on_sampling_with_request_context);
+    }
   }
 };
 
@@ -302,26 +326,30 @@ inline Server& Server::set_handler(const ServerHandler& handler) {
 
 /// @brief Installs callbacks from a contract-style server handler.
 inline Server& Server::set_handler(const ServerHandlerInterface& handler) {
-  set_completion_handler([&handler](const protocol::Json& request,
-                                    const SessionContext& context)
-                             -> core::Result<protocol::Json> {
-    const auto response = handler.on_completion(request, context);
-    if (response.has_value()) {
-      return std::move(*response);
-    }
-    return std::unexpected(
-        handler_method_not_found("server handler does not handle completion"));
-  });
-  set_sampling_handler([&handler](const protocol::Json& request,
-                                  const SessionContext& context)
-                           -> core::Result<protocol::Json> {
-    const auto response = handler.on_sampling(request, context);
-    if (response.has_value()) {
-      return std::move(*response);
-    }
-    return std::unexpected(
-        handler_method_not_found("server handler does not handle sampling"));
-  });
+  set_completion_handler(
+      [&handler](
+          const protocol::Json& request, const SessionContext& context,
+          CancellationToken cancellation) -> core::Result<protocol::Json> {
+        const auto response =
+            handler.on_completion(request, context, cancellation);
+        if (response.has_value()) {
+          return std::move(*response);
+        }
+        return std::unexpected(handler_method_not_found(
+            "server handler does not handle completion"));
+      });
+  set_sampling_handler(
+      [&handler](
+          const protocol::Json& request, const SessionContext& context,
+          CancellationToken cancellation) -> core::Result<protocol::Json> {
+        const auto response =
+            handler.on_sampling(request, context, cancellation);
+        if (response.has_value()) {
+          return std::move(*response);
+        }
+        return std::unexpected(handler_method_not_found(
+            "server handler does not handle sampling"));
+      });
   set_logging_handler(
       [&handler](std::string_view level, std::string_view message) {
         handler.on_logging(level, message);
