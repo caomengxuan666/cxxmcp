@@ -3696,15 +3696,47 @@ void test_protocol_type_constraints_are_rejected() {
   require_parse_failure(
       mcp::protocol::resources_read_params_from_json(Json{{"uri", 3}}),
       "resources/read non-string uri should fail");
+  require_parse_failure(mcp::protocol::resources_read_params_from_json(Json{
+                            {"uri", "file:///a"}, {"_meta", Json::array()}}),
+                        "resources/read non-object meta should fail");
   require_parse_failure(
       mcp::protocol::resources_subscribe_params_from_json(Json{{"uri", 3}}),
       "resources/subscribe non-string uri should fail");
   require_parse_failure(
+      mcp::protocol::resources_subscribe_params_from_json(
+          Json{{"uri", "file:///a"}, {"_meta", Json::array()}}),
+      "resources/subscribe non-object meta should fail");
+  require_parse_failure(
       mcp::protocol::resources_unsubscribe_params_from_json(Json{{"uri", 3}}),
       "resources/unsubscribe non-string uri should fail");
+  require_parse_failure(
+      mcp::protocol::resources_unsubscribe_params_from_json(
+          Json{{"uri", "file:///a"}, {"_meta", Json::array()}}),
+      "resources/unsubscribe non-object meta should fail");
   require_parse_failure(mcp::protocol::resources_list_result_from_json(
                             Json{{"resources", Json::object()}}),
                         "resources/list non-array resources should fail");
+  require_parse_failure(mcp::protocol::resource_contents_from_json(
+                            Json{{"uri", 3}, {"text", "hello"}}),
+                        "resource contents non-string uri should fail");
+  require_parse_failure(
+      mcp::protocol::resource_contents_from_json(
+          Json{{"uri", "file:///a"}, {"mimeType", 3}, {"text", "hello"}}),
+      "resource contents non-string mimeType should fail");
+  require_parse_failure(mcp::protocol::resource_contents_from_json(
+                            Json{{"uri", "file:///a"}, {"text", 3}}),
+                        "resource contents non-string text should fail");
+  require_parse_failure(mcp::protocol::resource_contents_from_json(
+                            Json{{"uri", "file:///a"}, {"blob", 3}}),
+                        "resource contents non-string blob should fail");
+  require_parse_failure(
+      mcp::protocol::resource_contents_from_json(Json{
+          {"uri", "file:///a"}, {"text", "hello"}, {"_meta", Json::array()}}),
+      "resource contents non-object meta should fail");
+  require_parse_failure(
+      mcp::protocol::resources_read_result_from_json(
+          Json{{"contents", Json::array()}, {"_meta", Json::array()}}),
+      "resources/read result non-object meta should fail");
   require_parse_failure(
       mcp::protocol::resource_updated_notification_params_from_json(
           Json{{"uri", 7}}),

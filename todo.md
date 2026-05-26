@@ -511,6 +511,8 @@ true:
   tools, prompts, resources, roots, completion, logging, sampling,
   elicitation, and tasks.
 - [x] Add resource subscription URI type-constraint negative parse coverage.
+- [x] Add resource params/content/result metadata and scalar type-constraint
+      negative parse coverage.
 - [x] Add nested negative parse coverage for sampling tool use/tool result,
   tool choice, model preferences, elicitation primitive schemas, and
   elicitation completion notifications.
