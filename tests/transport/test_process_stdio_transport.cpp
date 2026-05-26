@@ -460,8 +460,15 @@ void test_process_stdio_transport_rejects_duplicate_request_id() {
 
   transport->stop();
   first_request.join();
-  require(!first_result.has_value(),
-          "first duplicate-id request should finish as an error after stop");
+  const bool first_request_stopped =
+      (!first_result.has_value() &&
+       first_result.error().message ==
+           "process stdio transport reader stopped") ||
+      (first_result.has_value() && first_result->error.has_value() &&
+       first_result->error->message ==
+           "process stdio transport reader stopped");
+  require(first_request_stopped,
+          "first duplicate-id request should finish as a stable stop error");
 }
 
 #ifndef _WIN32

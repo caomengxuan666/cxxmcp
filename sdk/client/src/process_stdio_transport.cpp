@@ -236,13 +236,13 @@ std::string posix_error_message(int error) { return std::strerror(error); }
 class ScopedSigpipeBlock final {
  public:
   ScopedSigpipeBlock() noexcept {
-    ::sigemptyset(&sigpipe_set_);
-    ::sigaddset(&sigpipe_set_, SIGPIPE);
+    sigemptyset(&sigpipe_set_);
+    sigaddset(&sigpipe_set_, SIGPIPE);
     if (::pthread_sigmask(SIG_BLOCK, &sigpipe_set_, &previous_mask_) == 0) {
       blocked_ = true;
       sigset_t pending;
       if (::sigpending(&pending) == 0) {
-        had_pending_sigpipe_ = ::sigismember(&pending, SIGPIPE) == 1;
+        had_pending_sigpipe_ = sigismember(&pending, SIGPIPE) == 1;
       }
     }
   }
@@ -254,8 +254,7 @@ class ScopedSigpipeBlock final {
 
     if (!had_pending_sigpipe_) {
       sigset_t pending;
-      if (::sigpending(&pending) == 0 &&
-          ::sigismember(&pending, SIGPIPE) == 1) {
+      if (::sigpending(&pending) == 0 && sigismember(&pending, SIGPIPE) == 1) {
         int signal = 0;
         (void)::sigwait(&sigpipe_set_, &signal);
       }
@@ -537,14 +536,24 @@ class ProcessStdioTransport::Impl {
       }
 
       std::promise<protocol::JsonRpcResponse> promise;
+      std::optional<core::Error> unexpected_response_error;
       {
         std::lock_guard<std::mutex> lock(pending_mutex_);
         auto it = pending_responses_.find(*response->id);
         if (it == pending_responses_.end()) {
-          continue;
+          unexpected_response_error = make_process_error(
+              static_cast<int>(protocol::ErrorCode::InvalidRequest),
+              "process stdio transport received an unexpected response",
+              request_id_to_string(*response->id));
+        } else {
+          promise = std::move(it->second);
+          pending_responses_.erase(it);
         }
-        promise = std::move(it->second);
-        pending_responses_.erase(it);
+      }
+
+      if (unexpected_response_error.has_value()) {
+        fail_pending(*unexpected_response_error);
+        continue;
       }
 
       promise.set_value(*response);

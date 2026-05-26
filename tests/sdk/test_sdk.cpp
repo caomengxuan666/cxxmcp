@@ -670,7 +670,8 @@ void test_server_peer_tool_discovery_dispatches_on_peer_boundary() {
                             .description = "Echo payload",
                             .input_schema = Json{{"type", "object"}},
                         },
-                        [] {
+                        [](const mcp::server::ToolContext&)
+                            -> mcp::core::Result<mcp::protocol::ToolResult> {
                           mcp::protocol::ToolResult result;
                           result.content.push_back(mcp::protocol::ContentBlock{
                               .type = "text",
@@ -1206,7 +1207,7 @@ void test_client_peer_native_raw_request_dispatches_interleaved_messages() {
       });
 
   const auto response = peer.raw_request(mcp::protocol::JsonRpcRequest{
-      .method = "tools/list",
+      .method = "custom/raw",
       .params = Json::object(),
       .id = std::int64_t{77},
   });
@@ -1310,7 +1311,7 @@ void test_public_dispatch_boundaries_translate_handler_exceptions() {
               *client_response->error->data == "client boom",
           "client thrown handler error detail mismatch");
 
-  mcp::server::Server server;
+  mcp::server::Server server(mcp::server::ServerOptions{});
   server.set_custom_request_handler(
       [](const mcp::protocol::JsonRpcRequest&,
          const mcp::server::SessionContext&)
@@ -1320,7 +1321,8 @@ void test_public_dispatch_boundaries_translate_handler_exceptions() {
   const auto server_response = server.handle_request(
       mcp::protocol::JsonRpcRequest{.method = "custom/server",
                                     .params = Json::object(),
-                                    .id = std::int64_t{502}});
+                                    .id = std::int64_t{502}},
+      mcp::server::SessionContext{});
   require(server_response.has_value(),
           "server thrown handler should become an error response");
   require(server_response->error.has_value(),

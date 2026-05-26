@@ -6,6 +6,7 @@ on:
   push:
     branches:
       - rewrite-v2
+      - master
       - main
 
 jobs:
@@ -36,6 +37,8 @@ jobs:
             os: windows-latest
             generator: Ninja
             build_type: Debug
+            cc: cl
+            cxx: cl
             msvc_runtime: MultiThreaded$<$<CONFIG:Debug>:Debug>
           - name: windows-msvc-vs-dynamic-runtime
             os: windows-latest
@@ -48,6 +51,10 @@ jobs:
         uses: actions/checkout@v4
         with:
           submodules: recursive
+
+      - name: Setup MSVC developer environment
+        if: runner.os == 'Windows' && matrix.generator == 'Ninja'
+        uses: ilammy/msvc-dev-cmd@v1
 
       - name: Install Ninja
         if: matrix.generator == 'Ninja'

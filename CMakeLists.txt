@@ -64,6 +64,12 @@ if(MSVC AND CXXMCP_MSVC_RUNTIME_LIBRARY)
     set(CMAKE_MSVC_RUNTIME_LIBRARY "${CXXMCP_MSVC_RUNTIME_LIBRARY}")
 endif()
 
+if(MSVC)
+    add_compile_options(/bigobj)
+elseif(MINGW)
+    add_compile_options(-Wa,-mbig-obj)
+endif()
+
 cxxmcp_build_option(CXXMCP_BUILD_SDK MCP_BUILD_SDK
     "Build the public SDK layer" ON)
 cxxmcp_build_option(CXXMCP_BUILD_PROTOCOL MCP_BUILD_PROTOCOL
