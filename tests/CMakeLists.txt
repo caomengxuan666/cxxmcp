@@ -74,6 +74,15 @@ endif()
 if(TARGET mcp_auth)
     add_cxxmcp_public_header_compile_test(
         auth auth_header.cpp cxxmcp::auth)
+
+    add_executable(mcp_auth_tests
+        auth/test_auth.cpp
+    )
+
+    target_link_libraries(mcp_auth_tests PRIVATE cxxmcp::auth)
+
+    add_test(NAME auth COMMAND mcp_auth_tests)
+    cxxmcp_mark_release_blocking(auth auth security)
 endif()
 
 if(TARGET mcp_transport)

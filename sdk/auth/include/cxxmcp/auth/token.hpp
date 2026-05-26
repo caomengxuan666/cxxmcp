@@ -5,6 +5,7 @@
 #include <optional>
 #include <string>
 #include <utility>
+#include <vector>
 
 #include "cxxmcp/auth/types.hpp"
 #include "cxxmcp/core/result.hpp"
@@ -60,39 +61,64 @@ class TokenStore {
 
 /// @brief Minimal non-persistent token store useful for tests and simple apps.
 ///
-/// This class intentionally stores a single token set. Durable and secure
-/// storage such as keychain, TPM, or encrypted files belongs in applications.
+/// This class stores tokens in process memory and separates entries by the full
+/// TokenKey. Durable and secure storage such as keychain, TPM, or encrypted
+/// files belongs in applications.
 class InMemoryTokenStore final : public TokenStore {
  public:
   core::Result<std::optional<TokenSet>> load(const TokenKey& key) override {
-    if (!matches(key)) {
+    const auto iter = find_entry(key);
+    if (iter == entries_.end()) {
       return std::optional<TokenSet>{};
     }
-    return tokens_;
+    return iter->second;
   }
 
   core::Result<core::Unit> save(const TokenKey& key, TokenSet tokens) override {
-    key_ = key;
-    tokens_ = std::move(tokens);
+    auto iter = find_entry(key);
+    if (iter == entries_.end()) {
+      entries_.emplace_back(key, std::move(tokens));
+    } else {
+      iter->second = std::move(tokens);
+    }
     return core::Unit{};
   }
 
   core::Result<core::Unit> remove(const TokenKey& key) override {
-    if (matches(key)) {
-      key_.reset();
-      tokens_.reset();
+    auto iter = find_entry(key);
+    if (iter != entries_.end()) {
+      entries_.erase(iter);
     }
     return core::Unit{};
   }
 
  private:
-  bool matches(const TokenKey& key) const {
-    return key_.has_value() && key_->resource == key.resource &&
-           key_->issuer == key.issuer && key_->client_id == key.client_id;
+  using Entry = std::pair<TokenKey, TokenSet>;
+
+  static bool matches(const TokenKey& lhs, const TokenKey& rhs) {
+    return lhs.resource == rhs.resource && lhs.issuer == rhs.issuer &&
+           lhs.client_id == rhs.client_id && lhs.attributes == rhs.attributes;
   }
 
-  std::optional<TokenKey> key_;
-  std::optional<TokenSet> tokens_;
+  std::vector<Entry>::iterator find_entry(const TokenKey& key) {
+    for (auto iter = entries_.begin(); iter != entries_.end(); ++iter) {
+      if (matches(iter->first, key)) {
+        return iter;
+      }
+    }
+    return entries_.end();
+  }
+
+  std::vector<Entry>::const_iterator find_entry(const TokenKey& key) const {
+    for (auto iter = entries_.begin(); iter != entries_.end(); ++iter) {
+      if (matches(iter->first, key)) {
+        return iter;
+      }
+    }
+    return entries_.end();
+  }
+
+  std::vector<Entry> entries_;
 };
 
 }  // namespace mcp::auth

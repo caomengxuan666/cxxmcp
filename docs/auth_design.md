@@ -159,17 +159,19 @@ transport. The current `cxxmcp::auth` scaffold defines public contracts for:
 - Token refresh rotation boundaries (OAuth 2.1 requirement)
 - Token storage abstraction (`TokenStore` interface, default in-memory impl)
 
-Default parser, PKCE, DPoP, discovery, token exchange, refresh-on-401, and
-OpenSSL-backed verifier implementations are still planned work. Public headers
-must keep these interfaces C++17-compatible while those implementations land.
+PKCE, DPoP, discovery, token exchange, refresh-on-401, and OpenSSL-backed
+verifier implementations are still planned work. Public headers must keep
+these interfaces C++17-compatible while those implementations land.
 
 The current lightweight resource-metadata integration point is deliberately
 small and header-only: `cxxmcp/auth/www_auth.hpp` exposes stable parameter
-constants plus helpers for extracting `resource_metadata` and
-`insufficient_scope` from parsed `WWW-Authenticate` challenges, while
-`cxxmcp/auth/metadata.hpp` owns the RFC 9728 / RFC 8414 value models. Actual
-HTTP discovery and token exchange remain a later `cxxmcp::auth`
-implementation detail routed through SDK transport boundaries.
+constants, a default `WWW-Authenticate` parser, and helpers for extracting
+`resource_metadata` and `insufficient_scope` from parsed challenges, while
+`cxxmcp/auth/metadata.hpp` owns the RFC 9728 / RFC 8414 value models.
+`cxxmcp/auth/token.hpp` exposes the token model plus an in-memory token store
+that separates entries by the full resource/issuer/client key. Actual HTTP
+discovery and token exchange remain a later `cxxmcp::auth` implementation
+detail routed through SDK transport boundaries.
 
 ### Intentional Non-Goals (belong in application code)
 

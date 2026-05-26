@@ -822,6 +822,10 @@ true:
 - [x] Add tests for authorized and unauthorized HTTP requests.
 - [x] Add tests for auth context reaching handlers.
 - [x] Document TLS/HTTPS support and build requirements.
+- [x] Provide a lightweight default `WWW-Authenticate` parser and focused auth
+      tests for MCP OAuth challenge parameters.
+- [x] Make the default in-memory token store separate entries by token key
+      instead of overwriting unrelated resource/client credentials.
 
 ## P2: Performance, Load, And Reliability
 
