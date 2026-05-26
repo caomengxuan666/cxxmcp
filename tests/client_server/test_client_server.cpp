@@ -1980,6 +1980,114 @@ void test_server_non_task_tool_observes_cancelled_notification() {
           "non-task tool did not observe cancellation");
 }
 
+void test_completion_and_sampling_handlers_observe_cancellation_token() {
+  {
+    auto server = make_server();
+    std::atomic_bool started{false};
+    std::atomic_bool observed_cancelled{false};
+
+    server.set_completion_handler(
+        mcp::server::Server::JsonRequestContextHandler{
+            [&](const Json&, const mcp::server::SessionContext&,
+                mcp::server::CancellationToken cancellation)
+                -> mcp::core::Result<Json> {
+              started.store(true);
+              wait_until([&] { return cancellation.cancelled(); },
+                         "completion handler should observe cancellation");
+              observed_cancelled.store(cancellation.cancelled());
+              return Json{{"cancelled", observed_cancelled.load()}};
+            }});
+
+    std::optional<mcp::core::Result<mcp::protocol::JsonRpcResponse>> response;
+    std::thread worker([&] {
+      response = server.handle_request(
+          mcp::protocol::JsonRpcRequest{
+              .method = std::string(mcp::protocol::CompletionCompleteMethod),
+              .params = Json::object(),
+              .id = std::int64_t{301},
+          },
+          mcp::server::SessionContext{.session_id = "completion"});
+    });
+
+    wait_until([&] { return started.load(); },
+               "completion cancellation handler should start");
+    const auto cancelled = server.handle_notification(
+        mcp::protocol::JsonRpcNotification{
+            .method = std::string(mcp::protocol::CancelledNotificationMethod),
+            .params = mcp::protocol::cancelled_notification_params_to_json(
+                mcp::protocol::CancelledNotificationParams{
+                    .request_id = std::int64_t{301},
+                    .reason = "test",
+                }),
+        },
+        {});
+    require(cancelled.has_value(),
+            "completion cancellation notification failed");
+    worker.join();
+
+    require(response.has_value(), "completion cancellation response missing");
+    require(response->has_value(), "completion cancellation request failed");
+    require((*response)->result.has_value(),
+            "completion cancellation result missing");
+    require((*response)->result->at("cancelled") == true,
+            "completion handler cancellation token mismatch");
+    require(observed_cancelled.load(),
+            "completion handler did not observe cancellation");
+  }
+
+  {
+    std::atomic_bool started{false};
+    std::atomic_bool observed_cancelled{false};
+    auto built =
+        mcp::server::App::builder()
+            .sampling(
+                [&](const Json&, mcp::server::CancellationToken cancellation) {
+                  started.store(true);
+                  wait_until([&] { return cancellation.cancelled(); },
+                             "sampling handler should observe cancellation");
+                  observed_cancelled.store(cancellation.cancelled());
+                  return Json{{"cancelled", observed_cancelled.load()}};
+                })
+            .build();
+    require(built.has_value(), "sampling cancellation server should build");
+
+    std::optional<mcp::core::Result<mcp::protocol::JsonRpcResponse>> response;
+    std::thread worker([&] {
+      response = (*built)->handle_request(
+          mcp::protocol::JsonRpcRequest{
+              .method = std::string(mcp::protocol::SamplingCreateMessageMethod),
+              .params = Json::object(),
+              .id = std::int64_t{302},
+          },
+          mcp::server::SessionContext{.session_id = "sampling"});
+    });
+
+    wait_until([&] { return started.load(); },
+               "sampling cancellation handler should start");
+    const auto cancelled = (*built)->handle_notification(
+        mcp::protocol::JsonRpcNotification{
+            .method = std::string(mcp::protocol::CancelledNotificationMethod),
+            .params = mcp::protocol::cancelled_notification_params_to_json(
+                mcp::protocol::CancelledNotificationParams{
+                    .request_id = std::int64_t{302},
+                    .reason = "test",
+                }),
+        },
+        {});
+    require(cancelled.has_value(), "sampling cancellation notification failed");
+    worker.join();
+
+    require(response.has_value(), "sampling cancellation response missing");
+    require(response->has_value(), "sampling cancellation request failed");
+    require((*response)->result.has_value(),
+            "sampling cancellation result missing");
+    require((*response)->result->at("cancelled") == true,
+            "sampling handler cancellation token mismatch");
+    require(observed_cancelled.load(),
+            "sampling handler did not observe cancellation");
+  }
+}
+
 void test_contract_handlers_override_client_and_server_requests() {
   struct ContractClientHandler final : mcp::client::ClientHandlerInterface {
     std::optional<mcp::core::Result<mcp::protocol::RootsListResult>>
@@ -3699,6 +3807,8 @@ void test_server_app_builder_registers_typed_completion() {
       mcp::server::App::builder()
           .completion([](const mcp::protocol::CompleteParams& params,
                          const mcp::server::CompletionContext& context) {
+            require(!context.cancelled(),
+                    "typed completion should receive live cancellation token");
             mcp::protocol::CompletionResult result;
             result.values = {context.session_id + ":" + params.argument.value +
                              "-one"};
@@ -5291,6 +5401,8 @@ int main() {
        test_server_service_native_transport_stop_cancels_loop},
       {"server non-task tool observes cancelled notification",
        test_server_non_task_tool_observes_cancelled_notification},
+      {"completion and sampling handlers observe cancellation token",
+       test_completion_and_sampling_handlers_observe_cancellation_token},
       {"contract handlers override client and server requests",
        test_contract_handlers_override_client_and_server_requests},
       {"contract task handlers receive session context",
