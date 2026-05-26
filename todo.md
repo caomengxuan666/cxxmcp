@@ -772,18 +772,18 @@ true:
 ## P2: Developer Experience Polish
 
 - [ ] Keep examples focused on real usable SDK flows.
-- [ ] Add minimal stdio server example.
-- [ ] Add minimal Streamable HTTP client example.
-- [ ] Add process-stdio client example for local MCP servers.
-- [ ] Add typed tool server example.
-- [ ] Add prompt/resource server example.
-- [ ] Add completion example.
-- [ ] Add sampling example.
-- [ ] Add elicitation example.
-- [ ] Add task-aware tool example.
-- [ ] Add raw JSON-RPC escape-hatch example.
-- [ ] Add handler-interface example.
-- [ ] Add graceful shutdown example.
+- [x] Add minimal stdio server example.
+- [x] Add minimal Streamable HTTP client example.
+- [x] Add process-stdio client example for local MCP servers.
+- [x] Add typed tool server example.
+- [x] Add prompt/resource server example.
+- [x] Add completion example.
+- [x] Add sampling example.
+- [x] Add elicitation example.
+- [x] Add task-aware tool example.
+- [x] Add raw JSON-RPC escape-hatch example.
+- [x] Add handler-interface example.
+- [x] Add graceful shutdown example.
 - [ ] Add timeout/cancellation example.
 - [ ] Keep examples compiling in CI.
 - [ ] Keep example APIs aligned with canonical `Peer` / `Service` docs.
