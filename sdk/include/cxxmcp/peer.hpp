@@ -1919,6 +1919,13 @@ class Peer<RoleServer> {
     return *this;
   }
 
+  Peer& set_raw_request_handler(
+      server::Server::RawRequestContextHandler handler) {
+    raw_request_context_handler_ = handler;
+    server_->set_raw_request_handler(std::move(handler));
+    return *this;
+  }
+
   Peer& set_raw_notification_handler(
       server::Server::RawNotificationHandler handler) {
     native_notification_state_ = true;
@@ -1929,6 +1936,13 @@ class Peer<RoleServer> {
 
   Peer& set_custom_request_handler(server::Server::RawRequestHandler handler) {
     raw_request_handler_ = handler;
+    server_->set_custom_request_handler(std::move(handler));
+    return *this;
+  }
+
+  Peer& set_custom_request_handler(
+      server::Server::RawRequestContextHandler handler) {
+    raw_request_context_handler_ = handler;
     server_->set_custom_request_handler(std::move(handler));
     return *this;
   }
@@ -2076,13 +2090,13 @@ class Peer<RoleServer> {
   Peer& set_handler(const server::ServerHandlerInterface& handler) {
     server_->set_handler(handler);
     set_raw_request_handler([&handler](const protocol::JsonRpcRequest& request,
-                                       const server::SessionContext& context)
+                                       const server::SessionContext& context,
+                                       CancellationToken cancellation)
                                 -> std::optional<protocol::JsonRpcResponse> {
-      const auto discovery_response =
-          server::dispatch_server_handler_discovery_request(handler, request,
-                                                            context);
-      if (discovery_response.has_value()) {
-        return discovery_response;
+      const auto handler_response = server::dispatch_server_handler_request(
+          handler, request, context, cancellation);
+      if (handler_response.has_value()) {
+        return handler_response;
       }
       return handler.on_custom_request(request, context);
     });
@@ -2156,6 +2170,20 @@ class Peer<RoleServer> {
     }
     if (request.method == protocol::PingMethod) {
       return protocol::make_response(request.id, protocol::Json::object());
+    }
+
+    if (raw_request_context_handler_) {
+      const auto request_cancellation =
+          begin_peer_request_cancellation(request.id);
+      const std::shared_ptr<void> request_cancellation_cleanup(
+          nullptr, [this, request_id = request.id](void*) noexcept {
+            end_peer_request_cancellation(request_id);
+          });
+      const auto raw_response =
+          raw_request_context_handler_(request, context, request_cancellation);
+      if (raw_response.has_value()) {
+        return *raw_response;
+      }
     }
 
     if (raw_request_handler_) {
@@ -2731,6 +2759,7 @@ class Peer<RoleServer> {
           std::unordered_map<std::string, CancellationSource>>();
   bool native_notification_state_ = false;
   server::Server::RawRequestHandler raw_request_handler_;
+  server::Server::RawRequestContextHandler raw_request_context_handler_;
   server::Server::JsonContextHandler completion_handler_;
   server::Server::JsonContextHandler sampling_handler_;
   server::Server::LoggingHandler logging_handler_;

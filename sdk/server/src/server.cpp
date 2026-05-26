@@ -340,6 +340,14 @@ core::Result<protocol::JsonRpcResponse> Server::handle_request(
     return protocol::make_response(request.id, protocol::Json::object());
   }
 
+  if (raw_request_context_handler_) {
+    const auto raw_response =
+        raw_request_context_handler_(request, context, request_cancellation);
+    if (raw_response.has_value()) {
+      return *raw_response;
+    }
+  }
+
   if (raw_request_handler_) {
     const auto raw_response = raw_request_handler_(request, context);
     if (raw_response.has_value()) {
@@ -1017,11 +1025,19 @@ void Server::set_raw_request_handler(RawRequestHandler handler) {
   raw_request_handler_ = std::move(handler);
 }
 
+void Server::set_raw_request_handler(RawRequestContextHandler handler) {
+  raw_request_context_handler_ = std::move(handler);
+}
+
 void Server::set_raw_notification_handler(RawNotificationHandler handler) {
   raw_notification_handler_ = std::move(handler);
 }
 
 void Server::set_custom_request_handler(RawRequestHandler handler) {
+  set_raw_request_handler(std::move(handler));
+}
+
+void Server::set_custom_request_handler(RawRequestContextHandler handler) {
   set_raw_request_handler(std::move(handler));
 }
 

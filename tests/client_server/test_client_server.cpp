@@ -2374,6 +2374,45 @@ void test_contract_discovery_handlers_override_registries() {
       });
       return result;
     }
+
+    std::optional<mcp::core::Result<mcp::protocol::ToolResult>> on_call_tool(
+        const mcp::protocol::ToolCall& call,
+        const mcp::server::SessionContext& context,
+        mcp::CancellationToken cancellation) const override {
+      require(!cancellation.cancelled(),
+              "contract tool cancellation should start open");
+      return mcp::protocol::ToolResult::text(
+          context.session_id + ":" + call.name + ":" +
+          call.arguments.at("value").get<std::string>());
+    }
+
+    std::optional<mcp::core::Result<mcp::protocol::PromptsGetResult>>
+    on_get_prompt(const mcp::protocol::PromptsGetParams& params,
+                  const mcp::server::SessionContext& context,
+                  mcp::CancellationToken cancellation) const override {
+      require(!cancellation.cancelled(),
+              "contract prompt cancellation should start open");
+      mcp::protocol::PromptsGetResult result;
+      result.messages.push_back(mcp::protocol::PromptMessage::text(
+          "assistant", context.session_id + ":" + params.name + ":" +
+                           params.arguments.at("topic").get<std::string>()));
+      return result;
+    }
+
+    std::optional<mcp::core::Result<mcp::protocol::ResourcesReadResult>>
+    on_read_resource(const mcp::protocol::ResourcesReadParams& params,
+                     const mcp::server::SessionContext& context,
+                     mcp::CancellationToken cancellation) const override {
+      require(!cancellation.cancelled(),
+              "contract resource cancellation should start open");
+      mcp::protocol::ResourcesReadResult result;
+      result.contents.push_back(mcp::protocol::ResourceContents{
+          .uri = params.uri,
+          .mime_type = "text/plain",
+          .text = context.session_id + ":" + params.uri,
+      });
+      return result;
+    }
   } handler;
 
   auto require_discovery = [](mcp::server::Server& server,
@@ -2439,6 +2478,44 @@ void test_contract_discovery_handlers_override_registries() {
         templates->result->at("resourceTemplates").at(0).at("uriTemplate") ==
             "file:///" + std::string(session) + "/{name}.txt",
         "contract resources/templates/list should use handler");
+
+    const auto tool_call = server.handle_request(
+        mcp::protocol::JsonRpcRequest{
+            .method = std::string(mcp::protocol::ToolsCallMethod),
+            .params =
+                Json{{"name", "echo"}, {"arguments", Json{{"value", "hello"}}}},
+            .id = std::int64_t{216},
+        },
+        context);
+    require(tool_call.has_value(), "contract tools/call failed");
+    require(tool_call->result->at("content").at(0).at("text") ==
+                std::string(session) + ":echo:hello",
+            "contract tools/call should use handler");
+
+    const auto prompt_get = server.handle_request(
+        mcp::protocol::JsonRpcRequest{
+            .method = std::string(mcp::protocol::PromptsGetMethod),
+            .params =
+                Json{{"name", "write"}, {"arguments", Json{{"topic", "sdk"}}}},
+            .id = std::int64_t{217},
+        },
+        context);
+    require(prompt_get.has_value(), "contract prompts/get failed");
+    require(prompt_get->result->at("messages").at(0).at("content").at("text") ==
+                std::string(session) + ":write:sdk",
+            "contract prompts/get should use handler");
+
+    const auto resource_read = server.handle_request(
+        mcp::protocol::JsonRpcRequest{
+            .method = std::string(mcp::protocol::ResourcesReadMethod),
+            .params = Json{{"uri", "file:///contract.txt"}},
+            .id = std::int64_t{218},
+        },
+        context);
+    require(resource_read.has_value(), "contract resources/read failed");
+    require(resource_read->result->at("contents").at(0).at("text") ==
+                std::string(session) + ":file:///contract.txt",
+            "contract resources/read should use handler");
   };
 
   auto server = make_server();
@@ -2452,13 +2529,53 @@ void test_contract_discovery_handlers_override_registries() {
       mcp::protocol::JsonRpcRequest{
           .method = std::string(mcp::protocol::ToolsListMethod),
           .params = Json::object(),
-          .id = std::int64_t{216},
+          .id = std::int64_t{219},
       },
       mcp::server::SessionContext{.session_id = "peer-contract"});
   require(peer_tools.has_value(), "contract peer tools/list failed");
   require(
       peer_tools->result->at("tools").at(0).at("name") == "peer-contract-tool",
       "contract peer tools/list should use handler before registry");
+
+  const auto peer_tool_call = peer.handle_request(
+      mcp::protocol::JsonRpcRequest{
+          .method = std::string(mcp::protocol::ToolsCallMethod),
+          .params =
+              Json{{"name", "echo"}, {"arguments", Json{{"value", "peer"}}}},
+          .id = std::int64_t{220},
+      },
+      mcp::server::SessionContext{.session_id = "peer-contract"});
+  require(peer_tool_call.has_value(), "contract peer tools/call failed");
+  require(peer_tool_call->result->at("content").at(0).at("text") ==
+              "peer-contract:echo:peer",
+          "contract peer tools/call should use handler before registry");
+
+  const auto peer_prompt_get = peer.handle_request(
+      mcp::protocol::JsonRpcRequest{
+          .method = std::string(mcp::protocol::PromptsGetMethod),
+          .params =
+              Json{{"name", "write"}, {"arguments", Json{{"topic", "peer"}}}},
+          .id = std::int64_t{221},
+      },
+      mcp::server::SessionContext{.session_id = "peer-contract"});
+  require(peer_prompt_get.has_value(), "contract peer prompts/get failed");
+  require(
+      peer_prompt_get->result->at("messages").at(0).at("content").at("text") ==
+          "peer-contract:write:peer",
+      "contract peer prompts/get should use handler before registry");
+
+  const auto peer_resource_read = peer.handle_request(
+      mcp::protocol::JsonRpcRequest{
+          .method = std::string(mcp::protocol::ResourcesReadMethod),
+          .params = Json{{"uri", "file:///peer.txt"}},
+          .id = std::int64_t{222},
+      },
+      mcp::server::SessionContext{.session_id = "peer-contract"});
+  require(peer_resource_read.has_value(),
+          "contract peer resources/read failed");
+  require(peer_resource_read->result->at("contents").at(0).at("text") ==
+              "peer-contract:file:///peer.txt",
+          "contract peer resources/read should use handler before registry");
 }
 
 void test_contract_task_handlers_receive_session_context() {

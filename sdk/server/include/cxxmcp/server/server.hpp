@@ -876,6 +876,10 @@ class Server {
   using RawRequestHandler =
       std::function<std::optional<protocol::JsonRpcResponse>(
           const protocol::JsonRpcRequest&, const SessionContext&)>;
+  using RawRequestContextHandler =
+      std::function<std::optional<protocol::JsonRpcResponse>(
+          const protocol::JsonRpcRequest&, const SessionContext&,
+          CancellationToken)>;
 
   /// @brief Handles raw or custom notifications.
   using RawNotificationHandler = std::function<core::Result<core::Unit>(
@@ -928,12 +932,14 @@ class Server {
 
   /// @brief Registers a raw request hook.
   void set_raw_request_handler(RawRequestHandler handler);
+  void set_raw_request_handler(RawRequestContextHandler handler);
 
   /// @brief Registers a raw notification hook.
   void set_raw_notification_handler(RawNotificationHandler handler);
 
   /// @brief Registers a custom request handler.
   void set_custom_request_handler(RawRequestHandler handler);
+  void set_custom_request_handler(RawRequestContextHandler handler);
 
   /// @brief Registers a custom notification handler.
   void set_custom_notification_handler(RawNotificationHandler handler);
@@ -994,6 +1000,7 @@ class Server {
   JsonRequestContextHandler sampling_handler_;
   LoggingHandler logging_handler_;
   RawRequestHandler raw_request_handler_;
+  RawRequestContextHandler raw_request_context_handler_;
   RawNotificationHandler raw_notification_handler_;
   TaskListHandler task_list_handler_;
   TaskGetHandler task_get_handler_;

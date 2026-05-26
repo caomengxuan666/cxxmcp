@@ -59,6 +59,54 @@ struct ServerHandlerInterface {
   on_list_resource_templates(const SessionContext&) const {
     return std::nullopt;
   }
+  virtual std::optional<core::Result<protocol::ToolResult>> on_call_tool(
+      const protocol::ToolCall&) const {
+    return std::nullopt;
+  }
+  virtual std::optional<core::Result<protocol::ToolResult>> on_call_tool(
+      const protocol::ToolCall& call, const SessionContext& context) const {
+    (void)context;
+    return on_call_tool(call);
+  }
+  virtual std::optional<core::Result<protocol::ToolResult>> on_call_tool(
+      const protocol::ToolCall& call, const SessionContext& context,
+      CancellationToken cancellation) const {
+    (void)cancellation;
+    return on_call_tool(call, context);
+  }
+  virtual std::optional<core::Result<protocol::PromptsGetResult>> on_get_prompt(
+      const protocol::PromptsGetParams&) const {
+    return std::nullopt;
+  }
+  virtual std::optional<core::Result<protocol::PromptsGetResult>> on_get_prompt(
+      const protocol::PromptsGetParams& params,
+      const SessionContext& context) const {
+    (void)context;
+    return on_get_prompt(params);
+  }
+  virtual std::optional<core::Result<protocol::PromptsGetResult>> on_get_prompt(
+      const protocol::PromptsGetParams& params, const SessionContext& context,
+      CancellationToken cancellation) const {
+    (void)cancellation;
+    return on_get_prompt(params, context);
+  }
+  virtual std::optional<core::Result<protocol::ResourcesReadResult>>
+  on_read_resource(const protocol::ResourcesReadParams&) const {
+    return std::nullopt;
+  }
+  virtual std::optional<core::Result<protocol::ResourcesReadResult>>
+  on_read_resource(const protocol::ResourcesReadParams& params,
+                   const SessionContext& context) const {
+    (void)context;
+    return on_read_resource(params);
+  }
+  virtual std::optional<core::Result<protocol::ResourcesReadResult>>
+  on_read_resource(const protocol::ResourcesReadParams& params,
+                   const SessionContext& context,
+                   CancellationToken cancellation) const {
+    (void)cancellation;
+    return on_read_resource(params, context);
+  }
 
   virtual std::optional<core::Result<protocol::Json>> on_completion(
       const protocol::Json&) const {
@@ -296,6 +344,69 @@ dispatch_server_handler_discovery_request(
   return std::nullopt;
 }
 
+inline std::optional<protocol::JsonRpcResponse> dispatch_server_handler_request(
+    const ServerHandlerInterface& handler,
+    const protocol::JsonRpcRequest& request, const SessionContext& context,
+    CancellationToken cancellation) {
+  const auto discovery_response =
+      dispatch_server_handler_discovery_request(handler, request, context);
+  if (discovery_response.has_value()) {
+    return discovery_response;
+  }
+
+  if (request.method == protocol::ToolsCallMethod) {
+    const auto call = protocol::tool_call_from_json(request.params);
+    if (!call) {
+      return server_handler_error_response(request, call.error());
+    }
+    if (call->task.has_value()) {
+      return std::nullopt;
+    }
+    const auto result = handler.on_call_tool(*call, context, cancellation);
+    if (result.has_value()) {
+      return server_handler_result_response(
+          request, *result, [](const protocol::ToolResult& value) {
+            return protocol::tool_result_to_json(value);
+          });
+    }
+    return std::nullopt;
+  }
+
+  if (request.method == protocol::PromptsGetMethod) {
+    const auto params = protocol::prompts_get_params_from_json(request.params);
+    if (!params) {
+      return server_handler_error_response(request, params.error());
+    }
+    const auto result = handler.on_get_prompt(*params, context, cancellation);
+    if (result.has_value()) {
+      return server_handler_result_response(
+          request, *result, [](const protocol::PromptsGetResult& value) {
+            return protocol::prompts_get_result_to_json(value);
+          });
+    }
+    return std::nullopt;
+  }
+
+  if (request.method == protocol::ResourcesReadMethod) {
+    const auto params =
+        protocol::resources_read_params_from_json(request.params);
+    if (!params) {
+      return server_handler_error_response(request, params.error());
+    }
+    const auto result =
+        handler.on_read_resource(*params, context, cancellation);
+    if (result.has_value()) {
+      return server_handler_result_response(
+          request, *result, [](const protocol::ResourcesReadResult& value) {
+            return protocol::resources_read_result_to_json(value);
+          });
+    }
+    return std::nullopt;
+  }
+
+  return std::nullopt;
+}
+
 /// @brief Optional callback bundle for configuring a Server in one call.
 ///
 /// Each member mirrors a Server::set_*_handler() function. apply_to() and
@@ -467,12 +578,13 @@ inline Server& Server::set_handler(const ServerHandlerInterface& handler) {
         handler.on_logging(level, message);
       });
   set_raw_request_handler([&handler](const protocol::JsonRpcRequest& request,
-                                     const SessionContext& context)
+                                     const SessionContext& context,
+                                     CancellationToken cancellation)
                               -> std::optional<protocol::JsonRpcResponse> {
-    const auto discovery_response =
-        dispatch_server_handler_discovery_request(handler, request, context);
-    if (discovery_response.has_value()) {
-      return discovery_response;
+    const auto handler_response = dispatch_server_handler_request(
+        handler, request, context, cancellation);
+    if (handler_response.has_value()) {
+      return handler_response;
     }
     return handler.on_custom_request(request, context);
   });
