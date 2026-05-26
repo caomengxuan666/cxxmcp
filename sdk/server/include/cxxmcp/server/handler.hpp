@@ -39,6 +39,27 @@ struct ServerHandlerInterface {
 
   virtual ~ServerHandlerInterface() = default;
 
+  virtual std::optional<core::Result<protocol::ToolsListResult>> on_list_tools(
+      const SessionContext&) const {
+    return std::nullopt;
+  }
+  virtual std::optional<core::Result<protocol::ToolDefinition>> on_get_tool(
+      std::string_view, const SessionContext&) const {
+    return std::nullopt;
+  }
+  virtual std::optional<core::Result<protocol::PromptsListResult>>
+  on_list_prompts(const SessionContext&) const {
+    return std::nullopt;
+  }
+  virtual std::optional<core::Result<protocol::ResourcesListResult>>
+  on_list_resources(const SessionContext&) const {
+    return std::nullopt;
+  }
+  virtual std::optional<core::Result<protocol::ResourceTemplatesListResult>>
+  on_list_resource_templates(const SessionContext&) const {
+    return std::nullopt;
+  }
+
   virtual std::optional<core::Result<protocol::Json>> on_completion(
       const protocol::Json&) const {
     return std::nullopt;
@@ -183,6 +204,97 @@ struct ServerHandlerInterface {
     return on_resource_updated(uri);
   }
 };
+
+inline protocol::JsonRpcResponse server_handler_error_response(
+    const protocol::JsonRpcRequest& request, const core::Error& error) {
+  return protocol::make_error_response(
+      std::optional<protocol::RequestId>{request.id},
+      protocol::make_error(error.code, error.message,
+                           error.detail.empty()
+                               ? std::nullopt
+                               : std::optional<protocol::Json>{error.detail}));
+}
+
+template <class T, class Serializer>
+inline std::optional<protocol::JsonRpcResponse> server_handler_result_response(
+    const protocol::JsonRpcRequest& request, const core::Result<T>& result,
+    Serializer serializer) {
+  if (!result) {
+    return server_handler_error_response(request, result.error());
+  }
+  return protocol::make_response(request.id, serializer(*result));
+}
+
+inline std::optional<protocol::JsonRpcResponse>
+dispatch_server_handler_discovery_request(
+    const ServerHandlerInterface& handler,
+    const protocol::JsonRpcRequest& request, const SessionContext& context) {
+  if (request.method == protocol::ToolsListMethod) {
+    const auto result = handler.on_list_tools(context);
+    if (result.has_value()) {
+      return server_handler_result_response(
+          request, *result, [](const protocol::ToolsListResult& value) {
+            return protocol::tools_list_result_to_json(value);
+          });
+    }
+    return std::nullopt;
+  }
+
+  if (request.method == protocol::ToolsGetMethod) {
+    if (!request.params.is_object() || !request.params.contains("name") ||
+        !request.params.at("name").is_string()) {
+      return server_handler_error_response(
+          request, core::Error{
+                       static_cast<int>(protocol::ErrorCode::InvalidParams),
+                       "tools/get requires a string name",
+                       {},
+                   });
+    }
+    const auto result = handler.on_get_tool(
+        request.params.at("name").get<std::string>(), context);
+    if (result.has_value()) {
+      return server_handler_result_response(
+          request, *result, [](const protocol::ToolDefinition& value) {
+            return protocol::tool_definition_to_json(value);
+          });
+    }
+    return std::nullopt;
+  }
+
+  if (request.method == protocol::PromptsListMethod) {
+    const auto result = handler.on_list_prompts(context);
+    if (result.has_value()) {
+      return server_handler_result_response(
+          request, *result, [](const protocol::PromptsListResult& value) {
+            return protocol::prompts_list_result_to_json(value);
+          });
+    }
+    return std::nullopt;
+  }
+
+  if (request.method == protocol::ResourcesListMethod) {
+    const auto result = handler.on_list_resources(context);
+    if (result.has_value()) {
+      return server_handler_result_response(
+          request, *result, [](const protocol::ResourcesListResult& value) {
+            return protocol::resources_list_result_to_json(value);
+          });
+    }
+    return std::nullopt;
+  }
+
+  if (request.method == protocol::ResourcesTemplatesListMethod) {
+    const auto result = handler.on_list_resource_templates(context);
+    if (result.has_value()) {
+      return server_handler_result_response(
+          request, *result,
+          [](const protocol::ResourceTemplatesListResult& value) {
+            return protocol::resource_templates_list_result_to_json(value);
+          });
+    }
+  }
+  return std::nullopt;
+}
 
 /// @brief Optional callback bundle for configuring a Server in one call.
 ///
@@ -357,7 +469,12 @@ inline Server& Server::set_handler(const ServerHandlerInterface& handler) {
   set_raw_request_handler([&handler](const protocol::JsonRpcRequest& request,
                                      const SessionContext& context)
                               -> std::optional<protocol::JsonRpcResponse> {
-    return handler.on_raw_request(request, context);
+    const auto discovery_response =
+        dispatch_server_handler_discovery_request(handler, request, context);
+    if (discovery_response.has_value()) {
+      return discovery_response;
+    }
+    return handler.on_custom_request(request, context);
   });
   set_raw_notification_handler(
       [&handler](const protocol::JsonRpcNotification& notification,
@@ -369,11 +486,6 @@ inline Server& Server::set_handler(const ServerHandlerInterface& handler) {
         }
         return core::Unit{};
       });
-  set_custom_request_handler([&handler](const protocol::JsonRpcRequest& request,
-                                        const SessionContext& context)
-                                 -> std::optional<protocol::JsonRpcResponse> {
-    return handler.on_custom_request(request, context);
-  });
   set_custom_notification_handler(
       [&handler](const protocol::JsonRpcNotification& notification,
                  const SessionContext& context) -> core::Result<core::Unit> {

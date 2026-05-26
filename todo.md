@@ -612,6 +612,8 @@ true:
 - [x] Route events through explicit handler objects where possible.
 - [ ] Reduce public mutable callback setter state over time.
 - [ ] Keep registries as convenience wrappers over server handlers.
+  - [x] Route tool, prompt, resource, and resource-template discovery through
+    contract-style server handlers before registry fallback.
 - [x] Deepen typed tool registration helpers.
 - [x] Deepen typed prompt helper templates.
 - [x] Deepen typed resource helper templates.

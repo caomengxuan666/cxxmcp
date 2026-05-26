@@ -2075,6 +2075,17 @@ class Peer<RoleServer> {
 
   Peer& set_handler(const server::ServerHandlerInterface& handler) {
     server_->set_handler(handler);
+    set_raw_request_handler([&handler](const protocol::JsonRpcRequest& request,
+                                       const server::SessionContext& context)
+                                -> std::optional<protocol::JsonRpcResponse> {
+      const auto discovery_response =
+          server::dispatch_server_handler_discovery_request(handler, request,
+                                                            context);
+      if (discovery_response.has_value()) {
+        return discovery_response;
+      }
+      return handler.on_custom_request(request, context);
+    });
     return *this;
   }
 

@@ -2323,6 +2323,144 @@ void test_contract_handlers_override_client_and_server_requests() {
           "contract server peer completion result mismatch");
 }
 
+void test_contract_discovery_handlers_override_registries() {
+  struct ContractDiscoveryHandler final : mcp::server::ServerHandlerInterface {
+    std::optional<mcp::core::Result<mcp::protocol::ToolsListResult>>
+    on_list_tools(const mcp::server::SessionContext& context) const override {
+      mcp::protocol::ToolDefinition tool;
+      tool.name = context.session_id + "-tool";
+      tool.input_schema = Json::object();
+      mcp::protocol::ToolsListResult result;
+      result.tools.push_back(std::move(tool));
+      return result;
+    }
+
+    std::optional<mcp::core::Result<mcp::protocol::ToolDefinition>> on_get_tool(
+        std::string_view name,
+        const mcp::server::SessionContext& context) const override {
+      mcp::protocol::ToolDefinition tool;
+      tool.name = context.session_id + "-" + std::string(name);
+      tool.input_schema = Json::object();
+      return tool;
+    }
+
+    std::optional<mcp::core::Result<mcp::protocol::PromptsListResult>>
+    on_list_prompts(const mcp::server::SessionContext& context) const override {
+      mcp::protocol::PromptsListResult result;
+      result.prompts.push_back(mcp::protocol::Prompt{
+          .name = context.session_id + "-prompt",
+      });
+      return result;
+    }
+
+    std::optional<mcp::core::Result<mcp::protocol::ResourcesListResult>>
+    on_list_resources(
+        const mcp::server::SessionContext& context) const override {
+      mcp::protocol::ResourcesListResult result;
+      result.resources.push_back(mcp::protocol::Resource{
+          .uri = "file:///" + context.session_id + "/resource.txt",
+          .name = "resource",
+      });
+      return result;
+    }
+
+    std::optional<mcp::core::Result<mcp::protocol::ResourceTemplatesListResult>>
+    on_list_resource_templates(
+        const mcp::server::SessionContext& context) const override {
+      mcp::protocol::ResourceTemplatesListResult result;
+      result.resource_templates.push_back(mcp::protocol::ResourceTemplate{
+          .uri_template = "file:///" + context.session_id + "/{name}.txt",
+          .name = "template",
+      });
+      return result;
+    }
+  } handler;
+
+  auto require_discovery = [](mcp::server::Server& server,
+                              std::string_view session) {
+    const mcp::server::SessionContext context{.session_id =
+                                                  std::string(session)};
+    const auto tools = server.handle_request(
+        mcp::protocol::JsonRpcRequest{
+            .method = std::string(mcp::protocol::ToolsListMethod),
+            .params = Json::object(),
+            .id = std::int64_t{211},
+        },
+        context);
+    require(tools.has_value(), "contract tools/list failed");
+    require(tools->result->at("tools").at(0).at("name") ==
+                std::string(session) + "-tool",
+            "contract tools/list should use handler");
+
+    const auto tool = server.handle_request(
+        mcp::protocol::JsonRpcRequest{
+            .method = std::string(mcp::protocol::ToolsGetMethod),
+            .params = Json{{"name", "lookup"}},
+            .id = std::int64_t{212},
+        },
+        context);
+    require(tool.has_value(), "contract tools/get failed");
+    require(tool->result->at("name") == std::string(session) + "-lookup",
+            "contract tools/get should use handler");
+
+    const auto prompts = server.handle_request(
+        mcp::protocol::JsonRpcRequest{
+            .method = std::string(mcp::protocol::PromptsListMethod),
+            .params = Json::object(),
+            .id = std::int64_t{213},
+        },
+        context);
+    require(prompts.has_value(), "contract prompts/list failed");
+    require(prompts->result->at("prompts").at(0).at("name") ==
+                std::string(session) + "-prompt",
+            "contract prompts/list should use handler");
+
+    const auto resources = server.handle_request(
+        mcp::protocol::JsonRpcRequest{
+            .method = std::string(mcp::protocol::ResourcesListMethod),
+            .params = Json::object(),
+            .id = std::int64_t{214},
+        },
+        context);
+    require(resources.has_value(), "contract resources/list failed");
+    require(resources->result->at("resources").at(0).at("uri") ==
+                "file:///" + std::string(session) + "/resource.txt",
+            "contract resources/list should use handler");
+
+    const auto templates = server.handle_request(
+        mcp::protocol::JsonRpcRequest{
+            .method = std::string(mcp::protocol::ResourcesTemplatesListMethod),
+            .params = Json::object(),
+            .id = std::int64_t{215},
+        },
+        context);
+    require(templates.has_value(), "contract resources/templates/list failed");
+    require(
+        templates->result->at("resourceTemplates").at(0).at("uriTemplate") ==
+            "file:///" + std::string(session) + "/{name}.txt",
+        "contract resources/templates/list should use handler");
+  };
+
+  auto server = make_server();
+  server.set_handler(handler);
+  require_discovery(server, "server-contract");
+
+  mcp::ServerPeer peer(mcp::server::ServerOptions{});
+  peer.set_handler(handler);
+
+  const auto peer_tools = peer.handle_request(
+      mcp::protocol::JsonRpcRequest{
+          .method = std::string(mcp::protocol::ToolsListMethod),
+          .params = Json::object(),
+          .id = std::int64_t{216},
+      },
+      mcp::server::SessionContext{.session_id = "peer-contract"});
+  require(peer_tools.has_value(), "contract peer tools/list failed");
+  require(
+      peer_tools->result->at("tools").at(0).at("name") == "peer-contract-tool",
+      "contract peer tools/list should use handler before registry");
+}
+
 void test_contract_task_handlers_receive_session_context() {
   struct ContractTaskHandler final : mcp::server::ServerHandlerInterface {
     mutable std::vector<std::string> sessions;
@@ -5537,6 +5675,8 @@ int main() {
        test_contract_completion_sampling_handlers_receive_cancellation_token},
       {"contract handlers override client and server requests",
        test_contract_handlers_override_client_and_server_requests},
+      {"contract discovery handlers override registries",
+       test_contract_discovery_handlers_override_registries},
       {"contract task handlers receive session context",
        test_contract_task_handlers_receive_session_context},
       {"contract notification handlers receive session context",
