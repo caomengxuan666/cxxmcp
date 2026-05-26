@@ -122,6 +122,19 @@ target_link_libraries(loopback PRIVATE cxxmcp::sdk)
 - Use `cxxmcp::sdk` only when one target intentionally needs protocol, client,
   and server APIs together, such as loopback tests or SDK examples.
 
+## External Consumer Template
+
+A minimal out-of-tree CMake project is kept in:
+
+```text
+templates/external_consumer
+```
+
+It is intentionally small: one `find_package(cxxmcp CONFIG REQUIRED)`, one
+executable, and one narrow SDK target link. The package-smoke test configures
+and builds this template against the installed SDK output so the template stays
+valid for release candidates.
+
 ## xmake-repo
 
 The xmake-repo recipe draft lives at:

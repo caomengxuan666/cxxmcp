@@ -51,6 +51,9 @@ def check_source_tree(source: Path) -> None:
         "docs/request_lifecycle.md",
         "docs/sdk_peer_service_migration.md",
         "docs/Doxyfile",
+        "templates/external_consumer/CMakeLists.txt",
+        "templates/external_consumer/main.cpp",
+        "templates/external_consumer/README.md",
         ".github/workflows/release-gates.yml",
         "tests/CMakeLists.txt",
         "tests/package_smoke.cmake",
@@ -104,6 +107,11 @@ def check_source_tree(source: Path) -> None:
     package_smoke = source / "tests/package_smoke.cmake"
     require_contains(package_smoke, "PACKAGE_SMOKE_GENERATOR")
     require_contains(package_smoke, "PACKAGE_SMOKE_CXX_COMPILER")
+    require_contains(package_smoke, "templates/external_consumer")
+
+    template_cmake = source / "templates/external_consumer/CMakeLists.txt"
+    require_contains(template_cmake, "find_package(cxxmcp CONFIG REQUIRED)")
+    require_contains(template_cmake, "cxxmcp::server")
 
     example_markers = {
         "examples/client_loopback.cpp": "Compatibility example",
@@ -140,6 +148,9 @@ def check_evidence_dir(evidence: Path) -> None:
         "examples/server_peer.cpp",
         "examples/client_peer.cpp",
         "examples/process_stdio_client.cpp",
+        "templates/external_consumer/CMakeLists.txt",
+        "templates/external_consumer/main.cpp",
+        "templates/external_consumer/README.md",
     ]
     for relative in required_files:
         require_file(evidence / relative)

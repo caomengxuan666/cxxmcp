@@ -500,6 +500,7 @@ client 的 process-stdio fixtures 支撑。
 - [Security policy](SECURITY.md)
 - [Compatibility policy](docs/compatibility_policy.md)
 - [Dependency and reference policy](docs/dependency_policy.md)
+- [External consumer template](templates/external_consumer)
 - [Release gates](docs/release_gates.md)
 - [Release candidate checklist](docs/release_candidate_checklist.md)
 - [Release notes template](docs/release_notes_template.md)

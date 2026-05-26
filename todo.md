@@ -724,7 +724,7 @@ true:
 - [x] Decide and document whether downstream users can use system versions of
   dependencies.
 - [x] Add package-manager smoke tests when package recipes exist.
-- [ ] Add a tiny external consumer repository or template.
+- [x] Add a tiny external consumer repository or template.
 
 ## P1: Governance And Project Trust
 

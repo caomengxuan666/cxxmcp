@@ -278,7 +278,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          mkdir -p release-evidence/docs release-evidence/examples
+          mkdir -p release-evidence/docs release-evidence/examples release-evidence/templates
           cp \
             README.md \
             README_zh.md \
@@ -298,6 +298,7 @@ jobs:
             docs/sdk_peer_service_migration.md \
             release-evidence/docs/
           cp examples/*.cpp examples/CMakeLists.txt release-evidence/examples/
+          cp -r templates/external_consumer release-evidence/templates/
           {
             echo "commit=${GITHUB_SHA}"
             echo "workflow=${GITHUB_WORKFLOW}"

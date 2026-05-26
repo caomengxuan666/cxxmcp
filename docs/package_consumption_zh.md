@@ -115,6 +115,18 @@ target_link_libraries(loopback PRIVATE cxxmcp::sdk)
 - `cxxmcp::sdk` 只在一个 target 明确同时需要 protocol、client、server API
   时使用，比如 loopback 测试或 SDK 示例。
 
+## 外部消费者模板
+
+最小的仓库外 CMake 项目位于：
+
+```text
+templates/external_consumer
+```
+
+它刻意保持很小：一次 `find_package(cxxmcp CONFIG REQUIRED)`，一个 executable，
+以及一个窄 SDK target 链接。`package_smoke` 会用安装后的 SDK 产物配置并编译
+这个模板，确保 release candidate 里的模板始终可用。
+
 ## xmake-repo
 
 xmake-repo recipe 草案在：

@@ -94,7 +94,8 @@ The same workflow uploads:
   contribution guide, security policy, code of conduct, compatibility policy,
   dependency policy, Peer/Service migration guide, release gates, release
   candidate checklist, release notes template, request lifecycle notes, TODO,
-  and example source files used for the release decision.
+  the external consumer template, and example source files used for the
+  release decision.
 
 Release candidates must attach the source, documentation, and release evidence
 artifacts, or replace them with equivalent versioned artifacts built from the
