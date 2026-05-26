@@ -5,6 +5,13 @@
 - Reframed the public SDK around `Peer` / `Service` entry points.
 - Kept `client` / `server` as compatibility and convenience wrappers.
 - Added HTTP URI support and auth header support for client transport setup.
+- Added HTTP auth-lite server behavior: authentication failures are reported as
+  auth-category JSON-RPC errors and Streamable HTTP maps them to
+  `401 Unauthorized` with configurable `WWW-Authenticate`.
+- Added the optional `cxxmcp::auth` scaffold target for OAuth 2.1 / DPoP
+  contracts and public header smoke coverage.
+- Applied client HTTP bearer-token helpers consistently to Streamable HTTP POST,
+  SSE GET, and session DELETE requests.
 - Added `ClientPeer` and `ServerPeer` examples.
 - Aligned `process_stdio_client` with the peer/service path.
 - Routed native `ClientPeer` initialize, synchronous helpers, paginated helpers,
@@ -52,4 +59,7 @@
   through the `ServerPeer` boundary.
 - Routed Peer-registered task lifecycle request handlers through the
   `ServerPeer` boundary.
+- Added cancellation-aware client inbound handler overloads for roots,
+  sampling, elicitation, and custom server-to-client requests on both
+  `Client` and `ClientPeer`.
 - Added a dedicated SDK umbrella test for `cxxmcp/sdk.hpp`.

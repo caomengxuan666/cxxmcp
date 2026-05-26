@@ -32,10 +32,13 @@ struct HttpTransportOptions {
   /// HTTP path used for MCP requests.
   std::string path = "/";
 
-  /// Extra request headers sent on outbound HTTP requests.
+  /// Extra request headers sent on every outbound HTTP request, including
+  /// Streamable HTTP POST, SSE GET, and session DELETE requests.
   std::unordered_map<std::string, std::string> headers;
 
-  /// Optional bearer token inserted as an Authorization header.
+  /// Optional bearer token inserted as `Authorization: Bearer <token>` on
+  /// every outbound HTTP request. Empty tokens are ignored. If `headers`
+  /// already contains `Authorization`, the explicit header wins.
   std::optional<std::string> auth_header;
 
   /// Connect, read, and write timeout used by the transport.

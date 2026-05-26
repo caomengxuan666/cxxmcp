@@ -79,10 +79,15 @@ std::optional<std::string> header_name_from_request(
 }
 
 httplib::Headers to_headers(
-    const std::unordered_map<std::string, std::string>& headers) {
+    const std::unordered_map<std::string, std::string>& headers,
+    const std::optional<std::string>& bearer_token = std::nullopt) {
   httplib::Headers result;
   for (const auto& [key, value] : headers) {
     result.emplace(key, value);
+  }
+  if (bearer_token.has_value() && !bearer_token->empty() &&
+      result.find("Authorization") == result.end()) {
+    result.emplace("Authorization", "Bearer " + *bearer_token);
   }
   return result;
 }
@@ -252,7 +257,7 @@ struct HttpTransport::Impl {
 
     if (!session_id_to_terminate.empty() && options_error == std::nullopt) {
       auto client = make_client();
-      auto headers = to_headers(options.headers);
+      auto headers = make_base_headers();
       headers.emplace("Accept", "application/json");
       headers.emplace("MCP-Protocol-Version", protocol_version_to_send);
       headers.emplace(std::string(SessionHeader), session_id_to_terminate);
@@ -418,14 +423,15 @@ struct HttpTransport::Impl {
     return client;
   }
 
+  httplib::Headers make_base_headers() const {
+    return to_headers(options.headers, options.auth_header);
+  }
+
   httplib::Headers make_headers(std::optional<std::string_view> method,
                                 std::optional<std::string> name, bool json_body,
                                 bool event_stream,
                                 bool include_protocol_version = true) const {
-    auto headers = to_headers(options.headers);
-    if (options.auth_header.has_value()) {
-      headers.emplace("Authorization", "Bearer " + *options.auth_header);
-    }
+    auto headers = make_base_headers();
     if (json_body) {
       headers.emplace("Content-Type", "application/json");
     }
@@ -488,7 +494,7 @@ struct HttpTransport::Impl {
       }
       stream_client = std::make_unique<httplib::Client>(origin);
       apply_timeout(*stream_client, options.timeout);
-      auto headers = to_headers(options.headers);
+      auto headers = make_base_headers();
       headers.emplace("Accept", "text/event-stream");
       headers.emplace("MCP-Protocol-Version", protocol_version);
       headers.emplace(std::string(SessionHeader), session_id);

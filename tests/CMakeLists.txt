@@ -71,6 +71,11 @@ if(TARGET mcp_sdk)
         config config_header.cpp cxxmcp::sdk)
 endif()
 
+if(TARGET mcp_auth)
+    add_cxxmcp_public_header_compile_test(
+        auth auth_header.cpp cxxmcp::auth)
+endif()
+
 if(TARGET mcp_transport)
     add_executable(mcp_transport_contract_tests
         transport/test_transport_contract.cpp

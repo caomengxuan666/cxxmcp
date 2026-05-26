@@ -5,14 +5,18 @@ in the cxxmcp Streamable HTTP transport layer.
 
 ## Feature Gate
 
-OAuth support is an **optional feature**, gated by a CMake option:
+OAuth protocol scaffolding is an **optional feature**, gated by CMake options:
 
 ```cmake
-option(MCP_ENABLE_AUTH "OAuth 2.1 / DPoP authorization support" OFF)
+option(CXXMCP_ENABLE_AUTH "OAuth 2.1 / DPoP authorization scaffolding" OFF)
+# Legacy alias accepted by the build:
+option(MCP_ENABLE_AUTH "OAuth 2.1 / DPoP authorization scaffolding" OFF)
 ```
 
-- `OFF` (default): zero auth code compiled, zero crypto dependency pulled.
-  Suitable for stdio-only consumers and non-authenticated HTTP deployments.
+- `OFF` (default): no optional `cxxmcp::auth` OAuth target is exported and no
+  crypto dependency is pulled. The lightweight server auth contracts in
+  `cxxmcp::server` remain available because HTTP auth policy has to integrate
+  with normal server dispatch.
 - `ON`: compiles the `cxxmcp::auth` CMake target. The current scaffold exposes
   transport-neutral auth contracts without requiring OpenSSL or MiniOAuth2.
   The full OAuth implementation will add MiniOAuth2 and OpenSSL only behind
@@ -91,6 +95,29 @@ definitions. MiniOAuth2 include paths and feature macros should be private to
 `mcp_auth` or private implementation files in `mcp_client` / `mcp_server`.
 Consumers should see only `cxxmcp/auth/*.hpp` and the `cxxmcp::auth` target.
 
+## TLS / HTTPS Build Requirements
+
+Streamable HTTP auth is designed for HTTPS in real deployments. The current
+default SDK build does not force a TLS backend because many consumers use
+stdio, local loopback HTTP, or a TLS-terminating reverse proxy. HTTPS endpoint
+URIs are accepted by the public HTTP transport options, but cpp-httplib can
+only open HTTPS connections when it is compiled with a TLS backend such as
+OpenSSL (`CPPHTTPLIB_OPENSSL_SUPPORT` / `CPPHTTPLIB_SSL_ENABLED`) and linked to
+the matching crypto libraries.
+
+The auth scaffold therefore keeps these requirements explicit:
+
+- `CXXMCP_ENABLE_AUTH=OFF` does not call `find_package(OpenSSL)` and does not
+  compile crypto-backed auth code.
+- `CXXMCP_ENABLE_AUTH=ON` currently exposes transport-neutral auth contracts
+  only; it still does not require OpenSSL until the full OAuth/DPoP
+  implementation lands.
+- OAuth/DPoP and first-party HTTPS support must add OpenSSL through normal
+  package-manager resolution, not by vendoring OpenSSL into `third_party`.
+- Applications may place cxxmcp behind a reverse proxy that terminates TLS; in
+  that mode the SDK still receives and forwards normal HTTP headers, including
+  `Authorization`, `DPoP`, and `WWW-Authenticate`.
+
 ## Architecture: Network-Library-Agnostic
 
 The auth layer is split into a pure-protocol core and transport I/O:
@@ -119,17 +146,30 @@ client abstraction; it supplies OAuth request/PKCE helper logic only.
 ## MCP OAuth Scope
 
 The MCP 2025-11-25 spec mandates OAuth 2.1 with PKCE for Streamable HTTP
-transport. The `cxxmcp::auth` target covers:
+transport. The current `cxxmcp::auth` scaffold defines public contracts for:
 
-- PKCE S256 code challenge generation and verification
-- DPoP bound token proof construction (asymmetric key pair + signed JWT)
-- RFC 9728 protected resource metadata discovery
-- RFC 8414 authorization server metadata parsing
-- WWW-Authenticate `resource_metadata` and `error=insufficient_scope` parsing
+- PKCE S256 code challenge generation and verification boundaries
+- DPoP bound token proof construction and verification boundaries
+- RFC 9728 protected resource metadata discovery models
+- RFC 8414 authorization server metadata models
+- WWW-Authenticate `resource_metadata` and `error=insufficient_scope`
+  challenge helpers
 - Dynamic Client Registration (RFC 7591) model
 - Client ID Metadata Document model
-- Token refresh rotation (OAuth 2.1 requirement)
+- Token refresh rotation boundaries (OAuth 2.1 requirement)
 - Token storage abstraction (`TokenStore` interface, default in-memory impl)
+
+Default parser, PKCE, DPoP, discovery, token exchange, refresh-on-401, and
+OpenSSL-backed verifier implementations are still planned work. Public headers
+must keep these interfaces C++17-compatible while those implementations land.
+
+The current lightweight resource-metadata integration point is deliberately
+small and header-only: `cxxmcp/auth/www_auth.hpp` exposes stable parameter
+constants plus helpers for extracting `resource_metadata` and
+`insufficient_scope` from parsed `WWW-Authenticate` challenges, while
+`cxxmcp/auth/metadata.hpp` owns the RFC 9728 / RFC 8414 value models. Actual
+HTTP discovery and token exchange remain a later `cxxmcp::auth`
+implementation detail routed through SDK transport boundaries.
 
 ### Intentional Non-Goals (belong in application code)
 
@@ -151,10 +191,11 @@ Server-side authentication extension points already exist in
 - `AuthIdentity` — authenticated principal and claims
 - `AuthProvider` — abstract interface, applications implement `authenticate()`
 
-The `AuthProvider` is called before request dispatch and is compatible with
+The concrete `server::Server` dispatcher and canonical `ServerPeer` native
+dispatch call `AuthProvider` before request dispatch and are compatible with
 both Bearer token validation and any custom auth scheme. OAuth token validation
-(DPoP proof verification, audience check, scope check) can be implemented as an
-`AuthProvider` subclass by the application or by a future built-in provider.
+(DPoP proof verification, audience check, scope check) can be implemented as
+an `AuthProvider` subclass by the application or by a future built-in provider.
 
 OAuth-capable HTTP transports must also map authentication failures at the HTTP
 layer before JSON-RPC dispatch:
@@ -166,8 +207,9 @@ layer before JSON-RPC dispatch:
   flow;
 - successful authentication stores `AuthIdentity` in the request/session context
   so typed handlers and policy hooks can inspect the subject and claims;
-- `AuthRequest` must include normalized HTTP headers, not only the remote
-  address, because Bearer and DPoP validation are header-driven.
+- `AuthRequest` must include HTTP headers, not only the remote address, because
+  Bearer and DPoP validation are header-driven. Header normalization and
+  duplicate-header policy are still planned hardening work.
 
 The current P1 auth-lite implementation exposes this behavior without pulling
 crypto dependencies:
@@ -179,6 +221,29 @@ crypto dependencies:
   `WWW-Authenticate` value and defaults to `Bearer`.
 - Successful authentication stores `AuthIdentity` in `SessionContext` before
   typed tool, prompt, and resource handlers run.
+- `Server::authenticate_context()` is shared by concrete `Server` dispatch and
+  native `ServerPeer` request dispatch, so peer-boundary handlers receive the
+  same authenticated context as concrete server handlers.
+- Client HTTP transports apply `auth_header` as `Authorization: Bearer <token>`
+  on POST, SSE GET, and session DELETE requests unless an explicit
+  `Authorization` entry already exists in the custom header map.
+
+## Client-Side Bearer Token Helper
+
+`mcp::client::HttpTransportOptions::auth_header` and
+`mcp::transport::StreamableHttpClientTransportOptions::auth_header` are bearer
+token helpers, not raw header values. When set to a non-empty token, the client
+transport sends `Authorization: Bearer <token>` on every outbound Streamable
+HTTP request:
+
+- JSON-RPC POST requests and notifications;
+- SSE GET requests used for server-to-client messages;
+- POSTed responses to server-to-client requests;
+- session DELETE during transport shutdown.
+
+If `headers` already contains an explicit `Authorization` value, the explicit
+header wins. This keeps custom schemes and preformatted DPoP/Bearer experiments
+possible without changing the helper contract.
 
 ## Delivery
 

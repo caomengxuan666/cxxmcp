@@ -1144,6 +1144,59 @@ void test_server_auth_provider_receives_headers_and_sets_identity() {
           "authenticated tool result mismatch");
   require(provider_ptr->remote_address == "127.0.0.1",
           "auth provider remote address mismatch");
+
+  auto peer_server =
+      std::make_unique<mcp::server::Server>(mcp::server::ServerOptions{});
+  peer_server->set_auth_provider(std::make_unique<HeaderAuthProvider>());
+  const auto peer_added = peer_server->tools().add(
+      mcp::protocol::ToolDefinition{
+          .name = "peer-whoami",
+          .input_schema = Json::object(),
+      },
+      [](const mcp::server::ToolContext& tool_context)
+          -> mcp::core::Result<mcp::protocol::ToolResult> {
+        require(tool_context.auth_identity.has_value(),
+                "peer tool context should contain auth identity");
+        return mcp::protocol::ToolResult::text(
+            tool_context.auth_identity->subject);
+      });
+  require(peer_added.has_value(), "failed to register peer auth tool");
+
+  mcp::ServerPeer peer(std::move(peer_server));
+  const auto peer_response = peer.handle_request(
+      mcp::protocol::JsonRpcRequest{
+          .method = std::string(mcp::protocol::ToolsCallMethod),
+          .params = mcp::protocol::tool_call_to_json(mcp::protocol::ToolCall{
+              .name = "peer-whoami",
+              .arguments = Json::object(),
+          }),
+          .id = std::int64_t{92},
+      },
+      context);
+  require(peer_response.has_value(), "peer authenticated tool call failed");
+  require(peer_response->result->at("content").at(0).at("text") == "subject-1",
+          "peer authenticated tool result mismatch");
+
+  auto rejected_context = context;
+  rejected_context.headers.clear();
+  const auto rejected_peer_response = peer.handle_request(
+      mcp::protocol::JsonRpcRequest{
+          .method = std::string(mcp::protocol::ToolsCallMethod),
+          .params = mcp::protocol::tool_call_to_json(mcp::protocol::ToolCall{
+              .name = "peer-whoami",
+              .arguments = Json::object(),
+          }),
+          .id = std::int64_t{93},
+      },
+      rejected_context);
+  require(rejected_peer_response.has_value(),
+          "peer auth rejection should produce JSON-RPC response");
+  require(rejected_peer_response->error.has_value(),
+          "peer auth rejection should be an error response");
+  require(rejected_peer_response->error->data.has_value() &&
+              rejected_peer_response->error->data->is_object() &&
+              rejected_peer_response->error->data->at("category") == "auth",
+          "peer auth rejection should preserve auth error category");
 }
 
 void test_role_aware_peer_facades_forward_to_client_and_server() {

@@ -325,6 +325,7 @@ int main() {
 | `cxxmcp::service` | Service lifecycle boundary around peers |
 | `cxxmcp::client` | Embeddable MCP client SDK |
 | `cxxmcp::server` | Embeddable MCP server SDK |
+| `cxxmcp::auth` | Optional OAuth 2.1 / DPoP contract scaffold when `CXXMCP_ENABLE_AUTH=ON` |
 | `cxxmcp::sdk` | Aggregate public SDK target |
 | `cxxmcp::runtime` | Optional runtime application layer |
 | `cxxmcp::gateway` | Optional local gateway layer |
@@ -412,6 +413,17 @@ elicitation, cancellation, and progress notifications are routed to the correct
 HTTP client. One live real-time SSE stream is accepted per session; reconnects
 with `Last-Event-ID` can replay retained events while an old stream is closing.
 
+HTTP auth is intentionally exposed as SDK contracts rather than a bundled
+identity provider. Server applications can install `server::AuthProvider`; the
+Streamable HTTP transport passes request headers into `SessionContext`, stores a
+successful `AuthIdentity`, and maps auth-category failures to
+`401 Unauthorized` with `HttpTransportOptions::auth_challenge` as the
+`WWW-Authenticate` value. Client transports can set fixed request headers and a
+bearer token through `StreamableHttpClientTransportOptions`; the bearer helper
+is applied to POST, SSE GET, and session DELETE requests unless an explicit
+`Authorization` header is already present. The fuller OAuth 2.1 / DPoP
+direction is tracked in [Auth design](docs/auth_design.md).
+
 Legacy SSE compatibility is compatibility-only. New code should use the
 Streamable HTTP POST/GET/DELETE behavior and treat raw SSE endpoints as an
 adapter concern, not a separate SDK protocol.
@@ -431,6 +443,7 @@ adapter concern, not a separate SDK protocol.
 | `CXXMCP_BUILD_EXAMPLES` | `OFF` | Build example executables |
 | `CXXMCP_BUILD_TESTS` | `BUILD_TESTING` | Build tests for enabled layers |
 | `CXXMCP_BUILD_DOCS` | `OFF` | Build Doxygen API documentation |
+| `CXXMCP_ENABLE_AUTH` | `OFF` | Build the optional OAuth 2.1 / DPoP auth contract target |
 
 `CXXMCP_BUILD_SDK` enables the protocol, client, and server layers.
 `CXXMCP_BUILD_CLI` enables the gateway, runtime, server, client, and protocol

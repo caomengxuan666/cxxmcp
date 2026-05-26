@@ -2623,6 +2623,103 @@ void test_client_http_transport_uses_uri_and_auth_header() {
           "uri transport should inject authorization header");
 }
 
+void test_client_http_transport_bearer_helper_applies_to_session_requests() {
+  HttpServerFixture fixture;
+  std::atomic<bool> post_seen{false};
+  std::atomic<bool> get_seen{false};
+  std::atomic<bool> delete_seen{false};
+  std::mutex observed_mutex;
+  std::string post_authorization;
+  std::string get_authorization;
+  std::string delete_authorization;
+
+  auto capture_authorization = [&](const httplib::Request& request,
+                                   std::string* target) {
+    std::lock_guard lock(observed_mutex);
+    if (request.has_header("Authorization")) {
+      *target = request.get_header_value("Authorization");
+    }
+  };
+
+  fixture.server().Post("/mcp", [&](const httplib::Request& request,
+                                    httplib::Response& response) {
+    capture_authorization(request, &post_authorization);
+    const auto parsed = mcp::protocol::parse_message(request.body);
+    require(parsed.has_value(), "bearer helper initialize should parse");
+    const auto* rpc_request =
+        std::get_if<mcp::protocol::JsonRpcRequest>(&*parsed);
+    require(rpc_request != nullptr,
+            "bearer helper should send initialize request");
+    response.set_header("Mcp-Session-Id", "auth-session");
+    response.set_content(
+        serialize_test_response(mcp::protocol::JsonRpcResponse{
+            .id = rpc_request->id,
+            .result =
+                Json{
+                    {"protocolVersion",
+                     std::string(mcp::protocol::McpProtocolVersion)},
+                    {"capabilities", Json::object()},
+                    {"serverInfo",
+                     Json{{"name", "auth-helper"}, {"version", "1"}}},
+                },
+        }),
+        "application/json");
+    post_seen.store(true);
+  });
+
+  fixture.server().Get("/mcp", [&](const httplib::Request& request,
+                                   httplib::Response& response) {
+    capture_authorization(request, &get_authorization);
+    response.set_content(":\n\n", "text/event-stream");
+    get_seen.store(true);
+  });
+
+  fixture.server().Delete("/mcp", [&](const httplib::Request& request,
+                                      httplib::Response& response) {
+    capture_authorization(request, &delete_authorization);
+    response.status = 202;
+    delete_seen.store(true);
+  });
+
+  mcp::client::HttpTransport transport(mcp::client::HttpTransportOptions{
+      .uri = "http://127.0.0.1:" + std::to_string(fixture.port()) + "/mcp",
+      .auth_header = "token-123",
+      .timeout = std::chrono::milliseconds(2000),
+  });
+  const auto started =
+      transport.start([](const mcp::protocol::JsonRpcRequest&)
+                          -> mcp::core::Result<mcp::protocol::JsonRpcResponse> {
+        return std::unexpected(mcp::core::Error{
+            static_cast<int>(mcp::protocol::ErrorCode::MethodNotFound),
+            "unexpected request",
+        });
+      });
+  require(started.has_value(), "bearer helper transport should start");
+
+  const auto response = transport.send(mcp::protocol::JsonRpcRequest{
+      .method = std::string(mcp::protocol::InitializeMethod),
+      .params = Json::object(),
+      .id = std::int64_t{10},
+  });
+  require(response.has_value(), "bearer helper initialize should succeed");
+  require(wait_for([&]() { return post_seen.load() && get_seen.load(); },
+                   std::chrono::milliseconds(1000)),
+          "bearer helper should reach POST and SSE GET");
+
+  transport.stop();
+  require(wait_for([&]() { return delete_seen.load(); },
+                   std::chrono::milliseconds(1000)),
+          "bearer helper should terminate HTTP session");
+
+  std::lock_guard lock(observed_mutex);
+  require(post_authorization == "Bearer token-123",
+          "bearer helper should inject Authorization on POST");
+  require(get_authorization == "Bearer token-123",
+          "bearer helper should inject Authorization on SSE GET");
+  require(delete_authorization == "Bearer token-123",
+          "bearer helper should inject Authorization on DELETE");
+}
+
 void test_client_connect_streamable_http_accepts_uri_string() {
   HttpServerFixture fixture;
   std::atomic<int> request_count{0};
@@ -3513,6 +3610,8 @@ int main() {
        test_client_http_transport_rejects_unexpected_response_id},
       {"client http transport uses uri and auth header",
        test_client_http_transport_uses_uri_and_auth_header},
+      {"client http transport bearer helper applies to session requests",
+       test_client_http_transport_bearer_helper_applies_to_session_requests},
       {"client connect_streamable_http accepts uri string",
        test_client_connect_streamable_http_accepts_uri_string},
       {"native streamable http transport exposes client contract",

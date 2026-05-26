@@ -321,23 +321,17 @@ void Server::cancel_request(const protocol::RequestId& request_id) noexcept {
 core::Result<protocol::JsonRpcResponse> Server::handle_request(
     const protocol::JsonRpcRequest& request,
     const SessionContext& input_context) try {
-  SessionContext context = input_context;
+  auto authenticated_context = authenticate_context(input_context);
+  if (!authenticated_context) {
+    return make_auth_error_response(request,
+                                    authenticated_context.error().message);
+  }
+  SessionContext context = std::move(*authenticated_context);
   const auto request_cancellation = begin_request_cancellation(request.id);
   const std::shared_ptr<void> request_cancellation_cleanup(
       nullptr, [this, request_id = request.id](void*) noexcept {
         end_request_cancellation(request_id);
       });
-
-  if (auth_provider_) {
-    AuthRequest auth_request;
-    auth_request.headers = context.headers;
-    auth_request.remote_address = context.remote_address;
-    const auto identity = auth_provider_->authenticate(auth_request);
-    if (!identity) {
-      return make_auth_error_response(request, identity.error().message);
-    }
-    context.auth_identity = *identity;
-  }
 
   if (rate_limiter_) {
     RateLimitRequest rate_limit_request;
@@ -705,6 +699,25 @@ core::Result<protocol::JsonRpcResponse> Server::handle_request(
 } catch (...) {
   const auto error = errors::handler_unknown_exception();
   return make_error_response(request, error.code, error.message, error.detail);
+}
+
+core::Result<SessionContext> Server::authenticate_context(
+    const SessionContext& input_context) {
+  SessionContext context = input_context;
+  if (!auth_provider_ || context.auth_identity.has_value()) {
+    return context;
+  }
+
+  AuthRequest auth_request;
+  auth_request.headers = context.headers;
+  auth_request.remote_address = context.remote_address;
+  const auto identity = auth_provider_->authenticate(auth_request);
+  if (!identity) {
+    return std::unexpected(
+        make_auth_error(identity.error().message, identity.error().detail));
+  }
+  context.auth_identity = *identity;
+  return context;
 }
 
 core::Result<core::Unit> Server::handle_notification(

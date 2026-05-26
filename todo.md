@@ -808,15 +808,15 @@ true:
 
 - [x] Define HTTP auth extension points as SDK-level contracts.
 - [x] Expose request auth context on the server side.
-- [ ] Define bearer-token behavior for client helpers.
+- [x] Define bearer-token behavior for client helpers.
 - [x] Define custom header behavior.
 - [x] Define challenge/error behavior for unauthorized HTTP requests.
 - [x] Add scope/claims extension points.
-- [ ] Add OAuth/resource-metadata integration points if required by the MCP
+- [x] Add OAuth/resource-metadata integration points if required by the MCP
   snapshot.
 - [x] Add tests for authorized and unauthorized HTTP requests.
 - [x] Add tests for auth context reaching handlers.
-- [ ] Document TLS/HTTPS support and build requirements.
+- [x] Document TLS/HTTPS support and build requirements.
 
 ## P2: Performance, Load, And Reliability
 

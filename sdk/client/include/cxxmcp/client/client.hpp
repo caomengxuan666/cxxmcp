@@ -140,10 +140,12 @@ class Client {
     std::uint16_t port = 80;
     /// HTTP path for MCP requests or streams.
     std::string path = "/mcp";
-    /// Extra headers sent by the transport.
+    /// Extra headers sent by the transport on every outbound HTTP request.
     std::unordered_map<std::string, std::string> headers;
 
-    /// Optional bearer token inserted as an Authorization header.
+    /// Optional bearer token inserted as `Authorization: Bearer <token>` on
+    /// every outbound HTTP request unless `headers` already contains
+    /// `Authorization`.
     std::optional<std::string> auth_header;
 
     /// Per-request HTTP timeout.

@@ -791,6 +791,15 @@ class Server {
   core::Result<protocol::JsonRpcResponse> handle_request(
       const protocol::JsonRpcRequest& request, const SessionContext& context);
 
+  /// @brief Applies the configured AuthProvider to a session context.
+  ///
+  /// Returns the input context unchanged when no provider is configured or the
+  /// context already contains an authenticated identity. ServerPeer uses this
+  /// hook before native dispatch so peer-boundary handlers cannot bypass
+  /// server auth policy.
+  core::Result<SessionContext> authenticate_context(
+      const SessionContext& context);
+
   /// @brief Dispatches an inbound JSON-RPC notification from a transport.
   core::Result<core::Unit> handle_notification(
       const protocol::JsonRpcNotification& notification,

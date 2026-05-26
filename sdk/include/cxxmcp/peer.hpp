@@ -61,6 +61,21 @@ inline protocol::JsonRpcResponse peer_error_response(
       request.id, peer_error_object_from_core_error(error));
 }
 
+inline protocol::JsonRpcResponse peer_auth_error_response(
+    const protocol::JsonRpcRequest& request, const core::Error& error) {
+  protocol::Json data = protocol::Json::object();
+  data["category"] = std::string(server::AuthErrorCategory);
+  if (!error.detail.empty()) {
+    data["detail"] = error.detail;
+  } else if (!error.message.empty()) {
+    data["detail"] = error.message;
+  }
+  return protocol::make_error_response(
+      request.id,
+      protocol::make_error(protocol::ErrorCode::PermissionDenied,
+                           "authentication failed", std::move(data)));
+}
+
 inline core::Error peer_params_error(core::Error error) {
   if (error.code == static_cast<int>(protocol::ErrorCode::InvalidRequest)) {
     error.code = static_cast<int>(protocol::ErrorCode::InvalidParams);
@@ -2301,8 +2316,15 @@ class Peer<RoleServer> {
 
   core::Result<protocol::JsonRpcResponse> handle_request(
       const protocol::JsonRpcRequest& request,
-      const server::SessionContext& context = {},
+      const server::SessionContext& input_context = {},
       transport::ServerTransport* native_transport = nullptr) try {
+    auto authenticated_context = server_->authenticate_context(input_context);
+    if (!authenticated_context) {
+      return detail::peer_auth_error_response(request,
+                                              authenticated_context.error());
+    }
+    server::SessionContext context = std::move(*authenticated_context);
+
     if (request.method == protocol::InitializeMethod) {
       const auto valid =
           detail::validate_peer_server_initialize_params(request.params);

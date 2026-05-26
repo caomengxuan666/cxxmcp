@@ -45,9 +45,20 @@ meaningful execution boundary:
 - tool handlers receive `ToolContext::cancellation_token`;
 - prompt handlers receive `PromptContext::cancellation_token`;
 - resource handlers receive `ResourceContext::cancellation_token`;
+- completion, sampling, and contract-style request handlers receive a
+  cancellation token when the public overload exposes one;
+- client-side inbound roots, sampling, elicitation, and custom request
+  handlers can receive a `CancellationToken` through their cancellation-aware
+  overloads;
 - service receive loops observe the service cancellation token;
 - request timeout and explicit cancellation paths clean up pending response
   state.
+
+For both concrete `Client` and native `ClientPeer`, an incoming
+`notifications/cancelled` message cancels the matching inbound request token
+before the application handler observes subsequent cancellation checks. This
+keeps server-to-client requests on the same cooperative lifecycle model as
+client-to-server tool, prompt, resource, completion, sampling, and task flows.
 
 Application handlers should check `context.cancelled()` or
 `context.cancellation_token.cancelled()` before expensive work and between
