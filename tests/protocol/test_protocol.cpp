@@ -2319,6 +2319,14 @@ void test_protocol_required_fields_are_rejected() {
   require_parse_failure(mcp::protocol::create_message_result_from_json(
                             Json{{"role", "assistant"}}),
                         "sampling result without content should fail");
+  require_parse_failure(
+      mcp::protocol::tool_use_content_from_json(Json{
+          {"type", "tool_use"}, {"name", "lookup"}, {"input", Json::object()}}),
+      "tool_use content without id should fail");
+  require_parse_failure(
+      mcp::protocol::tool_result_content_from_json(
+          Json{{"type", "tool_result"}, {"content", Json::array()}}),
+      "tool_result content without toolUseId should fail");
 
   require_parse_failure(mcp::protocol::task_from_json(
                             Json{{"taskId", "task-1"},
@@ -2355,6 +2363,13 @@ void test_protocol_required_fields_are_rejected() {
   require_parse_failure(
       mcp::protocol::create_elicitation_result_from_json(Json::object()),
       "elicitation result without action should fail");
+  require_parse_failure(
+      mcp::protocol::primitive_schema_from_json(Json{{"title", "Name"}}),
+      "elicitation primitive schema without type should fail");
+  require_parse_failure(
+      mcp::protocol::elicitation_complete_notification_params_from_json(
+          Json::object()),
+      "elicitation completion without id should fail");
 }
 
 void test_protocol_type_constraints_are_rejected() {
@@ -2435,6 +2450,28 @@ void test_protocol_type_constraints_are_rejected() {
   require_parse_failure(mcp::protocol::model_preferences_from_json(
                             Json{{"hints", Json::object()}}),
                         "model preferences non-array hints should fail");
+  require_parse_failure(mcp::protocol::model_hint_from_json(Json{{"name", 7}}),
+                        "model hint non-string name should fail");
+  require_parse_failure(mcp::protocol::model_preferences_from_json(
+                            Json{{"costPriority", "high"}}),
+                        "model preferences non-number priority should fail");
+  require_parse_failure(mcp::protocol::tool_choice_from_json(Json{{"mode", 7}}),
+                        "tool choice non-string mode should fail");
+  require_parse_failure(
+      mcp::protocol::tool_choice_from_json(Json{{"mode", "later"}}),
+      "tool choice unsupported mode should fail");
+  require_parse_failure(
+      mcp::protocol::tool_use_content_from_json(Json{{"type", "tool_use"},
+                                                     {"id", "use-1"},
+                                                     {"name", "lookup"},
+                                                     {"input", Json::array()}}),
+      "tool_use content non-object input should fail");
+  require_parse_failure(
+      mcp::protocol::tool_result_content_from_json(
+          Json{{"type", "tool_result"},
+               {"toolUseId", "use-1"},
+               {"structuredContent", Json::array()}}),
+      "tool_result content non-object structuredContent should fail");
   require_parse_failure(mcp::protocol::create_message_result_from_json(Json{
                             {"role", "assistant"},
                             {"content", Json{{"type", "text"}, {"text", "ok"}}},
@@ -2481,6 +2518,25 @@ void test_protocol_type_constraints_are_rejected() {
   require_parse_failure(mcp::protocol::create_elicitation_result_from_json(
                             Json{{"action", "later"}}),
                         "elicitation result unsupported action should fail");
+  require_parse_failure(mcp::protocol::primitive_schema_from_json(
+                            Json{{"type", "string"}, {"default", 7}}),
+                        "elicitation string default type should fail");
+  require_parse_failure(mcp::protocol::primitive_schema_from_json(
+                            Json{{"type", "number"}, {"minimum", "low"}}),
+                        "elicitation number minimum type should fail");
+  require_parse_failure(mcp::protocol::primitive_schema_from_json(
+                            Json{{"type", "integer"}, {"default", 1.5}}),
+                        "elicitation integer default type should fail");
+  require_parse_failure(mcp::protocol::primitive_schema_from_json(
+                            Json{{"type", "boolean"}, {"default", "false"}}),
+                        "elicitation boolean default type should fail");
+  require_parse_failure(mcp::protocol::primitive_schema_from_json(Json{
+                            {"type", "string"}, {"enum", Json::array({1, 2})}}),
+                        "elicitation enum values type should fail");
+  require_parse_failure(
+      mcp::protocol::elicitation_complete_notification_params_from_json(
+          Json{{"elicitationId", 7}}),
+      "elicitation completion non-string id should fail");
 }
 
 }  // namespace
