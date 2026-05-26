@@ -535,6 +535,10 @@ inline core::Result<SamplingMessageContent> sampling_message_content_from_json(
   if (!block) {
     return std::unexpected(block.error());
   }
+  if (block->type == "resource" || block->type == "resource_link") {
+    return std::unexpected(sampling_json_error(
+        "sampling message content does not support resource content"));
+  }
   return SamplingMessageContent::from_content(*block);
 }
 

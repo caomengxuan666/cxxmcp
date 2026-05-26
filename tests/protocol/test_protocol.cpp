@@ -3100,6 +3100,26 @@ void test_protocol_type_constraints_are_rejected() {
           {"maxTokens", 64},
           {"includeContext", "unknown"}}),
       "sampling params unsupported includeContext should fail");
+  require_parse_failure(
+      mcp::protocol::create_message_params_from_json(Json{
+          {"messages",
+           Json::array(
+               {Json{{"role", "user"},
+                     {"content",
+                      Json{{"type", "resource"},
+                           {"resource", Json{{"uri", "file:///tmp/readme.txt"},
+                                             {"text", "hello"}}}}}}})},
+          {"maxTokens", 64}}),
+      "sampling resource content should fail");
+  require_parse_failure(
+      mcp::protocol::create_message_params_from_json(Json{
+          {"messages",
+           Json::array({Json{{"role", "user"},
+                             {"content", Json{{"type", "resource_link"},
+                                              {"uri", "file:///tmp/readme.txt"},
+                                              {"name", "readme.txt"}}}}})},
+          {"maxTokens", 64}}),
+      "sampling resource_link content should fail");
   require_parse_failure(mcp::protocol::model_preferences_from_json(
                             Json{{"hints", Json::object()}}),
                         "model preferences non-array hints should fail");

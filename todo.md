@@ -486,6 +486,8 @@ true:
   `description`, and no default `streaming=false` emission.
 - [x] Tighten content block parsing to RMCP tagged-union behavior with required
   supported `type` values and object-only annotations/meta.
+- [x] Reject resource and resource_link content at the sampling message content
+  boundary, matching RMCP sampling content variants.
 - [ ] Add negative parse tests for every required field and type constraint.
 - [x] Add cross-family required-field negative parse regression coverage for
   tools, prompts, resources, roots, completion, sampling, elicitation, and
