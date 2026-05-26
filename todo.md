@@ -607,6 +607,9 @@ true:
   - [x] Pass `SessionContext` through server and peer completion handlers.
   - [x] Pass `SessionContext` through server and peer sampling handlers.
 - [ ] Support cooperative cancellation token injection where meaningful.
+  - [x] Pass cancellation tokens into prompt contexts and typed prompt helpers.
+  - [x] Pass cancellation tokens into resource contexts and typed resource
+    helpers.
 - [ ] Keep `SchemaTraits<T>` and `schema_for<T>()` customization stable.
 - [ ] Add optional JSON Schema validator integration.
 - [ ] Validate tool input schemas where configured.

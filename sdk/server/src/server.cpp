@@ -524,7 +524,8 @@ core::Result<protocol::JsonRpcResponse> Server::handle_request(
       return make_params_error_response(request, params.error());
     }
 
-    const auto result = prompts_.get(params->name, params->arguments, context);
+    const auto result = prompts_.get(params->name, params->arguments, context,
+                                     request_cancellation);
     if (!result) {
       return protocol::make_error_response(
           std::optional<protocol::RequestId>{request.id},
@@ -553,7 +554,8 @@ core::Result<protocol::JsonRpcResponse> Server::handle_request(
       return make_params_error_response(request, params.error());
     }
 
-    const auto result = resources_.read(params->uri, request.params, context);
+    const auto result = resources_.read(params->uri, request.params, context,
+                                        request_cancellation);
     if (!result) {
       return protocol::make_error_response(
           std::optional<protocol::RequestId>{request.id},

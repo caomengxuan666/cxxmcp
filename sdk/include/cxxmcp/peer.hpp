@@ -2220,8 +2220,14 @@ class Peer<RoleServer> {
         return detail::peer_params_error_response(request, params.error());
       }
 
-      const auto result =
-          server_->prompts().get(params->name, params->arguments, context);
+      const auto request_cancellation =
+          begin_peer_request_cancellation(request.id);
+      const std::shared_ptr<void> request_cancellation_cleanup(
+          nullptr, [this, request_id = request.id](void*) noexcept {
+            end_peer_request_cancellation(request_id);
+          });
+      const auto result = server_->prompts().get(
+          params->name, params->arguments, context, request_cancellation);
       if (!result) {
         return detail::peer_error_response(request, result.error());
       }
@@ -2244,8 +2250,14 @@ class Peer<RoleServer> {
         return detail::peer_params_error_response(request, params.error());
       }
 
-      const auto result =
-          server_->resources().read(params->uri, request.params, context);
+      const auto request_cancellation =
+          begin_peer_request_cancellation(request.id);
+      const std::shared_ptr<void> request_cancellation_cleanup(
+          nullptr, [this, request_id = request.id](void*) noexcept {
+            end_peer_request_cancellation(request_id);
+          });
+      const auto result = server_->resources().read(
+          params->uri, request.params, context, request_cancellation);
       if (!result) {
         return detail::peer_error_response(request, result.error());
       }

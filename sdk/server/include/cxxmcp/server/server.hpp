@@ -316,6 +316,24 @@ decltype(auto) invoke_prompt_handler(Handler& handler,
     return handler(std::move(text));
   } else if constexpr (callable_arguments_match_v<Handler, PromptContext>) {
     return handler(context);
+  } else if constexpr (callable_arguments_match_v<Handler, Json,
+                                                  CancellationToken>) {
+    return handler(context.arguments, context.cancellation);
+  } else if constexpr (callable_arguments_match_v<Handler, CancellationToken,
+                                                  Json>) {
+    return handler(context.cancellation, context.arguments);
+  } else if constexpr (callable_arguments_match_v<Handler, std::string,
+                                                  CancellationToken>) {
+    auto text = argument_from_json<std::string>(context.arguments,
+                                                std::string_view("text"));
+    return handler(std::move(text), context.cancellation);
+  } else if constexpr (callable_arguments_match_v<Handler, CancellationToken,
+                                                  std::string>) {
+    auto text = argument_from_json<std::string>(context.arguments,
+                                                std::string_view("text"));
+    return handler(context.cancellation, std::move(text));
+  } else if constexpr (callable_arguments_match_v<Handler, CancellationToken>) {
+    return handler(context.cancellation);
   } else if constexpr (std::is_invocable_v<Handler&, const Json&,
                                            const PromptContext&>) {
     return handler(context.arguments, context);
@@ -346,7 +364,8 @@ decltype(auto) invoke_prompt_handler(Handler& handler,
     static_assert(always_false_v<Handler>,
                   "prompt handler must accept Json, Json+PromptContext, "
                   "PromptContext+Json, string, string+PromptContext, "
-                  "PromptContext+string, PromptContext, or no arguments");
+                  "PromptContext+string, PromptContext, Json/string plus "
+                  "CancellationToken, CancellationToken, or no arguments");
   }
 }
 
@@ -371,6 +390,20 @@ decltype(auto) invoke_resource_handler(Handler& handler,
     return handler(context.uri);
   } else if constexpr (callable_arguments_match_v<Handler, ResourceContext>) {
     return handler(context);
+  } else if constexpr (callable_arguments_match_v<Handler, Json,
+                                                  CancellationToken>) {
+    return handler(context.params, context.cancellation);
+  } else if constexpr (callable_arguments_match_v<Handler, CancellationToken,
+                                                  Json>) {
+    return handler(context.cancellation, context.params);
+  } else if constexpr (callable_arguments_match_v<Handler, std::string,
+                                                  CancellationToken>) {
+    return handler(context.uri, context.cancellation);
+  } else if constexpr (callable_arguments_match_v<Handler, CancellationToken,
+                                                  std::string>) {
+    return handler(context.cancellation, context.uri);
+  } else if constexpr (callable_arguments_match_v<Handler, CancellationToken>) {
+    return handler(context.cancellation);
   } else if constexpr (std::is_invocable_v<Handler&, const Json&,
                                            const ResourceContext&>) {
     return handler(context.params, context);
@@ -395,7 +428,8 @@ decltype(auto) invoke_resource_handler(Handler& handler,
     static_assert(always_false_v<Handler>,
                   "resource handler must accept Json, Json+ResourceContext, "
                   "ResourceContext+Json, string, string+ResourceContext, "
-                  "ResourceContext+string, ResourceContext, or no arguments");
+                  "ResourceContext+string, ResourceContext, Json/string plus "
+                  "CancellationToken, CancellationToken, or no arguments");
   }
 }
 
@@ -1164,7 +1198,9 @@ class App {
     /// @param name Prompt name advertised to clients.
     /// @param handler Callable accepting Json, string, PromptContext, one of
     /// the Json/string plus PromptContext combinations, or no argument. Returns
-    /// prompt text/result or core::Result of either.
+    /// prompt text/result or core::Result of either. CancellationToken may be
+    /// accepted directly with Json/string where cooperative cancellation is
+    /// useful.
     template <class Handler>
     Builder& prompt(std::string name, Handler handler);
 
@@ -1176,7 +1212,9 @@ class App {
     /// @param handler Callable accepting Json params, requested URI string,
     /// ResourceContext, one of the Json/string plus ResourceContext
     /// combinations, or no argument. Returns resource text/contents/result,
-    /// protocol::Resource metadata, or core::Result of these.
+    /// protocol::Resource metadata, or core::Result of these. CancellationToken
+    /// may be accepted directly with Json/string where cooperative
+    /// cancellation is useful.
     template <class Handler>
     Builder& resource(std::string name, Handler handler);
 

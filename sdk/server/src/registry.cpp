@@ -217,12 +217,19 @@ core::Result<protocol::PromptsGetResult> PromptRegistry::get(
     const std::string& session_id) const {
   SessionContext context;
   context.session_id = session_id;
-  return get(name, std::move(arguments), context);
+  return get(name, std::move(arguments), context, CancellationToken{});
 }
 
 core::Result<protocol::PromptsGetResult> PromptRegistry::get(
     std::string_view name, protocol::Json arguments,
     const SessionContext& session_context) const {
+  return get(name, std::move(arguments), session_context, CancellationToken{});
+}
+
+core::Result<protocol::PromptsGetResult> PromptRegistry::get(
+    std::string_view name, protocol::Json arguments,
+    const SessionContext& session_context,
+    CancellationToken cancellation) const {
   const auto it = prompts_.find(std::string(name));
   if (it == prompts_.end()) {
     return std::unexpected(core::Error{
@@ -237,6 +244,7 @@ core::Result<protocol::PromptsGetResult> PromptRegistry::get(
   context.remote_address = session_context.remote_address;
   context.transport = session_context.transport;
   context.arguments = std::move(arguments);
+  context.cancellation = std::move(cancellation);
   const auto result = it->second.handler(context);
   if (!result) {
     return std::unexpected(result.error());
@@ -297,12 +305,19 @@ core::Result<protocol::ResourcesReadResult> ResourceRegistry::read(
     const std::string& session_id) const {
   SessionContext context;
   context.session_id = session_id;
-  return read(uri, std::move(params), context);
+  return read(uri, std::move(params), context, CancellationToken{});
 }
 
 core::Result<protocol::ResourcesReadResult> ResourceRegistry::read(
     std::string_view uri, protocol::Json params,
     const SessionContext& session_context) const {
+  return read(uri, std::move(params), session_context, CancellationToken{});
+}
+
+core::Result<protocol::ResourcesReadResult> ResourceRegistry::read(
+    std::string_view uri, protocol::Json params,
+    const SessionContext& session_context,
+    CancellationToken cancellation) const {
   const auto it = resources_.find(std::string(uri));
   if (it == resources_.end()) {
     return std::unexpected(core::Error{
@@ -318,6 +333,7 @@ core::Result<protocol::ResourcesReadResult> ResourceRegistry::read(
   context.transport = session_context.transport;
   context.uri = std::string(uri);
   context.params = std::move(params);
+  context.cancellation = std::move(cancellation);
   const auto result = it->second.handler(context);
   if (!result) {
     return std::unexpected(result.error());

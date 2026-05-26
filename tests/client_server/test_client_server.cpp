@@ -3132,6 +3132,12 @@ void test_server_app_builder_registers_parity_surface() {
               [](std::string text, const mcp::server::PromptContext& context) {
                 return context.session_id + ":" + text;
               })
+          .prompt("cancel-aware",
+                  [](std::string text,
+                     const mcp::server::CancellationToken& cancellation) {
+                    return cancellation.cancelled() ? "cancelled"
+                                                    : text + ":active";
+                  })
           .resource(
               mcp::protocol::Resource{
                   .uri = "file:///tmp/readme.txt",
@@ -3155,6 +3161,12 @@ void test_server_app_builder_registers_parity_surface() {
                 return context.session_id + ":" + uri + ":" +
                        context.params.value("section", std::string("default"));
               })
+          .resource("file:///tmp/cancel.txt",
+                    [](std::string uri,
+                       const mcp::server::CancellationToken& cancellation) {
+                      return cancellation.cancelled() ? "cancelled"
+                                                      : uri + ":active";
+                    })
           .resource_template(mcp::protocol::ResourceTemplate{
               .uri_template = "file:///tmp/{name}.txt",
               .name = "Tmp file",
@@ -3271,6 +3283,22 @@ void test_server_app_builder_registers_parity_surface() {
           "facade:hello",
       "facade prompt context mismatch");
 
+  const auto cancellation_prompt = server.handle_request(
+      mcp::protocol::JsonRpcRequest{
+          .method = "prompts/get",
+          .params = Json{{"name", "cancel-aware"},
+                         {"arguments", Json{{"text", "hello"}}}},
+          .id = std::int64_t{31},
+      },
+      context);
+  require(cancellation_prompt.has_value(),
+          "facade prompt cancellation token get failed");
+  require(cancellation_prompt->result->at("messages")
+                  .at(0)
+                  .at("content")
+                  .at("text") == "hello:active",
+          "facade prompt cancellation token mismatch");
+
   const auto resources = server.handle_request(
       mcp::protocol::JsonRpcRequest{
           .method = "resources/read",
@@ -3294,6 +3322,19 @@ void test_server_app_builder_registers_parity_surface() {
   require(context_resource->result->at("contents").at(0).at("text") ==
               "facade:file:///tmp/session.txt:api",
           "facade resource context mismatch");
+
+  const auto cancellation_resource = server.handle_request(
+      mcp::protocol::JsonRpcRequest{
+          .method = "resources/read",
+          .params = Json{{"uri", "file:///tmp/cancel.txt"}},
+          .id = std::int64_t{41},
+      },
+      context);
+  require(cancellation_resource.has_value(),
+          "facade resource cancellation token read failed");
+  require(cancellation_resource->result->at("contents").at(0).at("text") ==
+              "file:///tmp/cancel.txt:active",
+          "facade resource cancellation token mismatch");
 
   const auto templates = server.handle_request(
       mcp::protocol::JsonRpcRequest{
