@@ -447,13 +447,13 @@ true:
 - [ ] Add `_meta` support where the spec expects it, not only on generic
   JSON-RPC envelopes.
 - [ ] Ensure `_meta` round-trips symmetrically.
-- [ ] Audit annotations support for tools, prompts, prompt arguments,
+- [x] Audit annotations support for tools, prompts, prompt arguments,
   resources, resource templates, and content blocks.
-- [ ] Audit icon support for tools, prompts, resources, and templates.
-- [ ] Audit title support for tools, prompts, prompt arguments, resources, and
+- [x] Audit icon support for tools, prompts, resources, and templates.
+- [x] Audit title support for tools, prompts, prompt arguments, resources, and
   templates.
-- [ ] Audit resource size support.
-- [ ] Audit content variants: text, image, audio, embedded resource, resource
+- [x] Audit resource size support.
+- [x] Audit content variants: text, image, audio, embedded resource, resource
   link, and future extension handling.
 - [ ] Add extension bags where RMCP/spec provides them.
 - [ ] Ensure raw JSON extension data is preserved even when typed helpers do not

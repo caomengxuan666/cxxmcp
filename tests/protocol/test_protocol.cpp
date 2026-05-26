@@ -1639,6 +1639,86 @@ void test_protocol_meta_round_trips() {
           "logging/setLevel _meta mismatch");
 }
 
+void test_protocol_extension_round_trips() {
+  const Json tool_json = Json{{"name", "echo"},
+                              {"description", "Echo"},
+                              {"inputSchema", Json::object()},
+                              {"x-vendor", Json{{"enabled", true}}}};
+  const auto tool = mcp::protocol::tool_definition_from_json(tool_json);
+  require(tool.has_value(), "tool with extension should parse");
+  require(tool->extensions.at("x-vendor").at("enabled"),
+          "tool extension should be preserved");
+  require(mcp::protocol::tool_definition_to_json(*tool)
+              .at("x-vendor")
+              .at("enabled"),
+          "tool extension should serialize");
+
+  const Json content_json = Json{{"type", "custom_block"},
+                                 {"text", "fallback"},
+                                 {"x-payload", Json{{"value", 7}}}};
+  const auto content = mcp::protocol::content_block_from_json(content_json);
+  require(content.has_value(), "content with extension should parse");
+  require(content->extensions.at("x-payload").at("value") == 7,
+          "content extension should be preserved");
+  require(mcp::protocol::content_block_to_json(*content)
+                  .at("x-payload")
+                  .at("value") == 7,
+          "content extension should serialize");
+
+  const Json resource_json =
+      Json{{"uri", "file:///a.txt"}, {"name", "a.txt"}, {"x-rank", 3}};
+  const auto resource = mcp::protocol::resource_from_json(resource_json);
+  require(resource.has_value(), "resource with extension should parse");
+  require(resource->extensions.at("x-rank") == 3,
+          "resource extension should be preserved");
+  require(mcp::protocol::resource_to_json(*resource).at("x-rank") == 3,
+          "resource extension should serialize");
+
+  const Json resource_contents_json =
+      Json{{"uri", "file:///a.txt"}, {"text", "hello"}, {"x-origin", "cache"}};
+  const auto resource_contents =
+      mcp::protocol::resource_contents_from_json(resource_contents_json);
+  require(resource_contents.has_value(),
+          "resource contents with extension should parse");
+  require(resource_contents->extensions.at("x-origin") == "cache",
+          "resource contents extension should be preserved");
+  require(mcp::protocol::resource_contents_to_json(*resource_contents)
+                  .at("x-origin") == "cache",
+          "resource contents extension should serialize");
+
+  const Json prompt_json =
+      Json{{"name", "summarize"},
+           {"arguments",
+            Json::array({Json{{"name", "text"}, {"x-argument", true}}})},
+           {"x-prompt", Json{{"source", "fixture"}}}};
+  const auto prompt = mcp::protocol::prompt_from_json(prompt_json);
+  require(prompt.has_value(), "prompt with extension should parse");
+  require(prompt->extensions.at("x-prompt").at("source") == "fixture",
+          "prompt extension should be preserved");
+  require(prompt->arguments.front().extensions.at("x-argument"),
+          "prompt argument extension should be preserved");
+  const auto serialized_prompt = mcp::protocol::prompt_to_json(*prompt);
+  require(serialized_prompt.at("x-prompt").at("source") == "fixture",
+          "prompt extension should serialize");
+  require(serialized_prompt.at("arguments").front().at("x-argument"),
+          "prompt argument extension should serialize");
+
+  const Json prompt_message_json =
+      Json{{"role", "user"},
+           {"content", Json{{"type", "text"}, {"text", "hi"}}},
+           {"x-message", "trace"}};
+  const auto prompt_message =
+      mcp::protocol::prompt_message_from_json(prompt_message_json);
+  require(prompt_message.has_value(),
+          "prompt message with extension should parse");
+  require(prompt_message->extensions.at("x-message") == "trace",
+          "prompt message extension should be preserved");
+  require(
+      mcp::protocol::prompt_message_to_json(*prompt_message).at("x-message") ==
+          "trace",
+      "prompt message extension should serialize");
+}
+
 void test_notification_helpers_round_trip() {
   require(
       mcp::protocol::CancelledNotificationMethod == "notifications/cancelled",
@@ -1784,6 +1864,7 @@ int main() {
        test_elicitation_protocol_round_trips},
       {"sampling tool use round trips", test_sampling_tool_use_round_trips},
       {"protocol meta round trips", test_protocol_meta_round_trips},
+      {"protocol extension round trips", test_protocol_extension_round_trips},
       {"notification helpers round trip", test_notification_helpers_round_trip},
       {"invalid json is rejected", test_invalid_json_is_rejected},
       {"invalid messages are rejected", test_invalid_messages_are_rejected},

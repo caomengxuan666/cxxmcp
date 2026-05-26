@@ -11,6 +11,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <initializer_list>
 #include <nlohmann/json.hpp>
 #include <optional>
 #include <string>
@@ -340,6 +341,46 @@ inline std::optional<ProgressToken> progress_token_from_json(const Json& json) {
 /// @brief Returns true when a value is a valid protocol `_meta` object.
 inline bool meta_is_object(const Json& meta) noexcept {
   return meta.is_object();
+}
+
+/// @brief Returns true when a JSON object key is part of a typed DTO shape.
+inline bool json_key_is_known(
+    std::string_view key, std::initializer_list<std::string_view> known_keys) {
+  for (const auto known : known_keys) {
+    if (key == known) {
+      return true;
+    }
+  }
+  return false;
+}
+
+/// @brief Collects unknown object members so typed DTOs can preserve future
+/// protocol fields and vendor extensions.
+inline Json collect_json_extensions(
+    const Json& json, std::initializer_list<std::string_view> known_keys) {
+  Json extensions = Json::object();
+  if (!json.is_object()) {
+    return extensions;
+  }
+  for (const auto& item : json.items()) {
+    if (!json_key_is_known(item.key(), known_keys)) {
+      extensions[item.key()] = item.value();
+    }
+  }
+  return extensions;
+}
+
+/// @brief Flattens extension members into a JSON object without overwriting
+/// typed fields.
+inline void append_json_extensions(Json& json, const Json& extensions) {
+  if (!json.is_object() || !extensions.is_object()) {
+    return;
+  }
+  for (const auto& item : extensions.items()) {
+    if (!json.contains(item.key())) {
+      json[item.key()] = item.value();
+    }
+  }
 }
 
 /// @brief Creates a metadata object carrying a progress token.

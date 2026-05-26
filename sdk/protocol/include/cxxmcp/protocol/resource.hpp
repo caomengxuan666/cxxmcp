@@ -40,6 +40,8 @@ struct Resource {
   Json annotations = Json::object();
   /// Optional `_meta` extension object preserved on the wire.
   std::optional<Json> meta;
+  /// Unknown JSON members preserved for forward-compatible round trips.
+  Json extensions = Json::object();
 };
 
 /// @brief Result object for `resources/list`.
@@ -72,6 +74,8 @@ struct ResourceTemplate {
   Json annotations = Json::object();
   /// Optional `_meta` extension object preserved on the wire.
   std::optional<Json> meta;
+  /// Unknown JSON members preserved for forward-compatible round trips.
+  Json extensions = Json::object();
 };
 
 /// @brief Result object for `resources/templates/list`.
@@ -115,6 +119,8 @@ struct ResourceContents {
   std::optional<std::string> blob;
   /// Optional `_meta` extension object preserved on the wire.
   std::optional<Json> meta;
+  /// Unknown JSON members preserved for forward-compatible round trips.
+  Json extensions = Json::object();
 };
 
 /// @brief Result object for `resources/read`.
@@ -160,6 +166,7 @@ inline Json resource_to_json(const Resource& resource) {
   if (resource.meta.has_value()) {
     json["_meta"] = *resource.meta;
   }
+  append_json_extensions(json, resource.extensions);
   return json;
 }
 
@@ -230,6 +237,9 @@ inline core::Result<Resource> resource_from_json(const Json& json) {
   if (json.contains("_meta")) {
     resource.meta = json.at("_meta");
   }
+  resource.extensions = collect_json_extensions(
+      json, {"title", "uri", "name", "description", "mimeType", "size", "icons",
+             "annotations", "_meta"});
   return resource;
 }
 
@@ -263,6 +273,7 @@ inline Json resource_template_to_json(
   if (resource_template.meta.has_value()) {
     json["_meta"] = *resource_template.meta;
   }
+  append_json_extensions(json, resource_template.extensions);
   return json;
 }
 
@@ -336,6 +347,9 @@ inline core::Result<ResourceTemplate> resource_template_from_json(
   if (json.contains("_meta")) {
     resource_template.meta = json.at("_meta");
   }
+  resource_template.extensions = collect_json_extensions(
+      json, {"title", "uriTemplate", "name", "description", "mimeType", "size",
+             "icons", "annotations", "_meta"});
   return resource_template;
 }
 
@@ -546,6 +560,7 @@ inline Json resource_contents_to_json(const ResourceContents& contents) {
   if (contents.meta.has_value()) {
     json["_meta"] = *contents.meta;
   }
+  append_json_extensions(json, contents.extensions);
   return json;
 }
 
@@ -593,6 +608,8 @@ inline core::Result<ResourceContents> resource_contents_from_json(
     }
     contents.meta = json.at("_meta");
   }
+  contents.extensions = collect_json_extensions(
+      json, {"uri", "mimeType", "text", "blob", "_meta"});
   if (!contents.text.has_value() && !contents.blob.has_value()) {
     return std::unexpected(
         resource_json_error("resource contents require text or blob"));

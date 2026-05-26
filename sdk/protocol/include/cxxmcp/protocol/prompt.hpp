@@ -33,6 +33,8 @@ struct PromptArgument {
   Json annotations = Json::object();
   /// Optional `_meta` extension object preserved on the wire.
   std::optional<Json> meta;
+  /// Unknown JSON members preserved for forward-compatible round trips.
+  Json extensions = Json::object();
 };
 
 /// @brief Prompt descriptor returned by `prompts/list`.
@@ -51,6 +53,8 @@ struct Prompt {
   Json annotations = Json::object();
   /// Optional `_meta` extension object preserved on the wire.
   std::optional<Json> meta;
+  /// Unknown JSON members preserved for forward-compatible round trips.
+  Json extensions = Json::object();
 };
 
 /// @brief Result object for `prompts/list`.
@@ -81,6 +85,8 @@ struct PromptMessage {
   ContentBlock content;
   /// Optional `_meta` extension object preserved on the wire.
   std::optional<Json> meta;
+  /// Unknown JSON members preserved for forward-compatible round trips.
+  Json extensions = Json::object();
 };
 
 /// @brief Result object for `prompts/get`.
@@ -118,6 +124,7 @@ inline Json prompt_argument_to_json(const PromptArgument& argument) {
   if (argument.meta.has_value()) {
     json["_meta"] = *argument.meta;
   }
+  append_json_extensions(json, argument.extensions);
   return json;
 }
 
@@ -165,6 +172,9 @@ inline core::Result<PromptArgument> prompt_argument_from_json(
   if (json.contains("_meta")) {
     argument.meta = json.at("_meta");
   }
+  argument.extensions = collect_json_extensions(
+      json,
+      {"title", "name", "description", "required", "annotations", "_meta"});
   return argument;
 }
 
@@ -196,6 +206,7 @@ inline Json prompt_to_json(const Prompt& prompt) {
   if (prompt.meta.has_value()) {
     json["_meta"] = *prompt.meta;
   }
+  append_json_extensions(json, prompt.extensions);
   return json;
 }
 
@@ -259,6 +270,9 @@ inline core::Result<Prompt> prompt_from_json(const Json& json) {
   if (json.contains("_meta")) {
     prompt.meta = json.at("_meta");
   }
+  prompt.extensions = collect_json_extensions(
+      json, {"title", "name", "description", "arguments", "icons",
+             "annotations", "_meta"});
   return prompt;
 }
 
@@ -369,6 +383,7 @@ inline Json prompt_message_to_json(const PromptMessage& message) {
   if (message.meta.has_value()) {
     json["_meta"] = *message.meta;
   }
+  append_json_extensions(json, message.extensions);
   return json;
 }
 
@@ -403,6 +418,8 @@ inline core::Result<PromptMessage> prompt_message_from_json(const Json& json) {
     }
     message.meta = json.at("_meta");
   }
+  message.extensions =
+      collect_json_extensions(json, {"role", "content", "_meta"});
   return message;
 }
 
