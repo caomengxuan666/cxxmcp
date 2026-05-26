@@ -3,6 +3,7 @@
 [![C++17](https://img.shields.io/badge/C%2B%2B-17-00599C.svg)](https://isocpp.org/)
 [![CMake](https://img.shields.io/badge/build-CMake-064F8C.svg)](https://cmake.org/)
 [![Release gates](https://github.com/caomengxuan666/cxxmcp/actions/workflows/release-gates.yml/badge.svg)](https://github.com/caomengxuan666/cxxmcp/actions/workflows/release-gates.yml)
+[![Pages](https://github.com/caomengxuan666/cxxmcp/actions/workflows/pages.yml/badge.svg)](https://caomengxuan666.github.io/cxxmcp/)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![MCP](https://img.shields.io/badge/protocol-Model%20Context%20Protocol-111827.svg)](https://modelcontextprotocol.io/)
 [![SDK](https://img.shields.io/badge/package-C%2B%2B%20SDK-0F766E.svg)](#作为库使用)
@@ -451,6 +452,7 @@ client 的 process-stdio fixtures 支撑。
 
 ## 文档
 
+- [GitHub Pages 文档站](https://caomengxuan666.github.io/cxxmcp/)
 - [Fact-standard TODO](todo.md)
 - [Compatibility policy](docs/compatibility_policy.md)
 - [Release gates](docs/release_gates.md)

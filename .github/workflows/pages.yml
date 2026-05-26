@@ -1,0 +1,76 @@
+name: pages
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - master
+      - main
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    name: build-pages
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Install documentation tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y doxygen ninja-build
+
+      - name: Configure Pages
+        uses: actions/configure-pages@v5
+
+      - name: Configure docs build
+        run: >
+          cmake -S . -B build-pages -G Ninja
+          -DCMAKE_BUILD_TYPE=Release
+          -DCXXMCP_BUILD_DOCS=ON
+          -DCXXMCP_BUILD_TESTS=OFF
+
+      - name: Build Doxygen API docs
+        run: cmake --build build-pages --target docs
+
+      - name: Assemble Pages site
+        run: |
+          set -euo pipefail
+          rm -rf public
+          mkdir -p public/api
+          cp -a docs/pages/. public/
+          cp -a docs/doxygen/html/. public/api/
+          touch public/.nojekyll
+          test -f public/index.html
+          test -f public/api/index.html
+
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: public
+
+  deploy:
+    name: deploy-pages
+    needs: build
+    runs-on: ubuntu-latest
+
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
