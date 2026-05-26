@@ -32,11 +32,54 @@ if(NOT install_result EQUAL 0)
     message(FATAL_ERROR "package smoke install failed: ${install_result}")
 endif()
 
+set(package_smoke_use_system_deps OFF)
+set(cache_path "${BUILD_DIR}/CMakeCache.txt")
+if(EXISTS "${cache_path}")
+    file(READ "${cache_path}" cache_content)
+    if(cache_content MATCHES "CXXMCP_USE_SYSTEM_DEPS:BOOL=(ON|TRUE|1)")
+        set(package_smoke_use_system_deps ON)
+    endif()
+endif()
+
+set(installed_include_dir "${prefix_dir}/include")
+set(installed_cxxmcp_config_dir "${prefix_dir}/lib/cmake/cxxmcp")
+if(NOT EXISTS "${installed_cxxmcp_config_dir}/cxxmcpConfig.cmake")
+    message(FATAL_ERROR "installed cxxmcp CMake config is missing")
+endif()
+if(NOT EXISTS "${installed_include_dir}/cxxmcp/protocol.hpp")
+    message(FATAL_ERROR "installed SDK umbrella headers are missing")
+endif()
+if(NOT EXISTS
+   "${installed_include_dir}/cxxmcp/third_party/jsonrpcpp/jsonrpcpp.hpp")
+    message(FATAL_ERROR "installed jsonrpcpp implementation header is missing")
+endif()
+if(EXISTS "${installed_include_dir}/httplib.h" OR
+   EXISTS "${installed_include_dir}/httplib/httplib.h")
+    message(FATAL_ERROR
+        "cpp-httplib must not be installed as an SDK public header")
+endif()
+if(package_smoke_use_system_deps)
+    if(EXISTS "${installed_include_dir}/tl/expected.hpp")
+        message(FATAL_ERROR "system-deps install must not vendor tl-expected")
+    endif()
+    if(EXISTS "${installed_include_dir}/nlohmann/json.hpp")
+        message(FATAL_ERROR "system-deps install must not vendor nlohmann-json")
+    endif()
+else()
+    if(NOT EXISTS "${installed_include_dir}/tl/expected.hpp")
+        message(FATAL_ERROR "bundled install must include tl/expected.hpp")
+    endif()
+    if(NOT EXISTS "${installed_include_dir}/nlohmann/json.hpp")
+        message(FATAL_ERROR "bundled install must include nlohmann/json.hpp")
+    endif()
+endif()
+
 set(configure_command
     "${CMAKE_COMMAND}"
     -S "${REPO_SOURCE_DIR}/tests/fixtures/package_smoke"
     -B "${consumer_build_dir}"
     "-DCMAKE_PREFIX_PATH=${prefix_dir}"
+    "-Dcxxmcp_DIR=${installed_cxxmcp_config_dir}"
 )
 if(NOT package_smoke_generator STREQUAL "")
     list(APPEND configure_command -G "${package_smoke_generator}")

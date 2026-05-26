@@ -719,9 +719,9 @@ true:
 - [x] Document consuming only `cxxmcp::client`.
 - [x] Document consuming only `cxxmcp::server`.
 - [x] Document consuming the aggregate `cxxmcp::sdk`.
-- [ ] Verify third-party header installation layout.
-- [ ] Decide and document dependency vendoring policy.
-- [ ] Decide and document whether downstream users can use system versions of
+- [x] Verify third-party header installation layout.
+- [x] Decide and document dependency vendoring policy.
+- [x] Decide and document whether downstream users can use system versions of
   dependencies.
 - [x] Add package-manager smoke tests when package recipes exist.
 - [ ] Add a tiny external consumer repository or template.

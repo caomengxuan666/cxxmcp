@@ -3,6 +3,32 @@
 这份文档覆盖中心包仓库之外的轻量消费路径。这里的路径都是 SDK-only：
 runtime、gateway、CLI、GUI 以及它们的依赖不属于 SDK package contract。
 
+## 依赖策略
+
+SDK 支持两种依赖模式：
+
+- 默认源码包 / archive 构建使用仓库内 bundled header-only SDK 依赖，让
+  FetchContent、CPM.cmake 和直接源码安装不依赖包管理器。安装树会包含
+  `tl/expected.hpp`、`nlohmann/json.hpp`，以及
+  `cxxmcp/third_party/jsonrpcpp/jsonrpcpp.hpp` 下的 jsonrpcpp 实现头。
+- 注册表包构建应设置 `CXXMCP_USE_SYSTEM_DEPS=ON`，并使用包管理器提供的
+  `tl-expected`、`nlohmann-json` 和 `cpp-httplib`。这种模式下安装树不能再
+  vendor `tl` 或 `nlohmann` 头文件。
+
+`jsonrpcpp` 仍然是仓库内实现细节，因为当前项目维护的是一个小的 patched
+single-header copy，而不是依赖外部 registry package。它安装在
+`cxxmcp/third_party` include 前缀下，供导出的 CMake targets 使用，但不占用顶层
+public include namespace。
+
+`cpp-httplib` 是 transport 实现依赖，不作为 public SDK header 安装。下游代码应
+包含 `cxxmcp/transport/http_transport.hpp`、
+`cxxmcp/client/http_transport.hpp` 或 `cxxmcp/server/http_transport.hpp`，而不是
+直接包含 `httplib.h`。
+
+spdlog、CLI11 等 runtime/tooling 依赖不属于 SDK package contract。面向
+vcpkg/Conan 的 SDK 包应保持 runtime、gateway、CLI、examples、tests 和 docs
+关闭，除非后续创建单独的 tools 包。
+
 ## FetchContent
 
 优先使用 release workflow 生成的 SDK source archive，而不是 GitHub 自动生成的

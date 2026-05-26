@@ -4,6 +4,35 @@ This document covers lightweight consumption paths that are useful before or
 outside central package registries. They are SDK-only paths: runtime, gateway,
 CLI, GUI, and their dependencies are not part of the SDK package contract.
 
+## Dependency Policy
+
+The SDK has two supported dependency modes:
+
+- Default source/archive builds use bundled header-only SDK dependencies so
+  FetchContent, CPM.cmake, and direct source installs work without a package
+  manager. The install tree includes `tl/expected.hpp`, `nlohmann/json.hpp`,
+  and the jsonrpcpp implementation header under
+  `cxxmcp/third_party/jsonrpcpp/jsonrpcpp.hpp`.
+- Registry builds should set `CXXMCP_USE_SYSTEM_DEPS=ON` and use package
+  manager dependencies for `tl-expected`, `nlohmann-json`, and `cpp-httplib`.
+  In this mode the install tree must not vendor `tl` or `nlohmann` headers.
+
+`jsonrpcpp` remains an in-tree implementation detail because this project keeps
+a small patched single-header copy rather than depending on an external package
+registry entry. It is installed under the `cxxmcp/third_party` include prefix so
+exported CMake targets can consume it without claiming a top-level public
+include namespace.
+
+`cpp-httplib` is a transport implementation dependency. It is intentionally not
+installed as a public SDK header. Downstream code should use
+`cxxmcp/transport/http_transport.hpp`, `cxxmcp/client/http_transport.hpp`, or
+`cxxmcp/server/http_transport.hpp` instead of including `httplib.h`.
+
+Runtime/tooling dependencies such as spdlog and CLI11 are outside the SDK
+package contract. vcpkg/Conan package submissions for the SDK should keep
+runtime, gateway, CLI, examples, tests, and docs disabled unless a separate
+tools package is created.
+
 ## FetchContent
 
 Prefer the SDK source release archive over GitHub's generated source archive.
