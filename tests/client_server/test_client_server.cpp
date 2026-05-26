@@ -3380,6 +3380,105 @@ void test_server_app_builder_registers_parity_surface() {
   require(raw->result->at("ok"), "facade raw request mismatch");
 }
 
+void test_server_app_builder_registers_typed_completion() {
+  auto built =
+      mcp::server::App::builder()
+          .completion([](const mcp::protocol::CompleteParams& params,
+                         const mcp::server::CompletionContext& context) {
+            mcp::protocol::CompletionResult result;
+            result.values = {context.session_id + ":" + params.argument.value +
+                             "-one"};
+            result.total = 1;
+            result.has_more = false;
+            return result;
+          })
+          .build();
+  require(built.has_value(), "typed completion server should build");
+
+  mcp::protocol::CompleteParams params;
+  params.ref = mcp::protocol::prompt_completion_reference("summarize");
+  params.argument = mcp::protocol::CompletionArgument{"text", "he"};
+
+  const auto response = (*built)->handle_request(
+      mcp::protocol::JsonRpcRequest{
+          .method = std::string(mcp::protocol::CompletionCompleteMethod),
+          .params = mcp::protocol::complete_params_to_json(params),
+          .id = std::int64_t{1},
+      },
+      mcp::server::SessionContext{.session_id = "typed"});
+  require(response.has_value(), "typed completion request should succeed");
+  require(response->result.has_value(), "typed completion result missing");
+  require(
+      response->result->at("completion").at("values").at(0) == "typed:he-one",
+      "typed completion value mismatch");
+  require(response->result->at("completion").at("total") == 1,
+          "typed completion total mismatch");
+  require(response->result->at("completion").at("hasMore") == false,
+          "typed completion hasMore mismatch");
+
+  auto argument_built =
+      mcp::server::App::builder()
+          .completion([](const mcp::server::CompletionContext& context,
+                         const mcp::protocol::CompletionArgument& argument) {
+            return std::vector<std::string>{context.session_id + ":" +
+                                            argument.value + "-arg"};
+          })
+          .build();
+  require(argument_built.has_value(),
+          "argument completion server should build");
+
+  const auto argument_response =
+      (*argument_built)
+          ->handle_request(
+              mcp::protocol::JsonRpcRequest{
+                  .method =
+                      std::string(mcp::protocol::CompletionCompleteMethod),
+                  .params = mcp::protocol::complete_params_to_json(params),
+                  .id = std::int64_t{2},
+              },
+              mcp::server::SessionContext{.session_id = "argument"});
+  require(argument_response.has_value(),
+          "argument completion request should succeed");
+  require(argument_response->result->at("completion").at("values").at(0) ==
+              "argument:he-arg",
+          "argument completion value mismatch");
+
+  auto value_built =
+      mcp::server::App::builder()
+          .completion([](std::string value) { return value + "-value"; })
+          .build();
+  require(value_built.has_value(), "value completion server should build");
+  const auto value_response =
+      (*value_built)
+          ->handle_request(
+              mcp::protocol::JsonRpcRequest{
+                  .method =
+                      std::string(mcp::protocol::CompletionCompleteMethod),
+                  .params = mcp::protocol::complete_params_to_json(params),
+                  .id = std::int64_t{3},
+              },
+              {});
+  require(value_response.has_value(),
+          "value completion request should succeed");
+  require(
+      value_response->result->at("completion").at("values").at(0) == "he-value",
+      "value completion mismatch");
+
+  const auto invalid = (*built)->handle_request(
+      mcp::protocol::JsonRpcRequest{
+          .method = std::string(mcp::protocol::CompletionCompleteMethod),
+          .params = Json{{"ref",
+                          Json{{"type", "ref/prompt"}, {"name", "summarize"}}}},
+          .id = std::int64_t{4},
+      },
+      {});
+  require(invalid.has_value(), "invalid typed completion should respond");
+  require(invalid->error.has_value(), "invalid typed completion should fail");
+  require(invalid->error->code ==
+              static_cast<int>(mcp::protocol::ErrorCode::InvalidParams),
+          "invalid typed completion code mismatch");
+}
+
 void test_server_app_builder_registers_typed_tool() {
   using typed_tool_fixture::SumArgs;
   using typed_tool_fixture::SumResult;
@@ -4659,6 +4758,8 @@ int main() {
        test_default_server_initialize_omits_inactive_capabilities},
       {"server app builder registers parity surface",
        test_server_app_builder_registers_parity_surface},
+      {"server app builder registers typed completion",
+       test_server_app_builder_registers_typed_completion},
       {"server app builder registers typed tool",
        test_server_app_builder_registers_typed_tool},
       {"server app builder typed scalar tool rejects empty args",

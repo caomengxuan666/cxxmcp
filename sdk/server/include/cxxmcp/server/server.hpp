@@ -28,6 +28,7 @@
 
 #include "cxxmcp/core/result.hpp"
 #include "cxxmcp/protocol/capabilities.hpp"
+#include "cxxmcp/protocol/completion.hpp"
 #include "cxxmcp/protocol/logging.hpp"
 #include "cxxmcp/protocol/task.hpp"
 #include "cxxmcp/server/auth.hpp"
@@ -37,6 +38,12 @@
 #include "cxxmcp/server/transport.hpp"
 
 namespace mcp::server {
+
+/// @brief Completion request context passed to typed completion handlers.
+struct CompletionContext : SessionContext {
+  /// Parsed `completion/complete` request parameters.
+  protocol::CompleteParams params;
+};
 
 namespace detail {
 
@@ -178,6 +185,52 @@ inline protocol::ResourcesReadResult value_to_resource_read_result(
   contents.text = std::move(text);
   result.contents.push_back(std::move(contents));
   return result;
+}
+
+inline protocol::Json value_to_complete_result_json(protocol::Json json) {
+  return json;
+}
+
+inline protocol::Json value_to_complete_result_json(
+    protocol::CompleteResult result) {
+  return protocol::complete_result_to_json(result);
+}
+
+inline protocol::Json value_to_complete_result_json(
+    protocol::CompletionResult result) {
+  protocol::CompleteResult envelope;
+  envelope.completion = std::move(result);
+  return protocol::complete_result_to_json(envelope);
+}
+
+inline protocol::Json value_to_complete_result_json(
+    std::vector<std::string> values) {
+  protocol::CompletionResult completion;
+  completion.values = std::move(values);
+  return value_to_complete_result_json(std::move(completion));
+}
+
+inline protocol::Json value_to_complete_result_json(std::string value) {
+  return value_to_complete_result_json(
+      std::vector<std::string>{std::move(value)});
+}
+
+inline protocol::Json value_to_complete_result_json(const char* value) {
+  return value_to_complete_result_json(
+      std::string(value == nullptr ? "" : value));
+}
+
+template <class T>
+inline core::Result<protocol::Json> completion_response_to_json(T&& value) {
+  using Value = std::decay_t<T>;
+  if constexpr (is_result<Value>::value) {
+    if (!value) {
+      return std::unexpected(value.error());
+    }
+    return completion_response_to_json(std::move(*value));
+  } else {
+    return value_to_complete_result_json(std::forward<T>(value));
+  }
 }
 
 template <class Arg>
@@ -368,6 +421,64 @@ decltype(auto) invoke_json_extension_handler(Handler& handler,
                   "JSON extension handler must accept Json, "
                   "Json+SessionContext, SessionContext+Json, "
                   "SessionContext, or no arguments");
+  }
+}
+
+template <class Handler>
+inline constexpr bool is_typed_completion_handler_v =
+    !callable_arguments_match_v<Handler, protocol::Json, SessionContext> &&
+    !callable_arguments_match_v<Handler, SessionContext, protocol::Json> &&
+    !callable_arguments_match_v<Handler, protocol::Json> &&
+    (callable_arguments_match_v<Handler, protocol::CompleteParams,
+                                CompletionContext> ||
+     callable_arguments_match_v<Handler, CompletionContext,
+                                protocol::CompleteParams> ||
+     callable_arguments_match_v<Handler, protocol::CompletionArgument,
+                                CompletionContext> ||
+     callable_arguments_match_v<Handler, CompletionContext,
+                                protocol::CompletionArgument> ||
+     callable_arguments_match_v<Handler, std::string, CompletionContext> ||
+     callable_arguments_match_v<Handler, CompletionContext, std::string> ||
+     callable_arguments_match_v<Handler, protocol::CompleteParams> ||
+     callable_arguments_match_v<Handler, protocol::CompletionArgument> ||
+     callable_arguments_match_v<Handler, std::string>);
+
+template <class Handler>
+decltype(auto) invoke_completion_handler(Handler& handler,
+                                         const CompletionContext& context) {
+  if constexpr (std::is_invocable_v<Handler&, const protocol::CompleteParams&,
+                                    const CompletionContext&>) {
+    return handler(context.params, context);
+  } else if constexpr (std::is_invocable_v<Handler&, const CompletionContext&,
+                                           const protocol::CompleteParams&>) {
+    return handler(context, context.params);
+  } else if constexpr (std::is_invocable_v<Handler&,
+                                           const protocol::CompletionArgument&,
+                                           const CompletionContext&>) {
+    return handler(context.params.argument, context);
+  } else if constexpr (std::is_invocable_v<
+                           Handler&, const CompletionContext&,
+                           const protocol::CompletionArgument&>) {
+    return handler(context, context.params.argument);
+  } else if constexpr (std::is_invocable_v<Handler&, std::string,
+                                           const CompletionContext&>) {
+    return handler(context.params.argument.value, context);
+  } else if constexpr (std::is_invocable_v<Handler&, const CompletionContext&,
+                                           std::string>) {
+    return handler(context, context.params.argument.value);
+  } else if constexpr (std::is_invocable_v<Handler&,
+                                           const protocol::CompleteParams&>) {
+    return handler(context.params);
+  } else if constexpr (std::is_invocable_v<
+                           Handler&, const protocol::CompletionArgument&>) {
+    return handler(context.params.argument);
+  } else if constexpr (std::is_invocable_v<Handler&, std::string>) {
+    return handler(context.params.argument.value);
+  } else {
+    static_assert(always_false_v<Handler>,
+                  "completion handler must accept CompleteParams, "
+                  "CompletionArgument, string, or those plus "
+                  "CompletionContext");
   }
 }
 
@@ -1275,12 +1386,27 @@ App::Builder& App::Builder::completion(Handler handler) {
       [handler = std::move(handler)](const protocol::Json& request,
                                      const SessionContext& context) mutable
           -> core::Result<protocol::Json> {
-        auto handled =
-            detail::invoke_json_extension_handler(handler, request, context);
-        if constexpr (detail::is_result<decltype(handled)>::value) {
-          return handled;
+        if constexpr (detail::is_typed_completion_handler_v<Handler>) {
+          const auto params = protocol::complete_params_from_json(request);
+          if (!params) {
+            return std::unexpected(core::Error{
+                static_cast<int>(protocol::ErrorCode::InvalidParams),
+                params.error().message, params.error().detail, "protocol"});
+          }
+          CompletionContext completion_context;
+          static_cast<SessionContext&>(completion_context) = context;
+          completion_context.params = *params;
+          auto handled =
+              detail::invoke_completion_handler(handler, completion_context);
+          return detail::completion_response_to_json(std::move(handled));
         } else {
-          return detail::value_to_json(std::move(handled));
+          auto handled =
+              detail::invoke_json_extension_handler(handler, request, context);
+          if constexpr (detail::is_result<decltype(handled)>::value) {
+            return handled;
+          } else {
+            return detail::value_to_json(std::move(handled));
+          }
         }
       });
   return *this;

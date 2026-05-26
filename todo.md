@@ -601,7 +601,7 @@ true:
 - [ ] Deepen typed tool registration helpers.
 - [ ] Deepen typed prompt helper templates.
 - [ ] Deepen typed resource helper templates.
-- [ ] Deepen typed completion helper templates.
+- [x] Deepen typed completion helper templates.
 - [ ] Support context injection consistently for tool, prompt, resource,
   completion, sampling, elicitation, and task handlers.
   - [x] Pass `SessionContext` through server and peer completion handlers.
