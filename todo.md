@@ -633,7 +633,7 @@ true:
 - [x] Map missing resources to resource not found.
 - [x] Map missing tools to tool not found.
 - [x] Map elicitation URL requirements to the correct SDK/protocol error.
-- [ ] Ensure transport errors do not leak transport-library-specific details
+- [x] Ensure transport errors do not leak transport-library-specific details
   unless placed in structured debug data.
 - [x] Add tests for every public error family.
 - [x] Add tests that errors serialize as valid JSON-RPC error responses.

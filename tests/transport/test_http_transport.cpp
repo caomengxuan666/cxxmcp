@@ -2260,6 +2260,12 @@ void test_client_http_transport_times_out_initialize() {
       .id = std::int64_t{1},
   });
   require(!response.has_value(), "initialize should honor HTTP timeout");
+  require(response.error().message == "http transport request timed out",
+          "HTTP timeout public message should be stable");
+  require(response.error().category == "transport",
+          "HTTP timeout error category mismatch");
+  require(!response.error().detail.empty(),
+          "HTTP timeout library detail should be structured as detail");
 }
 
 void test_client_http_transport_rejects_unexpected_response_id() {
