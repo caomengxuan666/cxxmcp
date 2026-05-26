@@ -23,6 +23,13 @@ registered through `cxxmcp_mark_release_blocking()`.
   consumer configure must use the same release-matrix generator and compiler
   family as the matrix leg producing the evidence.
 
+## Source Style Gates
+
+- `source-style`: the release-gates workflow runs `scripts/format.ps1 -Check`
+  and `scripts/check-cpplint.ps1` on Ubuntu before release evidence is treated
+  as clean. clang-tidy is intentionally tracked separately because it depends on
+  a configured compile database and may need a narrower source scope.
+
 ## Protocol, Transport, And Interop Gates
 
 - `protocol`: JSON-RPC and MCP protocol serialization, parsing, version policy,

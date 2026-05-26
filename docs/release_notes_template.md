@@ -70,6 +70,7 @@ optional layers outside the core SDK contract.
 
 ## Evidence Summary
 
+- Source style evidence:
 - `package_smoke` installed-package evidence:
 - Public-header compile evidence:
 - RMCP interoperability evidence:

@@ -683,8 +683,8 @@ true:
 - [x] Run transport contract tests in CI.
 - [x] Run transport adapter tests in CI.
 - [x] Run RMCP/cross-SDK conformance tests in CI.
-- [ ] Run formatting check in CI.
-- [ ] Run cpplint in CI.
+- [x] Run formatting check in CI.
+- [x] Run cpplint in CI.
 - [ ] Run clang-tidy in CI where practical.
 - [x] Build generated docs in CI.
 - [x] Keep all release-blocking tests documented.
