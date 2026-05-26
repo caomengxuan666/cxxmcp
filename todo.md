@@ -518,6 +518,8 @@ true:
 - [x] Add nested negative parse coverage for sampling tool use/tool result,
   tool choice, model preferences, elicitation primitive schemas, and
   elicitation completion notifications.
+- [x] Add shared icon, pageable `nextCursor`, and create-task result `_meta`
+  type-constraint negative coverage.
 - [x] Keep helper constructors for common text-only flows.
 - [ ] Avoid bool-heavy shortcuts when the wire shape expects object presence.
   - [x] Preserve client sampling raw object payloads without requiring

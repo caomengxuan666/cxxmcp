@@ -3587,6 +3587,12 @@ void test_protocol_type_constraints_are_rejected() {
                                  {"inputSchema", Json::object()},
                                  {"_meta", Json::array()}}),
                         "tool definition non-object meta should fail");
+  require_parse_failure(mcp::protocol::tools_list_result_from_json(
+                            Json{{"tools", Json::object()}}),
+                        "tools/list non-array tools should fail");
+  require_parse_failure(mcp::protocol::tools_list_result_from_json(
+                            Json{{"tools", Json::array()}, {"nextCursor", 7}}),
+                        "tools/list non-string nextCursor should fail");
   require_parse_failure(mcp::protocol::tool_call_from_json(Json{
                             {"name", "tool"}, {"arguments", Json::array()}}),
                         "tools/call non-object arguments should fail");
@@ -3637,6 +3643,16 @@ void test_protocol_type_constraints_are_rejected() {
                                  {"version", "1.0.0"},
                                  {"icons", Json::array({Json::object()})}}),
                         "implementation info invalid icon should fail");
+  require(!mcp::protocol::icon_from_json(
+               Json{{"src", "https://example.test/icon.png"},
+                    {"sizes", Json::array({"16x16", 7})}})
+               .has_value(),
+          "icon non-string size should fail");
+  require(
+      !mcp::protocol::icon_from_json(
+           Json{{"src", "https://example.test/icon.png"}, {"theme", "neon"}})
+           .has_value(),
+      "icon unsupported theme should fail");
   require_parse_failure(
       mcp::protocol::implementation_info_from_json(
           Json{{"name", "client"}, {"version", "1.0.0"}, {"websiteUrl", 7}}),
@@ -3694,6 +3710,12 @@ void test_protocol_type_constraints_are_rejected() {
   require_parse_failure(mcp::protocol::prompts_get_params_from_json(Json{
                             {"name", "prompt"}, {"arguments", Json::array()}}),
                         "prompts/get non-object arguments should fail");
+  require_parse_failure(mcp::protocol::prompts_list_result_from_json(
+                            Json{{"prompts", Json::object()}}),
+                        "prompts/list non-array prompts should fail");
+  require_parse_failure(mcp::protocol::prompts_list_result_from_json(Json{
+                            {"prompts", Json::array()}, {"nextCursor", 7}}),
+                        "prompts/list non-string nextCursor should fail");
   require_parse_failure(mcp::protocol::prompt_message_from_json(
                             Json{{"role", "user"}, {"content", "hello"}}),
                         "prompt message invalid content should fail");
@@ -3757,6 +3779,17 @@ void test_protocol_type_constraints_are_rejected() {
   require_parse_failure(mcp::protocol::resources_list_result_from_json(
                             Json{{"resources", Json::object()}}),
                         "resources/list non-array resources should fail");
+  require_parse_failure(mcp::protocol::resources_list_result_from_json(Json{
+                            {"resources", Json::array()}, {"nextCursor", 7}}),
+                        "resources/list non-string nextCursor should fail");
+  require_parse_failure(
+      mcp::protocol::resource_templates_list_result_from_json(
+          Json{{"resourceTemplates", Json::object()}}),
+      "resources/templates/list non-array templates should fail");
+  require_parse_failure(
+      mcp::protocol::resource_templates_list_result_from_json(
+          Json{{"resourceTemplates", Json::array()}, {"nextCursor", 7}}),
+      "resources/templates/list non-string nextCursor should fail");
   require_parse_failure(mcp::protocol::resource_contents_from_json(
                             Json{{"uri", 3}, {"text", "hello"}}),
                         "resource contents non-string uri should fail");
@@ -3984,11 +4017,22 @@ void test_protocol_type_constraints_are_rejected() {
                             Json{{"tasks", Json::object()}}),
                         "tasks/list non-array tasks should fail");
   require_parse_failure(mcp::protocol::task_list_result_from_json(
+                            Json{{"tasks", Json::array()}, {"nextCursor", 7}}),
+                        "tasks/list non-string nextCursor should fail");
+  require_parse_failure(mcp::protocol::task_list_result_from_json(
                             Json{{"tasks", Json::array()}, {"total", -1}}),
                         "tasks/list negative total should fail");
   require_parse_failure(mcp::protocol::task_list_result_from_json(
                             Json{{"tasks", Json::array()}, {"total", "1"}}),
                         "tasks/list non-integer total should fail");
+  require_parse_failure(
+      mcp::protocol::create_task_result_from_json(
+          Json{{"task", Json{{"taskId", "task-1"},
+                             {"status", "working"},
+                             {"createdAt", "2025-01-01T00:00:00Z"},
+                             {"lastUpdatedAt", "2025-01-01T00:00:01Z"}}},
+               {"_meta", Json::array()}}),
+      "create task result non-object meta should fail");
 
   require_parse_failure(
       mcp::protocol::create_elicitation_request_param_from_json(

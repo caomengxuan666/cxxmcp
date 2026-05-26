@@ -615,6 +615,10 @@ inline core::Result<CreateTaskResult> create_task_result_from_json(
   CreateTaskResult result;
   result.task = *task;
   if (json.contains("_meta")) {
+    if (!json.at("_meta").is_object()) {
+      return std::unexpected(
+          task_json_error("createTask result _meta must be an object"));
+    }
     result.meta = json.at("_meta");
   }
   result.extensions = collect_json_extensions(json, {"task", "_meta"});
