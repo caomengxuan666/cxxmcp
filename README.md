@@ -2,13 +2,19 @@
 
 [![C++17](https://img.shields.io/badge/C%2B%2B-17-00599C.svg)](https://isocpp.org/)
 [![CMake](https://img.shields.io/badge/build-CMake-064F8C.svg)](https://cmake.org/)
+[![Release gates](https://github.com/caomengxuan666/cxxmcp/actions/workflows/release-gates.yml/badge.svg)](https://github.com/caomengxuan666/cxxmcp/actions/workflows/release-gates.yml)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![MCP](https://img.shields.io/badge/protocol-Model%20Context%20Protocol-111827.svg)](https://modelcontextprotocol.io/)
 [![SDK](https://img.shields.io/badge/package-C%2B%2B%20SDK-0F766E.svg)](#using-as-a-library)
 
-`cxxmcp` is a modern C++17 SDK and optional C++20 runtime toolkit for the
-[Model Context Protocol](https://modelcontextprotocol.io/). It is designed to
-be the practical default choice for C++ applications that need to expose or
-consume MCP servers.
+> Status: `cxxmcp` is a community C++ MCP SDK preparing official SDK candidate
+> evidence. It is not an official MCP SDK unless accepted or listed by the MCP
+> maintainers.
+
+`cxxmcp` is a modern C++17 SDK for building
+[Model Context Protocol](https://modelcontextprotocol.io/) clients and servers.
+Optional C++20 runtime, gateway, CLI, and example targets are layered above the
+embeddable SDK.
 
 The public SDK surface is intentionally narrow and package-friendly:
 `protocol`, `transport`, `handler`, `peer`, `service`, `client`, and `server`
@@ -16,6 +22,23 @@ are the core library layers. Gateway, app, and CLI code are optional runtime
 tools built on top of the SDK.
 
 Read this in [Chinese](README_zh.md).
+
+## Contents
+
+- [Why cxxmcp](#why-cxxmcp)
+- [Quick Install](#quick-install)
+- [Quality Signals](#quality-signals)
+- [Capability Snapshot](#capability-snapshot)
+- [Using As A Library](#using-as-a-library)
+- [Build From Source](#build-from-source)
+- [Quick Start](#quick-start)
+- [Package Targets](#package-targets)
+- [Protocol Boundary](#protocol-boundary)
+- [HTTP Transport Policy](#http-transport-policy)
+- [Compatibility Contract](#compatibility-contract)
+- [Release Evidence](#release-evidence)
+- [Documentation](#documentation)
+- [Project Status](#project-status)
 
 ## Why cxxmcp
 
@@ -30,6 +53,39 @@ Read this in [Chinese](README_zh.md).
 - Optional gateway and CLI runtime for local MCP server management
 - Local RMCP interoperability and package-smoke tests used as release gates
 
+## Quick Install
+
+Install a local SDK package:
+
+```powershell
+cmake -S . -B build -DCXXMCP_BUILD_SDK=ON -DCXXMCP_BUILD_CLIENT=ON -DCXXMCP_BUILD_SERVER=ON
+cmake --build build --config Release
+cmake --install build --config Release --prefix out/install/cxxmcp
+```
+
+Consume it from a downstream CMake project:
+
+```cmake
+find_package(cxxmcp CONFIG REQUIRED)
+target_link_libraries(my_server PRIVATE cxxmcp::server)
+target_link_libraries(my_client PRIVATE cxxmcp::client)
+```
+
+Public SDK headers and package targets are C++17. Optional runtime, gateway,
+CLI, examples, and tests require C++20.
+
+## Quality Signals
+
+- Release gates cover public headers, package-smoke consumption, transports,
+  SDK behavior, and RMCP / TypeScript / Python interoperability.
+- Release candidates are expected to publish workflow artifacts, Doxygen API
+  docs, source archives, checksums, and release evidence for the exact commit.
+- Compatibility expectations are tracked in
+  [Compatibility policy](docs/compatibility_policy.md) and
+  [Release gates](docs/release_gates.md).
+- The official SDK candidate path is tracked in
+  [Official SDK candidate process](docs/official_sdk_candidate_process.md).
+
 ## Capability Snapshot
 
 | Area | Status |
@@ -41,6 +97,24 @@ Read this in [Chinese](README_zh.md).
 | Transports | stdio, process stdio, Streamable HTTP, legacy SSE compatibility paths |
 | Packaging | Exported CMake targets, install tree support, package-smoke fixture |
 | Runtime tools | Optional app, gateway, and CLI layers above the SDK |
+
+## SDK Map
+
+```mermaid
+flowchart TD
+    app[Application code]
+    peer[Peer / Service]
+    sdk[Client SDK / Server SDK]
+    core[Protocol / Transport / Handler]
+    io[stdio / process stdio / Streamable HTTP / SSE compatibility]
+    tools[Optional runtime / gateway / CLI]
+
+    app --> peer
+    peer --> sdk
+    sdk --> core
+    core --> io
+    tools -. builds on .-> sdk
+```
 
 ## Using As A Library
 
@@ -325,6 +399,21 @@ adapter concern, not a separate SDK protocol.
 `CXXMCP_BUILD_CLI` enables the gateway, runtime, server, client, and protocol
 layers it needs.
 
+## Async Request Executor
+
+Async request helpers use a small process-wide bounded worker pool. The default
+is 4 workers with a queue size of 64, which is intended for local
+stdio/process-stdio MCP workloads. Gateway, remote HTTP, or high-concurrency
+applications may configure it before the first async request:
+
+```cpp
+mcp::configure_request_executor(
+    mcp::RequestExecutorOptions{.worker_count = 8, .max_queue_size = 256});
+```
+
+Reconfiguration after the executor has been initialized is rejected so in-flight
+request semantics remain stable.
+
 ## Compatibility Contract
 
 - Public SDK headers and package targets compile as C++17 by default. The
@@ -374,6 +463,21 @@ The repository keeps SDK-grade checks close to the source tree:
 
 Current standardization work is tracked in [Fact-standard TODO](todo.md).
 
+## Release Evidence
+
+A release may claim support only for compiler, generator, runtime-library, and
+platform combinations where the release-blocking set passed for the release
+commit. The release evidence package is expected to include:
+
+- `cxxmcp-release-gates-*` workflow artifacts with CTest logs and JUnit output
+- `cxxmcp-doxygen-html` API documentation
+- `cxxmcp-source` source archive plus `SHA256SUMS.txt`
+- `cxxmcp-release-evidence` with README, changelog, compatibility policy,
+  release gates, checklist, notes template, TODO, and examples
+
+Interop evidence is anchored by RMCP conformance coverage and process-stdio
+fixtures for RMCP, TypeScript SDK, and Python SDK clients.
+
 ## Documentation
 
 - [Fact-standard TODO](todo.md)
@@ -381,6 +485,7 @@ Current standardization work is tracked in [Fact-standard TODO](todo.md).
 - [Release gates](docs/release_gates.md)
 - [Release candidate checklist](docs/release_candidate_checklist.md)
 - [Release notes template](docs/release_notes_template.md)
+- [Official SDK candidate process](docs/official_sdk_candidate_process.md)
 - [Peer/Service migration guide](docs/sdk_peer_service_migration.md)
 - [Changelog](CHANGELOG.md)
 
