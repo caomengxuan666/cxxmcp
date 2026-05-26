@@ -508,8 +508,8 @@ the SDK through a normal external CMake project and covers advanced surfaces
 that are intentionally broader than the compact in-tree samples: direct
 Streamable HTTP and legacy SSE, process stdio, custom transports, transport
 adapters, async request handles, cursor pagination, subscriptions,
-server-to-client callbacks, tasks and cancellation, plugin/adapters, gateway
-runtime, and app service management.
+server-to-client callbacks, HTTP auth-lite, tasks and cancellation,
+plugin/adapters, gateway runtime, and app service management.
 
 ## Quality Bar
 
