@@ -8,7 +8,19 @@ package("cxxmcp")
 
     add_deps("cmake")
 
+    on_load(function (package)
+        package:add("links", "mcp_server", "mcp_client", "mcp_protocol")
+        if package:is_plat("windows") then
+            package:add("syslinks", "ws2_32")
+        elseif package:is_plat("linux", "bsd") then
+            package:add("syslinks", "pthread")
+        end
+    end)
+
     on_install(function (package)
+        if package:config("shared") then
+            raise("cxxmcp currently supports static library linkage only")
+        end
         local configs = {
             "-DCXXMCP_BUILD_SDK=ON",
             "-DCXXMCP_BUILD_RUNTIME=OFF",
@@ -18,11 +30,20 @@ package("cxxmcp")
             "-DCXXMCP_BUILD_EXAMPLES=OFF",
             "-DCXXMCP_BUILD_TESTS=OFF",
             "-DCXXMCP_BUILD_DOCS=OFF",
+            "-DCXXMCP_USE_SYSTEM_DEPS=OFF",
             "-DBUILD_SHARED_LIBS=OFF"
         }
         import("package.tools.cmake").install(package, configs)
     end)
 
     on_test(function (package)
-        assert(package:has_cxxincludes("cxxmcp/sdk.hpp", {configs = {languages = "c++17"}}))
+        assert(package:check_cxxsnippets({test = [[
+            #include <cstdint>
+            #include <cxxmcp/protocol/serialization.hpp>
+            void test() {
+                auto request = mcp::protocol::make_ping_request(std::int64_t{1});
+                auto serialized = mcp::protocol::serialize_request(request);
+                (void)serialized;
+            }
+        ]]}, {configs = {languages = "c++17"}}))
     end)
