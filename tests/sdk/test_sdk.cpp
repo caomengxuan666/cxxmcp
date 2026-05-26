@@ -674,6 +674,21 @@ void test_sdk_peer_and_service_surface() {
   require(server_call->content.front().text == "{\"value\":\"server\"}",
           "server tool call result mismatch");
 
+  const auto invalid_server_peer_call = server_peer.handle_request(
+      mcp::protocol::JsonRpcRequest{
+          .method = std::string(mcp::protocol::ToolsCallMethod),
+          .params = Json{{"name", 7}},
+          .id = std::int64_t{601},
+      },
+      mcp::server::SessionContext{});
+  require(invalid_server_peer_call.has_value(),
+          "server peer invalid tool params should produce a response");
+  require(invalid_server_peer_call->error.has_value(),
+          "server peer invalid tool params should fail");
+  require(invalid_server_peer_call->error->code ==
+              static_cast<int>(mcp::protocol::ErrorCode::InvalidParams),
+          "server peer invalid tool params error code mismatch");
+
   auto server_service_transport =
       std::make_unique<BlockingServerContractTransport>();
   auto* server_service_transport_ptr = server_service_transport.get();

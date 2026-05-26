@@ -624,6 +624,8 @@ true:
 - [x] Map server-side known-method parameter parse and parameter validation
   failures to `InvalidParams` while preserving envelope failures as
   `InvalidRequest`.
+- [x] Map client-side and Peer known-method parameter parse failures to
+  `InvalidParams` at public request-dispatch boundaries.
 - [x] Map unknown methods to method not found.
 - [x] Map handler exceptions to internal errors with controlled diagnostics.
 - [x] Map permission failures to permission denied.

@@ -4191,6 +4191,9 @@ void test_client_elicitation_defaults_to_decline_without_handler() {
   require(invalid.has_value(), "invalid elicitation should produce response");
   require(invalid->error.has_value(),
           "invalid elicitation should still validate params before decline");
+  require(invalid->error->code ==
+              static_cast<int>(mcp::protocol::ErrorCode::InvalidParams),
+          "invalid elicitation params error code mismatch");
 
   mcp::ClientPeer peer(std::make_unique<RecordingTransport>());
   const auto peer_message = peer.dispatch_message(
@@ -4211,6 +4214,26 @@ void test_client_elicitation_defaults_to_decline_without_handler() {
           "peer default elicitation decline result missing");
   require(peer_response->result->at("action") == "decline",
           "peer default elicitation action mismatch");
+
+  const auto peer_invalid = peer.dispatch_message(
+      mcp::protocol::JsonRpcMessage{mcp::protocol::JsonRpcRequest{
+          .method = std::string(mcp::protocol::ElicitationCreateMethod),
+          .params = Json{{"message", "choose"}},
+          .id = std::int64_t{33},
+      }});
+  require(peer_invalid.has_value(),
+          "peer invalid elicitation dispatch should produce response");
+  require(peer_invalid->has_value(),
+          "peer invalid elicitation response missing");
+  const auto* peer_invalid_response =
+      std::get_if<mcp::protocol::JsonRpcResponse>(&**peer_invalid);
+  require(peer_invalid_response != nullptr,
+          "peer invalid elicitation response type mismatch");
+  require(peer_invalid_response->error.has_value(),
+          "peer invalid elicitation should fail");
+  require(peer_invalid_response->error->code ==
+              static_cast<int>(mcp::protocol::ErrorCode::InvalidParams),
+          "peer invalid elicitation params error code mismatch");
 }
 
 void test_client_request_callbacks() {
@@ -4322,6 +4345,20 @@ void test_client_request_callbacks() {
   require(sampled->result->at("content").at("text") == "sampled",
           "sampling response content mismatch");
   require(sampling_prompt == "hi", "sampling request handler mismatch");
+
+  const auto invalid_sampled =
+      client.handle_request(mcp::protocol::JsonRpcRequest{
+          .method = std::string(mcp::protocol::SamplingCreateMessageMethod),
+          .params = Json{{"messages", Json::array()}},
+          .id = std::int64_t{20},
+      });
+  require(invalid_sampled.has_value(),
+          "invalid sampling params should produce a response");
+  require(invalid_sampled->error.has_value(),
+          "invalid sampling params should fail");
+  require(invalid_sampled->error->code ==
+              static_cast<int>(mcp::protocol::ErrorCode::InvalidParams),
+          "invalid sampling params error code mismatch");
 
   const Json form_schema =
       Json{{"type", "object"},

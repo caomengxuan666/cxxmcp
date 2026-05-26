@@ -84,6 +84,19 @@ core::Result<protocol::JsonRpcResponse> make_error_response(
                                : std::optional<protocol::Json>{detail}));
 }
 
+int method_params_error_code(const core::Error& error) {
+  if (error.code == static_cast<int>(protocol::ErrorCode::InvalidRequest)) {
+    return static_cast<int>(protocol::ErrorCode::InvalidParams);
+  }
+  return error.code;
+}
+
+core::Result<protocol::JsonRpcResponse> make_params_error_response(
+    const protocol::JsonRpcRequest& request, const core::Error& error) {
+  return make_error_response(request, method_params_error_code(error),
+                             error.message, error.detail);
+}
+
 protocol::Json cursor_params(const std::optional<std::string>& cursor) {
   protocol::Json params = protocol::Json::object();
   if (cursor.has_value()) {
@@ -1345,8 +1358,7 @@ core::Result<protocol::JsonRpcResponse> Client::handle_request(
     const auto params =
         protocol::create_message_params_from_json(request.params);
     if (!params) {
-      return make_error_response(request, params.error().code,
-                                 params.error().message, params.error().detail);
+      return make_params_error_response(request, params.error());
     }
 
     const auto result = sampling_request_handler_(*params);
@@ -1363,8 +1375,7 @@ core::Result<protocol::JsonRpcResponse> Client::handle_request(
     const auto params =
         protocol::create_elicitation_request_param_from_json(request.params);
     if (!params) {
-      return make_error_response(request, params.error().code,
-                                 params.error().message, params.error().detail);
+      return make_params_error_response(request, params.error());
     }
 
     if (!elicitation_request_handler_) {

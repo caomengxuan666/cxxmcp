@@ -61,6 +61,18 @@ inline protocol::JsonRpcResponse peer_error_response(
       request.id, peer_error_object_from_core_error(error));
 }
 
+inline core::Error peer_params_error(core::Error error) {
+  if (error.code == static_cast<int>(protocol::ErrorCode::InvalidRequest)) {
+    error.code = static_cast<int>(protocol::ErrorCode::InvalidParams);
+  }
+  return error;
+}
+
+inline protocol::JsonRpcResponse peer_params_error_response(
+    const protocol::JsonRpcRequest& request, core::Error error) {
+  return peer_error_response(request, peer_params_error(std::move(error)));
+}
+
 inline std::string peer_request_cancellation_key(
     const protocol::RequestId& request_id) {
   return protocol::request_id_to_json(request_id).dump();
@@ -1588,7 +1600,7 @@ class Peer<RoleClient> {
       const auto params =
           protocol::create_message_params_from_json(request.params);
       if (!params) {
-        return native_error_response(request, params.error());
+        return detail::peer_params_error_response(request, params.error());
       }
       const auto result = sampling_request_handler_(*params);
       if (!result) {
@@ -1602,7 +1614,7 @@ class Peer<RoleClient> {
       const auto params =
           protocol::create_elicitation_request_param_from_json(request.params);
       if (!params) {
-        return native_error_response(request, params.error());
+        return detail::peer_params_error_response(request, params.error());
       }
       if (!elicitation_request_handler_) {
         return protocol::make_response(
@@ -2109,7 +2121,7 @@ class Peer<RoleServer> {
       if (!request.params.is_object() || !request.params.contains("name") ||
           !request.params.at("name").is_string()) {
         return detail::peer_error_response(
-            request, errors::make(protocol::ErrorCode::InvalidRequest,
+            request, errors::make(protocol::ErrorCode::InvalidParams,
                                   "tools/get requires a string name"));
       }
 
@@ -2124,12 +2136,12 @@ class Peer<RoleServer> {
     if (request.method == protocol::ToolsCallMethod) {
       const auto call = protocol::tool_call_from_json(request.params);
       if (!call) {
-        return detail::peer_error_response(request, call.error());
+        return detail::peer_params_error_response(request, call.error());
       }
       if (call->task.has_value()) {
         const auto valid = server_->tools().validate(*call);
         if (!valid) {
-          return detail::peer_error_response(request, valid.error());
+          return detail::peer_params_error_response(request, valid.error());
         }
         const auto task_manager = server_->task_manager();
         if (!task_manager) {
@@ -2140,7 +2152,7 @@ class Peer<RoleServer> {
         const auto task =
             task_manager->submit_tool_call(server_->tools(), *call, context);
         if (!task) {
-          return detail::peer_error_response(request, task.error());
+          return detail::peer_params_error_response(request, task.error());
         }
         return protocol::make_response(
             request.id, protocol::create_task_result_to_json(*task));
@@ -2173,7 +2185,7 @@ class Peer<RoleServer> {
       const auto params =
           protocol::prompts_get_params_from_json(request.params);
       if (!params) {
-        return detail::peer_error_response(request, params.error());
+        return detail::peer_params_error_response(request, params.error());
       }
 
       const auto result =
@@ -2197,7 +2209,7 @@ class Peer<RoleServer> {
       const auto params =
           protocol::resources_read_params_from_json(request.params);
       if (!params) {
-        return detail::peer_error_response(request, params.error());
+        return detail::peer_params_error_response(request, params.error());
       }
 
       const auto result =
@@ -2228,7 +2240,7 @@ class Peer<RoleServer> {
           !request.params.at("uri").is_string()) {
         return detail::peer_error_response(
             request,
-            errors::make(protocol::ErrorCode::InvalidRequest,
+            errors::make(protocol::ErrorCode::InvalidParams,
                          "resource subscription requires a string uri"));
       }
       const auto subscription = server_->set_resource_subscription(
@@ -2263,7 +2275,7 @@ class Peer<RoleServer> {
       if (!request.params.is_object() || !request.params.contains("level") ||
           !request.params.at("level").is_string()) {
         return detail::peer_error_response(
-            request, errors::make(protocol::ErrorCode::InvalidRequest,
+            request, errors::make(protocol::ErrorCode::InvalidParams,
                                   "logging/setLevel requires a string level"));
       }
       logging_handler_(request.params.at("level").get<std::string>(),
@@ -2274,7 +2286,7 @@ class Peer<RoleServer> {
     if (request.method == protocol::TasksListMethod && task_list_handler_) {
       const auto params = protocol::task_list_params_from_json(request.params);
       if (!params) {
-        return detail::peer_error_response(request, params.error());
+        return detail::peer_params_error_response(request, params.error());
       }
       const auto result = task_list_handler_(*params, context);
       if (!result) {
@@ -2287,7 +2299,7 @@ class Peer<RoleServer> {
     if (request.method == protocol::TasksGetMethod && task_get_handler_) {
       const auto params = protocol::task_get_params_from_json(request.params);
       if (!params) {
-        return detail::peer_error_response(request, params.error());
+        return detail::peer_params_error_response(request, params.error());
       }
       const auto result = task_get_handler_(*params, context);
       if (!result) {
@@ -2303,7 +2315,7 @@ class Peer<RoleServer> {
       const auto params =
           protocol::task_cancel_params_from_json(request.params);
       if (!params) {
-        return detail::peer_error_response(request, params.error());
+        return detail::peer_params_error_response(request, params.error());
       }
       const auto result = task_cancel_handler_(*params, context);
       if (!result) {
@@ -2320,7 +2332,7 @@ class Peer<RoleServer> {
       const auto params =
           protocol::task_result_params_from_json(request.params);
       if (!params) {
-        return detail::peer_error_response(request, params.error());
+        return detail::peer_params_error_response(request, params.error());
       }
       const auto result = task_result_handler_(*params, context);
       if (!result) {
