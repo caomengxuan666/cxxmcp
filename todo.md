@@ -685,7 +685,7 @@ true:
 - [x] Run RMCP/cross-SDK conformance tests in CI.
 - [x] Run formatting check in CI.
 - [x] Run cpplint in CI.
-- [ ] Run clang-tidy in CI where practical.
+- [x] Run clang-tidy in CI where practical.
 - [x] Build generated docs in CI.
 - [x] Keep all release-blocking tests documented.
 - [x] Add a release checklist that fails if package-smoke or conformance is

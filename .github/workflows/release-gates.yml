@@ -79,6 +79,61 @@ jobs:
       - name: Build SDK
         run: cmake --build build-config-smoke --parallel
 
+  clang-tidy:
+    name: clang-tidy-public-headers
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Install tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y clang-tidy ninja-build
+
+      - name: Configure
+        run: |
+          cmake \
+            -S . \
+            -B build-clang-tidy \
+            -G Ninja \
+            -DCMAKE_BUILD_TYPE=Debug \
+            -DCMAKE_EXPORT_COMPILE_COMMANDS=ON \
+            -DCXXMCP_BUILD_SDK=ON \
+            -DCXXMCP_BUILD_CLIENT=ON \
+            -DCXXMCP_BUILD_SERVER=ON \
+            -DCXXMCP_BUILD_RUNTIME=OFF \
+            -DCXXMCP_BUILD_APP=OFF \
+            -DCXXMCP_BUILD_GATEWAY=OFF \
+            -DCXXMCP_BUILD_CLI=OFF \
+            -DCXXMCP_BUILD_EXAMPLES=OFF \
+            -DCXXMCP_BUILD_TESTS=ON \
+            -DCXXMCP_BUILD_DOCS=OFF
+
+      - name: Build public header fixtures
+        run: |
+          cmake --build build-clang-tidy --parallel --target \
+            mcp_public_header_client \
+            mcp_public_header_config \
+            mcp_public_header_error \
+            mcp_public_header_handler \
+            mcp_public_header_peer \
+            mcp_public_header_protocol \
+            mcp_public_header_sdk \
+            mcp_public_header_server \
+            mcp_public_header_service \
+            mcp_public_header_transport
+
+      - name: Run clang-tidy
+        run: |
+          python scripts/run_clang_tidy.py \
+            --source . \
+            --build-dir build-clang-tidy \
+            tests/sdk/public_headers
+
   release-blocking:
     name: ${{ matrix.name }}
     runs-on: ${{ matrix.os }}

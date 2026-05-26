@@ -53,6 +53,7 @@ def check_source_tree(source: Path) -> None:
         "docs/sdk_peer_service_migration.md",
         "docs/Doxyfile",
         "scripts/check_protocol_model_coverage.py",
+        "scripts/run_clang_tidy.py",
         "templates/external_consumer/CMakeLists.txt",
         "templates/external_consumer/main.cpp",
         "templates/external_consumer/README.md",
@@ -114,6 +115,8 @@ def check_source_tree(source: Path) -> None:
     require_contains(workflow, "if-no-files-found: error")
     require_contains(workflow, "check_protocol_model_coverage.py")
     require_contains(workflow, "build-config-smoke")
+    require_contains(workflow, "clang-tidy-public-headers")
+    require_contains(workflow, "scripts/run_clang_tidy.py")
     require_contains(workflow, "Release")
     require_contains(workflow, "typescript_sdk_reference=@modelcontextprotocol/sdk@1.29.0")
     require_contains(workflow, "python_sdk_reference=mcp==1.27.1")

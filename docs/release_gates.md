@@ -39,6 +39,11 @@ registered through `cxxmcp_mark_release_blocking()`.
   runtime, gateway, CLI, tests, and docs disabled. This keeps release-mode
   compile coverage in CI without doubling the full cross-SDK conformance
   matrix.
+- `clang-tidy-public-headers`: the release-gates workflow configures a compile
+  database, builds the public-header compile fixtures, and runs clang-tidy over
+  those fixtures. The scope is intentionally the public SDK entry headers first;
+  broader implementation clang-tidy can be added after its noise level is
+  managed.
 
 ## Protocol, Transport, And Interop Gates
 

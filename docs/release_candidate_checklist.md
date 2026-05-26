@@ -40,6 +40,7 @@ path review.
 - [ ] Protocol model coverage check passed for `*_from_json` / `*_to_json`
       pairing.
 - [ ] `build-config-smoke` built the SDK Debug and Release configurations.
+- [ ] `clang-tidy-public-headers` passed on public SDK header fixtures.
 - [ ] All release-blocking CTest labels passed on every advertised matrix leg.
 - [ ] `package_smoke` passed from installed output on every advertised matrix
       leg, using the same generator and compiler family as that matrix leg.
