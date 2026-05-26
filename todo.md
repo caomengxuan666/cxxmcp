@@ -586,7 +586,7 @@ true:
 - [ ] Document timeout, cancellation, progress, and shutdown semantics.
 - [ ] Document task lifecycle and retention semantics.
 - [ ] Document elicitation lifecycle and capability requirements.
-- [ ] Document package consumption with `find_package(cxxmcp CONFIG REQUIRED)`.
+- [x] Document package consumption with `find_package(cxxmcp CONFIG REQUIRED)`.
 - [ ] Publish generated Doxygen docs for releases.
 - [ ] Keep README, README_zh, examples, Doxygen, and release notes in sync.
 - [ ] Add a minimal external consumer template.
@@ -636,10 +636,10 @@ true:
 
 ## P1: Package Manager And Consumer Experience
 
-- [ ] Add vcpkg packaging or a documented vcpkg overlay.
-- [ ] Add Conan packaging or a documented Conan recipe.
-- [ ] Document FetchContent usage if supported.
-- [ ] Document install-from-source usage.
+- [x] Add vcpkg packaging or a documented vcpkg overlay.
+- [x] Add Conan packaging or a documented Conan recipe.
+- [x] Document FetchContent usage if supported.
+- [x] Document install-from-source usage.
 - [ ] Document consuming only `cxxmcp::protocol`.
 - [ ] Document consuming only `cxxmcp::client`.
 - [ ] Document consuming only `cxxmcp::server`.
@@ -648,7 +648,7 @@ true:
 - [ ] Decide and document dependency vendoring policy.
 - [ ] Decide and document whether downstream users can use system versions of
   dependencies.
-- [ ] Add package-manager smoke tests when package recipes exist.
+- [x] Add package-manager smoke tests when package recipes exist.
 - [ ] Add a tiny external consumer repository or template.
 
 ## P1: Governance And Project Trust
