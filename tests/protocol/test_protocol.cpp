@@ -467,6 +467,30 @@ void test_tool_protocol_round_trips() {
           "tool result content mismatch");
   require(parsed_result->structured_content->at("value") == "hello",
           "tool structured content mismatch");
+
+  const mcp::protocol::ToolResult explicit_success{
+      .content = {mcp::protocol::ContentBlock{.type = "text", .text = "ok"}},
+      .is_error = false,
+  };
+  const auto explicit_success_json =
+      mcp::protocol::tool_result_to_json(explicit_success);
+  require(explicit_success_json.contains("isError") &&
+              explicit_success_json.at("isError") == false,
+          "explicit false tool result isError should serialize");
+  const auto parsed_explicit_success =
+      mcp::protocol::tool_result_from_json(explicit_success_json);
+  require(parsed_explicit_success.has_value(),
+          "explicit false tool result should parse");
+  require(parsed_explicit_success->is_error.has_value() &&
+              !parsed_explicit_success->is_error_result(),
+          "explicit false tool result isError should round-trip");
+
+  const auto meta_only_tool_result = mcp::protocol::tool_result_from_json(
+      Json{{"_meta", Json{{"traceId", "trace-1"}}}});
+  require(meta_only_tool_result.has_value(),
+          "tool result with only _meta should parse");
+  require(meta_only_tool_result->content.empty(),
+          "tool result without content should default to empty content");
 }
 
 void test_schema_and_tool_definition_builders() {
@@ -630,14 +654,17 @@ void test_text_helper_constructors_round_trip() {
   const auto parsed_tool_result = mcp::protocol::tool_result_from_json(
       mcp::protocol::tool_result_to_json(tool_result));
   require(parsed_tool_result.has_value(), "tool text helper should parse");
-  require(!parsed_tool_result->is_error,
+  require(parsed_tool_result->is_error.has_value() &&
+              !parsed_tool_result->is_error_result(),
           "tool text helper should not mark error");
 
   const auto tool_error = mcp::protocol::ToolResult::error_text("failed");
   const auto parsed_tool_error = mcp::protocol::tool_result_from_json(
       mcp::protocol::tool_result_to_json(tool_error));
   require(parsed_tool_error.has_value(), "tool error helper should parse");
-  require(parsed_tool_error->is_error, "tool error helper should mark error");
+  require(parsed_tool_error->is_error.has_value() &&
+              parsed_tool_error->is_error_result(),
+          "tool error helper should mark error");
 
   const auto prompt_message = mcp::protocol::PromptMessage::text("user", "hi");
   const auto parsed_prompt_message = mcp::protocol::prompt_message_from_json(
@@ -1442,11 +1469,25 @@ void test_roots_completion_logging_sampling_round_trips() {
   };
   const auto complete_result_json =
       mcp::protocol::complete_result_to_json(complete_result);
+  require(complete_result_json.at("completion").contains("hasMore") &&
+              complete_result_json.at("completion").at("hasMore") == false,
+          "explicit false completion hasMore should serialize");
   const auto parsed_complete_result =
       mcp::protocol::complete_result_from_json(complete_result_json);
   require(parsed_complete_result.has_value(), "completion result should parse");
   require(parsed_complete_result->completion.values.size() == 2,
           "completion values mismatch");
+  require(parsed_complete_result->completion.has_more.has_value() &&
+              !*parsed_complete_result->completion.has_more,
+          "completion hasMore false should round-trip");
+  require(!parsed_complete_result->completion.has_more_results(),
+          "completion helper should treat explicit false as no more results");
+
+  const auto completion_without_has_more =
+      mcp::protocol::completion_result_to_json(
+          mcp::protocol::CompletionResult{.values = {"solo"}});
+  require(!completion_without_has_more.contains("hasMore"),
+          "missing completion hasMore should remain absent");
 
   const mcp::protocol::LoggingSetLevelParams log_level{
       .level = mcp::protocol::LoggingLevel::Warning};
@@ -2556,6 +2597,11 @@ void test_protocol_type_constraints_are_rejected() {
   require_parse_failure(
       mcp::protocol::tool_result_from_json(Json{{"content", Json::object()}}),
       "tool result non-array content should fail");
+  require_parse_failure(mcp::protocol::tool_result_from_json(Json::object()),
+                        "empty tool result should fail");
+  require_parse_failure(
+      mcp::protocol::tool_result_from_json(Json{{"isError", "false"}}),
+      "tool result non-boolean isError should fail");
 
   require_parse_failure(mcp::protocol::implementation_info_from_json(
                             Json{{"name", 7}, {"version", "1.0.0"}}),
@@ -2630,6 +2676,21 @@ void test_protocol_type_constraints_are_rejected() {
                {"argument", Json{{"name", "arg"}, {"value", "v"}}},
                {"context", Json::array()}}),
       "completion params non-object context should fail");
+  require_parse_failure(mcp::protocol::completion_result_from_json(
+                            Json{{"values", Json::array()}, {"total", -1}}),
+                        "completion negative total should fail");
+  require_parse_failure(mcp::protocol::completion_result_from_json(Json{
+                            {"values", Json::array()}, {"hasMore", "false"}}),
+                        "completion hasMore non-boolean should fail");
+  Json too_many_completion_values = Json{{"values", Json::array()}};
+  for (int i = 0;
+       i <= static_cast<int>(mcp::protocol::CompletionResult::kMaxValues);
+       ++i) {
+    too_many_completion_values["values"].push_back("value");
+  }
+  require_parse_failure(
+      mcp::protocol::completion_result_from_json(too_many_completion_values),
+      "completion values over max should fail");
 
   require_parse_failure(
       mcp::protocol::logging_set_level_params_from_json(Json{{"level", 7}}),

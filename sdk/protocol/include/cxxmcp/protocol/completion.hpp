@@ -9,6 +9,9 @@
 /// variables by sending a `completion/complete` request for a referenced MCP
 /// object and one argument value prefix.
 
+#include <cstddef>
+#include <cstdint>
+#include <limits>
 #include <optional>
 #include <string>
 #include <utility>
@@ -74,14 +77,20 @@ struct CompleteParams {
 
 /// @brief Completion candidates returned by the server.
 struct CompletionResult {
+  /// Maximum number of completion values allowed by the MCP model.
+  static constexpr std::size_t kMaxValues = 100;
   /// Candidate values.
   std::vector<std::string> values;
   /// Optional total number of matches known to the server.
   std::optional<int> total;
-  /// Whether additional matches are available beyond the returned values.
-  bool has_more = false;
+  /// Optional pagination signal. Missing means the peer did not state whether
+  /// more matches exist; explicit false is preserved on the wire.
+  std::optional<bool> has_more;
   /// Unknown JSON members preserved for forward-compatible round trips.
   Json extensions = Json::object();
+
+  /// @brief Convenience predicate treating a missing signal as false.
+  bool has_more_results() const noexcept { return has_more.value_or(false); }
 };
 
 /// @brief Result object for `completion/complete`.
@@ -264,8 +273,8 @@ inline Json completion_result_to_json(const CompletionResult& completion) {
   if (completion.total.has_value()) {
     json["total"] = *completion.total;
   }
-  if (completion.has_more) {
-    json["hasMore"] = true;
+  if (completion.has_more.has_value()) {
+    json["hasMore"] = *completion.has_more;
   }
   append_json_extensions(json, completion.extensions);
   return json;
@@ -283,6 +292,10 @@ inline core::Result<CompletionResult> completion_result_from_json(
     return std::unexpected(
         completion_json_error("completion result requires a values array"));
   }
+  if (json.at("values").size() > CompletionResult::kMaxValues) {
+    return std::unexpected(
+        completion_json_error("completion result has too many values"));
+  }
 
   CompletionResult completion;
   for (const auto& item : json.at("values")) {
@@ -294,10 +307,15 @@ inline core::Result<CompletionResult> completion_result_from_json(
   }
   if (json.contains("total")) {
     if (!json.at("total").is_number_integer()) {
-      return std::unexpected(
-          completion_json_error("completion total must be an integer"));
+      return std::unexpected(completion_json_error(
+          "completion total must be a non-negative integer"));
     }
-    completion.total = json.at("total").get<int>();
+    const auto total = json.at("total").get<std::int64_t>();
+    if (total < 0 || total > std::numeric_limits<int>::max()) {
+      return std::unexpected(completion_json_error(
+          "completion total must be a non-negative integer"));
+    }
+    completion.total = static_cast<int>(total);
   }
   if (json.contains("hasMore")) {
     if (!json.at("hasMore").is_boolean()) {

@@ -2282,7 +2282,7 @@ void test_call_tool_round_trip() {
     throw std::runtime_error("call_tool failed: " + result.error().message +
                              " (" + std::to_string(result.error().code) + ")");
   }
-  require(!result->is_error, "tool result should not be an error");
+  require(!result->is_error_result(), "tool result should not be an error");
   require(result->content.size() == 1, "tool result content size mismatch");
   require(result->content.front().type == "text",
           "tool result content type mismatch");

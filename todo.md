@@ -466,6 +466,10 @@ true:
 - [x] Add typed resource updated notification payload and tests.
 - [x] Align cancellation, progress, and logging notification optional string
   fields with RMCP `Option<String>` semantics.
+- [x] Align completion `hasMore` with RMCP optional-bool semantics and enforce
+  completion value/total constraints.
+- [x] Align `tools/call` result `isError` with RMCP optional-bool semantics and
+  reject empty untagged tool-result objects.
 - [ ] Add negative parse tests for every required field and type constraint.
 - [x] Add cross-family required-field negative parse regression coverage for
   tools, prompts, resources, roots, completion, sampling, elicitation, and

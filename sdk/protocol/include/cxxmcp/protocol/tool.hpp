@@ -316,17 +316,22 @@ struct ToolResult {
   std::vector<ContentBlock> content;
   /// Optional machine-readable result matching the tool output schema.
   std::optional<Json> structured_content;
-  /// True when the tool call completed with a domain-level error result.
-  bool is_error = false;
+  /// Optional domain-level error signal. Missing means the peer did not state
+  /// whether the tool call produced an error; explicit false is preserved.
+  std::optional<bool> is_error;
   /// Optional `_meta` extension object preserved on the wire.
   std::optional<Json> meta;
   /// Unknown JSON members preserved for forward-compatible round trips.
   Json extensions = Json::object();
 
+  /// @brief Convenience predicate treating a missing signal as success.
+  bool is_error_result() const noexcept { return is_error.value_or(false); }
+
   /// @brief Creates a successful text-only tool result.
   static ToolResult text(std::string value) {
     ToolResult result;
     result.content.push_back(ContentBlock::text_content(std::move(value)));
+    result.is_error = false;
     return result;
   }
 
@@ -769,8 +774,8 @@ inline Json tool_result_to_json(const ToolResult& result) {
   if (result.structured_content.has_value()) {
     json["structuredContent"] = *result.structured_content;
   }
-  if (result.is_error) {
-    json["isError"] = true;
+  if (result.is_error.has_value()) {
+    json["isError"] = *result.is_error;
   }
   if (result.meta.has_value()) {
     json["_meta"] = *result.meta;
@@ -784,6 +789,11 @@ inline Json tool_result_to_json(const ToolResult& result) {
 inline core::Result<ToolResult> tool_result_from_json(const Json& json) {
   if (!json.is_object()) {
     return std::unexpected(tool_json_error("tool result must be an object"));
+  }
+  if (!json.contains("content") && !json.contains("structuredContent") &&
+      !json.contains("isError") && !json.contains("_meta")) {
+    return std::unexpected(tool_json_error(
+        "tool result requires content, structuredContent, isError, or _meta"));
   }
 
   ToolResult result;
