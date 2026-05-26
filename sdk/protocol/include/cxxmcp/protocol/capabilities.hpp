@@ -25,6 +25,8 @@ struct ToolCapabilities {
   bool enabled = false;
   /// Whether `notifications/tools/list_changed` may be emitted.
   bool list_changed = false;
+  /// Whether `listChanged` was explicitly present on the wire.
+  bool list_changed_present = false;
 };
 
 /// @brief Server capability flags for resources.
@@ -33,8 +35,12 @@ struct ResourceCapabilities {
   bool enabled = false;
   /// Whether `notifications/resources/list_changed` may be emitted.
   bool list_changed = false;
+  /// Whether `listChanged` was explicitly present on the wire.
+  bool list_changed_present = false;
   /// Whether the server supports resource subscribe/unsubscribe methods.
   bool subscribe = false;
+  /// Whether `subscribe` was explicitly present on the wire.
+  bool subscribe_present = false;
 };
 
 /// @brief Server capability flags for prompts.
@@ -43,6 +49,8 @@ struct PromptCapabilities {
   bool enabled = false;
   /// Whether `notifications/prompts/list_changed` may be emitted.
   bool list_changed = false;
+  /// Whether `listChanged` was explicitly present on the wire.
+  bool list_changed_present = false;
 };
 
 /// @brief Server capability flags for logging.
@@ -74,10 +82,14 @@ struct RootCapabilities {
   bool enabled = false;
   /// Whether `notifications/roots/list_changed` may be emitted.
   bool list_changed = false;
+  /// Whether `listChanged` was explicitly present on the wire.
+  bool list_changed_present = false;
 };
 
 /// @brief Client capability flags for elicitation.
 struct ElicitationCapabilities {
+  /// Whether the `elicitation` capability family was explicitly advertised.
+  bool present = false;
   /// Whether form-based `elicitation/create` requests are supported.
   bool form = false;
   /// Whether form elicitation can validate schemas locally.
@@ -185,6 +197,62 @@ inline TaskCapabilities task_capabilities_from_json(const Json& tasks) {
   return task_capabilities;
 }
 
+inline bool task_capability_member_valid(const Json& json) {
+  return json.is_object() || json.is_boolean();
+}
+
+inline bool task_capabilities_are_valid(const Json& tasks) {
+  if (!tasks.is_object()) {
+    return false;
+  }
+  if (tasks.contains("list") &&
+      !task_capability_member_valid(tasks.at("list"))) {
+    return false;
+  }
+  if (tasks.contains("cancel") &&
+      !task_capability_member_valid(tasks.at("cancel"))) {
+    return false;
+  }
+  if (!tasks.contains("requests")) {
+    return true;
+  }
+  if (!tasks.at("requests").is_object()) {
+    return false;
+  }
+  const auto& requests = tasks.at("requests");
+  if (requests.contains("tools")) {
+    if (!requests.at("tools").is_object()) {
+      return false;
+    }
+    const auto& tools = requests.at("tools");
+    if (tools.contains("call") &&
+        !task_capability_member_valid(tools.at("call"))) {
+      return false;
+    }
+  }
+  if (requests.contains("sampling")) {
+    if (!requests.at("sampling").is_object()) {
+      return false;
+    }
+    const auto& sampling = requests.at("sampling");
+    if (sampling.contains("createMessage") &&
+        !task_capability_member_valid(sampling.at("createMessage"))) {
+      return false;
+    }
+  }
+  if (requests.contains("elicitation")) {
+    if (!requests.at("elicitation").is_object()) {
+      return false;
+    }
+    const auto& elicitation = requests.at("elicitation");
+    if (elicitation.contains("create") &&
+        !task_capability_member_valid(elicitation.at("create"))) {
+      return false;
+    }
+  }
+  return true;
+}
+
 /// @brief Capabilities advertised by an MCP client during initialization.
 struct ClientCapabilities {
   /// Roots feature support.
@@ -207,6 +275,7 @@ class ClientCapabilitiesBuilder {
   ClientCapabilitiesBuilder& roots(bool list_changed = false) {
     capabilities_.roots.enabled = true;
     capabilities_.roots.list_changed = list_changed;
+    capabilities_.roots.list_changed_present = list_changed;
     return *this;
   }
 
@@ -220,12 +289,14 @@ class ClientCapabilitiesBuilder {
 
   ClientCapabilitiesBuilder& elicitation_form(
       std::optional<bool> schema_validation = std::nullopt) {
+    capabilities_.elicitation.present = true;
     capabilities_.elicitation.form = true;
     capabilities_.elicitation.form_schema_validation = schema_validation;
     return *this;
   }
 
   ClientCapabilitiesBuilder& elicitation_url() {
+    capabilities_.elicitation.present = true;
     capabilities_.elicitation.url = true;
     return *this;
   }
@@ -296,8 +367,9 @@ inline Json client_capabilities_to_json(
   Json json = Json::object();
 
   Json roots = Json::object();
-  if (capabilities.roots.list_changed) {
-    roots["listChanged"] = true;
+  if (capabilities.roots.list_changed ||
+      capabilities.roots.list_changed_present) {
+    roots["listChanged"] = capabilities.roots.list_changed;
   }
   if (capabilities.roots.enabled || !roots.empty()) {
     json["roots"] = std::move(roots);
@@ -326,7 +398,7 @@ inline Json client_capabilities_to_json(
   if (capabilities.elicitation.url) {
     elicitation["url"] = Json::object();
   }
-  if (!elicitation.empty()) {
+  if (capabilities.elicitation.present || !elicitation.empty()) {
     json["elicitation"] = std::move(elicitation);
   }
   if (capabilities.experimental.has_value() &&
@@ -369,6 +441,7 @@ class ServerCapabilitiesBuilder {
   ServerCapabilitiesBuilder& tools(bool list_changed = false) {
     capabilities_.tools.enabled = true;
     capabilities_.tools.list_changed = list_changed;
+    capabilities_.tools.list_changed_present = list_changed;
     return *this;
   }
 
@@ -376,13 +449,16 @@ class ServerCapabilitiesBuilder {
                                        bool subscribe = false) {
     capabilities_.resources.enabled = true;
     capabilities_.resources.list_changed = list_changed;
+    capabilities_.resources.list_changed_present = list_changed;
     capabilities_.resources.subscribe = subscribe;
+    capabilities_.resources.subscribe_present = subscribe;
     return *this;
   }
 
   ServerCapabilitiesBuilder& prompts(bool list_changed = false) {
     capabilities_.prompts.enabled = true;
     capabilities_.prompts.list_changed = list_changed;
+    capabilities_.prompts.list_changed_present = list_changed;
     return *this;
   }
 
@@ -462,27 +538,31 @@ inline Json server_capabilities_to_json(
   Json json = Json::object();
 
   Json tools = Json::object();
-  if (capabilities.tools.list_changed) {
-    tools["listChanged"] = true;
+  if (capabilities.tools.list_changed ||
+      capabilities.tools.list_changed_present) {
+    tools["listChanged"] = capabilities.tools.list_changed;
   }
   if (capabilities.tools.enabled || !tools.empty()) {
     json["tools"] = std::move(tools);
   }
 
   Json resources = Json::object();
-  if (capabilities.resources.list_changed) {
-    resources["listChanged"] = true;
+  if (capabilities.resources.list_changed ||
+      capabilities.resources.list_changed_present) {
+    resources["listChanged"] = capabilities.resources.list_changed;
   }
-  if (capabilities.resources.subscribe) {
-    resources["subscribe"] = true;
+  if (capabilities.resources.subscribe ||
+      capabilities.resources.subscribe_present) {
+    resources["subscribe"] = capabilities.resources.subscribe;
   }
   if (capabilities.resources.enabled || !resources.empty()) {
     json["resources"] = std::move(resources);
   }
 
   Json prompts = Json::object();
-  if (capabilities.prompts.list_changed) {
-    prompts["listChanged"] = true;
+  if (capabilities.prompts.list_changed ||
+      capabilities.prompts.list_changed_present) {
+    prompts["listChanged"] = capabilities.prompts.list_changed;
   }
   if (capabilities.prompts.enabled || !prompts.empty()) {
     json["prompts"] = std::move(prompts);
@@ -518,46 +598,70 @@ inline std::optional<ClientCapabilities> client_capabilities_from_json(
   }
 
   ClientCapabilities capabilities;
-  if (json.contains("roots") && json.at("roots").is_object()) {
+  if (json.contains("roots")) {
+    if (!json.at("roots").is_object()) {
+      return std::nullopt;
+    }
     capabilities.roots.enabled = true;
     const auto& roots = json.at("roots");
-    if (roots.contains("listChanged") && roots.at("listChanged").is_boolean()) {
+    if (roots.contains("listChanged")) {
+      if (!roots.at("listChanged").is_boolean()) {
+        return std::nullopt;
+      }
       capabilities.roots.list_changed = roots.at("listChanged").get<bool>();
+      capabilities.roots.list_changed_present = true;
     }
   }
   if (json.contains("sampling")) {
+    if (!json.at("sampling").is_object()) {
+      return std::nullopt;
+    }
     capabilities.sampling.enabled = true;
-    if (json.at("sampling").is_object()) {
-      const auto& sampling = json.at("sampling");
-      capabilities.sampling.tools =
-          sampling.contains("tools") && sampling.at("tools").is_object();
-      capabilities.sampling.context =
-          sampling.contains("context") && sampling.at("context").is_object();
+    const auto& sampling = json.at("sampling");
+    if (sampling.contains("tools")) {
+      if (!sampling.at("tools").is_object()) {
+        return std::nullopt;
+      }
+      capabilities.sampling.tools = true;
+    }
+    if (sampling.contains("context")) {
+      if (!sampling.at("context").is_object()) {
+        return std::nullopt;
+      }
+      capabilities.sampling.context = true;
     }
   }
   if (json.contains("elicitation")) {
     const auto& elicitation = json.at("elicitation");
-    if (elicitation.is_object()) {
-      if (elicitation.contains("form") && elicitation.at("form").is_object()) {
-        capabilities.elicitation.form = true;
-        const auto& form = elicitation.at("form");
-        if (form.contains("schemaValidation") &&
-            form.at("schemaValidation").is_boolean()) {
-          capabilities.elicitation.form_schema_validation =
-              form.at("schemaValidation").get<bool>();
-        }
+    if (!elicitation.is_object()) {
+      return std::nullopt;
+    }
+    capabilities.elicitation.present = true;
+    if (elicitation.contains("form")) {
+      if (!elicitation.at("form").is_object()) {
+        return std::nullopt;
       }
-      if (elicitation.contains("url") && elicitation.at("url").is_object()) {
-        capabilities.elicitation.url = true;
-      }
-      if (!capabilities.elicitation.enabled()) {
-        capabilities.elicitation.form = true;
-      }
-    } else {
       capabilities.elicitation.form = true;
+      const auto& form = elicitation.at("form");
+      if (form.contains("schemaValidation")) {
+        if (!form.at("schemaValidation").is_boolean()) {
+          return std::nullopt;
+        }
+        capabilities.elicitation.form_schema_validation =
+            form.at("schemaValidation").get<bool>();
+      }
+    }
+    if (elicitation.contains("url")) {
+      if (!elicitation.at("url").is_object()) {
+        return std::nullopt;
+      }
+      capabilities.elicitation.url = true;
     }
   }
-  if (json.contains("tasks") && json.at("tasks").is_object()) {
+  if (json.contains("tasks")) {
+    if (!task_capabilities_are_valid(json.at("tasks"))) {
+      return std::nullopt;
+    }
     capabilities.tasks = task_capabilities_from_json(json.at("tasks"));
   }
   if (json.contains("experimental")) {
@@ -596,6 +700,7 @@ inline std::optional<ServerCapabilities> server_capabilities_from_json(
         return std::nullopt;
       }
       capabilities.tools.list_changed = tools.at("listChanged").get<bool>();
+      capabilities.tools.list_changed_present = true;
     }
   }
 
@@ -611,12 +716,14 @@ inline std::optional<ServerCapabilities> server_capabilities_from_json(
       }
       capabilities.resources.list_changed =
           resources.at("listChanged").get<bool>();
+      capabilities.resources.list_changed_present = true;
     }
     if (resources.contains("subscribe")) {
       if (!resources.at("subscribe").is_boolean()) {
         return std::nullopt;
       }
       capabilities.resources.subscribe = resources.at("subscribe").get<bool>();
+      capabilities.resources.subscribe_present = true;
     }
   }
 
@@ -631,6 +738,7 @@ inline std::optional<ServerCapabilities> server_capabilities_from_json(
         return std::nullopt;
       }
       capabilities.prompts.list_changed = prompts.at("listChanged").get<bool>();
+      capabilities.prompts.list_changed_present = true;
     }
   }
 
@@ -647,7 +755,7 @@ inline std::optional<ServerCapabilities> server_capabilities_from_json(
     capabilities.completions.enabled = true;
   }
   if (json.contains("tasks")) {
-    if (!json.at("tasks").is_object()) {
+    if (!task_capabilities_are_valid(json.at("tasks"))) {
       return std::nullopt;
     }
     capabilities.tasks = task_capabilities_from_json(json.at("tasks"));

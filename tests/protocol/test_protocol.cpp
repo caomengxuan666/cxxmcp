@@ -1036,6 +1036,47 @@ void test_task_protocol_round_trips() {
                Json{{"extensions", Json::array()}})
                .has_value(),
           "client extensions capability bag must be an object");
+  require(!mcp::protocol::client_capabilities_from_json(
+               Json{{"roots", Json::array()}})
+               .has_value(),
+          "client roots capability must be an object");
+  require(!mcp::protocol::client_capabilities_from_json(
+               Json{{"roots", Json{{"listChanged", "yes"}}}})
+               .has_value(),
+          "client roots listChanged capability must be boolean");
+  require(
+      !mcp::protocol::client_capabilities_from_json(Json{{"sampling", true}})
+           .has_value(),
+      "client sampling capability must be an object");
+  require(!mcp::protocol::client_capabilities_from_json(
+               Json{{"sampling", Json{{"tools", true}}}})
+               .has_value(),
+          "client sampling tools capability must be an object");
+  require(!mcp::protocol::client_capabilities_from_json(
+               Json{{"sampling", Json{{"context", true}}}})
+               .has_value(),
+          "client sampling context capability must be an object");
+  require(
+      !mcp::protocol::client_capabilities_from_json(Json{{"elicitation", true}})
+           .has_value(),
+      "client elicitation capability must be an object");
+  require(!mcp::protocol::client_capabilities_from_json(
+               Json{{"elicitation", Json{{"form", true}}}})
+               .has_value(),
+          "client elicitation form capability must be an object");
+  require(!mcp::protocol::client_capabilities_from_json(
+               Json{{"elicitation",
+                     Json{{"form", Json{{"schemaValidation", "yes"}}}}}})
+               .has_value(),
+          "client elicitation schemaValidation capability must be boolean");
+  require(!mcp::protocol::client_capabilities_from_json(
+               Json{{"elicitation", Json{{"url", true}}}})
+               .has_value(),
+          "client elicitation url capability must be an object");
+  require(!mcp::protocol::client_capabilities_from_json(
+               Json{{"tasks", Json{{"list", "yes"}}}})
+               .has_value(),
+          "client task capability members must be objects or booleans");
 
   Json legacy_json = Json::object();
   legacy_json["tasks"] = Json{
@@ -1088,6 +1129,31 @@ void test_client_capability_wire_shape() {
           "client form elicitation should use object presence by default");
   require(!json.contains("tasks"),
           "client tasks should be omitted when not advertised");
+
+  const auto parsed_empty_elicitation =
+      mcp::protocol::client_capabilities_from_json(
+          Json{{"elicitation", Json::object()}});
+  require(parsed_empty_elicitation.has_value(),
+          "empty client elicitation capability should parse");
+  require(!parsed_empty_elicitation->elicitation.enabled(),
+          "empty client elicitation capability should not invent form support");
+  require(mcp::protocol::client_capabilities_to_json(*parsed_empty_elicitation)
+              .at("elicitation")
+              .empty(),
+          "empty client elicitation capability should round trip");
+
+  const auto parsed_false_roots = mcp::protocol::client_capabilities_from_json(
+      Json{{"roots", Json{{"listChanged", false}}}});
+  require(parsed_false_roots.has_value(),
+          "explicit false client roots capability should parse");
+  require(parsed_false_roots->roots.enabled,
+          "explicit false client roots should preserve family presence");
+  require(!parsed_false_roots->roots.list_changed,
+          "explicit false client roots listChanged mismatch");
+  require(mcp::protocol::client_capabilities_to_json(*parsed_false_roots)
+                  .at("roots")
+                  .at("listChanged") == false,
+          "explicit false client roots listChanged should round trip");
 
   capabilities.tasks = mcp::protocol::TaskCapabilities{};
   const auto with_empty_tasks =
@@ -1231,6 +1297,37 @@ void test_server_capability_wire_shape() {
                Json{{"resources", Json{{"subscribe", "yes"}}}})
                .has_value(),
           "invalid server resource capability members should be rejected");
+  require(!mcp::protocol::server_capabilities_from_json(
+               Json{{"resources", Json{{"listChanged", "yes"}}}})
+               .has_value(),
+          "invalid server resource listChanged should be rejected");
+  require(!mcp::protocol::server_capabilities_from_json(
+               Json{{"prompts", Json{{"listChanged", "yes"}}}})
+               .has_value(),
+          "invalid server prompt listChanged should be rejected");
+  require(!mcp::protocol::server_capabilities_from_json(
+               Json{{"tasks", Json{{"requests", Json::array()}}}})
+               .has_value(),
+          "invalid server task requests should be rejected");
+
+  const auto parsed_false_server =
+      mcp::protocol::server_capabilities_from_json(Json{
+          {"tools", Json{{"listChanged", false}}},
+          {"resources", Json{{"listChanged", false}, {"subscribe", false}}},
+          {"prompts", Json{{"listChanged", false}}},
+      });
+  require(parsed_false_server.has_value(),
+          "explicit false server capabilities should parse");
+  const auto false_server_json =
+      mcp::protocol::server_capabilities_to_json(*parsed_false_server);
+  require(false_server_json.at("tools").at("listChanged") == false,
+          "explicit false server tools listChanged should round trip");
+  require(false_server_json.at("resources").at("listChanged") == false,
+          "explicit false server resources listChanged should round trip");
+  require(false_server_json.at("resources").at("subscribe") == false,
+          "explicit false server resources subscribe should round trip");
+  require(false_server_json.at("prompts").at("listChanged") == false,
+          "explicit false server prompts listChanged should round trip");
 }
 
 void test_capability_builders_match_wire_shape() {

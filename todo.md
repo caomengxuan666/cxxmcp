@@ -494,6 +494,10 @@ true:
   resource references.
 - [x] Constrain resource and resource-template `size` parsing to the RMCP
   `u32` range.
+- [x] Tighten capability wire parsing for RMCP object-presence semantics,
+  including explicit `false` round-trips for optional bool members and strict
+  non-object rejection for client sampling, elicitation, roots, and task
+  shapes.
 - [ ] Add negative parse tests for every required field and type constraint.
 - [x] Add cross-family required-field negative parse regression coverage for
   tools, prompts, resources, roots, completion, sampling, elicitation, and
@@ -514,6 +518,9 @@ true:
 - [x] Audit task capabilities against RMCP/spec.
 - [x] Keep object-presence semantics for active capability families.
 - [x] Preserve present-but-empty capability objects where meaningful.
+- [x] Preserve explicit `false` for RMCP optional-bool capability members.
+- [x] Reject non-object capability families and non-boolean optional bool
+  members instead of silently ignoring them.
 - [x] Preserve experimental and extension bags.
 - [x] Reject invalid non-object experimental/extension bags where appropriate.
 - [x] Add tests for every capability serializer and parser.
