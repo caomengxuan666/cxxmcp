@@ -522,7 +522,7 @@ true:
 - [x] Define terminal task retention and TTL semantics.
 - [x] Add hard-cancellation strategy for non-cooperative running handlers or
   explicitly document why only cooperative cancellation is supported.
-- [ ] Add richer typed operation result transport beyond raw JSON payload
+- [x] Add richer typed operation result transport beyond raw JSON payload
   storage where RMCP/spec expects it.
 - [x] Add flattened `tasks/get` and `tasks/cancel` result models plus
   `tasks/list.total`, aligned with RMCP task result shapes.
