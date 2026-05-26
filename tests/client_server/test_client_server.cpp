@@ -1,5 +1,6 @@
 // Copyright (c) 2025 [caomengxuan666]
 
+#include <algorithm>
 #include <atomic>
 #include <chrono>
 #include <condition_variable>
@@ -3641,12 +3642,23 @@ void test_server_app_builder_registers_typed_tool() {
                         "typed tool context should not be cancelled");
                 return SumResult{.sum = args.a + args.b + 1};
               })
+          .tool(mcp::server::tool<Json, Json>("z-configured")
+                    .input<SumArgs>()
+                    .output<SumResult>()
+                    .streaming()
+                    .execution(mcp::protocol::ToolExecution{}.with_task_support(
+                        mcp::protocol::TaskSupport::Required))
+                    .annotations(Json{{"category", "math"}})
+                    .handler([](const Json& args) {
+                      return Json{{"sum", args.at("a").get<int>() +
+                                              args.at("b").get<int>()}};
+                    }))
           .build();
   require(built.has_value(), "typed tool server should build");
   auto& server = **built;
 
   const auto listed = server.list_tools();
-  require(listed.size() == 2, "typed tool count mismatch");
+  require(listed.size() == 3, "typed tool count mismatch");
   require(listed.front().name == "sum", "typed tool name mismatch");
   require(listed.front().description == "Add two integers",
           "typed tool description mismatch");
@@ -3658,6 +3670,21 @@ void test_server_app_builder_registers_typed_tool() {
           "typed tool output schema missing sum");
   require(listed.front().task_support() == mcp::protocol::TaskSupport::Optional,
           "typed tool task support mismatch");
+  const auto configured_it =
+      std::find_if(listed.begin(), listed.end(),
+                   [](const mcp::protocol::ToolDefinition& tool) {
+                     return tool.name == "z-configured";
+                   });
+  require(configured_it != listed.end(), "configured typed tool missing");
+  require(configured_it->input_schema.at("properties").contains("a"),
+          "configured typed tool input<T> missing a");
+  require(configured_it->output_schema.at("properties").contains("sum"),
+          "configured typed tool output<T> missing sum");
+  require(configured_it->streaming, "configured typed tool streaming mismatch");
+  require(configured_it->task_support() == mcp::protocol::TaskSupport::Required,
+          "configured typed tool execution mismatch");
+  require(configured_it->annotations.at("category") == "math",
+          "configured typed tool annotations mismatch");
 
   const auto result =
       server.call_tool("sum", Json{{"a", 2}, {"b", 3}}, "typed-tool-session");

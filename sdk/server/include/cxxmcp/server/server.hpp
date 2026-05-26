@@ -1128,10 +1128,20 @@ class TypedToolBuilder {
     return *this;
   }
 
+  template <class T>
+  TypedToolBuilder& input() {
+    return input_schema(protocol::schema_for<T>());
+  }
+
   TypedToolBuilder& output_schema(protocol::Json schema) {
     definition_.output_schema = std::move(schema);
     definition_.output_schema_present = true;
     return *this;
+  }
+
+  template <class T>
+  TypedToolBuilder& output() {
+    return output_schema(protocol::schema_for<T>());
   }
 
   TypedToolBuilder& streaming(bool value = true) {
@@ -1149,6 +1159,11 @@ class TypedToolBuilder {
       definition_.execution = protocol::ToolExecution{};
     }
     definition_.execution->task_support = value;
+    return *this;
+  }
+
+  TypedToolBuilder& execution(protocol::ToolExecution value) {
+    definition_.execution = std::move(value);
     return *this;
   }
 
