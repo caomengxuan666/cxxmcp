@@ -672,7 +672,7 @@ true:
 - [x] Add public CI for Linux/GCC.
 - [x] Add public CI for Linux/Clang.
 - [x] Add public CI for macOS/AppleClang.
-- [ ] Run Debug and Release builds where practical.
+- [x] Run Debug and Release builds where practical.
 - [x] Run Ninja and Visual Studio generators where practical.
 - [x] Run package-smoke in CI for every supported platform.
 - [x] Run protocol tests in CI.

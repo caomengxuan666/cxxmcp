@@ -37,6 +37,7 @@ path review.
 ## Gate Review
 
 - [ ] `source-style` passed formatting and cpplint checks.
+- [ ] `build-config-smoke` built the SDK Debug and Release configurations.
 - [ ] All release-blocking CTest labels passed on every advertised matrix leg.
 - [ ] `package_smoke` passed from installed output on every advertised matrix
       leg, using the same generator and compiler family as that matrix leg.

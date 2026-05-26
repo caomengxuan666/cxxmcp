@@ -111,6 +111,8 @@ def check_source_tree(source: Path) -> None:
     workflow = source / ".github/workflows/release-gates.yml"
     require_contains(workflow, "cxxmcp-release-evidence")
     require_contains(workflow, "if-no-files-found: error")
+    require_contains(workflow, "build-config-smoke")
+    require_contains(workflow, "Release")
     require_contains(workflow, "typescript_sdk_reference=@modelcontextprotocol/sdk@1.29.0")
     require_contains(workflow, "python_sdk_reference=mcp==1.27.1")
 

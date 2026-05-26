@@ -30,6 +30,14 @@ registered through `cxxmcp_mark_release_blocking()`.
   as clean. clang-tidy is intentionally tracked separately because it depends on
   a configured compile database and may need a narrower source scope.
 
+## Build Configuration Gates
+
+- `build-config-smoke`: the release-gates workflow builds the SDK, client,
+  server, and examples in both Debug and Release modes on Linux/Ninja with
+  runtime, gateway, CLI, tests, and docs disabled. This keeps release-mode
+  compile coverage in CI without doubling the full cross-SDK conformance
+  matrix.
+
 ## Protocol, Transport, And Interop Gates
 
 - `protocol`: JSON-RPC and MCP protocol serialization, parsing, version policy,
