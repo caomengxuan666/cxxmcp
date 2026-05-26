@@ -607,6 +607,7 @@ true:
   - [x] Pass `SessionContext` through server and peer completion handlers.
   - [x] Pass `SessionContext` through server and peer sampling handlers.
   - [x] Pass `SessionContext` through contract-style task handlers.
+  - [x] Pass `SessionContext` through contract-style notification handlers.
 - [ ] Support cooperative cancellation token injection where meaningful.
   - [x] Pass cancellation tokens into prompt contexts and typed prompt helpers.
   - [x] Pass cancellation tokens into resource contexts and typed resource

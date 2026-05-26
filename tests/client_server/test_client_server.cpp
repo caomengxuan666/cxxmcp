@@ -2200,6 +2200,109 @@ void test_contract_task_handlers_receive_session_context() {
           "contract task session context mismatch");
 }
 
+void test_contract_notification_handlers_receive_session_context() {
+  struct ContractNotificationHandler final
+      : mcp::server::ServerHandlerInterface {
+    mutable std::vector<std::string> events;
+
+    std::optional<mcp::core::Result<mcp::core::Unit>> on_progress(
+        const mcp::protocol::ProgressNotificationParams& params,
+        const mcp::server::SessionContext& context) const override {
+      require(params.progress == 0.5,
+              "contract progress notification value mismatch");
+      events.push_back("progress:" + context.session_id);
+      return mcp::core::Unit{};
+    }
+
+    std::optional<mcp::core::Result<mcp::core::Unit>> on_roots_list_changed(
+        const mcp::server::SessionContext& context) const override {
+      events.push_back("roots:" + context.remote_address);
+      return mcp::core::Unit{};
+    }
+
+    std::optional<mcp::core::Result<mcp::core::Unit>> on_tool_list_changed(
+        const mcp::server::SessionContext& context) const override {
+      events.push_back("tools:" + context.session_id);
+      return mcp::core::Unit{};
+    }
+
+    std::optional<mcp::core::Result<mcp::core::Unit>> on_prompt_list_changed(
+        const mcp::server::SessionContext& context) const override {
+      events.push_back("prompts:" + context.session_id);
+      return mcp::core::Unit{};
+    }
+
+    std::optional<mcp::core::Result<mcp::core::Unit>> on_resource_list_changed(
+        const mcp::server::SessionContext& context) const override {
+      events.push_back("resources:" + context.session_id);
+      return mcp::core::Unit{};
+    }
+
+    std::optional<mcp::core::Result<mcp::core::Unit>> on_resource_updated(
+        const std::string& uri,
+        const mcp::server::SessionContext& context) const override {
+      require(uri == "file:///tmp/data.txt",
+              "contract resource updated uri mismatch");
+      events.push_back("updated:" + context.remote_address);
+      return mcp::core::Unit{};
+    }
+  } handler;
+
+  auto server = make_server();
+  server.set_handler(handler);
+
+  const mcp::server::SessionContext context{
+      .session_id = "session-1",
+      .remote_address = "127.0.0.1",
+  };
+  const std::vector<mcp::protocol::JsonRpcNotification> notifications = {
+      mcp::protocol::JsonRpcNotification{
+          .method =
+              std::string(mcp::protocol::RootsListChangedNotificationMethod),
+          .params = Json::object(),
+      },
+      mcp::protocol::JsonRpcNotification{
+          .method =
+              std::string(mcp::protocol::ToolsListChangedNotificationMethod),
+          .params = Json::object(),
+      },
+      mcp::protocol::JsonRpcNotification{
+          .method =
+              std::string(mcp::protocol::PromptsListChangedNotificationMethod),
+          .params = Json::object(),
+      },
+      mcp::protocol::JsonRpcNotification{
+          .method = std::string(
+              mcp::protocol::ResourcesListChangedNotificationMethod),
+          .params = Json::object(),
+      },
+      mcp::protocol::JsonRpcNotification{
+          .method = std::string(mcp::protocol::ProgressNotificationMethod),
+          .params = mcp::protocol::progress_notification_params_to_json(
+              mcp::protocol::ProgressNotificationParams{
+                  .progress_token = std::int64_t{1},
+                  .progress = 0.5,
+              }),
+      },
+      mcp::protocol::JsonRpcNotification{
+          .method =
+              std::string(mcp::protocol::ResourcesUpdatedNotificationMethod),
+          .params = Json{{"uri", "file:///tmp/data.txt"}},
+      },
+  };
+
+  for (const auto& notification : notifications) {
+    require(server.handle_notification(notification, context).has_value(),
+            "contract notification dispatch failed");
+  }
+
+  const std::vector<std::string> expected = {
+      "roots:127.0.0.1",     "tools:session-1",    "prompts:session-1",
+      "resources:session-1", "progress:session-1", "updated:127.0.0.1"};
+  require(handler.events == expected,
+          "contract notification context events mismatch");
+}
+
 void test_server_notification_facade_round_trip() {
   auto server = make_server();
 
@@ -5192,6 +5295,8 @@ int main() {
        test_contract_handlers_override_client_and_server_requests},
       {"contract task handlers receive session context",
        test_contract_task_handlers_receive_session_context},
+      {"contract notification handlers receive session context",
+       test_contract_notification_handlers_receive_session_context},
       {"server notification facade round trip",
        test_server_notification_facade_round_trip},
       {"server notify facade broadcasts notifications",
