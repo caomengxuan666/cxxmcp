@@ -997,6 +997,88 @@ void test_server_direct_facade_round_trip() {
           "direct read_resource text mismatch");
 }
 
+void test_server_direct_facade_accepts_context_and_cancellation() {
+  auto make_context_server = [] {
+    mcp::server::Server server(mcp::server::ServerOptions{});
+
+    const auto tool_added = server.tools().add(
+        mcp::protocol::ToolDefinition{
+            .name = "ctx-tool",
+            .input_schema = Json::object(),
+        },
+        [](const mcp::server::ToolContext& context)
+            -> mcp::core::Result<mcp::protocol::ToolResult> {
+          return mcp::protocol::ToolResult::text(
+              context.session_id + ":" + context.remote_address + ":" +
+              (context.cancelled() ? "cancelled" : "open"));
+        });
+    require(tool_added.has_value(), "failed to register context tool");
+
+    const auto prompt_added = server.prompts().add(
+        mcp::protocol::Prompt{.name = "ctx-prompt"},
+        [](const mcp::server::PromptContext& context)
+            -> mcp::core::Result<mcp::protocol::PromptsGetResult> {
+          mcp::protocol::PromptsGetResult result;
+          result.messages.push_back(mcp::protocol::PromptMessage::text(
+              "assistant", context.session_id + ":" + context.remote_address +
+                               ":" +
+                               (context.cancelled() ? "cancelled" : "open")));
+          return result;
+        });
+    require(prompt_added.has_value(), "failed to register context prompt");
+
+    const auto resource_added = server.resources().add(
+        mcp::protocol::Resource{.uri = "file:///ctx.txt", .name = "ctx"},
+        [](const mcp::server::ResourceContext& context)
+            -> mcp::core::Result<mcp::protocol::ResourcesReadResult> {
+          mcp::protocol::ResourcesReadResult result;
+          result.contents.push_back(mcp::protocol::ResourceContents{
+              .uri = context.uri,
+              .mime_type = "text/plain",
+              .text = context.session_id + ":" + context.remote_address + ":" +
+                      (context.cancelled() ? "cancelled" : "open"),
+          });
+          return result;
+        });
+    require(resource_added.has_value(), "failed to register context resource");
+    return server;
+  };
+
+  mcp::server::SessionContext context{.session_id = "ctx-session",
+                                      .remote_address = "127.0.0.1"};
+  mcp::CancellationSource cancellation;
+  cancellation.cancel();
+
+  auto server = make_context_server();
+  const auto tool = server.call_tool("ctx-tool", Json::object(), context,
+                                     cancellation.token());
+  require(tool.has_value(), "context call_tool failed");
+  require(tool->content.front().text == "ctx-session:127.0.0.1:cancelled",
+          "context call_tool should pass full context and cancellation");
+
+  const auto prompt = server.get_prompt("ctx-prompt", Json::object(), context,
+                                        cancellation.token());
+  require(prompt.has_value(), "context get_prompt failed");
+  require(prompt->messages.front().content.text ==
+              "ctx-session:127.0.0.1:cancelled",
+          "context get_prompt should pass full context and cancellation");
+
+  const auto resource = server.read_resource("file:///ctx.txt", Json::object(),
+                                             context, cancellation.token());
+  require(resource.has_value(), "context read_resource failed");
+  require(resource->contents.front().text == "ctx-session:127.0.0.1:cancelled",
+          "context read_resource should pass full context and cancellation");
+
+  auto peer_server =
+      std::make_unique<mcp::server::Server>(make_context_server());
+  mcp::ServerPeer peer(std::move(peer_server));
+  const auto peer_tool =
+      peer.call_tool("ctx-tool", Json::object(), context, cancellation.token());
+  require(peer_tool.has_value(), "peer context call_tool failed");
+  require(peer_tool->content.front().text == "ctx-session:127.0.0.1:cancelled",
+          "peer context call_tool should pass context and cancellation");
+}
+
 void test_role_aware_peer_facades_forward_to_client_and_server() {
   auto transport = std::make_unique<RecordingTransport>();
   auto* recording = transport.get();
@@ -5757,6 +5839,8 @@ int main() {
       {"list tools round trip", test_list_tools_round_trip},
       {"get tool round trip", test_get_tool_round_trip},
       {"server direct facade round trip", test_server_direct_facade_round_trip},
+      {"server direct facade context and cancellation",
+       test_server_direct_facade_accepts_context_and_cancellation},
       {"role-aware peer facades",
        test_role_aware_peer_facades_forward_to_client_and_server},
       {"client peer typed async helpers", test_client_peer_typed_async_helpers},

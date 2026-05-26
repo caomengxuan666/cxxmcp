@@ -170,6 +170,16 @@ core::Result<protocol::ToolResult> Server::call_tool(
                      schema_validator_.get());
 }
 
+core::Result<protocol::ToolResult> Server::call_tool(
+    std::string_view name, protocol::Json arguments,
+    const SessionContext& context, CancellationToken cancellation) const {
+  protocol::ToolCall call;
+  call.name = std::string(name);
+  call.arguments = std::move(arguments);
+  return tools_.call(std::move(call), context, cancellation,
+                     schema_validator_.get());
+}
+
 Server& Server::use_task_manager(TaskOperationProcessorOptions options) {
   return use_task_manager(
       std::make_shared<TaskOperationProcessor>(std::move(options)));
@@ -207,6 +217,12 @@ core::Result<protocol::PromptsGetResult> Server::get_prompt(
   return prompts_.get(name, std::move(arguments), session_id);
 }
 
+core::Result<protocol::PromptsGetResult> Server::get_prompt(
+    std::string_view name, protocol::Json arguments,
+    const SessionContext& context, CancellationToken cancellation) const {
+  return prompts_.get(name, std::move(arguments), context, cancellation);
+}
+
 ResourceRegistry& Server::resources() noexcept { return resources_; }
 
 const ResourceRegistry& Server::resources() const noexcept {
@@ -221,6 +237,12 @@ core::Result<protocol::ResourcesReadResult> Server::read_resource(
     std::string_view uri, protocol::Json params,
     const std::string& session_id) const {
   return resources_.read(uri, std::move(params), session_id);
+}
+
+core::Result<protocol::ResourcesReadResult> Server::read_resource(
+    std::string_view uri, protocol::Json params, const SessionContext& context,
+    CancellationToken cancellation) const {
+  return resources_.read(uri, std::move(params), context, cancellation);
 }
 
 ResourceTemplateRegistry& Server::resource_templates() noexcept {

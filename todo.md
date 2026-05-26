@@ -624,6 +624,8 @@ true:
   completion, sampling, elicitation, and task handlers.
   - [x] Pass `SessionContext` through server and peer completion handlers.
   - [x] Pass `SessionContext` through server and peer sampling handlers.
+  - [x] Pass full `SessionContext` through direct server and server-peer tool,
+    prompt, and resource facades.
   - [x] Pass `SessionContext` through contract-style task handlers.
   - [x] Pass `SessionContext` through contract-style notification handlers.
 - [ ] Support cooperative cancellation token injection where meaningful.
@@ -633,6 +635,8 @@ true:
   - [x] Pass cancellation tokens into completion and sampling request handlers.
   - [x] Pass cancellation tokens into contract-style completion and sampling
     handlers.
+  - [x] Pass cancellation tokens through direct server and server-peer tool,
+    prompt, and resource facades.
 - [x] Keep `SchemaTraits<T>` and `schema_for<T>()` customization stable.
 - [x] Add optional JSON Schema validator integration.
 - [x] Validate tool input schemas where configured.

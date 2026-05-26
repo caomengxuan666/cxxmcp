@@ -2118,6 +2118,14 @@ class Peer<RoleServer> {
     return server_->call_tool(name, std::move(arguments), session_id);
   }
 
+  core::Result<protocol::ToolResult> call_tool(
+      std::string_view name, protocol::Json arguments,
+      const server::SessionContext& context,
+      CancellationToken cancellation = {}) const {
+    return server_->call_tool(name, std::move(arguments), context,
+                              cancellation);
+  }
+
   std::vector<protocol::Prompt> list_prompts() const {
     return server_->list_prompts();
   }
@@ -2129,6 +2137,14 @@ class Peer<RoleServer> {
     return server_->get_prompt(name, std::move(arguments), session_id);
   }
 
+  core::Result<protocol::PromptsGetResult> get_prompt(
+      std::string_view name, protocol::Json arguments,
+      const server::SessionContext& context,
+      CancellationToken cancellation = {}) const {
+    return server_->get_prompt(name, std::move(arguments), context,
+                               cancellation);
+  }
+
   std::vector<protocol::Resource> list_resources() const {
     return server_->list_resources();
   }
@@ -2137,6 +2153,14 @@ class Peer<RoleServer> {
       std::string_view uri, protocol::Json params = protocol::Json::object(),
       const std::string& session_id = {}) const {
     return server_->read_resource(uri, std::move(params), session_id);
+  }
+
+  core::Result<protocol::ResourcesReadResult> read_resource(
+      std::string_view uri, protocol::Json params,
+      const server::SessionContext& context,
+      CancellationToken cancellation = {}) const {
+    return server_->read_resource(uri, std::move(params), context,
+                                  cancellation);
   }
 
   std::vector<protocol::ResourceTemplate> list_resource_templates() const {
