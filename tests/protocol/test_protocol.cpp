@@ -2288,6 +2288,132 @@ void test_protocol_required_fields_are_rejected() {
       "elicitation result without action should fail");
 }
 
+void test_protocol_type_constraints_are_rejected() {
+  require_parse_failure(mcp::protocol::tool_definition_from_json(
+                            Json{{"name", 7}, {"inputSchema", Json::object()}}),
+                        "tool definition non-string name should fail");
+  require_parse_failure(mcp::protocol::tool_definition_from_json(
+                            Json{{"name", "tool"}, {"streaming", "yes"}}),
+                        "tool definition non-boolean streaming should fail");
+  require_parse_failure(mcp::protocol::tool_call_from_json(Json{
+                            {"name", "tool"}, {"arguments", Json::array()}}),
+                        "tools/call non-object arguments should fail");
+  require_parse_failure(
+      mcp::protocol::tool_result_from_json(Json{{"content", Json::object()}}),
+      "tool result non-array content should fail");
+
+  require_parse_failure(mcp::protocol::prompt_argument_from_json(
+                            Json{{"name", "arg"}, {"required", "true"}}),
+                        "prompt argument non-boolean required should fail");
+  require_parse_failure(mcp::protocol::prompt_from_json(Json{
+                            {"name", "prompt"}, {"arguments", Json::object()}}),
+                        "prompt non-array arguments should fail");
+  require_parse_failure(mcp::protocol::prompts_get_params_from_json(Json{
+                            {"name", "prompt"}, {"arguments", Json::array()}}),
+                        "prompts/get non-object arguments should fail");
+  require_parse_failure(mcp::protocol::prompt_message_from_json(
+                            Json{{"role", "user"}, {"content", "hello"}}),
+                        "prompt message invalid content should fail");
+
+  require_parse_failure(
+      mcp::protocol::resource_from_json(
+          Json{{"uri", "file:///a"}, {"name", "a"}, {"size", "big"}}),
+      "resource non-integer size should fail");
+  require_parse_failure(mcp::protocol::resource_template_from_json(
+                            Json{{"uriTemplate", 3}, {"name", "rt"}}),
+                        "resource template non-string uriTemplate should fail");
+  require_parse_failure(
+      mcp::protocol::resources_read_params_from_json(Json{{"uri", 3}}),
+      "resources/read non-string uri should fail");
+  require_parse_failure(mcp::protocol::resources_list_result_from_json(
+                            Json{{"resources", Json::object()}}),
+                        "resources/list non-array resources should fail");
+
+  require_parse_failure(mcp::protocol::root_from_json(
+                            Json{{"uri", "file:///workspace"}, {"name", 3}}),
+                        "root non-string name should fail");
+  require_parse_failure(mcp::protocol::roots_list_result_from_json(
+                            Json{{"roots", Json::object()}}),
+                        "roots/list non-array roots should fail");
+
+  require_parse_failure(mcp::protocol::completion_reference_from_json(
+                            Json{{"type", 7}, {"name", "prompt"}}),
+                        "completion ref non-string type should fail");
+  require_parse_failure(mcp::protocol::completion_argument_from_json(
+                            Json{{"name", "arg"}, {"value", 7}}),
+                        "completion argument non-string value should fail");
+  require_parse_failure(
+      mcp::protocol::complete_params_from_json(
+          Json{{"ref", Json{{"type", "ref/prompt"}, {"name", "prompt"}}},
+               {"argument", Json{{"name", "arg"}, {"value", "v"}}},
+               {"context", Json::array()}}),
+      "completion params non-object context should fail");
+
+  require_parse_failure(
+      mcp::protocol::logging_set_level_params_from_json(Json{{"level", 7}}),
+      "logging setLevel non-string level should fail");
+  require_parse_failure(mcp::protocol::logging_set_level_params_from_json(
+                            Json{{"level", "not-a-level"}}),
+                        "logging setLevel unsupported level should fail");
+
+  require_parse_failure(
+      mcp::protocol::sampling_message_from_json(Json{
+          {"role", 7}, {"content", Json{{"type", "text"}, {"text", "hi"}}}}),
+      "sampling message non-string role should fail");
+  require_parse_failure(mcp::protocol::create_message_params_from_json(Json{
+                            {"messages", Json::array()}, {"maxTokens", "64"}}),
+                        "sampling params non-integer maxTokens should fail");
+  require_parse_failure(mcp::protocol::model_preferences_from_json(
+                            Json{{"hints", Json::object()}}),
+                        "model preferences non-array hints should fail");
+  require_parse_failure(mcp::protocol::create_message_result_from_json(Json{
+                            {"role", "assistant"},
+                            {"content", Json{{"type", "text"}, {"text", "ok"}}},
+                            {"model", 7}}),
+                        "sampling result non-string model should fail");
+
+  require_parse_failure(mcp::protocol::task_from_json(
+                            Json{{"taskId", "task-1"},
+                                 {"status", "not-a-status"},
+                                 {"createdAt", "2025-01-01T00:00:00Z"},
+                                 {"lastUpdatedAt", "2025-01-01T00:00:01Z"}}),
+                        "task invalid status should fail");
+  require_parse_failure(mcp::protocol::task_from_json(
+                            Json{{"taskId", "task-1"},
+                                 {"status", "working"},
+                                 {"createdAt", "2025-01-01T00:00:00Z"},
+                                 {"lastUpdatedAt", "2025-01-01T00:00:01Z"},
+                                 {"ttl", "forever"}}),
+                        "task non-integer ttl should fail");
+  require_parse_failure(
+      mcp::protocol::task_list_params_from_json(Json{{"cursor", 7}}),
+      "tasks/list non-string cursor should fail");
+  require_parse_failure(mcp::protocol::task_list_result_from_json(
+                            Json{{"tasks", Json::object()}}),
+                        "tasks/list non-array tasks should fail");
+
+  require_parse_failure(
+      mcp::protocol::create_elicitation_request_param_from_json(
+          Json{{"message", "need input"},
+               {"mode", 7},
+               {"requestedSchema",
+                Json{{"type", "object"}, {"properties", Json::object()}}}}),
+      "elicitation request non-string mode should fail");
+  require_parse_failure(
+      mcp::protocol::create_elicitation_request_param_from_json(
+          Json{{"message", "need input"},
+               {"mode", "form"},
+               {"requestedSchema",
+                Json{{"type", "object"}, {"properties", Json::array()}}}}),
+      "elicitation schema non-object properties should fail");
+  require_parse_failure(
+      mcp::protocol::create_elicitation_result_from_json(Json{{"action", 7}}),
+      "elicitation result non-string action should fail");
+  require_parse_failure(mcp::protocol::create_elicitation_result_from_json(
+                            Json{{"action", "later"}}),
+                        "elicitation result unsupported action should fail");
+}
+
 }  // namespace
 
 int main() {
@@ -2327,6 +2453,8 @@ int main() {
       {"invalid messages are rejected", test_invalid_messages_are_rejected},
       {"protocol required fields are rejected",
        test_protocol_required_fields_are_rejected},
+      {"protocol type constraints are rejected",
+       test_protocol_type_constraints_are_rejected},
   };
 
   std::size_t failures = 0;

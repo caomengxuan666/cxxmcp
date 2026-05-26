@@ -464,6 +464,9 @@ true:
 - [x] Add cross-family required-field negative parse regression coverage for
   tools, prompts, resources, roots, completion, sampling, elicitation, and
   tasks.
+- [x] Add cross-family type-constraint negative parse regression coverage for
+  tools, prompts, resources, roots, completion, logging, sampling,
+  elicitation, and tasks.
 - [x] Keep helper constructors for common text-only flows.
 - [ ] Avoid bool-heavy shortcuts when the wire shape expects object presence.
 
