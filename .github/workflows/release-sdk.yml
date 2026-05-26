@@ -1,0 +1,88 @@
+name: release-sdk
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  sdk-source-release:
+    name: sdk-source-release
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Create SDK source archive
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          tag="${GITHUB_REF_NAME}"
+          package="cxxmcp-sdk-source-${tag}.tar.gz"
+          prefix="cxxmcp-sdk-${tag}"
+          mkdir -p release-artifacts
+
+          tar \
+            --exclude-vcs \
+            --exclude='./release-artifacts' \
+            --exclude='./docs/doxygen' \
+            --transform "s,^,${prefix}/," \
+            -czf "release-artifacts/${package}" \
+            CMakeLists.txt \
+            CMakePresets.json \
+            cmake \
+            sdk \
+            extensions \
+            examples \
+            tests \
+            docs \
+            third_party/tl \
+            third_party/jsonrpcpp \
+            third_party/nlohmann \
+            third_party/httplib/httplib.h \
+            third_party/spdlog \
+            README.md \
+            README_zh.md \
+            CHANGELOG.md \
+            LICENSE \
+            .clang-format \
+            .clang-tidy
+
+          (
+            cd release-artifacts
+            sha256sum "${package}" > SHA256SUMS.txt
+          )
+
+      - name: Publish GitHub release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+
+          tag="${GITHUB_REF_NAME}"
+          notes="SDK source release for ${tag}.
+
+This release intentionally publishes SDK source and checksums only. Runtime,
+gateway, CLI, and other tool binaries are not attached to this SDK release."
+
+          if gh release view "${tag}" >/dev/null 2>&1; then
+            gh release upload "${tag}" \
+              "release-artifacts/cxxmcp-sdk-source-${tag}.tar.gz" \
+              "release-artifacts/SHA256SUMS.txt" \
+              --clobber
+          else
+            gh release create "${tag}" \
+              "release-artifacts/cxxmcp-sdk-source-${tag}.tar.gz" \
+              "release-artifacts/SHA256SUMS.txt" \
+              --title "cxxmcp ${tag}" \
+              --notes "${notes}" \
+              --verify-tag
+          fi
