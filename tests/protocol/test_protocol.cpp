@@ -1155,6 +1155,46 @@ void test_client_capability_wire_shape() {
                   .at("listChanged") == false,
           "explicit false client roots listChanged should round trip");
 
+  const Json client_payload_json = Json{
+      {"roots", Json{{"listChanged", true}, {"futureRoot", Json{{"x", 1}}}}},
+      {"sampling", Json{{"tools", Json{{"maxCalls", 2}}},
+                        {"context", Json{{"scope", "workspace"}}},
+                        {"futureSampling", Json{{"enabled", true}}}}},
+      {"elicitation",
+       Json{{"form", Json{{"schemaValidation", false}, {"ui", "modal"}}},
+            {"url", Json{{"schemes", Json::array({"https"})}}},
+            {"futureElicitation", Json{{"enabled", true}}}}}};
+  const auto parsed_client_payload =
+      mcp::protocol::client_capabilities_from_json(client_payload_json);
+  require(parsed_client_payload.has_value(),
+          "client capability payload objects should parse");
+  const auto client_payload_round_trip =
+      mcp::protocol::client_capabilities_to_json(*parsed_client_payload);
+  require(client_payload_round_trip.at("roots").at("futureRoot").at("x") == 1,
+          "client roots capability payload should round trip");
+  require(
+      client_payload_round_trip.at("sampling").at("tools").at("maxCalls") == 2,
+      "client sampling tools payload should round trip");
+  require(client_payload_round_trip.at("sampling").at("context").at("scope") ==
+              "workspace",
+          "client sampling context payload should round trip");
+  require(client_payload_round_trip.at("sampling")
+              .at("futureSampling")
+              .at("enabled"),
+          "client sampling future payload should round trip");
+  require(client_payload_round_trip.at("elicitation")
+                  .at("form")
+                  .at("schemaValidation") == false,
+          "client elicitation schemaValidation false should round trip");
+  require(client_payload_round_trip.at("elicitation").at("form").at("ui") ==
+              "modal",
+          "client elicitation form payload should round trip");
+  require(client_payload_round_trip.at("elicitation")
+                  .at("url")
+                  .at("schemes")
+                  .front() == "https",
+          "client elicitation URL payload should round trip");
+
   capabilities.tasks = mcp::protocol::TaskCapabilities{};
   const auto with_empty_tasks =
       mcp::protocol::client_capabilities_to_json(capabilities);
@@ -1328,6 +1368,57 @@ void test_server_capability_wire_shape() {
           "explicit false server resources subscribe should round trip");
   require(false_server_json.at("prompts").at("listChanged") == false,
           "explicit false server prompts listChanged should round trip");
+
+  const Json server_payload_json = Json{
+      {"tools", Json{{"listChanged", true}, {"futureTool", Json{{"x", 1}}}}},
+      {"resources", Json{{"subscribe", true},
+                         {"listChanged", true},
+                         {"futureResource", Json{{"x", 2}}}}},
+      {"prompts",
+       Json{{"listChanged", true}, {"futurePrompt", Json{{"x", 3}}}}},
+      {"logging", Json{{"levelNames", Json::array({"debug", "info"})}}},
+      {"completions", Json{{"cache", true}}},
+      {"tasks",
+       Json{{"list", Json{{"cursor", true}}},
+            {"requests",
+             Json{{"tools", Json{{"call", Json{{"priority", "high"}}}}},
+                  {"futureRequest", Json{{"x", 4}}}}},
+            {"futureTask", Json{{"x", 5}}}}}};
+  const auto parsed_server_payload =
+      mcp::protocol::server_capabilities_from_json(server_payload_json);
+  require(parsed_server_payload.has_value(),
+          "server capability payload objects should parse");
+  const auto server_payload_round_trip =
+      mcp::protocol::server_capabilities_to_json(*parsed_server_payload);
+  require(server_payload_round_trip.at("tools").at("futureTool").at("x") == 1,
+          "server tools capability payload should round trip");
+  require(
+      server_payload_round_trip.at("resources").at("futureResource").at("x") ==
+          2,
+      "server resources capability payload should round trip");
+  require(
+      server_payload_round_trip.at("prompts").at("futurePrompt").at("x") == 3,
+      "server prompts capability payload should round trip");
+  require(server_payload_round_trip.at("logging").at("levelNames").front() ==
+              "debug",
+          "server logging payload should round trip");
+  require(server_payload_round_trip.at("completions").at("cache"),
+          "server completions payload should round trip");
+  require(server_payload_round_trip.at("tasks").at("list").at("cursor"),
+          "server task list payload should round trip");
+  require(server_payload_round_trip.at("tasks")
+                  .at("requests")
+                  .at("tools")
+                  .at("call")
+                  .at("priority") == "high",
+          "server task request payload should round trip");
+  require(server_payload_round_trip.at("tasks")
+                  .at("requests")
+                  .at("futureRequest")
+                  .at("x") == 4,
+          "server task request future payload should round trip");
+  require(server_payload_round_trip.at("tasks").at("futureTask").at("x") == 5,
+          "server task future payload should round trip");
 }
 
 void test_capability_builders_match_wire_shape() {

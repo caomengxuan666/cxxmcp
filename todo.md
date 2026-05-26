@@ -498,6 +498,8 @@ true:
   including explicit `false` round-trips for optional bool members and strict
   non-object rejection for client sampling, elicitation, roots, and task
   shapes.
+- [x] Preserve raw capability object payloads for RMCP `JsonObject` capability
+  members while keeping the existing convenience bool accessors.
 - [ ] Add negative parse tests for every required field and type constraint.
 - [x] Add cross-family required-field negative parse regression coverage for
   tools, prompts, resources, roots, completion, sampling, elicitation, and
@@ -521,6 +523,8 @@ true:
 - [x] Preserve explicit `false` for RMCP optional-bool capability members.
 - [x] Reject non-object capability families and non-boolean optional bool
   members instead of silently ignoring them.
+- [x] Preserve per-capability object payloads for future RMCP fields and
+  capability settings.
 - [x] Preserve experimental and extension bags.
 - [x] Reject invalid non-object experimental/extension bags where appropriate.
 - [x] Add tests for every capability serializer and parser.
