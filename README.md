@@ -35,6 +35,7 @@ Read this in [Chinese](README_zh.md).
 - [Quick Start](#quick-start)
 - [Package Targets](#package-targets)
 - [Protocol Boundary](#protocol-boundary)
+- [Capability Classification](#capability-classification)
 - [HTTP Transport Policy](#http-transport-policy)
 - [Compatibility Contract](#compatibility-contract)
 - [Examples](#examples)
@@ -351,6 +352,23 @@ force applications to implement task or elicitation handlers unless that
 milestone explicitly covers those capabilities. Capability negotiation and raw
 JSON-RPC escape hatches remain the compatibility path for partial or future
 feature support.
+
+## Capability Classification
+
+cxxmcp treats protocol capabilities as negotiated contracts, not as global
+feature promises. Once `initialize` capabilities are known, typed helpers fail
+locally with a protocol error instead of sending a method that the peer did not
+advertise. Raw JSON-RPC APIs remain available for vendor extensions and future
+protocol fields.
+
+| Classification | Capability families | SDK rule |
+|---|---|---|
+| Core protocol | initialize, initialized, ping, JSON-RPC errors, raw request/notification escape hatches, cancellation, progress, and the typed model/serialization layer | Always part of the SDK contract. These are not optional product features, though individual transports may still report transport-level failures. |
+| Core advertised server features | tools, prompts, resources, resource templates, completion, logging, resource subscribe/unsubscribe | Public typed helpers are stable. Helpers that depend on advertised server capabilities are gated after initialize. |
+| Core advertised client features | roots, sampling, elicitation, cancellation and progress callbacks | Public typed handlers/helpers are stable. Server-side `ClientPeer` helpers are gated by the connected client's negotiated capabilities. |
+| Optional task lifecycle | task-aware tool calls, task list/get/cancel/result, task status notifications, task request parameters on supported feature calls | Stable typed protocol models and helpers exist, but applications only need to implement them when they advertise or require task support. |
+| Optional advanced interaction | elicitation form/URL flows and sampling details beyond basic request handling | Stable typed helpers exist, but implementations should keep them capability-gated and document user-facing behavior. |
+| Experimental or vendor extension | `experimental`, `extensions`, unknown JSON members, and vendor-specific methods | Raw JSON is preserved where modeled. Semantics are not guaranteed as stable SDK behavior until promoted into a documented capability family. |
 
 ## Protocol Version Policy
 

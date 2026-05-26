@@ -488,7 +488,7 @@ true:
 - [x] Gate client-side `Client` and native `ClientPeer` completion, logging,
   resource subscription, task management, and task-aware tool helpers on
   negotiated server capabilities.
-- [ ] Document which capabilities are core, optional, or experimental.
+- [x] Document which capabilities are core, optional, or experimental.
 
 ## P1: Task Lifecycle
 
