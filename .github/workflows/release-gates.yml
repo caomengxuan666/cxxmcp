@@ -389,8 +389,13 @@ jobs:
             todo.md \
             release-evidence/
           cp \
+            docs/auth_design.md \
             docs/compatibility_policy.md \
             docs/dependency_policy.md \
+            docs/elicitation_lifecycle.md \
+            docs/official_sdk_candidate_process.md \
+            docs/package_consumption.md \
+            docs/package_consumption_zh.md \
             docs/protocol_model_audit.md \
             docs/release_process.md \
             docs/release_gates.md \
@@ -398,6 +403,7 @@ jobs:
             docs/release_notes_template.md \
             docs/request_lifecycle.md \
             docs/sdk_peer_service_migration.md \
+            docs/task_lifecycle.md \
             release-evidence/docs/
           cp examples/*.cpp examples/CMakeLists.txt release-evidence/examples/
           cp -r templates/external_consumer release-evidence/templates/

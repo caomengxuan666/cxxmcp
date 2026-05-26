@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import re
 from pathlib import Path
 
 
@@ -34,7 +35,19 @@ def require_file(path: Path) -> None:
         fail(f"missing required file: {path}")
 
 
+def project_version(source: Path) -> str:
+    cmake = read_text(source / "CMakeLists.txt")
+    match = re.search(
+        r"project\s*\(\s*cxxmcp\s+VERSION\s+([0-9]+(?:\.[0-9]+)*)",
+        cmake,
+    )
+    if not match:
+        fail("CMakeLists.txt must declare project(cxxmcp VERSION <version>)")
+    return match.group(1)
+
+
 def check_source_tree(source: Path) -> None:
+    version = project_version(source)
     required_files = [
         "README.md",
         "README_zh.md",
@@ -43,8 +56,13 @@ def check_source_tree(source: Path) -> None:
         "SECURITY.md",
         "CODE_OF_CONDUCT.md",
         "todo.md",
+        "docs/auth_design.md",
         "docs/compatibility_policy.md",
         "docs/dependency_policy.md",
+        "docs/elicitation_lifecycle.md",
+        "docs/official_sdk_candidate_process.md",
+        "docs/package_consumption.md",
+        "docs/package_consumption_zh.md",
         "docs/protocol_model_audit.md",
         "docs/release_process.md",
         "docs/release_gates.md",
@@ -52,6 +70,7 @@ def check_source_tree(source: Path) -> None:
         "docs/release_notes_template.md",
         "docs/request_lifecycle.md",
         "docs/sdk_peer_service_migration.md",
+        "docs/task_lifecycle.md",
         "docs/Doxyfile",
         "scripts/check_protocol_model_coverage.py",
         "scripts/run_clang_tidy.py",
@@ -71,9 +90,11 @@ def check_source_tree(source: Path) -> None:
         require_contains(path, "Service")
         require_contains(path, "Compatibility policy")
 
-    require_contains(source / "CHANGELOG.md", "Peer")
-    require_contains(source / "CHANGELOG.md", "Service")
-    require_not_contains(source / "CHANGELOG.md", "facade")
+    changelog = source / "CHANGELOG.md"
+    require_contains(changelog, f"## {version}")
+    require_contains(changelog, "Peer")
+    require_contains(changelog, "Service")
+    require_not_contains(changelog, "facade")
 
     compatibility = source / "docs/compatibility_policy.md"
     require_contains(compatibility, "canonical SDK path")
@@ -116,8 +137,11 @@ def check_source_tree(source: Path) -> None:
         require_contains(release_process, needle)
 
     doxygen = source / "docs/Doxyfile"
+    require_contains(doxygen, f"PROJECT_NUMBER         = {version}")
     require_contains(doxygen, 'PROJECT_BRIEF          = "C++ MCP SDK"')
+    require_contains(doxygen, "sdk/auth/include")
     require_contains(doxygen, "sdk/transport/include")
+    require_contains(doxygen, "MARKDOWN_ID_STYLE      = GITHUB")
     for forbidden in [
         "runtime/include",
         "runtime/observability/include",
@@ -176,8 +200,13 @@ def check_evidence_dir(evidence: Path) -> None:
         "CODE_OF_CONDUCT.md",
         "todo.md",
         "MANIFEST.txt",
+        "docs/auth_design.md",
         "docs/compatibility_policy.md",
         "docs/dependency_policy.md",
+        "docs/elicitation_lifecycle.md",
+        "docs/official_sdk_candidate_process.md",
+        "docs/package_consumption.md",
+        "docs/package_consumption_zh.md",
         "docs/protocol_model_audit.md",
         "docs/release_process.md",
         "docs/release_gates.md",
@@ -185,6 +214,7 @@ def check_evidence_dir(evidence: Path) -> None:
         "docs/release_notes_template.md",
         "docs/request_lifecycle.md",
         "docs/sdk_peer_service_migration.md",
+        "docs/task_lifecycle.md",
         "examples/CMakeLists.txt",
         "examples/server_peer.cpp",
         "examples/client_peer.cpp",
