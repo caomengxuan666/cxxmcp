@@ -589,21 +589,21 @@ true:
 
 ## P1: Error Model
 
-- [ ] Keep typed error model in the protocol/core layer.
-- [ ] Map parse errors to JSON-RPC parse errors.
+- [x] Keep typed error model in the protocol/core layer.
+- [x] Map parse errors to JSON-RPC parse errors.
 - [ ] Map invalid envelope and validation failures to invalid request or invalid
   params consistently.
-- [ ] Map unknown methods to method not found.
-- [ ] Map handler exceptions to internal errors with controlled diagnostics.
-- [ ] Map permission failures to permission denied.
-- [ ] Map rate-limit failures to rate limited.
-- [ ] Map missing resources to resource not found.
-- [ ] Map missing tools to tool not found.
-- [ ] Map elicitation URL requirements to the correct SDK/protocol error.
+- [x] Map unknown methods to method not found.
+- [x] Map handler exceptions to internal errors with controlled diagnostics.
+- [x] Map permission failures to permission denied.
+- [x] Map rate-limit failures to rate limited.
+- [x] Map missing resources to resource not found.
+- [x] Map missing tools to tool not found.
+- [x] Map elicitation URL requirements to the correct SDK/protocol error.
 - [ ] Ensure transport errors do not leak transport-library-specific details
   unless placed in structured debug data.
-- [ ] Add tests for every public error family.
-- [ ] Add tests that errors serialize as valid JSON-RPC error responses.
+- [x] Add tests for every public error family.
+- [x] Add tests that errors serialize as valid JSON-RPC error responses.
 - [ ] Add tests that raw handler failures are translated and not thrown through
   public APIs.
 

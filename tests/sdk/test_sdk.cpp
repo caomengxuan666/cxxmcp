@@ -2006,27 +2006,103 @@ void test_executor_rejects_empty_task() {
 }
 
 void test_public_error_helpers_assign_stable_categories() {
+  auto require_error_object = [](const mcp::core::Error& error,
+                                 mcp::protocol::ErrorCode code,
+                                 std::string_view message,
+                                 std::string_view detail) {
+    const auto object = mcp::errors::to_json_rpc_error(error);
+    require(object.code == static_cast<int>(code),
+            "json-rpc error code mismatch");
+    require(object.message == message, "json-rpc error message mismatch");
+    if (detail.empty()) {
+      require(!object.data.has_value(), "json-rpc error data mismatch");
+    } else {
+      require(object.data.has_value(), "json-rpc error data missing");
+      require(object.data->is_string(), "json-rpc error data type mismatch");
+      require(object.data->get<std::string>() == detail,
+              "json-rpc error data value mismatch");
+    }
+  };
+
   const auto parse = mcp::errors::parse("bad json");
   require(parse.category == "protocol", "parse category mismatch");
   require(parse.detail == "bad json", "parse detail mismatch");
+  require_error_object(parse, mcp::protocol::ErrorCode::ParseError,
+                       "parse error", "bad json");
+
+  const auto invalid_request = mcp::errors::invalid_request("missing method");
+  require(invalid_request.category == "protocol",
+          "invalid request category mismatch");
+  require_error_object(invalid_request,
+                       mcp::protocol::ErrorCode::InvalidRequest,
+                       "invalid request", "missing method");
+
+  const auto invalid_params = mcp::errors::invalid_params("bad params");
+  require(invalid_params.category == "protocol",
+          "invalid params category mismatch");
+  require_error_object(invalid_params, mcp::protocol::ErrorCode::InvalidParams,
+                       "invalid params", "bad params");
+
+  const auto method = mcp::errors::method_not_found("unknown/method");
+  require(method.category == "protocol", "method-not-found category mismatch");
+  require_error_object(method, mcp::protocol::ErrorCode::MethodNotFound,
+                       "method not found", "unknown/method");
+
+  const auto tool = mcp::errors::tool_not_found("missing_tool");
+  require(tool.category == "tool", "tool-not-found category mismatch");
+  require_error_object(tool, mcp::protocol::ErrorCode::ToolNotFound,
+                       "tool not found", "missing_tool");
+
+  const auto resource = mcp::errors::resource_not_found("file:///missing.txt");
+  require(resource.category == "resource",
+          "resource-not-found category mismatch");
+  require_error_object(resource, mcp::protocol::ErrorCode::ResourceNotFound,
+                       "resource not found", "file:///missing.txt");
+
+  const auto permission = mcp::errors::permission_denied("filesystem");
+  require(permission.category == "permission",
+          "permission-denied category mismatch");
+  require_error_object(permission, mcp::protocol::ErrorCode::PermissionDenied,
+                       "permission denied", "filesystem");
+
+  const auto limited = mcp::errors::rate_limited("tool quota");
+  require(limited.category == "rate_limit", "rate-limited category mismatch");
+  require_error_object(limited, mcp::protocol::ErrorCode::RateLimited,
+                       "rate limited", "tool quota");
+
+  const auto elicitation =
+      mcp::errors::url_elicitation_required("https://example.test/auth");
+  require(elicitation.category == "elicitation",
+          "url elicitation category mismatch");
+  require_error_object(elicitation,
+                       mcp::protocol::ErrorCode::UrlElicitationRequired,
+                       "url elicitation required", "https://example.test/auth");
 
   const auto handler = mcp::errors::handler_failed("boom");
   require(handler.category == "handler", "handler category mismatch");
   require(handler.message == "handler failed", "handler message mismatch");
+  require_error_object(handler, mcp::protocol::ErrorCode::InternalError,
+                       "handler failed", "boom");
 
   const auto closed = mcp::errors::transport_closed("stdio");
   require(closed.category == "transport", "transport category mismatch");
   require(closed.message == "transport closed",
           "transport closed message mismatch");
+  require_error_object(closed, mcp::protocol::ErrorCode::InvalidRequest,
+                       "transport closed", "stdio");
 
   const auto timed_out =
       mcp::errors::request_timed_out(std::chrono::milliseconds(25));
   require(timed_out.category == "timeout", "timeout category mismatch");
   require(timed_out.detail == "25ms", "timeout detail mismatch");
+  require_error_object(timed_out, mcp::protocol::ErrorCode::InternalError,
+                       "request timed out", "25ms");
 
   const auto cancelled = mcp::errors::request_cancelled();
   require(cancelled.category == "cancellation",
           "cancellation category mismatch");
+  require_error_object(cancelled, mcp::protocol::ErrorCode::InternalError,
+                       "request cancelled", "");
 }
 
 }  // namespace
