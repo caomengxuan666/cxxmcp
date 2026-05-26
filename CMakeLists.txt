@@ -199,7 +199,10 @@ if(MCP_ENABLE_CLIENT)
         ${CMAKE_CURRENT_SOURCE_DIR}/third_party/httplib
     )
     target_link_libraries(mcp_client
-        PUBLIC mcp_core mcp_protocol
+        PUBLIC
+            mcp_core
+            mcp_protocol
+            $<$<PLATFORM_ID:Windows>:ws2_32>
         PRIVATE Threads::Threads
     )
     cxxmcp_require_sdk_cxx(mcp_client)
@@ -223,7 +226,12 @@ if(MCP_ENABLE_SERVER)
     target_include_directories(mcp_server PRIVATE
         ${CMAKE_CURRENT_SOURCE_DIR}/third_party/httplib
     )
-    target_link_libraries(mcp_server PUBLIC mcp_core mcp_protocol)
+    target_link_libraries(mcp_server
+        PUBLIC
+            mcp_core
+            mcp_protocol
+            $<$<PLATFORM_ID:Windows>:ws2_32>
+    )
     cxxmcp_require_sdk_cxx(mcp_server)
 endif()
 

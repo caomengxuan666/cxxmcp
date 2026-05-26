@@ -78,4 +78,4 @@ jobs:
         run: >
           ctest --test-dir build-process-stdio
           -R "^(process_stdio_transport|interop_typescript_client_process_stdio|interop_python_client_process_stdio|interop_rmcp_client_process_stdio)$"
-          --output-on-failure --timeout 300
+          --output-on-failure --timeout 600

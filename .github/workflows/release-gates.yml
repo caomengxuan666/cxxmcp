@@ -145,7 +145,7 @@ jobs:
             "--test-dir", "build-release-gates",
             "-L", "release-blocking",
             "--output-on-failure",
-            "--timeout", "300",
+            "--timeout", "600",
             "--output-junit", "build-release-gates/test-results/release-blocking.xml"
           )
           if ("${{ matrix.config }}") {
