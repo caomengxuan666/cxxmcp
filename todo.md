@@ -804,16 +804,16 @@ true:
 
 ## P2: Security And Auth
 
-- [ ] Define HTTP auth extension points as SDK-level contracts.
-- [ ] Expose request auth context on the server side.
+- [x] Define HTTP auth extension points as SDK-level contracts.
+- [x] Expose request auth context on the server side.
 - [ ] Define bearer-token behavior for client helpers.
-- [ ] Define custom header behavior.
+- [x] Define custom header behavior.
 - [ ] Define challenge/error behavior for unauthorized HTTP requests.
-- [ ] Add scope/claims extension points.
+- [x] Add scope/claims extension points.
 - [ ] Add OAuth/resource-metadata integration points if required by the MCP
   snapshot.
 - [ ] Add tests for authorized and unauthorized HTTP requests.
-- [ ] Add tests for auth context reaching handlers.
+- [x] Add tests for auth context reaching handlers.
 - [ ] Document TLS/HTTPS support and build requirements.
 
 ## P2: Performance, Load, And Reliability

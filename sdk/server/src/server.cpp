@@ -307,7 +307,8 @@ void Server::cancel_request(const protocol::RequestId& request_id) noexcept {
 
 core::Result<protocol::JsonRpcResponse> Server::handle_request(
     const protocol::JsonRpcRequest& request,
-    const SessionContext& context) try {
+    const SessionContext& input_context) try {
+  SessionContext context = input_context;
   const auto request_cancellation = begin_request_cancellation(request.id);
   const std::shared_ptr<void> request_cancellation_cleanup(
       nullptr, [this, request_id = request.id](void*) noexcept {
@@ -316,6 +317,7 @@ core::Result<protocol::JsonRpcResponse> Server::handle_request(
 
   if (auth_provider_) {
     AuthRequest auth_request;
+    auth_request.headers = context.headers;
     auth_request.remote_address = context.remote_address;
     const auto identity = auth_provider_->authenticate(auth_request);
     if (!identity) {
@@ -323,6 +325,7 @@ core::Result<protocol::JsonRpcResponse> Server::handle_request(
           request, static_cast<int>(protocol::ErrorCode::PermissionDenied),
           "authentication failed", identity.error().message);
     }
+    context.auth_identity = *identity;
   }
 
   if (rate_limiter_) {

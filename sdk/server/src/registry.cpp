@@ -225,6 +225,8 @@ core::Result<protocol::ToolResult> ToolRegistry::call(
   ToolContext context;
   context.session_id = session_context.session_id;
   context.remote_address = session_context.remote_address;
+  context.headers = session_context.headers;
+  context.auth_identity = session_context.auth_identity;
   context.transport = session_context.transport;
   context.arguments = std::move(call.arguments);
   context.task = std::move(call.task);
@@ -328,6 +330,8 @@ core::Result<protocol::PromptsGetResult> PromptRegistry::get(
   PromptContext context;
   context.session_id = session_context.session_id;
   context.remote_address = session_context.remote_address;
+  context.headers = session_context.headers;
+  context.auth_identity = session_context.auth_identity;
   context.transport = session_context.transport;
   context.arguments = std::move(arguments);
   context.cancellation = std::move(cancellation);
@@ -416,6 +420,8 @@ core::Result<protocol::ResourcesReadResult> ResourceRegistry::read(
   ResourceContext context;
   context.session_id = session_context.session_id;
   context.remote_address = session_context.remote_address;
+  context.headers = session_context.headers;
+  context.auth_identity = session_context.auth_identity;
   context.transport = session_context.transport;
   context.uri = std::string(uri);
   context.params = std::move(params);

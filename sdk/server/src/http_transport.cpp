@@ -42,6 +42,15 @@ core::Error make_transport_error(int code, std::string message,
   return core::Error{code, std::move(message), std::move(detail), "transport"};
 }
 
+std::unordered_map<std::string, std::string> copy_request_headers(
+    const httplib::Request& request) {
+  std::unordered_map<std::string, std::string> headers;
+  for (const auto& header : request.headers) {
+    headers.emplace(header.first, header.second);
+  }
+  return headers;
+}
+
 std::optional<protocol::RequestId> request_id_from_message(
     const protocol::JsonRpcMessage& message) {
   if (const auto* request = std::get_if<protocol::JsonRpcRequest>(&message)) {
@@ -413,6 +422,7 @@ core::Result<core::Unit> HttpTransport::start(
         SessionContext context;
         context.session_id = active_session_id;
         context.remote_address = request.remote_addr;
+        context.headers = copy_request_headers(request);
         context.transport = this;
         core::Result<core::Unit> handled;
         try {
@@ -521,6 +531,7 @@ core::Result<core::Unit> HttpTransport::start(
     SessionContext context;
     context.session_id = session_context_id;
     context.remote_address = request.remote_addr;
+    context.headers = copy_request_headers(request);
     context.transport = this;
     core::Result<protocol::JsonRpcResponse> rpc_response;
     try {

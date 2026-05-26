@@ -1750,6 +1750,78 @@ void test_server_http_transport_accepts_client_notification_with_202() {
   server_transport.transport().stop();
 }
 
+void test_server_http_transport_copies_headers_to_session_context() {
+  constexpr int kPort = 40220;
+  const std::string kPath = "/mcp";
+  std::string observed_authorization;
+  std::string observed_tenant;
+
+  RunningServerTransportFixture server_transport(
+      std::make_unique<mcp::server::HttpTransport>(
+          mcp::server::HttpTransportOptions{
+              .listen_host = "127.0.0.1",
+              .listen_port = kPort,
+              .path = kPath,
+          }),
+      [&](const mcp::protocol::JsonRpcRequest& request,
+          const mcp::server::SessionContext& context) {
+        observed_authorization = context.headers.at("Authorization");
+        observed_tenant = context.headers.at("X-Tenant");
+        if (request.method == mcp::protocol::InitializeMethod) {
+          return mcp::protocol::JsonRpcResponse{
+              .id = request.id,
+              .result =
+                  Json{
+                      {"protocolVersion",
+                       std::string(mcp::protocol::McpProtocolVersion)},
+                      {"capabilities", Json::object()},
+                      {"serverInfo",
+                       Json{{"name", "server-http-test"}, {"version", "1"}}},
+                  },
+          };
+        }
+        return mcp::protocol::make_error_response(
+            std::optional<mcp::protocol::RequestId>{request.id},
+            mcp::protocol::make_error(mcp::protocol::ErrorCode::MethodNotFound,
+                                      "unexpected request"));
+      });
+
+  require(!server_transport.start_error().has_value(),
+          "server transport should start");
+
+  httplib::Client http_client("127.0.0.1", kPort);
+  httplib::Result response;
+  for (int attempt = 0; attempt < 100; ++attempt) {
+    response = http_client.Post(
+        kPath,
+        httplib::Headers{
+            {"Accept", "application/json"},
+            {"Content-Type", "application/json"},
+            {"Mcp-Method", std::string(mcp::protocol::InitializeMethod)},
+            {"Authorization", "Bearer header-token"},
+            {"X-Tenant", "tenant-a"},
+        },
+        serialize_test_request(mcp::protocol::JsonRpcRequest{
+            .method = std::string(mcp::protocol::InitializeMethod),
+            .params = Json::object(),
+            .id = std::int64_t{1},
+        }),
+        "application/json");
+    if (response) {
+      break;
+    }
+    std::this_thread::sleep_for(std::chrono::milliseconds(25));
+  }
+  require(static_cast<bool>(response), "initialize should succeed");
+  require(response->status == 200, "initialize status should be 200");
+  require(observed_authorization == "Bearer header-token",
+          "session context authorization header mismatch");
+  require(observed_tenant == "tenant-a",
+          "session context custom header mismatch");
+
+  server_transport.transport().stop();
+}
+
 void test_server_http_transport_rejects_mismatched_origin_when_allowlisted() {
   constexpr int kPort = 40177;
   const std::string kPath = "/mcp";
@@ -3220,6 +3292,8 @@ int main() {
        test_server_http_transport_emits_sse_retry_priming},
       {"server http transport accepts client notification with 202",
        test_server_http_transport_accepts_client_notification_with_202},
+      {"server http transport copies headers to session context",
+       test_server_http_transport_copies_headers_to_session_context},
       {"server http transport rejects mismatched origin when allowlisted",
        test_server_http_transport_rejects_mismatched_origin_when_allowlisted},
       {"server http transport can request client",

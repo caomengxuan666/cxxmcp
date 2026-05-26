@@ -1079,6 +1079,73 @@ void test_server_direct_facade_accepts_context_and_cancellation() {
           "peer context call_tool should pass context and cancellation");
 }
 
+void test_server_auth_provider_receives_headers_and_sets_identity() {
+  class HeaderAuthProvider final : public mcp::server::AuthProvider {
+   public:
+    mcp::core::Result<mcp::server::AuthIdentity> authenticate(
+        const mcp::server::AuthRequest& request) override {
+      remote_address = request.remote_address;
+      const auto authorization = request.headers.find("Authorization");
+      if (authorization == request.headers.end() ||
+          authorization->second != "Bearer test-token") {
+        return std::unexpected(mcp::core::Error{
+            static_cast<int>(mcp::protocol::ErrorCode::PermissionDenied),
+            "missing bearer token",
+            {},
+        });
+      }
+      mcp::server::AuthIdentity identity;
+      identity.subject = "subject-1";
+      identity.claims.emplace("scope", "tools:call");
+      return identity;
+    }
+
+    std::string remote_address;
+  };
+
+  mcp::server::Server server(mcp::server::ServerOptions{});
+  auto provider = std::make_unique<HeaderAuthProvider>();
+  auto* provider_ptr = provider.get();
+  server.set_auth_provider(std::move(provider));
+
+  const auto added = server.tools().add(
+      mcp::protocol::ToolDefinition{
+          .name = "whoami",
+          .input_schema = Json::object(),
+      },
+      [](const mcp::server::ToolContext& context)
+          -> mcp::core::Result<mcp::protocol::ToolResult> {
+        require(context.auth_identity.has_value(),
+                "tool context should contain auth identity");
+        require(context.auth_identity->claims.at("scope") == "tools:call",
+                "tool context auth claim mismatch");
+        return mcp::protocol::ToolResult::text(context.auth_identity->subject);
+      });
+  require(added.has_value(), "failed to register auth tool");
+
+  mcp::server::SessionContext context{
+      .session_id = "auth-session",
+      .remote_address = "127.0.0.1",
+      .headers = {{"Authorization", "Bearer test-token"}},
+  };
+
+  const auto response = server.handle_request(
+      mcp::protocol::JsonRpcRequest{
+          .method = std::string(mcp::protocol::ToolsCallMethod),
+          .params = mcp::protocol::tool_call_to_json(mcp::protocol::ToolCall{
+              .name = "whoami",
+              .arguments = Json::object(),
+          }),
+          .id = std::int64_t{91},
+      },
+      context);
+  require(response.has_value(), "authenticated tool call failed");
+  require(response->result->at("content").at(0).at("text") == "subject-1",
+          "authenticated tool result mismatch");
+  require(provider_ptr->remote_address == "127.0.0.1",
+          "auth provider remote address mismatch");
+}
+
 void test_role_aware_peer_facades_forward_to_client_and_server() {
   auto transport = std::make_unique<RecordingTransport>();
   auto* recording = transport.get();
@@ -5841,6 +5908,8 @@ int main() {
       {"server direct facade round trip", test_server_direct_facade_round_trip},
       {"server direct facade context and cancellation",
        test_server_direct_facade_accepts_context_and_cancellation},
+      {"server auth provider receives headers and sets identity",
+       test_server_auth_provider_receives_headers_and_sets_identity},
       {"role-aware peer facades",
        test_role_aware_peer_facades_forward_to_client_and_server},
       {"client peer typed async helpers", test_client_peer_typed_async_helpers},
