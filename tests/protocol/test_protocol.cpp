@@ -2341,7 +2341,7 @@ void test_protocol_extension_round_trips() {
       mcp::protocol::tools_list_result_to_json(*tools_list).at("x-tools-list"),
       "tools/list extension should serialize");
 
-  const Json content_json = Json{{"type", "custom_block"},
+  const Json content_json = Json{{"type", "text"},
                                  {"text", "fallback"},
                                  {"x-payload", Json{{"value", 7}}}};
   const auto content = mcp::protocol::content_block_from_json(content_json);
@@ -2942,6 +2942,23 @@ void test_protocol_type_constraints_are_rejected() {
   require_parse_failure(
       mcp::protocol::tool_result_from_json(Json{{"isError", "false"}}),
       "tool result non-boolean isError should fail");
+  require_parse_failure(
+      mcp::protocol::content_block_from_json(Json{{"text", "missing type"}}),
+      "content block without type should fail");
+  require_parse_failure(mcp::protocol::content_block_from_json(
+                            Json{{"type", "unknown"}, {"text", "value"}}),
+                        "content block unknown type should fail");
+  require_parse_failure(
+      mcp::protocol::content_block_from_json(Json{{"type", "text"}}),
+      "text content block without text should fail");
+  require_parse_failure(
+      mcp::protocol::content_block_from_json(Json{
+          {"type", "text"}, {"text", "value"}, {"annotations", Json::array()}}),
+      "content block non-object annotations should fail");
+  require_parse_failure(
+      mcp::protocol::content_block_from_json(
+          Json{{"type", "text"}, {"text", "value"}, {"_meta", Json::array()}}),
+      "content block non-object meta should fail");
 
   require_parse_failure(mcp::protocol::implementation_info_from_json(
                             Json{{"name", 7}, {"version", "1.0.0"}}),

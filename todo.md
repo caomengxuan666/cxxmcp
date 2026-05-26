@@ -484,6 +484,8 @@ true:
 - [x] Tighten tool definition schema presence and optional field wire behavior:
   required object `inputSchema`, explicit `outputSchema` presence, optional
   `description`, and no default `streaming=false` emission.
+- [x] Tighten content block parsing to RMCP tagged-union behavior with required
+  supported `type` values and object-only annotations/meta.
 - [ ] Add negative parse tests for every required field and type constraint.
 - [x] Add cross-family required-field negative parse regression coverage for
   tools, prompts, resources, roots, completion, sampling, elicitation, and

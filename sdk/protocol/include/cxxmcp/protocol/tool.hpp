@@ -463,13 +463,11 @@ inline core::Result<ContentBlock> content_block_from_json(const Json& json) {
   }
 
   ContentBlock block;
-  if (json.contains("type")) {
-    if (!json.at("type").is_string()) {
-      return std::unexpected(
-          tool_json_error("content block type must be a string"));
-    }
-    block.type = json.at("type").get<std::string>();
+  if (!json.contains("type") || !json.at("type").is_string()) {
+    return std::unexpected(
+        tool_json_error("content block requires a string type"));
   }
+  block.type = json.at("type").get<std::string>();
 
   if (block.type == "image" || block.type == "audio") {
     const auto data = required_content_string(
@@ -501,32 +499,30 @@ inline core::Result<ContentBlock> content_block_from_json(const Json& json) {
       return std::unexpected(resource.error());
     }
     block.resource_link = *resource;
+  } else if (block.type == "text") {
+    const auto text = required_content_string(
+        json, "text", "text content block requires string text");
+    if (!text) {
+      return std::unexpected(text.error());
+    }
+    block.text = *text;
   } else {
-    if (json.contains("text")) {
-      if (!json.at("text").is_string()) {
-        return std::unexpected(
-            tool_json_error("content block text must be a string"));
-      }
-      block.text = json.at("text").get<std::string>();
-    }
-
-    if (json.contains("data")) {
-      block.data = json.at("data");
-    }
-
-    if (json.contains("mimeType")) {
-      if (!json.at("mimeType").is_string()) {
-        return std::unexpected(
-            tool_json_error("content block mimeType must be a string"));
-      }
-      block.mime_type = json.at("mimeType").get<std::string>();
-    }
+    return std::unexpected(
+        tool_json_error("content block type is not supported"));
   }
 
   if (json.contains("annotations")) {
+    if (!json.at("annotations").is_object()) {
+      return std::unexpected(
+          tool_json_error("content block annotations must be an object"));
+    }
     block.annotations = json.at("annotations");
   }
   if (json.contains("_meta")) {
+    if (!json.at("_meta").is_object()) {
+      return std::unexpected(
+          tool_json_error("content block _meta must be an object"));
+    }
     block.meta = json.at("_meta");
   }
   block.extensions = collect_json_extensions(
