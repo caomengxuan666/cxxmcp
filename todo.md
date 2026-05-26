@@ -470,6 +470,8 @@ true:
   completion value/total constraints.
 - [x] Align `tools/call` result `isError` with RMCP optional-bool semantics and
   reject empty untagged tool-result objects.
+- [x] Enforce RMCP sampling role/includeContext enums plus SEP-1577
+  tool_use/tool_result role and balance constraints.
 - [ ] Add negative parse tests for every required field and type constraint.
 - [x] Add cross-family required-field negative parse regression coverage for
   tools, prompts, resources, roots, completion, sampling, elicitation, and

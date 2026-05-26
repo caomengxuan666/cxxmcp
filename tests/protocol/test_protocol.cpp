@@ -2165,13 +2165,17 @@ void test_protocol_extension_round_trips() {
 
   const Json sampling_json = Json{
       {"messages",
-       Json::array({Json{{"role", "user"},
+       Json::array({Json{{"role", "assistant"},
                          {"content", Json{{"type", "tool_use"},
                                           {"id", "tool-use-1"},
                                           {"name", "lookup"},
                                           {"input", Json{{"query", "weather"}}},
                                           {"x-tool-use", true}}},
-                         {"x-message", "sample"}}})},
+                         {"x-message", "sample"}},
+                    Json{{"role", "user"},
+                         {"content", Json{{"type", "tool_result"},
+                                          {"toolUseId", "tool-use-1"},
+                                          {"content", Json::array()}}}}})},
       {"maxTokens", 64},
       {"modelPreferences",
        Json{{"hints", Json::array({Json{{"name", "model-a"}, {"x-hint", 1}}})},
@@ -2703,9 +2707,23 @@ void test_protocol_type_constraints_are_rejected() {
       mcp::protocol::sampling_message_from_json(Json{
           {"role", 7}, {"content", Json{{"type", "text"}, {"text", "hi"}}}}),
       "sampling message non-string role should fail");
+  require_parse_failure(
+      mcp::protocol::sampling_message_from_json(
+          Json{{"role", "system"},
+               {"content", Json{{"type", "text"}, {"text", "hi"}}}}),
+      "sampling message unsupported role should fail");
   require_parse_failure(mcp::protocol::create_message_params_from_json(Json{
                             {"messages", Json::array()}, {"maxTokens", "64"}}),
                         "sampling params non-integer maxTokens should fail");
+  require_parse_failure(
+      mcp::protocol::create_message_params_from_json(Json{
+          {"messages",
+           Json::array({Json{
+               {"role", "user"},
+               {"content", Json{{"type", "text"}, {"text", "sample me"}}}}})},
+          {"maxTokens", 64},
+          {"includeContext", "unknown"}}),
+      "sampling params unsupported includeContext should fail");
   require_parse_failure(mcp::protocol::model_preferences_from_json(
                             Json{{"hints", Json::object()}}),
                         "model preferences non-array hints should fail");
@@ -2731,11 +2749,57 @@ void test_protocol_type_constraints_are_rejected() {
                {"toolUseId", "use-1"},
                {"structuredContent", Json::array()}}),
       "tool_result content non-object structuredContent should fail");
+  require_parse_failure(
+      mcp::protocol::create_message_params_from_json(Json{
+          {"messages",
+           Json::array({Json{{"role", "user"},
+                             {"content", Json{{"type", "tool_use"},
+                                              {"id", "tool-use-1"},
+                                              {"name", "lookup"},
+                                              {"input", Json::object()}}}}})},
+          {"maxTokens", 64}}),
+      "sampling user tool_use should fail");
+  require_parse_failure(
+      mcp::protocol::create_message_params_from_json(Json{
+          {"messages",
+           Json::array({Json{{"role", "assistant"},
+                             {"content", Json{{"type", "tool_result"},
+                                              {"toolUseId", "tool-use-1"},
+                                              {"content", Json::array()}}}}})},
+          {"maxTokens", 64}}),
+      "sampling assistant tool_result should fail");
+  require_parse_failure(
+      mcp::protocol::create_message_params_from_json(Json{
+          {"messages",
+           Json::array({Json{{"role", "assistant"},
+                             {"content", Json{{"type", "tool_use"},
+                                              {"id", "tool-use-1"},
+                                              {"name", "lookup"},
+                                              {"input", Json::object()}}}}})},
+          {"maxTokens", 64}}),
+      "sampling unmatched tool_use should fail");
+  require_parse_failure(
+      mcp::protocol::create_message_params_from_json(Json{
+          {"messages",
+           Json::array({Json{
+               {"role", "user"},
+               {"content",
+                Json::array({Json{{"type", "tool_result"},
+                                  {"toolUseId", "tool-use-1"},
+                                  {"content", Json::array()}},
+                             Json{{"type", "text"}, {"text", "extra"}}})}}})},
+          {"maxTokens", 64}}),
+      "sampling mixed tool_result content should fail");
   require_parse_failure(mcp::protocol::create_message_result_from_json(Json{
                             {"role", "assistant"},
                             {"content", Json{{"type", "text"}, {"text", "ok"}}},
                             {"model", 7}}),
                         "sampling result non-string model should fail");
+  require_parse_failure(mcp::protocol::create_message_result_from_json(Json{
+                            {"role", "user"},
+                            {"content", Json{{"type", "text"}, {"text", "no"}}},
+                            {"model", "model-1"}}),
+                        "sampling result non-assistant role should fail");
 
   require_parse_failure(mcp::protocol::task_from_json(
                             Json{{"taskId", "task-1"},

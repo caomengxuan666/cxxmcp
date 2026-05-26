@@ -10,8 +10,10 @@
 /// optional model preferences, and generation controls; the response carries
 /// one generated message and the model that produced it.
 
+#include <algorithm>
 #include <optional>
 #include <string>
+#include <string_view>
 #include <utility>
 #include <vector>
 
@@ -235,6 +237,77 @@ struct CreateMessageResult {
 inline core::Error sampling_json_error(std::string message) {
   return core::Error{
       static_cast<int>(ErrorCode::InvalidRequest), std::move(message), {}};
+}
+
+/// @brief Returns true for the MCP sampling message roles.
+inline bool sampling_role_is_valid(std::string_view role) noexcept {
+  return role == "user" || role == "assistant";
+}
+
+/// @brief Returns true for the MCP sampling includeContext values.
+inline bool sampling_include_context_is_valid(std::string_view value) noexcept {
+  return value == "allServers" || value == "none" || value == "thisServer";
+}
+
+/// @brief Validates SEP-1577 tool-use/tool-result placement for one message.
+inline core::Result<core::Unit> validate_sampling_message_content_roles(
+    const SamplingMessage& message) {
+  bool has_tool_result = false;
+  bool has_non_tool_result = false;
+  for (const auto& content : message.contents) {
+    if (content.is_tool_use() && message.role != "assistant") {
+      return std::unexpected(sampling_json_error(
+          "sampling tool_use content is only allowed in assistant messages"));
+    }
+    if (content.is_tool_result() && message.role != "user") {
+      return std::unexpected(sampling_json_error(
+          "sampling tool_result content is only allowed in user messages"));
+    }
+    has_tool_result = has_tool_result || content.is_tool_result();
+    has_non_tool_result = has_non_tool_result || !content.is_tool_result();
+  }
+  if (has_tool_result && has_non_tool_result) {
+    return std::unexpected(sampling_json_error(
+        "sampling tool_result messages must not mix other content types"));
+  }
+  return core::Unit{};
+}
+
+/// @brief Validates that every sampling tool result answers a prior tool use.
+inline core::Result<core::Unit> validate_sampling_tool_use_result_balance(
+    const std::vector<SamplingMessage>& messages) {
+  std::vector<std::string> pending_tool_use_ids;
+  for (const auto& message : messages) {
+    if (message.role == "assistant") {
+      for (const auto& content : message.contents) {
+        if (content.tool_use.has_value()) {
+          pending_tool_use_ids.push_back(content.tool_use->id);
+        }
+      }
+      continue;
+    }
+    if (message.role != "user") {
+      continue;
+    }
+    for (const auto& content : message.contents) {
+      if (!content.tool_result.has_value()) {
+        continue;
+      }
+      const auto found =
+          std::find(pending_tool_use_ids.begin(), pending_tool_use_ids.end(),
+                    content.tool_result->tool_use_id);
+      if (found == pending_tool_use_ids.end()) {
+        return std::unexpected(sampling_json_error(
+            "sampling tool_result content has no matching tool_use"));
+      }
+      pending_tool_use_ids.erase(found);
+    }
+  }
+  if (!pending_tool_use_ids.empty()) {
+    return std::unexpected(sampling_json_error(
+        "sampling tool_use content is missing a matching tool_result"));
+  }
+  return core::Unit{};
 }
 
 /// @brief Converts a tool-choice mode to the lowercase wire value.
@@ -506,6 +579,10 @@ inline core::Result<SamplingMessage> sampling_message_from_json(
   }
   SamplingMessage message;
   message.role = json.at("role").get<std::string>();
+  if (!sampling_role_is_valid(message.role)) {
+    return std::unexpected(
+        sampling_json_error("sampling message role is not supported"));
+  }
   if (json.at("content").is_array()) {
     for (const auto& item : json.at("content")) {
       const auto content = sampling_message_content_from_json(item);
@@ -533,6 +610,10 @@ inline core::Result<SamplingMessage> sampling_message_from_json(
   }
   message.extensions =
       collect_json_extensions(json, {"role", "content", "_meta"});
+  if (const auto valid = validate_sampling_message_content_roles(message);
+      !valid) {
+    return std::unexpected(valid.error());
+  }
   return message;
 }
 
@@ -733,6 +814,10 @@ inline core::Result<CreateMessageParams> create_message_params_from_json(
           sampling_json_error("sampling includeContext must be a string"));
     }
     params.include_context = json.at("includeContext").get<std::string>();
+    if (!sampling_include_context_is_valid(*params.include_context)) {
+      return std::unexpected(
+          sampling_json_error("sampling includeContext is not supported"));
+    }
   }
   if (json.contains("temperature")) {
     if (!json.at("temperature").is_number()) {
@@ -800,6 +885,11 @@ inline core::Result<CreateMessageParams> create_message_params_from_json(
       json, {"messages", "modelPreferences", "systemPrompt", "includeContext",
              "temperature", "maxTokens", "stopSequences", "metadata", "task",
              "_meta", "tools", "toolChoice"});
+  if (const auto valid =
+          validate_sampling_tool_use_result_balance(params.messages);
+      !valid) {
+    return std::unexpected(valid.error());
+  }
   return params;
 }
 
@@ -853,6 +943,10 @@ inline core::Result<CreateMessageResult> create_message_result_from_json(
   }
   CreateMessageResult result;
   result.role = json.at("role").get<std::string>();
+  if (result.role != "assistant") {
+    return std::unexpected(sampling_json_error(
+        "sampling/createMessage result role must be assistant"));
+  }
   if (json.at("content").is_array()) {
     for (const auto& item : json.at("content")) {
       const auto content = sampling_message_content_from_json(item);
@@ -888,6 +982,14 @@ inline core::Result<CreateMessageResult> create_message_result_from_json(
   }
   result.extensions = collect_json_extensions(
       json, {"role", "content", "model", "stopReason", "_meta"});
+  SamplingMessage result_message;
+  result_message.role = result.role;
+  result_message.contents = result.contents;
+  if (const auto valid =
+          validate_sampling_message_content_roles(result_message);
+      !valid) {
+    return std::unexpected(valid.error());
+  }
   return result;
 }
 
