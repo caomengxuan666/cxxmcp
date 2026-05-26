@@ -460,6 +460,9 @@ true:
   understand it.
 - [ ] Make serialization/deserialization exhaustive and symmetric.
 - [x] Add round-trip fixture tests for every protocol family.
+- [x] Add typed initialize payload models for implementation info,
+  initialize params, and initialize result, aligned with RMCP initialize
+  payload shape.
 - [ ] Add negative parse tests for every required field and type constraint.
 - [x] Add cross-family required-field negative parse regression coverage for
   tools, prompts, resources, roots, completion, sampling, elicitation, and

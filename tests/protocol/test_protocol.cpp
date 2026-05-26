@@ -11,6 +11,7 @@
 #include "cxxmcp/protocol/capabilities.hpp"
 #include "cxxmcp/protocol/completion.hpp"
 #include "cxxmcp/protocol/elicitation.hpp"
+#include "cxxmcp/protocol/initialize.hpp"
 #include "cxxmcp/protocol/logging.hpp"
 #include "cxxmcp/protocol/prompt.hpp"
 #include "cxxmcp/protocol/resource.hpp"
@@ -92,6 +93,24 @@ void test_initialize_request_round_trip() {
   require(request->method == mcp::protocol::InitializeMethod,
           "initialize method mismatch");
   require(std::get<std::int64_t>(request->id) == 1, "initialize id mismatch");
+  const auto initialize_params =
+      mcp::protocol::initialize_params_from_json(request->params);
+  require(initialize_params.has_value(), "initialize params should parse");
+  require(initialize_params->protocol_version == "2024-11-05",
+          "initialize params protocol version mismatch");
+  require(initialize_params->client_info.name == "mcp-protocol-test",
+          "initialize client info name mismatch");
+  require(initialize_params->capabilities.roots.enabled,
+          "initialize roots capability missing");
+  const auto canonical_params =
+      mcp::protocol::initialize_params_to_json(*initialize_params);
+  const auto reparsed_params =
+      mcp::protocol::initialize_params_from_json(canonical_params);
+  require(reparsed_params.has_value(),
+          "canonical initialize params should parse");
+  require(mcp::protocol::initialize_params_to_json(*reparsed_params) ==
+              canonical_params,
+          "canonical initialize params typed round-trip mismatch");
 
   const auto serialized = mcp::protocol::serialize_message(*parsed);
   require(serialized.has_value(), "initialize request should serialize");
@@ -124,6 +143,57 @@ void test_initialized_notification_round_trip() {
   const auto constructed = mcp::protocol::make_initialized_notification();
   require(constructed.method == "notifications/initialized",
           "constructed initialized method mismatch");
+}
+
+void test_initialize_payload_models_round_trip() {
+  mcp::protocol::ImplementationInfo client_info;
+  client_info.name = "cxxmcp-client";
+  client_info.version = "1.2.3";
+  client_info.meta = Json{{"traceId", "client-init"}};
+  client_info.extensions = Json{{"x-client", true}};
+  const auto client_info_json =
+      mcp::protocol::implementation_info_to_json(client_info);
+  const auto parsed_client_info =
+      mcp::protocol::implementation_info_from_json(client_info_json);
+  require(parsed_client_info.has_value(), "implementation info should parse");
+  require(mcp::protocol::implementation_info_to_json(*parsed_client_info) ==
+              client_info_json,
+          "implementation info round-trip mismatch");
+
+  mcp::protocol::InitializeParams params;
+  params.protocol_version = std::string(mcp::protocol::McpProtocolVersion);
+  params.capabilities =
+      mcp::protocol::ClientCapabilitiesBuilder().roots(true).sampling().build();
+  params.client_info = client_info;
+  params.meta = Json{{"requestId", "init-1"}};
+  params.extensions = Json{{"x-init", 1}};
+  const auto params_json = mcp::protocol::initialize_params_to_json(params);
+  const auto parsed_params =
+      mcp::protocol::initialize_params_from_json(params_json);
+  require(parsed_params.has_value(), "initialize params model should parse");
+  require(
+      mcp::protocol::initialize_params_to_json(*parsed_params) == params_json,
+      "initialize params model round-trip mismatch");
+
+  mcp::protocol::ImplementationInfo server_info;
+  server_info.name = "cxxmcp-server";
+  server_info.version = "4.5.6";
+  mcp::protocol::InitializeResult result;
+  result.protocol_version = "2025-06-18";
+  result.capabilities = mcp::protocol::ServerCapabilitiesBuilder()
+                            .tools(true)
+                            .resources(false, true)
+                            .build();
+  result.server_info = server_info;
+  result.instructions = "Use typed helpers.";
+  result.extensions = Json{{"x-result", true}};
+  const auto result_json = mcp::protocol::initialize_result_to_json(result);
+  const auto parsed_result =
+      mcp::protocol::initialize_result_from_json(result_json);
+  require(parsed_result.has_value(), "initialize result model should parse");
+  require(
+      mcp::protocol::initialize_result_to_json(*parsed_result) == result_json,
+      "initialize result model round-trip mismatch");
 }
 
 void test_supported_protocol_versions_are_explicit() {
@@ -2269,6 +2339,24 @@ void test_protocol_required_fields_are_rejected() {
       "tools/list without tools should fail");
 
   require_parse_failure(
+      mcp::protocol::implementation_info_from_json(Json{{"version", "1.0.0"}}),
+      "implementation info without name should fail");
+  require_parse_failure(
+      mcp::protocol::initialize_params_from_json(
+          Json{{"capabilities", Json::object()},
+               {"clientInfo", Json{{"name", "client"}, {"version", "1.0.0"}}}}),
+      "initialize params without protocolVersion should fail");
+  require_parse_failure(
+      mcp::protocol::initialize_params_from_json(
+          Json{{"protocolVersion", "2025-06-18"},
+               {"clientInfo", Json{{"name", "client"}, {"version", "1.0.0"}}}}),
+      "initialize params without capabilities should fail");
+  require_parse_failure(
+      mcp::protocol::initialize_result_from_json(Json{
+          {"protocolVersion", "2025-06-18"}, {"capabilities", Json::object()}}),
+      "initialize result without serverInfo should fail");
+
+  require_parse_failure(
       mcp::protocol::prompt_argument_from_json(Json{{"description", "arg"}}),
       "prompt argument without name should fail");
   require_parse_failure(mcp::protocol::prompt_from_json(Json::object()),
@@ -2385,6 +2473,29 @@ void test_protocol_type_constraints_are_rejected() {
   require_parse_failure(
       mcp::protocol::tool_result_from_json(Json{{"content", Json::object()}}),
       "tool result non-array content should fail");
+
+  require_parse_failure(mcp::protocol::implementation_info_from_json(
+                            Json{{"name", 7}, {"version", "1.0.0"}}),
+                        "implementation info non-string name should fail");
+  require_parse_failure(
+      mcp::protocol::initialize_params_from_json(
+          Json{{"protocolVersion", 7},
+               {"capabilities", Json::object()},
+               {"clientInfo", Json{{"name", "client"}, {"version", "1.0.0"}}}}),
+      "initialize params non-string version should fail");
+  require_parse_failure(
+      mcp::protocol::initialize_params_from_json(
+          Json{{"protocolVersion", "2025-06-18"},
+               {"capabilities", Json::array()},
+               {"clientInfo", Json{{"name", "client"}, {"version", "1.0.0"}}}}),
+      "initialize params non-object capabilities should fail");
+  require_parse_failure(
+      mcp::protocol::initialize_result_from_json(
+          Json{{"protocolVersion", "2025-06-18"},
+               {"capabilities", Json::object()},
+               {"serverInfo", Json{{"name", "server"}, {"version", "1.0.0"}}},
+               {"instructions", 7}}),
+      "initialize result non-string instructions should fail");
 
   require_parse_failure(mcp::protocol::prompt_argument_from_json(
                             Json{{"name", "arg"}, {"required", "true"}}),
@@ -2546,6 +2657,8 @@ int main() {
       {"initialize request round trip", test_initialize_request_round_trip},
       {"initialized notification round trip",
        test_initialized_notification_round_trip},
+      {"initialize payload models round trip",
+       test_initialize_payload_models_round_trip},
       {"supported protocol versions are explicit",
        test_supported_protocol_versions_are_explicit},
       {"ping request round trip", test_ping_request_round_trip},
