@@ -148,7 +148,15 @@ void test_initialized_notification_round_trip() {
 void test_initialize_payload_models_round_trip() {
   mcp::protocol::ImplementationInfo client_info;
   client_info.name = "cxxmcp-client";
+  client_info.title = "cxxmcp Client";
   client_info.version = "1.2.3";
+  client_info.description = "Embeddable MCP client";
+  client_info.icons = {
+      mcp::protocol::Icon::from_src("https://example.test/client.png")
+          .with_mime_type("image/png")
+          .with_sizes({"48x48"})
+          .with_theme(mcp::protocol::IconTheme::Light)};
+  client_info.website_url = "https://example.test/client";
   client_info.meta = Json{{"traceId", "client-init"}};
   client_info.extensions = Json{{"x-client", true}};
   const auto client_info_json =
@@ -159,6 +167,17 @@ void test_initialize_payload_models_round_trip() {
   require(mcp::protocol::implementation_info_to_json(*parsed_client_info) ==
               client_info_json,
           "implementation info round-trip mismatch");
+  require(parsed_client_info->title == "cxxmcp Client",
+          "implementation info title mismatch");
+  require(parsed_client_info->description == "Embeddable MCP client",
+          "implementation info description mismatch");
+  require(parsed_client_info->icons.size() == 1,
+          "implementation info icons mismatch");
+  require(parsed_client_info->icons.front().src ==
+              "https://example.test/client.png",
+          "implementation info icon src mismatch");
+  require(parsed_client_info->website_url == "https://example.test/client",
+          "implementation info websiteUrl mismatch");
 
   mcp::protocol::InitializeParams params;
   params.protocol_version = std::string(mcp::protocol::McpProtocolVersion);
@@ -177,7 +196,15 @@ void test_initialize_payload_models_round_trip() {
 
   mcp::protocol::ImplementationInfo server_info;
   server_info.name = "cxxmcp-server";
+  server_info.title = "cxxmcp Server";
   server_info.version = "4.5.6";
+  server_info.description = "Embeddable MCP server";
+  server_info.icons = {
+      mcp::protocol::Icon::from_src("https://example.test/server.svg")
+          .with_mime_type("image/svg+xml")
+          .with_sizes({"any"})
+          .with_theme(mcp::protocol::IconTheme::Dark)};
+  server_info.website_url = "https://example.test/server";
   mcp::protocol::InitializeResult result;
   result.protocol_version = "2025-06-18";
   result.capabilities = mcp::protocol::ServerCapabilitiesBuilder()
@@ -2879,6 +2906,29 @@ void test_protocol_type_constraints_are_rejected() {
   require_parse_failure(mcp::protocol::implementation_info_from_json(
                             Json{{"name", 7}, {"version", "1.0.0"}}),
                         "implementation info non-string name should fail");
+  require_parse_failure(
+      mcp::protocol::implementation_info_from_json(
+          Json{{"name", "client"}, {"version", "1.0.0"}, {"title", 7}}),
+      "implementation info non-string title should fail");
+  require_parse_failure(
+      mcp::protocol::implementation_info_from_json(
+          Json{{"name", "client"}, {"version", "1.0.0"}, {"description", 7}}),
+      "implementation info non-string description should "
+      "fail");
+  require_parse_failure(
+      mcp::protocol::implementation_info_from_json(Json{
+          {"name", "client"}, {"version", "1.0.0"}, {"icons", Json::object()}}),
+      "implementation info non-array icons should fail");
+  require_parse_failure(mcp::protocol::implementation_info_from_json(
+                            Json{{"name", "client"},
+                                 {"version", "1.0.0"},
+                                 {"icons", Json::array({Json::object()})}}),
+                        "implementation info invalid icon should fail");
+  require_parse_failure(
+      mcp::protocol::implementation_info_from_json(
+          Json{{"name", "client"}, {"version", "1.0.0"}, {"websiteUrl", 7}}),
+      "implementation info non-string websiteUrl should "
+      "fail");
   require_parse_failure(
       mcp::protocol::initialize_params_from_json(
           Json{{"protocolVersion", 7},

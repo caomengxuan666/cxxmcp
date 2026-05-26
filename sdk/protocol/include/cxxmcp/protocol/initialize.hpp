@@ -8,6 +8,7 @@
 #include <optional>
 #include <string>
 #include <utility>
+#include <vector>
 
 #include "cxxmcp/core/result.hpp"
 #include "cxxmcp/protocol/capabilities.hpp"
@@ -20,8 +21,16 @@ namespace mcp::protocol {
 struct ImplementationInfo {
   /// Human-readable implementation name.
   std::string name;
+  /// Optional display title.
+  std::optional<std::string> title;
   /// Human-readable implementation version.
   std::string version;
+  /// Optional display description.
+  std::optional<std::string> description;
+  /// Optional icon descriptors.
+  std::vector<Icon> icons;
+  /// Optional project or documentation website URL.
+  std::optional<std::string> website_url;
   /// Optional `_meta` extension object preserved on the wire.
   std::optional<Json> meta;
   /// Unknown JSON members preserved for forward-compatible round trips.
@@ -63,6 +72,21 @@ inline core::Error initialize_json_error(std::string message) {
 
 inline Json implementation_info_to_json(const ImplementationInfo& info) {
   Json json = Json{{"name", info.name}, {"version", info.version}};
+  if (info.title.has_value()) {
+    json["title"] = *info.title;
+  }
+  if (info.description.has_value()) {
+    json["description"] = *info.description;
+  }
+  if (!info.icons.empty()) {
+    json["icons"] = Json::array();
+    for (const auto& icon : info.icons) {
+      json["icons"].push_back(icon_to_json(icon));
+    }
+  }
+  if (info.website_url.has_value()) {
+    json["websiteUrl"] = *info.website_url;
+  }
   if (info.meta.has_value()) {
     json["_meta"] = *info.meta;
   }
@@ -87,6 +111,41 @@ inline core::Result<ImplementationInfo> implementation_info_from_json(
   ImplementationInfo info;
   info.name = json.at("name").get<std::string>();
   info.version = json.at("version").get<std::string>();
+  if (json.contains("title")) {
+    if (!json.at("title").is_string()) {
+      return std::unexpected(
+          initialize_json_error("implementation info title must be a string"));
+    }
+    info.title = json.at("title").get<std::string>();
+  }
+  if (json.contains("description")) {
+    if (!json.at("description").is_string()) {
+      return std::unexpected(initialize_json_error(
+          "implementation info description must be a string"));
+    }
+    info.description = json.at("description").get<std::string>();
+  }
+  if (json.contains("icons")) {
+    if (!json.at("icons").is_array()) {
+      return std::unexpected(
+          initialize_json_error("implementation info icons must be an array"));
+    }
+    for (const auto& item : json.at("icons")) {
+      const auto icon = icon_from_json(item);
+      if (!icon.has_value()) {
+        return std::unexpected(initialize_json_error(
+            "implementation info icons must contain valid icon objects"));
+      }
+      info.icons.push_back(*icon);
+    }
+  }
+  if (json.contains("websiteUrl")) {
+    if (!json.at("websiteUrl").is_string()) {
+      return std::unexpected(initialize_json_error(
+          "implementation info websiteUrl must be a string"));
+    }
+    info.website_url = json.at("websiteUrl").get<std::string>();
+  }
   if (json.contains("_meta")) {
     if (!json.at("_meta").is_object()) {
       return std::unexpected(
@@ -94,7 +153,9 @@ inline core::Result<ImplementationInfo> implementation_info_from_json(
     }
     info.meta = json.at("_meta");
   }
-  info.extensions = collect_json_extensions(json, {"name", "version", "_meta"});
+  info.extensions =
+      collect_json_extensions(json, {"name", "title", "version", "description",
+                                     "icons", "websiteUrl", "_meta"});
   return info;
 }
 
