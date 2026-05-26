@@ -339,6 +339,96 @@ class BlockingServerContractTransport final
   std::condition_variable cv_;
 };
 
+class CapabilityClientPeerTransport final : public mcp::server::Transport {
+ public:
+  explicit CapabilityClientPeerTransport(
+      std::optional<mcp::protocol::ClientCapabilities> capabilities)
+      : capabilities_(std::move(capabilities)) {}
+
+  mcp::core::Result<mcp::core::Unit> start(
+      mcp::server::RequestHandler,
+      mcp::server::NotificationHandler = {}) override {
+    return mcp::core::Unit{};
+  }
+
+  mcp::core::Result<mcp::protocol::JsonRpcResponse> send_request_to_session(
+      std::string_view session_id,
+      const mcp::protocol::JsonRpcRequest& request) override {
+    session_ids.push_back(std::string(session_id));
+    requests.push_back(request);
+
+    Json result = Json::object();
+    if (request.method == std::string(mcp::protocol::RootsListMethod)) {
+      result = mcp::protocol::roots_list_result_to_json(
+          mcp::protocol::RootsListResult{
+              .roots = {mcp::protocol::Root{.uri = "file:///cap-root"}}});
+    } else if (request.method ==
+               std::string(mcp::protocol::SamplingCreateMessageMethod)) {
+      mcp::protocol::CreateMessageResult message;
+      message.role = "assistant";
+      message.content = mcp::protocol::ContentBlock{
+          .type = "text",
+          .text = "sampled",
+          .data = Json::object(),
+      };
+      result = mcp::protocol::create_message_result_to_json(message);
+    } else if (request.method ==
+               std::string(mcp::protocol::ElicitationCreateMethod)) {
+      mcp::protocol::CreateElicitationResult elicitation;
+      elicitation.action = mcp::protocol::ElicitationAction::Accept;
+      elicitation.content = Json{{"ok", true}};
+      result = mcp::protocol::create_elicitation_result_to_json(elicitation);
+    } else if (request.method == std::string(mcp::protocol::TasksListMethod)) {
+      result = Json{{"tasks", Json::array({Json{
+                                  {"taskId", "cap-task"},
+                                  {"status", "working"},
+                                  {"createdAt", "2025-01-01T00:00:00Z"},
+                                  {"lastUpdatedAt", "2025-01-01T00:00:01Z"},
+                                  {"ttl", nullptr},
+                              }})}};
+    } else if (request.method == std::string(mcp::protocol::TasksGetMethod) ||
+               request.method ==
+                   std::string(mcp::protocol::TasksCancelMethod)) {
+      result =
+          Json{{"taskId", request.params.at("taskId")},
+               {"status",
+                request.method == std::string(mcp::protocol::TasksCancelMethod)
+                    ? "cancelled"
+                    : "completed"},
+               {"createdAt", "2025-01-01T00:00:00Z"},
+               {"lastUpdatedAt", "2025-01-01T00:00:01Z"},
+               {"ttl", nullptr}};
+    } else if (request.method ==
+               std::string(mcp::protocol::TasksResultMethod)) {
+      result = Json{{"taskId", request.params.at("taskId")}, {"value", 7}};
+    }
+
+    return mcp::protocol::JsonRpcResponse{.id = request.id, .result = result};
+  }
+
+  std::optional<mcp::protocol::ClientCapabilities>
+  client_capabilities_for_session(std::string_view session_id) const override {
+    last_capability_session = std::string(session_id);
+    return capabilities_;
+  }
+
+  mcp::core::Result<mcp::core::Unit> send_notification(
+      const mcp::protocol::JsonRpcNotification&) override {
+    return mcp::core::Unit{};
+  }
+
+  void stop() noexcept override {}
+
+  std::string_view name() const noexcept override {
+    return "capability-client-peer";
+  }
+
+  std::optional<mcp::protocol::ClientCapabilities> capabilities_;
+  std::vector<mcp::protocol::JsonRpcRequest> requests;
+  std::vector<std::string> session_ids;
+  mutable std::string last_capability_session;
+};
+
 void test_sdk_peer_and_service_surface() {
   mcp::CancellationSource cancellation_source;
   const auto cancellation_token = cancellation_source.token();
@@ -1173,6 +1263,109 @@ void test_server_peer_task_handlers_dispatch_on_peer_boundary() {
           "tasks/result should preserve session context");
 }
 
+void test_server_client_peer_gates_helpers_on_client_capabilities() {
+  CapabilityClientPeerTransport unsupported_transport(
+      mcp::protocol::ClientCapabilities{});
+  mcp::server::ClientPeer unsupported_peer(&unsupported_transport, "session-a");
+
+  require(!unsupported_peer.supports_roots(),
+          "empty client capabilities should not support roots");
+  require(!unsupported_peer.list_roots().has_value(),
+          "roots helper should reject missing roots capability");
+  require(!unsupported_peer.list_roots_async().await_response().has_value(),
+          "async roots helper should reject missing roots capability");
+
+  mcp::protocol::CreateMessageParams sampling_params;
+  require(!unsupported_peer.create_message(sampling_params).has_value(),
+          "sampling helper should reject missing sampling capability");
+  require(!unsupported_peer.create_message_async(sampling_params)
+               .await_response()
+               .has_value(),
+          "async sampling helper should reject missing sampling capability");
+
+  mcp::protocol::CreateElicitationRequestParam form_elicitation;
+  form_elicitation.message = "Need value";
+  require(
+      !unsupported_peer.create_elicitation(form_elicitation).has_value(),
+      "form elicitation helper should reject missing elicitation capability");
+  require(!unsupported_peer.create_elicitation_async(form_elicitation)
+               .await_response()
+               .has_value(),
+          "async form elicitation helper should reject missing capability");
+
+  mcp::protocol::CreateElicitationRequestParam url_elicitation;
+  url_elicitation.message = "Open URL";
+  url_elicitation.mode = mcp::protocol::ElicitationMode::Url;
+  url_elicitation.elicitation_id = "elicit-1";
+  url_elicitation.url = "https://example.test";
+  const auto rejected_url =
+      unsupported_peer.create_elicitation(url_elicitation);
+  require(!rejected_url.has_value(),
+          "url elicitation helper should reject missing url capability");
+  require(
+      rejected_url.error().code ==
+          static_cast<int>(mcp::protocol::ErrorCode::UrlElicitationRequired),
+      "url elicitation rejection should use protocol url-required error");
+
+  require(!unsupported_peer.list_tasks().has_value(),
+          "task list helper should reject missing task capability");
+  require(!unsupported_peer.get_task("missing").has_value(),
+          "task get helper should reject missing task capability");
+  require(!unsupported_peer.cancel_task("missing").has_value(),
+          "task cancel helper should reject missing task cancel capability");
+  require(!unsupported_peer.task_result("missing").has_value(),
+          "task result helper should reject missing task capability");
+  require(unsupported_transport.requests.empty(),
+          "unsupported capability helpers should not send requests");
+
+  auto capabilities = mcp::protocol::client_capabilities()
+                          .roots(false)
+                          .sampling()
+                          .elicitation_form()
+                          .elicitation_url()
+                          .task_list()
+                          .task_cancel()
+                          .build();
+  CapabilityClientPeerTransport supported_transport(capabilities);
+  mcp::server::ClientPeer supported_peer(&supported_transport, "session-b");
+
+  const auto roots = supported_peer.list_roots();
+  require(roots.has_value() && roots->roots.size() == 1 &&
+              roots->roots.front().uri == "file:///cap-root",
+          "roots helper should send when roots capability is present");
+
+  const auto sampled = supported_peer.create_message(sampling_params);
+  require(sampled.has_value() && sampled->content.text == "sampled",
+          "sampling helper should send when sampling capability is present");
+
+  const auto elicited = supported_peer.create_elicitation(form_elicitation);
+  require(elicited.has_value() &&
+              elicited->action == mcp::protocol::ElicitationAction::Accept,
+          "elicitation helper should send when form capability is present");
+
+  const auto url_result = supported_peer.create_elicitation(url_elicitation);
+  require(url_result.has_value(),
+          "url elicitation helper should send when url capability is present");
+
+  const auto tasks = supported_peer.list_tasks();
+  require(tasks.has_value() && tasks->size() == 1 &&
+              tasks->front().task_id == "cap-task",
+          "task list helper should send when task list capability is present");
+  require(supported_peer.get_task("task-1").has_value(),
+          "task get helper should send when tasks are advertised");
+  const auto cancelled = supported_peer.cancel_task("task-2");
+  require(cancelled.has_value() &&
+              cancelled->status == mcp::protocol::TaskStatus::Cancelled,
+          "task cancel helper should send when task cancel is advertised");
+  const auto task_result = supported_peer.task_result("task-3");
+  require(task_result.has_value() && task_result->at("value") == 7,
+          "task result helper should send when tasks are advertised");
+  require(!supported_transport.requests.empty(),
+          "supported capability helpers should send requests");
+  require(supported_transport.session_ids.front() == "session-b",
+          "client peer helper should route through the requested session");
+}
+
 void test_client_peer_native_raw_request_dispatches_interleaved_messages() {
   auto transport = std::make_unique<RecordingClientContractTransport>();
   auto* transport_ptr = transport.get();
@@ -1602,6 +1795,7 @@ int main() {
     test_server_peer_resource_subscriptions_use_native_transport_identity();
     test_server_peer_handler_requests_dispatch_on_peer_boundary();
     test_server_peer_task_handlers_dispatch_on_peer_boundary();
+    test_server_client_peer_gates_helpers_on_client_capabilities();
     test_client_peer_native_raw_request_dispatches_interleaved_messages();
     test_client_peer_native_raw_request_reports_transport_failures();
     test_request_handle_rejects_invalid_state();

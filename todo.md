@@ -475,10 +475,16 @@ true:
 - [x] Reject invalid non-object experimental/extension bags where appropriate.
 - [x] Add tests for every capability serializer and parser.
 - [ ] Add tests for capability negotiation affecting helper behavior.
-- [ ] Gate roots helpers on roots capability.
-- [ ] Gate sampling helpers on sampling capability.
-- [ ] Gate elicitation helpers on elicitation capability.
+- [x] Gate server-side `ClientPeer` roots helper sync/async paths on the
+  negotiated client roots capability.
+- [x] Gate server-side `ClientPeer` sampling helper sync/async paths on the
+  negotiated client sampling capability.
+- [x] Gate server-side `ClientPeer` elicitation helper sync/async paths on the
+  negotiated client elicitation form/URL capabilities.
 - [ ] Gate task helpers on task capability where applicable.
+- [x] Gate server-side `ClientPeer` task list/cancel/result helper paths on
+  negotiated client task capabilities where the capability model exposes a
+  method-specific flag.
 - [ ] Document which capabilities are core, optional, or experimental.
 
 ## P1: Task Lifecycle
