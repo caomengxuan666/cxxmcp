@@ -1,0 +1,95 @@
+name: compiler-compat
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "0 18 * * 0"
+  pull_request:
+    paths:
+      - ".github/workflows/compiler-compat.yml"
+      - "CMakeLists.txt"
+      - "CMakePresets.json"
+      - "cmake/**"
+      - "sdk/**"
+      - "tests/**"
+      - "third_party/**"
+  push:
+    branches:
+      - master
+    paths:
+      - ".github/workflows/compiler-compat.yml"
+      - "CMakeLists.txt"
+      - "CMakePresets.json"
+      - "cmake/**"
+      - "sdk/**"
+      - "tests/**"
+      - "third_party/**"
+
+jobs:
+  mingw-sdk:
+    name: ${{ matrix.name }}
+    runs-on: windows-latest
+    continue-on-error: true
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: windows-mingw-ucrt64-gcc
+            msystem: UCRT64
+          - name: windows-mingw-clang64-clang
+            msystem: CLANG64
+
+    defaults:
+      run:
+        shell: msys2 {0}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Setup MSYS2
+        uses: msys2/setup-msys2@v2
+        with:
+          msystem: ${{ matrix.msystem }}
+          update: true
+          pacboy: >-
+            toolchain:p
+            cmake:p
+            ninja:p
+
+      - name: Configure SDK compatibility build
+        run: |
+          cmake -S . -B build-compiler-compat -G Ninja \
+            -DCMAKE_BUILD_TYPE=Debug \
+            -DCXXMCP_BUILD_SDK=ON \
+            -DCXXMCP_BUILD_RUNTIME=OFF \
+            -DCXXMCP_BUILD_APP=OFF \
+            -DCXXMCP_BUILD_GATEWAY=OFF \
+            -DCXXMCP_BUILD_CLI=OFF \
+            -DCXXMCP_BUILD_EXAMPLES=ON \
+            -DCXXMCP_BUILD_TESTS=ON
+
+      - name: Build SDK compatibility targets
+        run: cmake --build build-compiler-compat --parallel
+
+      - name: Run SDK compatibility tests
+        run: |
+          mkdir -p build-compiler-compat/test-results
+          ctest --test-dir build-compiler-compat \
+            -R "^(protocol|sdk_boundary|public_header_.*|transport_contract|transport_stdio_contract|client_server|stdio_transport|transport_adapters|http_transport|sdk|public_targets|package_smoke)$" \
+            --output-on-failure \
+            --timeout 240 \
+            --output-junit build-compiler-compat/test-results/compiler-compat.xml
+
+      - name: Upload compatibility evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: cxxmcp-compiler-compat-${{ matrix.name }}
+          path: |
+            build-compiler-compat/CMakeCache.txt
+            build-compiler-compat/test-results/compiler-compat.xml
+            build-compiler-compat/Testing/Temporary/*.log
+          if-no-files-found: warn

@@ -159,6 +159,9 @@ add_library(cpp_httplib INTERFACE)
 target_include_directories(cpp_httplib INTERFACE
     $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/third_party/httplib>
 )
+target_link_libraries(cpp_httplib INTERFACE
+    $<$<PLATFORM_ID:Windows>:ws2_32>
+)
 
 cxxmcp_require_sdk_cxx(cpp_httplib)
 

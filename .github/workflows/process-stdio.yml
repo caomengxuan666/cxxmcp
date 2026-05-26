@@ -3,8 +3,7 @@ name: process-stdio
 on:
   push:
     branches:
-      - rewrite-v2
-      - main
+      - master
   pull_request:
 
 jobs:

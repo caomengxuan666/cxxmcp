@@ -5,9 +5,7 @@ on:
   pull_request:
   push:
     branches:
-      - rewrite-v2
       - master
-      - main
 
 jobs:
   release-blocking:
@@ -39,6 +37,13 @@ jobs:
             build_type: Debug
             cc: cl
             cxx: cl
+            msvc_runtime: MultiThreaded$<$<CONFIG:Debug>:Debug>
+          - name: windows-clangcl-ninja-static-runtime
+            os: windows-latest
+            generator: Ninja
+            build_type: Debug
+            cc: clang-cl
+            cxx: clang-cl
             msvc_runtime: MultiThreaded$<$<CONFIG:Debug>:Debug>
           - name: windows-msvc-vs-dynamic-runtime
             os: windows-latest
