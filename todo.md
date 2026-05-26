@@ -808,11 +808,11 @@ true:
 - [x] Expose request auth context on the server side.
 - [ ] Define bearer-token behavior for client helpers.
 - [x] Define custom header behavior.
-- [ ] Define challenge/error behavior for unauthorized HTTP requests.
+- [x] Define challenge/error behavior for unauthorized HTTP requests.
 - [x] Add scope/claims extension points.
 - [ ] Add OAuth/resource-metadata integration points if required by the MCP
   snapshot.
-- [ ] Add tests for authorized and unauthorized HTTP requests.
+- [x] Add tests for authorized and unauthorized HTTP requests.
 - [x] Add tests for auth context reaching handlers.
 - [ ] Document TLS/HTTPS support and build requirements.
 

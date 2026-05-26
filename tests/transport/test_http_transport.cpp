@@ -21,6 +21,7 @@
 #include "cxxmcp/protocol/serialization.hpp"
 #include "cxxmcp/server/http_transport.hpp"
 #include "cxxmcp/server/peer.hpp"
+#include "cxxmcp/server/server.hpp"
 #include "cxxmcp/transport/http_transport.hpp"
 #include "httplib.h"
 
@@ -1822,6 +1823,204 @@ void test_server_http_transport_copies_headers_to_session_context() {
   server_transport.transport().stop();
 }
 
+void test_server_http_transport_unauthorized_uses_bearer_challenge() {
+  class RejectingAuthProvider final : public mcp::server::AuthProvider {
+   public:
+    mcp::core::Result<mcp::server::AuthIdentity> authenticate(
+        const mcp::server::AuthRequest&) override {
+      return std::unexpected(mcp::server::make_auth_error(
+          "authentication failed", "missing bearer token"));
+    }
+  };
+
+  constexpr int kPort = 40221;
+  const std::string kPath = "/mcp";
+  mcp::server::Server server(mcp::server::ServerOptions{});
+  server.set_auth_provider(std::make_unique<RejectingAuthProvider>());
+
+  RunningServerTransportFixture server_transport(
+      std::make_unique<mcp::server::HttpTransport>(
+          mcp::server::HttpTransportOptions{
+              .listen_host = "127.0.0.1",
+              .listen_port = kPort,
+              .path = kPath,
+              .auth_challenge = "Bearer realm=\"cxxmcp\"",
+          }),
+      [&](const mcp::protocol::JsonRpcRequest& request,
+          const mcp::server::SessionContext& context) {
+        return server.handle_request(request, context);
+      });
+
+  httplib::Result response;
+  for (int attempt = 0; attempt < 100; ++attempt) {
+    httplib::Client http_client("127.0.0.1", kPort);
+    response = http_client.Post(
+        kPath,
+        httplib::Headers{
+            {"Accept", "application/json"},
+            {"Content-Type", "application/json"},
+            {"Mcp-Method", std::string(mcp::protocol::InitializeMethod)},
+        },
+        serialize_test_request(mcp::protocol::JsonRpcRequest{
+            .method = std::string(mcp::protocol::InitializeMethod),
+            .params = Json::object(),
+            .id = std::int64_t{41},
+        }),
+        "application/json");
+    if (response) {
+      break;
+    }
+    std::this_thread::sleep_for(std::chrono::milliseconds(25));
+  }
+
+  require(static_cast<bool>(response),
+          "unauthorized initialize should return a response");
+  require(response->status == 401, "unauthorized initialize should return 401");
+  require(response->has_header("WWW-Authenticate"),
+          "unauthorized response should include WWW-Authenticate");
+  require(response->get_header_value("WWW-Authenticate") ==
+              "Bearer realm=\"cxxmcp\"",
+          "unauthorized response challenge mismatch");
+  require(!response->has_header("Mcp-Session-Id"),
+          "unauthorized initialize must not create a session");
+
+  const auto parsed = mcp::protocol::parse_response(response->body);
+  require(parsed.has_value(), "unauthorized response body should parse");
+  require(parsed->error.has_value(), "unauthorized body should be an error");
+  require(parsed->error->code ==
+              static_cast<int>(mcp::protocol::ErrorCode::PermissionDenied),
+          "unauthorized error code mismatch");
+  require(parsed->error->data.has_value() &&
+              parsed->error->data->at("category") == "auth",
+          "unauthorized error category mismatch");
+
+  server_transport.transport().stop();
+}
+
+void test_server_http_transport_authorized_request_sets_auth_identity() {
+  class TokenAuthProvider final : public mcp::server::AuthProvider {
+   public:
+    mcp::core::Result<mcp::server::AuthIdentity> authenticate(
+        const mcp::server::AuthRequest& request) override {
+      const auto authorization = request.headers.find("Authorization");
+      if (authorization == request.headers.end() ||
+          authorization->second != "Bearer valid-token") {
+        return std::unexpected(mcp::server::make_auth_error(
+            "authentication failed", "invalid bearer token"));
+      }
+      mcp::server::AuthIdentity identity;
+      identity.subject = "http-subject";
+      identity.claims.emplace("scope", "tools:call");
+      return identity;
+    }
+  };
+
+  constexpr int kPort = 40222;
+  const std::string kPath = "/mcp";
+  mcp::server::Server server(mcp::server::ServerOptions{});
+  server.set_auth_provider(std::make_unique<TokenAuthProvider>());
+  const auto added = server.tools().add(
+      mcp::protocol::ToolDefinition{
+          .name = "whoami",
+          .description = "Return authenticated subject",
+          .input_schema = Json::object(),
+      },
+      [](const mcp::server::ToolContext& context)
+          -> mcp::core::Result<mcp::protocol::ToolResult> {
+        require(context.auth_identity.has_value(),
+                "HTTP tool context should contain auth identity");
+        require(context.auth_identity->claims.at("scope") == "tools:call",
+                "HTTP tool auth claim mismatch");
+        return mcp::protocol::ToolResult::text(context.auth_identity->subject);
+      });
+  require(added.has_value(), "failed to register authenticated HTTP tool");
+
+  RunningServerTransportFixture server_transport(
+      std::make_unique<mcp::server::HttpTransport>(
+          mcp::server::HttpTransportOptions{
+              .listen_host = "127.0.0.1",
+              .listen_port = kPort,
+              .path = kPath,
+          }),
+      [&](const mcp::protocol::JsonRpcRequest& request,
+          const mcp::server::SessionContext& context) {
+        return server.handle_request(request, context);
+      });
+
+  httplib::Client http_client("127.0.0.1", kPort);
+  httplib::Result initialize_response;
+  for (int attempt = 0; attempt < 100; ++attempt) {
+    initialize_response = http_client.Post(
+        kPath,
+        httplib::Headers{
+            {"Accept", "application/json"},
+            {"Content-Type", "application/json"},
+            {"Mcp-Method", std::string(mcp::protocol::InitializeMethod)},
+            {"Authorization", "Bearer valid-token"},
+        },
+        serialize_test_request(mcp::protocol::JsonRpcRequest{
+            .method = std::string(mcp::protocol::InitializeMethod),
+            .params =
+                Json{
+                    {"protocolVersion",
+                     std::string(mcp::protocol::McpProtocolVersion)},
+                    {"capabilities", Json::object()},
+                    {"clientInfo",
+                     Json{{"name", "auth-test"}, {"version", "1"}}},
+                },
+            .id = std::int64_t{51},
+        }),
+        "application/json");
+    if (initialize_response) {
+      break;
+    }
+    std::this_thread::sleep_for(std::chrono::milliseconds(25));
+  }
+  require(static_cast<bool>(initialize_response),
+          "authorized initialize should return a response");
+  require(initialize_response->status == 200,
+          "authorized initialize should return 200");
+  require(initialize_response->has_header("Mcp-Session-Id"),
+          "authorized initialize should create a session");
+  const auto session_id =
+      initialize_response->get_header_value("Mcp-Session-Id");
+
+  const auto tool_response = http_client.Post(
+      kPath,
+      httplib::Headers{
+          {"Accept", "application/json"},
+          {"Content-Type", "application/json"},
+          {"MCP-Protocol-Version",
+           std::string(mcp::protocol::McpProtocolVersion)},
+          {"Mcp-Session-Id", session_id},
+          {"Mcp-Method", std::string(mcp::protocol::ToolsCallMethod)},
+          {"Mcp-Name", "whoami"},
+          {"Authorization", "Bearer valid-token"},
+      },
+      serialize_test_request(mcp::protocol::JsonRpcRequest{
+          .method = std::string(mcp::protocol::ToolsCallMethod),
+          .params = mcp::protocol::tool_call_to_json(mcp::protocol::ToolCall{
+              .name = "whoami",
+              .arguments = Json::object(),
+          }),
+          .id = std::int64_t{52},
+      }),
+      "application/json");
+
+  require(static_cast<bool>(tool_response),
+          "authorized tool call should return a response");
+  require(tool_response->status == 200,
+          "authorized tool call should return 200");
+  const auto parsed = mcp::protocol::parse_response(tool_response->body);
+  require(parsed.has_value(), "authorized tool response should parse");
+  require(parsed->result.has_value(),
+          "authorized tool response should succeed");
+  require(parsed->result->at("content").at(0).at("text") == "http-subject",
+          "authorized tool subject mismatch");
+
+  server_transport.transport().stop();
+}
+
 void test_server_http_transport_rejects_mismatched_origin_when_allowlisted() {
   constexpr int kPort = 40177;
   const std::string kPath = "/mcp";
@@ -3294,6 +3493,10 @@ int main() {
        test_server_http_transport_accepts_client_notification_with_202},
       {"server http transport copies headers to session context",
        test_server_http_transport_copies_headers_to_session_context},
+      {"server http transport unauthorized uses bearer challenge",
+       test_server_http_transport_unauthorized_uses_bearer_challenge},
+      {"server http transport authorized request sets auth identity",
+       test_server_http_transport_authorized_request_sets_auth_identity},
       {"server http transport rejects mismatched origin when allowlisted",
        test_server_http_transport_rejects_mismatched_origin_when_allowlisted},
       {"server http transport can request client",

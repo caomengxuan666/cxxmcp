@@ -81,6 +81,19 @@ core::Result<protocol::JsonRpcResponse> make_error_response(
                                : std::optional<protocol::Json>{detail}));
 }
 
+core::Result<protocol::JsonRpcResponse> make_auth_error_response(
+    const protocol::JsonRpcRequest& request, std::string detail) {
+  protocol::Json data = protocol::Json::object();
+  data["category"] = std::string(AuthErrorCategory);
+  if (!detail.empty()) {
+    data["detail"] = std::move(detail);
+  }
+  return protocol::make_error_response(
+      std::optional<protocol::RequestId>{request.id},
+      protocol::make_error(protocol::ErrorCode::PermissionDenied,
+                           "authentication failed", data));
+}
+
 int method_params_error_code(const core::Error& error) {
   if (error.code == static_cast<int>(protocol::ErrorCode::InvalidRequest)) {
     return static_cast<int>(protocol::ErrorCode::InvalidParams);
@@ -321,9 +334,7 @@ core::Result<protocol::JsonRpcResponse> Server::handle_request(
     auth_request.remote_address = context.remote_address;
     const auto identity = auth_provider_->authenticate(auth_request);
     if (!identity) {
-      return make_error_response(
-          request, static_cast<int>(protocol::ErrorCode::PermissionDenied),
-          "authentication failed", identity.error().message);
+      return make_auth_error_response(request, identity.error().message);
     }
     context.auth_identity = *identity;
   }

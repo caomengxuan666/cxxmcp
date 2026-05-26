@@ -169,6 +169,17 @@ layer before JSON-RPC dispatch:
 - `AuthRequest` must include normalized HTTP headers, not only the remote
   address, because Bearer and DPoP validation are header-driven.
 
+The current P1 auth-lite implementation exposes this behavior without pulling
+crypto dependencies:
+
+- `AuthProvider::authenticate()` failures are encoded as auth-category
+  JSON-RPC `PermissionDenied` errors.
+- `HttpTransport` maps those auth-category failures to HTTP `401` responses.
+- `HttpTransportOptions::auth_challenge` controls the emitted
+  `WWW-Authenticate` value and defaults to `Bearer`.
+- Successful authentication stores `AuthIdentity` in `SessionContext` before
+  typed tool, prompt, and resource handlers run.
+
 ## Delivery
 
 The full crypto-backed auth implementation should ship the following together

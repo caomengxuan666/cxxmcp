@@ -43,6 +43,10 @@ struct HttpTransportOptions {
   /// Maximum time to wait for a client response to a server-to-client request.
   /// Set to zero or a negative duration to wait indefinitely.
   std::chrono::milliseconds request_timeout{30000};
+  /// HTTP WWW-Authenticate challenge emitted when authentication fails.
+  /// Empty disables the header for custom deployments that emit challenges
+  /// through another layer.
+  std::string auth_challenge = std::string(DefaultAuthChallenge);
 };
 
 /// @brief MCP streamable HTTP transport with session-aware SSE delivery.
