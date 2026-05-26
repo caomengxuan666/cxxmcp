@@ -611,9 +611,9 @@ true:
   - [x] Pass cancellation tokens into resource contexts and typed resource
     helpers.
 - [ ] Keep `SchemaTraits<T>` and `schema_for<T>()` customization stable.
-- [ ] Add optional JSON Schema validator integration.
-- [ ] Validate tool input schemas where configured.
-- [ ] Validate tool output schemas where configured.
+- [x] Add optional JSON Schema validator integration.
+- [x] Validate tool input schemas where configured.
+- [x] Validate tool output schemas where configured.
 - [ ] Validate elicitation schemas where configured.
 - [ ] Keep low-boilerplate `App::Builder` helpers as convenience, not the only
   canonical API.

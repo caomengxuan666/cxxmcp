@@ -2182,7 +2182,8 @@ class Peer<RoleServer> {
                                     "task processor is not configured"));
         }
         const auto task =
-            task_manager->submit_tool_call(server_->tools(), *call, context);
+            task_manager->submit_tool_call(server_->tools(), *call, context,
+                                           server_->schema_validator().get());
         if (!task) {
           return detail::peer_params_error_response(request, task.error());
         }
@@ -2197,7 +2198,8 @@ class Peer<RoleServer> {
             end_peer_request_cancellation(request_id);
           });
       const auto result =
-          server_->tools().call(*call, context, request_cancellation);
+          server_->tools().call(*call, context, request_cancellation,
+                                server_->schema_validator().get());
       if (!result) {
         return detail::peer_error_response(request, result.error());
       }

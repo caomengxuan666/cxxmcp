@@ -161,7 +161,13 @@ core::Result<protocol::ToolDefinition> Server::get_tool(
 core::Result<protocol::ToolResult> Server::call_tool(
     std::string_view name, protocol::Json arguments,
     const std::string& session_id) const {
-  return tools_.call(name, std::move(arguments), session_id);
+  protocol::ToolCall call;
+  call.name = std::string(name);
+  call.arguments = std::move(arguments);
+  SessionContext context;
+  context.session_id = session_id;
+  return tools_.call(std::move(call), context, CancellationToken{},
+                     schema_validator_.get());
 }
 
 Server& Server::use_task_manager(TaskOperationProcessorOptions options) {
@@ -487,8 +493,8 @@ core::Result<protocol::JsonRpcResponse> Server::handle_request(
             request, static_cast<int>(protocol::ErrorCode::MethodNotFound),
             "task processor is not configured");
       }
-      const auto task =
-          task_processor_->submit_tool_call(tools_, *call, context);
+      const auto task = task_processor_->submit_tool_call(
+          tools_, *call, context, schema_validator_.get());
       if (!task) {
         return make_params_error_response(request, task.error());
       }
@@ -496,7 +502,8 @@ core::Result<protocol::JsonRpcResponse> Server::handle_request(
           request.id, protocol::create_task_result_to_json(*task));
     }
 
-    const auto result = tools_.call(*call, context, request_cancellation);
+    const auto result = tools_.call(*call, context, request_cancellation,
+                                    schema_validator_.get());
     if (!result) {
       return protocol::make_error_response(
           std::optional<protocol::RequestId>{request.id},
@@ -912,6 +919,11 @@ void Server::set_rate_limiter(std::unique_ptr<RateLimiter> rate_limiter) {
   rate_limiter_ = std::move(rate_limiter);
 }
 
+void Server::set_schema_validator(
+    std::shared_ptr<const JsonSchemaValidator> validator) {
+  schema_validator_ = std::move(validator);
+}
+
 core::Result<core::Unit> Server::start() {
   for (auto& transport : transports_) {
     const auto started = transport->start(
@@ -1071,6 +1083,12 @@ ServerBuilder& ServerBuilder::with_auth_provider(
 ServerBuilder& ServerBuilder::with_rate_limiter(
     std::unique_ptr<RateLimiter> rate_limiter) {
   rate_limiter_ = std::move(rate_limiter);
+  return *this;
+}
+
+ServerBuilder& ServerBuilder::with_schema_validator(
+    std::shared_ptr<const JsonSchemaValidator> validator) {
+  schema_validator_ = std::move(validator);
   return *this;
 }
 
@@ -1265,6 +1283,7 @@ core::Result<std::unique_ptr<Server>> ServerBuilder::build() {
   auto server = std::make_unique<Server>(options_);
   server->set_auth_provider(std::move(auth_provider_));
   server->set_rate_limiter(std::move(rate_limiter_));
+  server->set_schema_validator(std::move(schema_validator_));
   server->use_task_manager(std::move(task_processor_));
   server->set_completion_handler(std::move(completion_handler_));
   server->set_sampling_handler(std::move(sampling_handler_));
@@ -1347,6 +1366,12 @@ App::Builder& App::Builder::transport(std::unique_ptr<Transport> value) {
 
 App::Builder& App::Builder::tasks(TaskOperationProcessorOptions options) {
   builder_.with_task_manager(std::move(options));
+  return *this;
+}
+
+App::Builder& App::Builder::schema_validator(
+    std::shared_ptr<const JsonSchemaValidator> validator) {
+  builder_.with_schema_validator(std::move(validator));
   return *this;
 }
 

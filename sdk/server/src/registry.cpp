@@ -38,6 +38,72 @@ core::Result<core::Unit> validate_tool_task_support(
   return core::Unit{};
 }
 
+core::Error schema_validation_error(protocol::ErrorCode code,
+                                    std::string message, std::string tool_name,
+                                    const core::Error& cause) {
+  if (!cause.message.empty()) {
+    message += ": ";
+    message += cause.message;
+  }
+  std::string detail = tool_name;
+  if (!cause.detail.empty()) {
+    detail += ": ";
+    detail += cause.detail;
+  }
+  return core::Error{static_cast<int>(code), std::move(message),
+                     std::move(detail), "schema"};
+}
+
+core::Result<core::Unit> validate_tool_input_schema(
+    const protocol::ToolDefinition& definition, const protocol::Json& arguments,
+    const JsonSchemaValidator* schema_validator) {
+  if (schema_validator == nullptr || definition.input_schema.empty()) {
+    return core::Unit{};
+  }
+  SchemaValidationContext context;
+  context.target = SchemaValidationTarget::ToolInput;
+  context.tool_name = definition.name;
+  const auto valid =
+      schema_validator->validate(definition.input_schema, arguments, context);
+  if (!valid) {
+    return std::unexpected(schema_validation_error(
+        protocol::ErrorCode::InvalidParams,
+        "tool input failed schema validation", definition.name, valid.error()));
+  }
+  return core::Unit{};
+}
+
+core::Result<core::Unit> validate_tool_output_schema(
+    const protocol::ToolDefinition& definition,
+    const protocol::ToolResult& result,
+    const JsonSchemaValidator* schema_validator) {
+  const bool has_output_schema =
+      definition.output_schema_present || !definition.output_schema.empty();
+  if (schema_validator == nullptr || !has_output_schema) {
+    return core::Unit{};
+  }
+  if (!result.structured_content.has_value()) {
+    return std::unexpected(core::Error{
+        static_cast<int>(protocol::ErrorCode::InternalError),
+        "tool output failed schema validation: missing structuredContent",
+        definition.name,
+        "schema",
+    });
+  }
+  SchemaValidationContext context;
+  context.target = SchemaValidationTarget::ToolOutput;
+  context.tool_name = definition.name;
+  const auto valid = schema_validator->validate(
+      definition.output_schema, *result.structured_content, context);
+  if (!valid) {
+    return std::unexpected(
+        schema_validation_error(protocol::ErrorCode::InternalError,
+                                "tool output failed schema validation",
+                                definition.name, valid.error()));
+  }
+  return core::Unit{};
+}
+
 }  // namespace
 
 core::Result<core::Unit> ToolRegistry::add(protocol::ToolDefinition definition,
@@ -128,6 +194,14 @@ core::Result<protocol::ToolResult> ToolRegistry::call(
 core::Result<protocol::ToolResult> ToolRegistry::call(
     protocol::ToolCall call, const SessionContext& session_context,
     CancellationToken cancellation) const {
+  return this->call(std::move(call), session_context, std::move(cancellation),
+                    nullptr);
+}
+
+core::Result<protocol::ToolResult> ToolRegistry::call(
+    protocol::ToolCall call, const SessionContext& session_context,
+    CancellationToken cancellation,
+    const JsonSchemaValidator* schema_validator) const {
   const auto it = tools_.find(call.name);
   if (it == tools_.end()) {
     return std::unexpected(core::Error{
@@ -142,6 +216,12 @@ core::Result<protocol::ToolResult> ToolRegistry::call(
     return std::unexpected(task_support.error());
   }
 
+  const auto input_valid = validate_tool_input_schema(
+      it->second.definition, call.arguments, schema_validator);
+  if (!input_valid) {
+    return std::unexpected(input_valid.error());
+  }
+
   ToolContext context;
   context.session_id = session_context.session_id;
   context.remote_address = session_context.remote_address;
@@ -152,6 +232,12 @@ core::Result<protocol::ToolResult> ToolRegistry::call(
   const auto result = it->second.handler(context);
   if (!result) {
     return std::unexpected(result.error());
+  }
+
+  const auto output_valid = validate_tool_output_schema(
+      it->second.definition, *result, schema_validator);
+  if (!output_valid) {
+    return std::unexpected(output_valid.error());
   }
 
   return *result;

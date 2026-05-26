@@ -15,6 +15,7 @@
 #include "cxxmcp/protocol/resource.hpp"
 #include "cxxmcp/protocol/tool.hpp"
 #include "cxxmcp/server/peer.hpp"
+#include "cxxmcp/server/schema_validator.hpp"
 #include "cxxmcp/server/transport.hpp"
 
 /// @file
@@ -155,6 +156,10 @@ class ToolRegistry {
   core::Result<protocol::ToolResult> call(protocol::ToolCall call,
                                           const SessionContext& session_context,
                                           CancellationToken cancellation) const;
+  core::Result<protocol::ToolResult> call(
+      protocol::ToolCall call, const SessionContext& session_context,
+      CancellationToken cancellation,
+      const JsonSchemaValidator* schema_validator) const;
 
   /// @brief Invoke a tool with only a session id.
   /// @param name Registered tool name.

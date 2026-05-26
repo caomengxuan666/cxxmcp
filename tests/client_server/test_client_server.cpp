@@ -100,6 +100,32 @@ void require(bool condition, std::string_view message) {
   }
 }
 
+class RecordingSchemaValidator final : public mcp::server::JsonSchemaValidator {
+ public:
+  mcp::core::Result<mcp::core::Unit> validate(
+      const Json& schema, const Json& instance,
+      const mcp::server::SchemaValidationContext& context) const override {
+    schemas.push_back(schema);
+    instances.push_back(instance);
+    contexts.push_back(context);
+    if (reject_input &&
+        context.target == mcp::server::SchemaValidationTarget::ToolInput) {
+      return std::unexpected(mcp::core::Error{0, "input rejected", "bad"});
+    }
+    if (reject_output &&
+        context.target == mcp::server::SchemaValidationTarget::ToolOutput) {
+      return std::unexpected(mcp::core::Error{0, "output rejected", "bad"});
+    }
+    return mcp::core::Unit{};
+  }
+
+  bool reject_input = false;
+  bool reject_output = false;
+  mutable std::vector<Json> schemas;
+  mutable std::vector<Json> instances;
+  mutable std::vector<mcp::server::SchemaValidationContext> contexts;
+};
+
 template <class Predicate>
 void wait_until(Predicate predicate, std::string_view message) {
   for (int attempt = 0; attempt < 100; ++attempt) {
@@ -3710,6 +3736,95 @@ void test_server_app_builder_registers_typed_tool() {
           "typed tool invalid args error code mismatch");
 }
 
+void test_server_tool_schema_validator_hooks() {
+  using typed_tool_fixture::SumArgs;
+  using typed_tool_fixture::SumResult;
+
+  auto validator = std::make_shared<RecordingSchemaValidator>();
+  auto built =
+      mcp::server::App::builder()
+          .schema_validator(validator)
+          .tool<SumArgs, SumResult>(
+              "sum",
+              [](SumArgs args) { return SumResult{.sum = args.a + args.b}; })
+          .build();
+  require(built.has_value(), "schema validator server should build");
+
+  const auto result =
+      (*built)->call_tool("sum", Json{{"a", 2}, {"b", 3}}, "schema-session");
+  require(result.has_value(), "schema validator tool call should succeed");
+  require(validator->contexts.size() == 2,
+          "schema validator should see input and output");
+  require(validator->contexts.at(0).target ==
+              mcp::server::SchemaValidationTarget::ToolInput,
+          "schema validator input target mismatch");
+  require(validator->contexts.at(0).tool_name == "sum",
+          "schema validator input tool mismatch");
+  require(validator->instances.at(0).at("a") == 2,
+          "schema validator input instance mismatch");
+  require(validator->contexts.at(1).target ==
+              mcp::server::SchemaValidationTarget::ToolOutput,
+          "schema validator output target mismatch");
+  require(validator->instances.at(1).at("sum") == 5,
+          "schema validator output instance mismatch");
+
+  auto input_rejector = std::make_shared<RecordingSchemaValidator>();
+  input_rejector->reject_input = true;
+  auto input_built =
+      mcp::server::App::builder()
+          .schema_validator(input_rejector)
+          .tool<SumArgs, SumResult>(
+              "sum",
+              [](SumArgs args) { return SumResult{.sum = args.a + args.b}; })
+          .build();
+  require(input_built.has_value(),
+          "input schema validator server should build");
+  const auto input_response =
+      (*input_built)
+          ->handle_request(
+              mcp::protocol::JsonRpcRequest{
+                  .method = std::string(mcp::protocol::ToolsCallMethod),
+                  .params = Json{{"name", "sum"},
+                                 {"arguments", Json{{"a", 2}, {"b", 3}}}},
+                  .id = std::int64_t{1},
+              },
+              {});
+  require(input_response.has_value(), "input schema failure should respond");
+  require(input_response->error.has_value(),
+          "input schema failure should be an error response");
+  require(input_response->error->code ==
+              static_cast<int>(mcp::protocol::ErrorCode::InvalidParams),
+          "input schema failure code mismatch");
+
+  auto output_rejector = std::make_shared<RecordingSchemaValidator>();
+  output_rejector->reject_output = true;
+  auto output_built =
+      mcp::server::App::builder()
+          .schema_validator(output_rejector)
+          .tool<SumArgs, SumResult>(
+              "sum",
+              [](SumArgs args) { return SumResult{.sum = args.a + args.b}; })
+          .build();
+  require(output_built.has_value(),
+          "output schema validator server should build");
+  const auto output_response =
+      (*output_built)
+          ->handle_request(
+              mcp::protocol::JsonRpcRequest{
+                  .method = std::string(mcp::protocol::ToolsCallMethod),
+                  .params = Json{{"name", "sum"},
+                                 {"arguments", Json{{"a", 2}, {"b", 3}}}},
+                  .id = std::int64_t{2},
+              },
+              {});
+  require(output_response.has_value(), "output schema failure should respond");
+  require(output_response->error.has_value(),
+          "output schema failure should be an error response");
+  require(output_response->error->code ==
+              static_cast<int>(mcp::protocol::ErrorCode::InternalError),
+          "output schema failure code mismatch");
+}
+
 void test_server_app_builder_typed_scalar_tool_rejects_empty_args() {
   auto built = mcp::server::App::builder()
                    .tool<std::string, std::string>(
@@ -4932,6 +5047,8 @@ int main() {
        test_server_app_builder_registers_typed_prompt_and_resource},
       {"server app builder registers typed tool",
        test_server_app_builder_registers_typed_tool},
+      {"server tool schema validator hooks",
+       test_server_tool_schema_validator_hooks},
       {"server app builder typed scalar tool rejects empty args",
        test_server_app_builder_typed_scalar_tool_rejects_empty_args},
       {"client session initialize and mark initialized",

@@ -34,6 +34,7 @@
 #include "cxxmcp/server/auth.hpp"
 #include "cxxmcp/server/rate_limit.hpp"
 #include "cxxmcp/server/registry.hpp"
+#include "cxxmcp/server/schema_validator.hpp"
 #include "cxxmcp/server/task_manager.hpp"
 #include "cxxmcp/server/transport.hpp"
 
@@ -780,6 +781,15 @@ class Server {
   /// @brief Installs a rate limiter used by supported transports.
   void set_rate_limiter(std::unique_ptr<RateLimiter> rate_limiter);
 
+  /// @brief Installs an optional JSON Schema validator.
+  void set_schema_validator(
+      std::shared_ptr<const JsonSchemaValidator> validator);
+
+  /// @brief Returns the configured JSON Schema validator, if any.
+  std::shared_ptr<const JsonSchemaValidator> schema_validator() const noexcept {
+    return schema_validator_;
+  }
+
   /// @brief Starts every registered transport.
   core::Result<core::Unit> start();
 
@@ -913,6 +923,7 @@ class Server {
   std::shared_ptr<TaskOperationProcessor> task_processor_;
   std::unique_ptr<AuthProvider> auth_provider_;
   std::unique_ptr<RateLimiter> rate_limiter_;
+  std::shared_ptr<const JsonSchemaValidator> schema_validator_;
   std::vector<std::unique_ptr<Transport>> transports_;
   JsonContextHandler completion_handler_;
   JsonContextHandler sampling_handler_;
@@ -978,6 +989,10 @@ class ServerBuilder {
 
   /// @brief Sets the rate limiter owned by the built server.
   ServerBuilder& with_rate_limiter(std::unique_ptr<RateLimiter> rate_limiter);
+
+  /// @brief Sets the optional JSON Schema validator used by the built server.
+  ServerBuilder& with_schema_validator(
+      std::shared_ptr<const JsonSchemaValidator> validator);
 
   /// @brief Enables the built-in SDK task processor on the built server.
   ServerBuilder& with_task_manager(TaskOperationProcessorOptions options = {});
@@ -1076,6 +1091,7 @@ class ServerBuilder {
   ServerOptions options_;
   std::unique_ptr<AuthProvider> auth_provider_;
   std::unique_ptr<RateLimiter> rate_limiter_;
+  std::shared_ptr<const JsonSchemaValidator> schema_validator_;
   std::shared_ptr<TaskOperationProcessor> task_processor_;
   std::vector<std::unique_ptr<Transport>> transports_;
   std::vector<ServerRegistration> registrations_;
@@ -1235,6 +1251,10 @@ class App {
 
     /// @brief Enables server-side task processing for task-aware tools.
     Builder& tasks(TaskOperationProcessorOptions options = {});
+
+    /// @brief Installs an optional JSON Schema validator.
+    Builder& schema_validator(
+        std::shared_ptr<const JsonSchemaValidator> validator);
 
     /// @brief Registers a tool using a typed argument adapter.
     /// @tparam Args Type decoded from the JSON arguments object.

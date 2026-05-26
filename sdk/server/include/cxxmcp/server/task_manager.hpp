@@ -74,7 +74,8 @@ class TaskOperationProcessor {
   /// @brief Submit a `tools/call` request for background execution.
   core::Result<protocol::CreateTaskResult> submit_tool_call(
       const ToolRegistry& tools, protocol::ToolCall call,
-      const SessionContext& context);
+      const SessionContext& context,
+      const JsonSchemaValidator* schema_validator = nullptr);
 
   /// @brief List retained task snapshots.
   core::Result<protocol::TaskListResult> list_tasks(
