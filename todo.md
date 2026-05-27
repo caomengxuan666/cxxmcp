@@ -760,6 +760,38 @@ true:
 - [x] Add package-manager smoke tests when package recipes exist.
 - [x] Add a tiny external consumer repository or template.
 
+## P2: Vcpkg Curated Registry Readiness
+
+- [ ] Keep `packaging/vcpkg/ports/cxxmcp` as the first-class overlay port while
+  the project does not yet meet vcpkg curated-registry maturity requirements.
+- [ ] Publish clear overlay-port usage instructions in README / package docs,
+  including `--overlay-ports=<repo>/packaging/vcpkg/ports`.
+- [ ] Add a `vcpkg-configuration.json` example for consuming cxxmcp from an
+  overlay or future custom Git registry with a pinned baseline.
+- [ ] Prepare a standalone or repository-hosted Git registry path if users need
+  vcpkg versioning before the curated registry accepts the port.
+- [ ] For a future curated-registry PR, replace local-source overlay logic with
+  `vcpkg_from_github()` using a release tag and SHA512 source archive hash.
+- [ ] Remove `-DBUILD_SHARED_LIBS=OFF` from the curated-registry portfile and
+  let vcpkg triplets control linkage; keep `vcpkg_check_linkage` only if the
+  SDK intentionally remains static-only.
+- [ ] Make `jsonrpcpp` a private implementation detail for package consumers:
+  do not export a public `jsonrpcpp` target or install it as a visible
+  third-party SDK surface unless vcpkg explicitly accepts that shape.
+- [ ] Decide the vcpkg HTTPS/TLS feature model for `cpp-httplib`: default
+  loopback HTTP only, or an opt-in `ssl` / `https` feature depending on
+  `cpp-httplib[openssl]`.
+- [ ] Keep full OAuth/DPoP auth as a separate future vcpkg feature after the
+  OpenSSL-backed implementation lands; do not pull OpenSSL into the default SDK
+  package path prematurely.
+- [ ] Accumulate maturity evidence before resubmitting to the vcpkg curated
+  registry: stable release history, green release-gates over time, downstream
+  examples, package-manager smoke evidence, changelog discipline, and public
+  user adoption signals.
+- [ ] Resubmit to the vcpkg curated registry only after the maturity evidence is
+  strong enough to address `microsoft/vcpkg#51972` without relying on policy
+  exceptions.
+
 ## P1: Governance And Project Trust
 
 - [x] Add `CONTRIBUTING.md`.
