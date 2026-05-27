@@ -7,6 +7,7 @@
 
 #include <chrono>
 #include <cstddef>
+#include <functional>
 #include <memory>
 #include <optional>
 #include <string>
@@ -16,6 +17,19 @@
 #include "cxxmcp/transport/transport.hpp"
 
 namespace mcp::transport {
+
+/// @brief HTTP auth challenge observed by Streamable HTTP client transport.
+struct StreamableHttpAuthChallenge {
+  int status_code = 0;
+  std::string method;
+  std::unordered_map<std::string, std::string> headers;
+  std::optional<std::string> www_authenticate;
+};
+
+/// @brief Application hook used for one-shot bearer refresh on HTTP 401.
+using StreamableHttpAuthRefreshHandler =
+    std::function<std::optional<std::string>(
+        const StreamableHttpAuthChallenge&)>;
 
 /// @brief Configuration for a Streamable HTTP client transport.
 struct StreamableHttpClientTransportOptions {
@@ -41,6 +55,11 @@ struct StreamableHttpClientTransportOptions {
   /// every outbound HTTP request. Empty tokens are ignored. If `headers`
   /// already contains `Authorization`, the explicit header wins.
   std::optional<std::string> auth_header;
+
+  /// Optional refresh hook invoked once for a 401 response before surfacing the
+  /// auth failure. The returned token is stored as the new bearer token for the
+  /// retry and future requests.
+  StreamableHttpAuthRefreshHandler auth_refresh_handler;
 
   /// Connect, read, and write timeout used by the transport.
   std::chrono::milliseconds timeout{30000};

@@ -12,6 +12,8 @@
 /// details of later source files, not public API dependencies.
 
 #include "cxxmcp/auth/dpop.hpp"
+#include "cxxmcp/auth/http_metadata_endpoint.hpp"
+#include "cxxmcp/auth/lifecycle.hpp"
 #include "cxxmcp/auth/metadata.hpp"
 #include "cxxmcp/auth/pkce.hpp"
 #include "cxxmcp/auth/registration.hpp"

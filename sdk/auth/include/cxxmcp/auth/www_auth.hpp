@@ -23,7 +23,6 @@ inline constexpr std::string_view WwwAuthenticateErrorParam = "error";
 inline constexpr std::string_view WwwAuthenticateScopeParam = "scope";
 inline constexpr std::string_view WwwAuthenticateInsufficientScopeError =
     "insufficient_scope";
-inline constexpr std::string_view AuthErrorCategory = "auth";
 
 namespace detail {
 

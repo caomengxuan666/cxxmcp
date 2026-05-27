@@ -19,12 +19,14 @@ class CxxmcpConan(ConanFile):
     options = {
         "shared": [False],
         "fPIC": [True, False],
+        "with_auth": [True, False],
         "with_examples": [True, False],
         "with_tests": [True, False],
     }
     default_options = {
         "shared": False,
         "fPIC": True,
+        "with_auth": False,
         "with_examples": False,
         "with_tests": False,
     }
@@ -69,6 +71,8 @@ class CxxmcpConan(ConanFile):
         toolchain.variables["CXXMCP_BUILD_TESTS"] = bool(
             self.options.with_tests)
         toolchain.variables["CXXMCP_BUILD_DOCS"] = False
+        toolchain.variables["CXXMCP_ENABLE_AUTH"] = bool(
+            self.options.with_auth)
         toolchain.variables["BUILD_SHARED_LIBS"] = False
         if self.settings.os != "Windows":
             toolchain.variables["CMAKE_POSITION_INDEPENDENT_CODE"] = bool(
@@ -132,6 +136,11 @@ class CxxmcpConan(ConanFile):
         self.cpp_info.components["service"].set_property(
             "cmake_target_name", "cxxmcp::service")
         self.cpp_info.components["service"].requires = ["peer"]
+
+        if self.options.with_auth:
+            self.cpp_info.components["auth"].set_property(
+                "cmake_target_name", "cxxmcp::auth")
+            self.cpp_info.components["auth"].requires = ["core"]
 
         self.cpp_info.components["plugin_sdk"].set_property(
             "cmake_target_name", "cxxmcp::plugin_sdk")

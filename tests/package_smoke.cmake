@@ -34,11 +34,16 @@ if(NOT install_result EQUAL 0)
 endif()
 
 set(package_smoke_use_system_deps OFF)
+set(package_smoke_auth_enabled OFF)
 set(cache_path "${BUILD_DIR}/CMakeCache.txt")
 if(EXISTS "${cache_path}")
     file(READ "${cache_path}" cache_content)
     if(cache_content MATCHES "CXXMCP_USE_SYSTEM_DEPS:BOOL=(ON|TRUE|1)")
         set(package_smoke_use_system_deps ON)
+    endif()
+    if(cache_content MATCHES "CXXMCP_ENABLE_AUTH:BOOL=(ON|TRUE|1)" OR
+       cache_content MATCHES "MCP_ENABLE_AUTH:BOOL=(ON|TRUE|1)")
+        set(package_smoke_auth_enabled ON)
     endif()
 endif()
 
@@ -49,6 +54,18 @@ if(NOT EXISTS "${installed_cxxmcp_config_dir}/cxxmcpConfig.cmake")
 endif()
 if(NOT EXISTS "${installed_include_dir}/cxxmcp/protocol.hpp")
     message(FATAL_ERROR "installed SDK umbrella headers are missing")
+endif()
+if(package_smoke_auth_enabled)
+    if(NOT EXISTS "${installed_include_dir}/cxxmcp/auth.hpp")
+        message(FATAL_ERROR
+            "auth-enabled package smoke did not install cxxmcp/auth.hpp")
+    endif()
+else()
+    if(EXISTS "${installed_include_dir}/cxxmcp/auth.hpp" OR
+       EXISTS "${installed_include_dir}/cxxmcp/auth")
+        message(FATAL_ERROR
+            "default package smoke must not install optional auth headers")
+    endif()
 endif()
 if(NOT EXISTS
    "${installed_include_dir}/cxxmcp/third_party/jsonrpcpp/jsonrpcpp.hpp")

@@ -12,6 +12,7 @@ file(READ "${tests_cmake}" tests_cmake_content)
 set(required_release_blocking_tests
     protocol
     sdk_boundary
+    auth
     transport_contract
     transport_stdio_contract
     client_server
@@ -40,7 +41,7 @@ foreach(test_name IN LISTS required_release_blocking_tests)
 endforeach()
 
 foreach(header_test
-        protocol error config transport client server peer handler service sdk)
+        protocol error config auth transport client server peer handler service sdk)
     string(REGEX MATCH
         "add_cxxmcp_public_header_compile_test\\([ \t\r\n]*${header_test}([ \t\r\n]|\\))"
         has_header_test

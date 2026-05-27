@@ -1,6 +1,18 @@
-get_filename_component(SOURCE_PATH "${CURRENT_PORT_DIR}/../../../.." ABSOLUTE)
+# Future curated-registry portfile sketch.
+#
+# This file is not consumed by the overlay port. It documents the shape expected
+# for a future microsoft/vcpkg curated-registry PR after cxxmcp has enough
+# maturity evidence and a release tag with a known source archive hash.
 
 vcpkg_check_linkage(ONLY_STATIC_LIBRARY)
+
+vcpkg_from_github(
+    OUT_SOURCE_PATH SOURCE_PATH
+    REPO caomengxuan666/cxxmcp
+    REF v@CXXMCP_VERSION@
+    SHA512 @CXXMCP_RELEASE_ARCHIVE_SHA512@
+    HEAD_REF master
+)
 
 set(CXXMCP_VCPKG_ENABLE_AUTH OFF)
 if("auth" IN_LIST FEATURES)

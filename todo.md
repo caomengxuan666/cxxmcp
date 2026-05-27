@@ -762,32 +762,35 @@ true:
 
 ## P2: Vcpkg Curated Registry Readiness
 
-- [ ] Keep `packaging/vcpkg/ports/cxxmcp` as the first-class overlay port while
+- [x] Keep `packaging/vcpkg/ports/cxxmcp` as the first-class overlay port while
   the project does not yet meet vcpkg curated-registry maturity requirements.
-- [ ] Publish clear overlay-port usage instructions in README / package docs,
+- [x] Publish clear overlay-port usage instructions in README / package docs,
   including `--overlay-ports=<repo>/packaging/vcpkg/ports`.
-- [ ] Add a `vcpkg-configuration.json` example for consuming cxxmcp from an
+- [x] Add a `vcpkg-configuration.json` example for consuming cxxmcp from an
   overlay or future custom Git registry with a pinned baseline.
-- [ ] Prepare a standalone or repository-hosted Git registry path if users need
+- [x] Prepare a standalone or repository-hosted Git registry path if users need
   vcpkg versioning before the curated registry accepts the port.
-- [ ] For a future curated-registry PR, replace local-source overlay logic with
-  `vcpkg_from_github()` using a release tag and SHA512 source archive hash.
-- [ ] Remove `-DBUILD_SHARED_LIBS=OFF` from the curated-registry portfile and
-  let vcpkg triplets control linkage; keep `vcpkg_check_linkage` only if the
-  SDK intentionally remains static-only.
-- [ ] Make `jsonrpcpp` a private implementation detail for package consumers:
+- [x] Prepare the future curated-registry PR replacement for local-source
+  overlay logic with `vcpkg_from_github()`, a release tag, and SHA512 source
+  archive hash placeholders.
+- [x] Remove `-DBUILD_SHARED_LIBS=OFF` from the curated-registry portfile; keep
+  `vcpkg_check_linkage(ONLY_STATIC_LIBRARY)` because current SDK libraries are
+  intentionally static-only until a shared-library ABI policy exists.
+- [x] Make `jsonrpcpp` a private implementation detail for package consumers:
   do not export a public `jsonrpcpp` target or install it as a visible
   third-party SDK surface unless vcpkg explicitly accepts that shape.
-- [ ] Decide the vcpkg HTTPS/TLS feature model for `cpp-httplib`: default
+- [x] Decide the vcpkg HTTPS/TLS feature model for `cpp-httplib`: default
   loopback HTTP only, or an opt-in `ssl` / `https` feature depending on
   `cpp-httplib[openssl]`.
-- [ ] Keep full OAuth/DPoP auth as a separate future vcpkg feature after the
+- [x] Keep full OAuth/DPoP auth as a separate future vcpkg feature after the
   OpenSSL-backed implementation lands; do not pull OpenSSL into the default SDK
   package path prematurely.
 - [ ] Accumulate maturity evidence before resubmitting to the vcpkg curated
   registry: stable release history, green release-gates over time, downstream
   examples, package-manager smoke evidence, changelog discipline, and public
   user adoption signals.
+  - [x] Track the required evidence categories in
+        `docs/ecosystem_maturity_evidence.md`.
 - [ ] Resubmit to the vcpkg curated registry only after the maturity evidence is
   strong enough to address `microsoft/vcpkg#51972` without relying on policy
   exceptions.
@@ -810,7 +813,7 @@ true:
 
 ## P2: Developer Experience Polish
 
-- [ ] Keep examples focused on real usable SDK flows.
+- [x] Keep examples focused on real usable SDK flows.
 - [x] Add minimal stdio server example.
 - [x] Add minimal Streamable HTTP client example.
 - [x] Add process-stdio client example for local MCP servers.
@@ -823,21 +826,30 @@ true:
 - [x] Add raw JSON-RPC escape-hatch example.
 - [x] Add handler-interface example.
 - [x] Add graceful shutdown example.
-- [ ] Add timeout/cancellation example.
-- [ ] Keep examples compiling in CI.
-- [ ] Keep example APIs aligned with canonical `Peer` / `Service` docs.
+- [x] Add timeout/cancellation example.
+- [x] Keep examples compiling in CI.
+- [x] Keep example APIs aligned with canonical `Peer` / `Service` docs.
+- [x] Track the in-tree example taxonomy and canonical/non-canonical split in
+  `docs/examples.md`.
 
 ## P2: Runtime, Gateway, CLI Separation
 
-- [ ] Keep gateway docs separate from SDK docs.
-- [ ] Keep runtime state out of SDK headers.
-- [ ] Keep server registry/discovery out of SDK core.
-- [ ] Keep exposure profiles out of SDK core.
-- [ ] Keep trust/approval policy out of SDK core.
-- [ ] Keep import/export out of SDK core.
-- [ ] Keep multi-profile hosting out of SDK core.
-- [ ] Make gateway depend on SDK targets, not the other way around.
-- [ ] Keep CLI defaults out of public SDK APIs.
+- [x] Keep gateway docs separate from SDK docs and out of the README first
+  screen, which should stay SDK-first.
+  - [x] Track the runtime/gateway/tooling boundary in
+        `docs/runtime_gateway.md`.
+- [x] Keep runtime state out of SDK headers.
+- [x] Keep server registry/discovery out of SDK core.
+- [x] Keep exposure profiles out of SDK core.
+- [x] Keep trust/approval policy out of SDK core.
+- [x] Keep import/export out of SDK core.
+- [x] Keep multi-profile hosting out of SDK core.
+- [x] Make gateway depend on SDK targets, not the other way around.
+- [x] Keep CLI defaults out of public SDK APIs.
+- [x] Add a source-layout audit gate that fails if runtime/gateway/CLI types
+  are included by canonical SDK headers under `cxxmcp/protocol`,
+  `cxxmcp/transport`, `cxxmcp/handler`, `cxxmcp/peer`, `cxxmcp/service`,
+  `cxxmcp/client`, or `cxxmcp/server`.
 - [x] Add tests that SDK package consumption does not require runtime/gateway
   targets unless explicitly linked.
 
@@ -858,20 +870,52 @@ true:
       tests for MCP OAuth challenge parameters.
 - [x] Make the default in-memory token store separate entries by token key
       instead of overwriting unrelated resource/client credentials.
+- [x] Add RMCP-style OAuth client lifecycle scaffolding for authorization URL
+  creation, authorization-code exchange boundary, token refresh boundary, and
+  reauthorization-required state.
+- [x] Add protected-resource and authorization-server discovery planning plus a
+  transport-neutral metadata fetch boundary.
+- [x] Add concrete protected-resource and authorization-server discovery
+  executor over the `OAuthMetadataEndpoint` transport boundary.
+- [x] Add a default SDK HTTP metadata endpoint implementation for the optional
+  auth target.
+- [x] Add explicit `CredentialStore` and `StateStore` contracts for OAuth
+  credentials and PKCE/CSRF state without choosing persistent storage for
+  applications.
+- [x] Add complete scope selection policy matching the RMCP shape:
+  `WWW-Authenticate` scope first, protected-resource metadata next,
+  authorization-server metadata next, and application defaults last.
+- [x] Add scope-upgrade URL generation from `insufficient_scope`
+  `WWW-Authenticate` challenges.
+- [x] Add Streamable HTTP client integration points for `401
+  WWW-Authenticate`, `403 insufficient_scope`, refresh-on-401, and one-shot
+  retry after a successful refresh.
+- [x] Add dynamic client registration and Client ID Metadata Document
+  lifecycle boundaries without making browser launching or loopback redirect
+  receivers part of the SDK core.
+- [x] Keep DPoP/JWT verification behind the auth feature and OpenSSL-backed
+  implementation; do not ship decode-only security checks.
+- [x] Add installed-package smoke coverage proving default installs do not
+  expose optional auth headers and auth-enabled installs can consume
+  `cxxmcp::auth` explicitly.
+- [x] Keep full OAuth/DPoP out of the default package path until the optional
+  auth feature has package-manager smoke coverage.
 
 ## P2: Performance, Load, And Reliability
 
-- [ ] Add load tests for concurrent HTTP sessions.
-- [ ] Add load tests for many in-flight requests.
-- [ ] Add load tests for high-volume notifications.
-- [ ] Add memory/queue bound tests.
-- [ ] Add backpressure tests.
-- [ ] Add shutdown-under-load tests.
-- [ ] Add long-running process-stdio tests.
-- [ ] Add malformed input fuzz/smoke tests for JSON-RPC parsing.
-- [ ] Add sanitizer builds where practical.
-- [ ] Add thread sanitizer builds where practical.
-- [ ] Use load-test results before considering a different HTTP backend.
+- [x] Add load tests for concurrent HTTP sessions.
+- [x] Add load tests for many in-flight requests.
+- [x] Add load tests for high-volume notifications.
+- [x] Add memory/queue bound tests.
+- [x] Add backpressure tests.
+- [x] Add shutdown-under-load tests.
+- [x] Add long-running process-stdio tests.
+- [x] Add malformed input fuzz/smoke tests for JSON-RPC parsing.
+- [x] Add sanitizer builds where practical.
+- [x] Add thread sanitizer builds where practical.
+- [x] Use load-test results before considering a different HTTP backend.
+  - [x] Track the current HTTP backend evidence and replacement triggers in
+        `docs/http_transport_backend_evidence.md`.
 
 ## Non-Goals
 
@@ -929,4 +973,4 @@ true:
 - [x] Publish generated docs.
 - [x] Add vcpkg/Conan route.
 - [x] Add contribution/security/governance docs.
-- [ ] Publish versioned release artifacts and compatibility notes.
+- [x] Publish versioned release artifacts and compatibility notes.

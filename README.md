@@ -14,13 +14,10 @@
 
 `cxxmcp` is a modern C++17 SDK for building
 [Model Context Protocol](https://modelcontextprotocol.io/) clients and servers.
-Optional C++20 runtime, gateway, CLI, and example targets are layered above the
-embeddable SDK.
 
 The public SDK surface is intentionally narrow and package-friendly:
 `protocol`, `transport`, `handler`, `peer`, `service`, `client`, and `server`
-are the core library layers. Gateway, app, and CLI code are optional runtime
-tools built on top of the SDK.
+are the core library layers.
 
 Read this in [Chinese](README_zh.md).
 
@@ -53,7 +50,6 @@ Read this in [Chinese](README_zh.md).
   paths
 - Typed tool, prompt, resource, completion, elicitation, sampling, task,
   progress, and cancellation surfaces
-- Optional gateway and CLI runtime for local MCP server management
 - Local RMCP interoperability and package-smoke tests used as release gates
 
 ## Quick Install
@@ -74,8 +70,8 @@ target_link_libraries(my_server PRIVATE cxxmcp::server)
 target_link_libraries(my_client PRIVATE cxxmcp::client)
 ```
 
-Public SDK headers and package targets are C++17. Optional runtime, gateway,
-CLI, examples, and tests require C++20.
+Public SDK headers and package targets are C++17. Optional non-SDK targets,
+examples, and tests require C++20.
 
 Package-manager work starts from the SDK-only contract:
 
@@ -85,9 +81,19 @@ Package-manager work starts from the SDK-only contract:
 - FetchContent / CPM.cmake snippets:
   [Package consumption](docs/package_consumption.md)
 
-These paths build the C++17 SDK targets and keep runtime, gateway, and CLI
-disabled. The vcpkg port is an overlay port for this checkout; an upstream
-registry port will need a fixed release URL and checksum.
+These paths build the C++17 SDK targets and leave optional tooling disabled.
+The vcpkg port is an overlay port for this checkout:
+
+```powershell
+vcpkg install cxxmcp --overlay-ports=C:\path\to\MCPServer.cpp\packaging\vcpkg\ports
+```
+
+Manifest-mode projects can use
+`packaging/vcpkg/vcpkg-configuration.overlay-example.json` as a starting point
+and pin their own vcpkg `builtin-baseline`. cxxmcp is not in the curated
+registry today; a future registry port will need a release tag, SHA512 source
+archive hash, triplet-controlled linkage, and the same SDK-only dependency
+contract.
 
 ## Quality Signals
 
@@ -193,6 +199,7 @@ Build examples:
 ```powershell
 cmake --preset examples
 cmake --build --preset examples
+ctest --preset examples
 ```
 
 Build and run the full smoke test set:
@@ -428,6 +435,9 @@ Legacy SSE compatibility is compatibility-only. New code should use the
 Streamable HTTP POST/GET/DELETE behavior and treat raw SSE endpoints as an
 adapter concern, not a separate SDK protocol.
 
+The current `cpp-httplib` backend decision and replacement trigger are tracked
+in [HTTP transport backend evidence](docs/http_transport_backend_evidence.md).
+
 ## CMake Options
 
 | Option | Default | Description |
@@ -496,10 +506,19 @@ request semantics remain stable.
 The in-tree examples preset builds compact SDK entry points:
 
 - First-choice Peer/Service examples: `server_peer`, `client_peer`,
-  `process_stdio_client`
-- Compatibility and low-level examples: `stdio_server`, `typed_stdio_server`,
-  `client_loopback`, `task_async_client_server`
+  `process_stdio_client`, `timeout_cancellation`, `elicitation_client`
+- Focused capability examples: `handler_contracts`, `task_async_client_server`,
+  `typed_stdio_server`, `streamable_http_client`
+- Compatibility and low-level examples: `stdio_server`, `client_loopback`
 - Optional runtime tooling example: `gateway_runtime`
+
+`ctest --preset examples` runs only self-contained smoke examples. Long-running
+stdio servers and external Streamable HTTP samples are build-checked but not run
+as standalone CTest cases.
+
+The example taxonomy is maintained in [Examples](docs/examples.md). Runtime and
+gateway tooling is documented separately in
+[Runtime and gateway tools](docs/runtime_gateway.md).
 
 The separate
 [cxxmcp-examples](https://github.com/caomengxuan666/cxxmcp-examples)

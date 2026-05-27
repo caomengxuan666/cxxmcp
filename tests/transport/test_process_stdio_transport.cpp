@@ -735,6 +735,96 @@ void test_native_process_stdio_transport_exposes_client_contract() {
   require(closed.has_value(), "native process close should succeed");
 }
 
+void test_native_process_stdio_transport_reuses_child_for_multiple_requests() {
+  constexpr int kToolRequestCount = 16;
+
+  mcp::transport::ProcessStdioClientTransportOptions options;
+  options.command = MCP_TEST_CHILD_EXE;
+  mcp::transport::ProcessStdioClientTransport transport(std::move(options));
+
+  auto sent = transport.send(mcp::protocol::JsonRpcRequest{
+      .method = std::string(mcp::protocol::InitializeMethod),
+      .params = mcp::protocol::Json::object(),
+      .id = std::int64_t{700},
+  });
+  require(sent.has_value(), "native long-running initialize send failed");
+
+  auto received = transport.receive();
+  require(received.has_value(),
+          "native long-running initialize receive failed");
+  require(received->has_value(),
+          "native long-running initialize response missing");
+  const auto* initialize_response =
+      std::get_if<mcp::protocol::JsonRpcResponse>(&received->value());
+  require(initialize_response != nullptr,
+          "native long-running initialize should receive response");
+  require(
+      initialize_response->id == mcp::protocol::RequestId{std::int64_t{700}},
+      "native long-running initialize response id mismatch");
+  require(initialize_response->result.has_value(),
+          "native long-running initialize should have result");
+
+  sent = transport.send(mcp::protocol::JsonRpcNotification{
+      .method = "notifications/initialized",
+      .params = mcp::protocol::Json::object(),
+  });
+  require(sent.has_value(),
+          "native long-running initialized notification send failed");
+
+  for (int i = 0; i < kToolRequestCount; ++i) {
+    const auto request_id = std::int64_t{701 + i};
+    sent = transport.send(mcp::protocol::JsonRpcRequest{
+        .method = "tools/call",
+        .params =
+            mcp::protocol::Json{
+                {"name", "echo"},
+                {"arguments", mcp::protocol::Json{{"round", i}}},
+            },
+        .id = request_id,
+    });
+    require(sent.has_value(), "native long-running tool request send failed");
+
+    received = transport.receive();
+    require(received.has_value(),
+            "native long-running tool response receive failed");
+    require(received->has_value(), "native long-running tool response missing");
+    const auto* response =
+        std::get_if<mcp::protocol::JsonRpcResponse>(&received->value());
+    require(response != nullptr,
+            "native long-running should receive tool response");
+    require(response->id == mcp::protocol::RequestId{request_id},
+            "native long-running tool response id mismatch");
+    require(response->result.has_value(),
+            "native long-running tool response should have result");
+    require(response->result->at("content").at(0).at("text") == "echo",
+            "native long-running tool response content mismatch");
+    require(response->result->at("structuredContent").at("round") == i,
+            "native long-running structured content mismatch");
+  }
+
+  const auto diagnostics = transport.diagnostics();
+  require(diagnostics.at("closed") == false,
+          "native long-running transport should remain open");
+  require(diagnostics.at("queued").get<std::size_t>() == 0,
+          "native long-running transport should drain queued responses");
+  require(diagnostics.at("pendingServerRequests").get<std::size_t>() == 0,
+          "native long-running transport should not leak server requests");
+  require(diagnostics.at("activeRequestWorkers").get<std::size_t>() == 0,
+          "native long-running transport should not leak active workers");
+  require(diagnostics.at("completedRequestWorkers").get<std::size_t>() >=
+              static_cast<std::size_t>(kToolRequestCount + 1),
+          "native long-running completed worker count mismatch");
+  require(diagnostics.at("failedRequestWorkers").get<std::size_t>() == 0,
+          "native long-running request workers should not fail");
+  require(diagnostics.at("timedOutRequestWorkers").get<std::size_t>() == 0,
+          "native long-running request workers should not time out");
+
+  const auto closed = transport.close();
+  require(closed.has_value(), "native long-running close should succeed");
+  require(transport.diagnostics().at("closed") == true,
+          "native long-running diagnostics should report closed");
+}
+
 void test_native_process_stdio_transport_diagnostics_timeout_cleanup() {
   mcp::transport::ProcessStdioClientTransportOptions options;
   options.command = MCP_TEST_CHILD_EXE;
@@ -1041,6 +1131,8 @@ int main() {
        test_process_stdio_transport_calls_rust_tool},
       {"native process stdio transport exposes client contract",
        test_native_process_stdio_transport_exposes_client_contract},
+      {"native process stdio transport reuses child for multiple requests",
+       test_native_process_stdio_transport_reuses_child_for_multiple_requests},
       {"native process stdio transport diagnostics timeout cleanup",
        test_native_process_stdio_transport_diagnostics_timeout_cleanup},
       {"native process stdio transport surfaces unexpected response id",

@@ -31,6 +31,28 @@ FetchContent and CPM.cmake consumption. Registry builds should use
 Runtime/tooling dependencies such as spdlog and CLI11 are outside the SDK
 package contract and should not be required by SDK-only packages.
 
+`cpp-httplib` remains an implementation dependency hidden behind transport
+interfaces. The evidence and replacement trigger for considering another HTTP
+backend are tracked in
+[HTTP transport backend evidence](http_transport_backend_evidence.md).
+
+Runtime and gateway state is also outside the public SDK header contract. The
+canonical SDK include roots must not expose app-layer registry/discovery models,
+runtime state, exposure profiles, trust policy, import/export services,
+multi-profile hosting configuration, CLI defaults, or observability/logging
+types. Those concepts may depend on the SDK, but the dependency must not point
+back into SDK headers or package targets.
+
+For vcpkg, the repository-hosted overlay port is the supported package-manager
+path until the project has enough maturity evidence for a curated-registry PR.
+That port must stay SDK-only: no runtime, gateway, CLI, examples, tests, docs,
+spdlog, or CLI11 in the default package dependency closure.
+
+`jsonrpcpp` is private to cxxmcp package builds. It may be installed under the
+`cxxmcp/third_party` prefix if exported targets need it internally, but cxxmcp
+must not present it as a public package target or top-level third-party SDK
+surface.
+
 ## Update Cadence
 
 Before each public release candidate:

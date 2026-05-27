@@ -37,6 +37,15 @@ jobs:
       - name: Check protocol model coverage
         run: python scripts/check_protocol_model_coverage.py --source .
 
+      - name: Check SDK header boundaries
+        run: python scripts/check_sdk_header_boundaries.py --source .
+
+      - name: Check package auth features
+        run: python scripts/check_package_auth_features.py --source .
+
+      - name: Check P2 TODO status
+        run: python scripts/check_p2_todo_status.py --source .
+
   build-config-smoke:
     name: sdk-build-${{ matrix.build_type }}
     runs-on: ubuntu-latest
@@ -78,6 +87,58 @@ jobs:
 
       - name: Build SDK
         run: cmake --build build-config-smoke --parallel
+
+  sanitizer:
+    name: sanitizer-${{ matrix.name }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: asan-ubsan
+            configure_preset: tests-asan-ubsan
+            build_preset: tests-asan-ubsan
+            test_preset: sanitizer-asan-ubsan
+          - name: tsan
+            configure_preset: tests-tsan
+            build_preset: tests-tsan
+            test_preset: sanitizer-tsan
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Install sanitizer tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y clang ninja-build
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Setup uv
+        uses: astral-sh/setup-uv@v5
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Configure sanitizer build
+        run: cmake --preset ${{ matrix.configure_preset }}
+
+      - name: Build sanitizer tests
+        run: cmake --build --preset ${{ matrix.build_preset }} --parallel
+
+      - name: Run sanitizer release-blocking subset
+        run: ctest --preset ${{ matrix.test_preset }}
 
   clang-tidy:
     name: clang-tidy-public-headers
@@ -393,6 +454,9 @@ jobs:
             docs/compatibility_policy.md \
             docs/dependency_policy.md \
             docs/elicitation_lifecycle.md \
+            docs/ecosystem_maturity_evidence.md \
+            docs/examples.md \
+            docs/http_transport_backend_evidence.md \
             docs/official_sdk_candidate_process.md \
             docs/package_consumption.md \
             docs/package_consumption_zh.md \
@@ -402,6 +466,7 @@ jobs:
             docs/release_candidate_checklist.md \
             docs/release_notes_template.md \
             docs/request_lifecycle.md \
+            docs/runtime_gateway.md \
             docs/sdk_peer_service_migration.md \
             docs/task_lifecycle.md \
             release-evidence/docs/

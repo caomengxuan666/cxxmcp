@@ -334,7 +334,15 @@ if(MCP_ENABLE_AUTH)
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/sdk/auth/include>
         $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>
     )
+    if(NOT CXXMCP_USE_SYSTEM_DEPS)
+        target_include_directories(mcp_auth INTERFACE
+            $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/third_party>
+        )
+    endif()
     target_link_libraries(mcp_auth INTERFACE mcp_core)
+    if(CXXMCP_JSON_TARGET)
+        target_link_libraries(mcp_auth INTERFACE "${CXXMCP_JSON_TARGET}")
+    endif()
     cxxmcp_require_sdk_cxx(mcp_auth)
 endif()
 

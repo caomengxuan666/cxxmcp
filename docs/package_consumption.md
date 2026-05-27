@@ -33,6 +33,107 @@ package contract. vcpkg/Conan package submissions for the SDK should keep
 runtime, gateway, CLI, examples, tests, and docs disabled unless a separate
 tools package is created.
 
+## vcpkg Overlay Port
+
+`cxxmcp` is not in the vcpkg curated registry. The repository-hosted port at
+`packaging/vcpkg/ports/cxxmcp` is the supported vcpkg path for now, and should
+be consumed as an overlay port from a checkout of this repository.
+
+For a one-off install:
+
+```powershell
+vcpkg install cxxmcp --overlay-ports=C:\path\to\MCPServer.cpp\packaging\vcpkg\ports
+```
+
+For manifest mode, keep your application manifest narrow:
+
+```json
+{
+  "dependencies": [
+    "cxxmcp"
+  ]
+}
+```
+
+Then install with the overlay path:
+
+```powershell
+vcpkg install --overlay-ports=C:\path\to\MCPServer.cpp\packaging\vcpkg\ports
+```
+
+An example `vcpkg-configuration.json` shape is available at:
+
+```text
+packaging/vcpkg/vcpkg-configuration.overlay-example.json
+```
+
+Copy it next to your downstream `vcpkg.json` and replace the
+`builtin-baseline` placeholder with the vcpkg commit your project pins. The
+`overlay-ports` path is relative to the directory containing
+`vcpkg-configuration.json`; adjust it if your checkout lives elsewhere.
+
+The overlay port builds only the C++17 SDK package targets. It sets
+`CXXMCP_USE_SYSTEM_DEPS=ON`, disables runtime, gateway, CLI, examples, tests,
+and docs, and depends on vcpkg packages for `tl-expected`, `nlohmann-json`, and
+`cpp-httplib`. It does not make spdlog, CLI11, runtime, gateway, or CLI targets
+part of SDK package consumption.
+
+The optional auth scaffold is exposed as an opt-in feature and is not part of
+the default vcpkg package path:
+
+```powershell
+vcpkg install "cxxmcp[auth]" --overlay-ports=C:\path\to\MCPServer.cpp\packaging\vcpkg\ports
+```
+
+The `auth` feature maps to `CXXMCP_ENABLE_AUTH=ON`. It currently enables
+transport-neutral OAuth/DPoP contracts only; it must not pull OpenSSL into the
+default package path.
+
+`jsonrpcpp` remains a private implementation detail. Consumers should link
+`cxxmcp::protocol`, `cxxmcp::client`, `cxxmcp::server`, or `cxxmcp::sdk`;
+they should not include or link a public `jsonrpcpp` package surface through
+cxxmcp.
+
+## Future vcpkg Registry Paths
+
+If users need vcpkg versioning before the curated registry accepts the port,
+the next step is a standalone or repository-hosted custom Git registry for the
+same SDK-only port. A future configuration shape is sketched at:
+
+```text
+packaging/vcpkg/vcpkg-configuration.git-registry-future-example.json
+```
+
+That file is intentionally an example, not an active registry promise. Replace
+the repository URL and both baseline placeholders with real registry commits
+before using it.
+
+Curated-registry resubmission is gated by
+[Ecosystem maturity evidence](ecosystem_maturity_evidence.md), not by the
+presence of the overlay port alone.
+
+A future vcpkg curated-registry pull request should differ from the local
+overlay port in these ways:
+
+- fetch source with `vcpkg_from_github()` from a release tag and SHA512 source
+  archive hash, instead of using the local checkout as `SOURCE_PATH`; use
+  `packaging/vcpkg/curated-portfile.future.cmake` as the current review sketch;
+- keep `vcpkg_check_linkage(ONLY_STATIC_LIBRARY)` while the SDK libraries are
+  explicitly built as static libraries and shared-library ABI support is not
+  claimed; do not force `-DBUILD_SHARED_LIBS=OFF` in the portfile;
+- keep SDK-only build options enabled and runtime, gateway, CLI, examples,
+  tests, and docs disabled;
+- keep `jsonrpcpp` private to the cxxmcp package instead of exporting a public
+  third-party target;
+- keep default `cpp-httplib` consumption as loopback HTTP without TLS unless a
+  deliberate `ssl` or `https` feature is added for `cpp-httplib[openssl]`;
+- keep OAuth/DPoP auth as a later opt-in feature after the OpenSSL-backed
+  implementation exists, rather than pulling OpenSSL into the default SDK
+  package;
+- keep package smoke evidence in both modes: default installs must not expose
+  `cxxmcp::auth`, while auth-enabled installs must let an external consumer
+  link `cxxmcp::auth` explicitly.
+
 ## FetchContent
 
 Prefer the SDK source release archive over GitHub's generated source archive.
@@ -91,6 +192,19 @@ add_executable(my_client main.cpp)
 target_link_libraries(my_client PRIVATE cxxmcp::client)
 ```
 
+## Conan
+
+The root `conanfile.py` keeps auth disabled by default. Consumers that need the
+optional auth scaffold must opt in explicitly:
+
+```powershell
+conan create . -o cxxmcp/*:with_auth=True
+```
+
+`with_auth=True` maps to `CXXMCP_ENABLE_AUTH=ON` and exposes the
+`cxxmcp::auth` component. The default Conan package remains SDK-only and does
+not export auth headers or OpenSSL requirements.
+
 ## Narrow SDK Targets
 
 Choose the narrowest public target that matches the binary you are building.
@@ -145,4 +259,5 @@ packaging/xmake/packages/c/cxxmcp/xmake.lua
 
 It builds the same SDK source archive and disables runtime, gateway, CLI,
 examples, tests, and docs. Submit it to xmake-repo after the package interface
-is stable enough for registry review.
+is stable enough for registry review. The recipe has an opt-in `auth` config
+that maps to `CXXMCP_ENABLE_AUTH=ON`; the default remains auth-off.

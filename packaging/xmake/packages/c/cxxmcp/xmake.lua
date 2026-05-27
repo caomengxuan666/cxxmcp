@@ -5,6 +5,7 @@ package("cxxmcp")
 
     add_urls("https://github.com/caomengxuan666/cxxmcp/releases/download/$(version)/cxxmcp-sdk-source-$(version).tar.gz")
     add_versions("v2.0.2", "3c4ad678a8612183a4f2539973328b6a85dab360991a86e6328ca032cc5e2ba8")
+    add_configs("auth", {description = "Build the optional OAuth 2.1 / DPoP auth scaffold target.", default = false, type = "boolean"})
 
     add_deps("cmake")
 
@@ -30,6 +31,7 @@ package("cxxmcp")
             "-DCXXMCP_BUILD_EXAMPLES=OFF",
             "-DCXXMCP_BUILD_TESTS=OFF",
             "-DCXXMCP_BUILD_DOCS=OFF",
+            "-DCXXMCP_ENABLE_AUTH=" .. (package:config("auth") and "ON" or "OFF"),
             "-DCXXMCP_USE_SYSTEM_DEPS=OFF",
             "-DBUILD_SHARED_LIBS=OFF"
         }
@@ -46,4 +48,15 @@ package("cxxmcp")
                 (void)serialized;
             }
         ]]}, {configs = {languages = "c++17"}}))
+        if package:config("auth") then
+            assert(package:check_cxxsnippets({test = [[
+                #include <cxxmcp/auth.hpp>
+                void test() {
+                    mcp::auth::ClientRegistrationOptions options;
+                    options.redirect_uri = "http://localhost/callback";
+                    auto request = mcp::auth::build_client_registration_request(options);
+                    (void)request;
+                }
+            ]]}, {configs = {languages = "c++17"}}))
+        end
     end)

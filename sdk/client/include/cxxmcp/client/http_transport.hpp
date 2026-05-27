@@ -7,6 +7,7 @@
 /// endpoints.
 
 #include <chrono>
+#include <functional>
 #include <memory>
 #include <optional>
 #include <string>
@@ -15,6 +16,27 @@
 #include "cxxmcp/client/client.hpp"
 
 namespace mcp::client {
+
+/// @brief HTTP auth challenge observed by the client transport.
+struct HttpAuthChallenge {
+  /// HTTP status code, normally 401 or 403.
+  int status_code = 0;
+  /// Request method name that received the challenge.
+  std::string method;
+  /// Response headers copied from the failed HTTP response.
+  std::unordered_map<std::string, std::string> headers;
+  /// First `WWW-Authenticate` header value, when present.
+  std::optional<std::string> www_authenticate;
+};
+
+/// @brief Application hook used for one-shot bearer refresh on HTTP 401.
+///
+/// Return a new raw bearer token to retry the failed request once. Returning
+/// `std::nullopt` leaves the original auth failure intact. The transport does
+/// not perform OAuth itself; full OAuth lifecycle remains in the optional auth
+/// layer and application code.
+using HttpAuthRefreshHandler =
+    std::function<std::optional<std::string>(const HttpAuthChallenge&)>;
 
 /// @brief Configuration for the client HTTP transport.
 struct HttpTransportOptions {
@@ -40,6 +62,11 @@ struct HttpTransportOptions {
   /// every outbound HTTP request. Empty tokens are ignored. If `headers`
   /// already contains `Authorization`, the explicit header wins.
   std::optional<std::string> auth_header;
+
+  /// Optional refresh hook invoked once for a 401 response before surfacing the
+  /// auth failure. The returned token is stored as the new bearer token for the
+  /// retry and future requests.
+  HttpAuthRefreshHandler auth_refresh_handler;
 
   /// Connect, read, and write timeout used by the transport.
   std::chrono::milliseconds timeout{30000};

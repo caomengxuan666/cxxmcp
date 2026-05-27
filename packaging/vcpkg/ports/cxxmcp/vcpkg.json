@@ -9,8 +9,7 @@
   "dependencies": [
     {
       "name": "cpp-httplib",
-      "default-features": false,
-      "features": []
+      "default-features": false
     },
     "nlohmann-json",
     "tl-expected",
@@ -22,5 +21,10 @@
       "name": "vcpkg-cmake-config",
       "host": true
     }
-  ]
+  ],
+  "features": {
+    "auth": {
+      "description": "Build the optional OAuth 2.1 / DPoP auth scaffold target."
+    }
+  }
 }

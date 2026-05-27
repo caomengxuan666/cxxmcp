@@ -53,8 +53,8 @@ OAuth still requires cxxmcp-owned protocol and security code around that helper:
 | RFC 9728/8414 metadata | Typed structs + from-json, same pattern as existing `cxxmcp::protocol` models. | cxxmcp |
 | WWW-Authenticate parsing | Header key-value parser owned by cxxmcp so MCP-specific challenge behavior is explicit. | cxxmcp |
 | Token model + refresh rotation | Access/refresh token structs, expiry tracking, refresh-on-401 hook. | cxxmcp |
-| DPoP (RFC 9449) | Header/payload JSON assembly, base64url, ECDSA/EdDSA signing and verification via OpenSSL. | cxxmcp + OpenSSL |
-| JWT / ID token validation | Decode and verify signatures/claims via OpenSSL/JWKS-aware code. MiniOAuth2 JWT parsing is not sufficient because it does not validate signatures or claims. | cxxmcp + OpenSSL |
+| DPoP (RFC 9449) | Header/payload JSON assembly, base64url, ECDSA/EdDSA signing and verification via OpenSSL-backed implementations behind `cxxmcp::auth`. | cxxmcp + OpenSSL |
+| JWT / ID token validation | Verify signatures and claims via OpenSSL/JWKS-aware code. Decode-only helpers are intentionally not part of the public SDK. | cxxmcp + OpenSSL |
 
 OpenSSL is the only binary/system dependency that the full implementation should
 introduce when crypto-backed auth is enabled. The initial scaffold does not call
@@ -78,6 +78,9 @@ Auth support must preserve the existing SDK packaging behavior:
   call `find_package(OpenSSL)`, and do not export auth targets;
 - `MCP_ENABLE_AUTH=ON` builds add `cxxmcp::auth` and install/export the auth
   contract headers with the rest of the SDK package;
+- installed-package smoke checks default builds do not install optional auth
+  headers, while auth-enabled builds can consume `cxxmcp::auth` from a clean
+  external CMake project;
 - vcpkg builds resolve OpenSSL through the active vcpkg toolchain and port
   dependency metadata;
 - Conan builds resolve OpenSSL through the Conan dependency graph and generated
@@ -129,7 +132,12 @@ include/cxxmcp/auth/          (pure protocol, no network I/O)
 ├── metadata.hpp              RFC 9728 + RFC 8414 models
 ├── www_auth.hpp              WWW-Authenticate header parser
 ├── token.hpp                 Token model and refresh rotation logic
-└── registration.hpp          DCR + Client ID Metadata Document models
+├── lifecycle.hpp             OAuth lifecycle stores, state machine, and
+│                              token endpoint boundaries
+├── registration.hpp          DCR + Client ID Metadata Document models and
+│                              client_id selection lifecycle boundaries
+└── http_metadata_endpoint.hpp
+                               default metadata JSON parser over injected HTTP GET
 
 third_party/MiniOAuth2/       Planned vendored C++17 OAuth helper; private include
 
@@ -150,28 +158,64 @@ transport. The current `cxxmcp::auth` scaffold defines public contracts for:
 
 - PKCE S256 code challenge generation and verification boundaries
 - DPoP bound token proof construction and verification boundaries
+- JWT verifier boundary for access tokens, ID tokens, client assertions, and
+  DPoP proofs; public auth APIs expose verification contracts, not decode-only
+  parsing helpers
 - RFC 9728 protected resource metadata discovery models
 - RFC 8414 authorization server metadata models
 - WWW-Authenticate `resource_metadata` and `error=insufficient_scope`
   challenge helpers
-- Dynamic Client Registration (RFC 7591) model
-- Client ID Metadata Document model
+- Dynamic Client Registration (RFC 7591) model, endpoint boundary, request
+  defaults, and response-to-client-config normalization
+- Client ID Metadata Document model, HTTPS URL validation, support-flag
+  detection, and RMCP-style client_id selection fallback to DCR
+- Credential storage abstraction (`CredentialStore`) and authorization state
+  storage abstraction (`StateStore`) with in-memory defaults
+- Transport-neutral metadata fetch boundary (`OAuthMetadataEndpoint`) plus
+  protected-resource and authorization-server metadata URL planning helpers
+- Default `HttpOAuthMetadataEndpoint` implementation that parses RFC 9728 /
+  RFC 8414 JSON over an injected HTTP GET callback without exposing a concrete
+  HTTP library
+- Authorization URL construction from caller-supplied PKCE values
+- Authorization-code exchange and refresh-token endpoint interfaces
+- `AuthorizationManager` lifecycle state for
+  unauthorized -> authorization pending -> authorized transitions
+- RMCP-style scope selection order, scope upgrade policy, and
+  `WWW-Authenticate` response analysis for `insufficient_scope`
 - Token refresh rotation boundaries (OAuth 2.1 requirement)
 - Token storage abstraction (`TokenStore` interface, default in-memory impl)
 
-PKCE, DPoP, discovery, token exchange, refresh-on-401, and OpenSSL-backed
-verifier implementations are still planned work. Public headers must keep
-these interfaces C++17-compatible while those implementations land.
+PKCE generation, DPoP signing/verification, concrete token HTTP exchange, full
+OAuth refresh-on-401 orchestration, and OpenSSL-backed verifier implementations
+are still planned work. Public headers must keep these interfaces
+C++17-compatible while those implementations land.
 
 The current lightweight resource-metadata integration point is deliberately
 small and header-only: `cxxmcp/auth/www_auth.hpp` exposes stable parameter
 constants, a default `WWW-Authenticate` parser, and helpers for extracting
 `resource_metadata` and `insufficient_scope` from parsed challenges, while
 `cxxmcp/auth/metadata.hpp` owns the RFC 9728 / RFC 8414 value models.
-`cxxmcp/auth/token.hpp` exposes the token model plus an in-memory token store
-that separates entries by the full resource/issuer/client key. Actual HTTP
-discovery and token exchange remain a later `cxxmcp::auth` implementation
-detail routed through SDK transport boundaries.
+`cxxmcp/auth/http_metadata_endpoint.hpp` provides the default SDK metadata
+endpoint parser over an injected HTTP GET function, so applications can reuse
+cxxmcp's discovery parsing without exposing cpp-httplib or another HTTP stack
+in public auth APIs. `cxxmcp/auth/token.hpp` exposes the token model plus an
+in-memory token store that separates entries by the full
+resource/issuer/client key. `cxxmcp/auth/lifecycle.hpp` exposes the public
+OAuth lifecycle scaffold: applications can plug in credential/state stores and
+a token endpoint or metadata endpoint implementation, while cxxmcp owns
+metadata URL planning, protected-resource and authorization-server discovery
+execution over that endpoint boundary, RMCP-style scope selection,
+authorization URL assembly, one-time state consumption, credential persistence,
+refresh-token rotation bookkeeping, access-token refresh decisions, and
+scope-upgrade URL generation. `cxxmcp/auth/registration.hpp` owns the DCR and
+Client ID Metadata Document lifecycle boundary, including request defaults,
+empty-secret normalization, URL client_id validation, and fallback from CIMD to
+DCR when the authorization server does not advertise support. The scaffold does
+not include fake crypto, decode-only JWT helpers, or browser/loopback behavior.
+Concrete JWT/DPoP verification must remain behind `cxxmcp::auth` and be backed
+by OpenSSL/JWKS-aware implementation code before it is shipped as a first-party
+provider. Deeper refresh-on-401 OAuth orchestration remains separate
+implementation work.
 
 ### Intentional Non-Goals (belong in application code)
 
@@ -229,6 +273,12 @@ crypto dependencies:
 - Client HTTP transports apply `auth_header` as `Authorization: Bearer <token>`
   on POST, SSE GET, and session DELETE requests unless an explicit
   `Authorization` entry already exists in the custom header map.
+- Client HTTP transports expose a transport-level auth refresh hook for
+  `401 Unauthorized`: the hook receives status, headers, method, and
+  `WWW-Authenticate`, may return a replacement bearer token, and the transport
+  retries the failed POST once. A final `401` or `403` is surfaced as an
+  auth-category `PermissionDenied` error carrying the `WWW-Authenticate`
+  detail when present.
 
 ## Client-Side Bearer Token Helper
 

@@ -1738,11 +1738,11 @@ class Peer<RoleClient> {
       }
       if (!elicitation_request_handler_ &&
           !elicitation_request_cancellation_handler_) {
+        protocol::CreateElicitationResult decline_result;
+        decline_result.action = protocol::ElicitationAction::Decline;
         return protocol::make_response(
-            request.id, protocol::create_elicitation_result_to_json(
-                            protocol::CreateElicitationResult{
-                                .action = protocol::ElicitationAction::Decline,
-                            }));
+            request.id,
+            protocol::create_elicitation_result_to_json(decline_result));
       }
       const auto result = elicitation_request_cancellation_handler_
                               ? elicitation_request_cancellation_handler_(
@@ -2575,10 +2575,10 @@ class Peer<RoleServer> {
       if (!result) {
         return detail::peer_error_response(request, result.error());
       }
+      protocol::TaskGetResult response_result;
+      response_result.task = *result;
       return protocol::make_response(
-          request.id, protocol::task_get_result_to_json(protocol::TaskGetResult{
-                          .task = *result,
-                      }));
+          request.id, protocol::task_get_result_to_json(response_result));
     }
 
     if (request.method == protocol::TasksCancelMethod && task_cancel_handler_) {
@@ -2591,11 +2591,10 @@ class Peer<RoleServer> {
       if (!result) {
         return detail::peer_error_response(request, result.error());
       }
+      protocol::TaskCancelResult response_result;
+      response_result.task = *result;
       return protocol::make_response(
-          request.id,
-          protocol::task_cancel_result_to_json(protocol::TaskCancelResult{
-              .task = *result,
-          }));
+          request.id, protocol::task_cancel_result_to_json(response_result));
     }
 
     if (request.method == protocol::TasksResultMethod && task_result_handler_) {

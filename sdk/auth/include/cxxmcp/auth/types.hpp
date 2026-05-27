@@ -4,7 +4,9 @@
 
 #include <chrono>
 #include <map>
+#include <optional>
 #include <string>
+#include <string_view>
 #include <vector>
 
 /// @file
@@ -19,6 +21,8 @@ using StringList = std::vector<std::string>;
 using SystemClock = std::chrono::system_clock;
 using TimePoint = SystemClock::time_point;
 
+inline constexpr std::string_view AuthErrorCategory = "auth";
+
 /// @brief Transport-neutral HTTP request descriptor used by auth helpers.
 struct HttpRequestTarget {
   std::string method;
@@ -29,6 +33,15 @@ struct HttpRequestTarget {
 struct HttpResponseMetadata {
   int status_code = 0;
   HeaderMap headers;
+};
+
+/// @brief Public OAuth client configuration used by lifecycle helpers.
+struct OAuthClientConfig {
+  std::string client_id;
+  std::optional<std::string> client_secret;
+  std::string redirect_uri;
+  ScopeList scopes;
+  MetadataMap metadata;
 };
 
 }  // namespace mcp::auth

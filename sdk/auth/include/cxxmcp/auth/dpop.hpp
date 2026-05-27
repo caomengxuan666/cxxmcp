@@ -43,6 +43,39 @@ struct DpopProofClaims {
   MetadataMap claims;
 };
 
+/// @brief JWT verification purpose for OAuth/DPoP deployments.
+enum class JwtVerificationPurpose {
+  kAccessToken,
+  kIdToken,
+  kClientAssertion,
+  kDpopProof,
+};
+
+/// @brief Input for signature- and claims-verified JWT validation.
+///
+/// This is intentionally not a decode API. Implementations must verify the
+/// signature, issuer, audience, expiry, and any deployment-specific claims
+/// before returning VerifiedJwtClaims.
+struct JwtVerificationRequest {
+  std::string jwt;
+  JwtVerificationPurpose purpose = JwtVerificationPurpose::kAccessToken;
+  std::optional<std::string> issuer;
+  std::optional<std::string> audience;
+  std::optional<std::string> required_algorithm;
+  MetadataMap required_claims;
+  TimePoint now = SystemClock::now();
+};
+
+/// @brief Claims returned only after JWT signature and claim validation.
+struct VerifiedJwtClaims {
+  std::string issuer;
+  std::string subject;
+  std::string audience;
+  std::optional<TimePoint> issued_at;
+  std::optional<TimePoint> expires_at;
+  MetadataMap claims;
+};
+
 /// @brief DPoP proof construction boundary.
 class DpopSigner {
  public:
@@ -59,6 +92,15 @@ class DpopVerifier {
   virtual core::Result<DpopProofClaims> verify(
       const std::string& proof_jwt, const HttpRequestTarget& target,
       const std::optional<std::string>& access_token) = 0;
+};
+
+/// @brief JWT verification boundary for access tokens and client assertions.
+class JwtVerifier {
+ public:
+  virtual ~JwtVerifier() = default;
+
+  virtual core::Result<VerifiedJwtClaims> verify(
+      const JwtVerificationRequest& request) = 0;
 };
 
 }  // namespace mcp::auth

@@ -67,3 +67,8 @@ add_cxxmcp_package_smoke_target(
     cxxmcp_package_plugin_sdk plugin_sdk.cpp cxxmcp::plugin_sdk)
 add_cxxmcp_package_smoke_target(
     cxxmcp_package_adapters adapters.cpp cxxmcp::adapters)
+
+if(TARGET cxxmcp::auth)
+    add_cxxmcp_package_smoke_target(
+        cxxmcp_package_auth auth.cpp cxxmcp::auth)
+endif()

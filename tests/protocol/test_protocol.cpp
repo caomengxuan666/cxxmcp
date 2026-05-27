@@ -71,10 +71,18 @@ void require(bool condition, std::string_view message) {
   }
 }
 
-void require_error_code(const mcp::core::Result<JsonRpcMessage>& result,
-                        ErrorCode expected, std::string_view context) {
+template <class T>
+void require_error_code(const mcp::core::Result<T>& result, ErrorCode expected,
+                        std::string_view context) {
   require(!result.has_value(), context);
   require(result.error().code == static_cast<int>(expected), context);
+}
+
+template <class T>
+void require_protocol_rejection(const mcp::core::Result<T>& result,
+                                std::string_view context) {
+  require(!result.has_value(), context);
+  require(result.error().category == "protocol", context);
 }
 
 template <class T>
@@ -3339,17 +3347,44 @@ void test_notification_helpers_round_trip() {
 }
 
 void test_invalid_json_is_rejected() {
-  const auto parsed = mcp::protocol::parse_message("{not json");
-  require_error_code(parsed, ErrorCode::ParseError,
-                     "invalid JSON should be rejected");
+  const std::vector<std::string> malformed_json = {
+      "",
+      "{",
+      "{not json",
+      R"({"jsonrpc":"2.0","method":"ping","id":1,})",
+      R"({"jsonrpc":"2.0","method":"ping","id":1,"params":{"x":)",
+  };
+
+  for (const auto& input : malformed_json) {
+    require_error_code(
+        mcp::protocol::parse_message(input), ErrorCode::ParseError,
+        std::string("malformed JSON should be ParseError: ") + input);
+  }
+
+  std::string oversized_unterminated =
+      R"({"jsonrpc":"2.0","method":"ping","id":1,"params":{"blob":")";
+  oversized_unterminated.append(64 * 1024, 'x');
+  require_error_code(mcp::protocol::parse_message(oversized_unterminated),
+                     ErrorCode::ParseError,
+                     "bounded unterminated payload should be ParseError");
 }
 
 void test_invalid_messages_are_rejected() {
   const std::vector<std::string> invalid_envelopes = {
       "[]",
+      "null",
+      "true",
+      "42",
+      R"("request")",
       R"({"jsonrpc":"2.0","id":1})",
+      R"({"jsonrpc":"2.0","params":{},"id":1})",
+      R"({"jsonrpc":"2.0","method":"","id":1})",
       R"({"jsonrpc":"2.0","method":7,"id":1})",
+      R"({"jsonrpc":"2.0","method":"ping","id":null})",
       R"({"jsonrpc":"2.0","method":"ping","id":{"bad":1}})",
+      R"({"jsonrpc":"2.0","method":"ping","id":1,"params":{"_meta":[]}})",
+      R"({"jsonrpc":"2.0","method":"notifications/progress","params":{"_meta":"bad"}})",
+      R"({"jsonrpc":"2.0","result":{},"id":1,"_meta":[]})",
       R"({"jsonrpc":"2.0","result":{},"error":{"code":-32603,"message":"bad"},"id":1})",
   };
   for (const auto& envelope : invalid_envelopes) {
@@ -3384,6 +3419,45 @@ void test_invalid_messages_are_rejected() {
       load_fixture_text("invalid.dual_result_error.json"));
   require_error_code(dual_payload, ErrorCode::InvalidRequest,
                      "response with both payloads should be rejected");
+}
+
+void test_bounded_invalid_protocol_payloads_do_not_crash() {
+  std::string scalar_params =
+      R"({"jsonrpc":"2.0","method":"ping","id":1,"params":")";
+  scalar_params.append(64 * 1024, 'x');
+  scalar_params.append(R"("})");
+  require_protocol_rejection(mcp::protocol::parse_message(scalar_params),
+                             "bounded scalar params should be rejected");
+
+  Json large_meta = Json::array();
+  for (int index = 0; index < 4096; ++index) {
+    large_meta.push_back(index);
+  }
+  const std::string large_invalid_meta = Json{
+      {"jsonrpc", "2.0"},
+      {"method", "ping"},
+      {"id", 1},
+      {"params",
+       Json{{"_meta", large_meta}}}}.dump();
+  require_error_code(mcp::protocol::parse_message(large_invalid_meta),
+                     ErrorCode::InvalidRequest,
+                     "bounded non-object params _meta should be rejected");
+
+  require_error_code(
+      mcp::protocol::initialize_params_from_json(
+          Json{{"protocolVersion", 7},
+               {"capabilities", Json::object()},
+               {"clientInfo", Json{{"name", "client"}, {"version", "1.0.0"}}}}),
+      ErrorCode::InvalidRequest,
+      "initialize params with non-string protocolVersion should fail");
+  require(!mcp::protocol::cancelled_notification_params_from_json(
+               Json{{"requestId", Json::array()}})
+               .has_value(),
+          "cancelled notification with invalid requestId type should fail");
+  require(!mcp::protocol::progress_notification_params_from_json(
+               Json{{"progressToken", "token-1"}, {"progress", "half"}})
+               .has_value(),
+          "progress notification with non-number progress should fail");
 }
 
 void test_protocol_required_fields_are_rejected() {
@@ -4264,6 +4338,8 @@ int main() {
       {"notification helpers round trip", test_notification_helpers_round_trip},
       {"invalid json is rejected", test_invalid_json_is_rejected},
       {"invalid messages are rejected", test_invalid_messages_are_rejected},
+      {"bounded invalid protocol payloads do not crash",
+       test_bounded_invalid_protocol_payloads_do_not_crash},
       {"protocol required fields are rejected",
        test_protocol_required_fields_are_rejected},
       {"protocol type constraints are rejected",

@@ -29,6 +29,94 @@ spdlog、CLI11 等 runtime/tooling 依赖不属于 SDK package contract。面向
 vcpkg/Conan 的 SDK 包应保持 runtime、gateway、CLI、examples、tests 和 docs
 关闭，除非后续创建单独的 tools 包。
 
+## vcpkg Overlay Port
+
+`cxxmcp` 尚未进入 vcpkg curated registry。当前支持的 vcpkg 路径是本仓库里的
+`packaging/vcpkg/ports/cxxmcp` overlay port，需要从这个仓库 checkout 消费。
+
+一次性安装：
+
+```powershell
+vcpkg install cxxmcp --overlay-ports=C:\path\to\MCPServer.cpp\packaging\vcpkg\ports
+```
+
+manifest mode 下，下游应用的 manifest 保持精简：
+
+```json
+{
+  "dependencies": [
+    "cxxmcp"
+  ]
+}
+```
+
+然后用 overlay path 安装：
+
+```powershell
+vcpkg install --overlay-ports=C:\path\to\MCPServer.cpp\packaging\vcpkg\ports
+```
+
+示例 `vcpkg-configuration.json` 形状位于：
+
+```text
+packaging/vcpkg/vcpkg-configuration.overlay-example.json
+```
+
+把它放到下游 `vcpkg.json` 旁边后，需要把 `builtin-baseline` placeholder 替换成
+你的项目锁定的 vcpkg commit。`overlay-ports` 路径相对于
+`vcpkg-configuration.json` 所在目录；如果仓库 checkout 在其他位置，请同步调整。
+
+这个 overlay port 只构建 C++17 SDK package targets。它设置
+`CXXMCP_USE_SYSTEM_DEPS=ON`，关闭 runtime、gateway、CLI、examples、tests 和
+docs，并使用 vcpkg 提供的 `tl-expected`、`nlohmann-json` 和 `cpp-httplib`。它不会
+把 spdlog、CLI11、runtime、gateway 或 CLI targets 变成 SDK 包的默认消费面。
+
+可选 auth scaffold 是显式 feature，不属于默认 vcpkg package 路径：
+
+```powershell
+vcpkg install "cxxmcp[auth]" --overlay-ports=C:\path\to\MCPServer.cpp\packaging\vcpkg\ports
+```
+
+`auth` feature 会映射到 `CXXMCP_ENABLE_AUTH=ON`。它当前只启用
+transport-neutral OAuth/DPoP contracts，不允许把 OpenSSL 拉入默认 package 路径。
+
+`jsonrpcpp` 仍然是私有实现细节。消费者应该链接 `cxxmcp::protocol`、
+`cxxmcp::client`、`cxxmcp::server` 或 `cxxmcp::sdk`；不应通过 cxxmcp 包含或链接
+public `jsonrpcpp` package surface。
+
+## 后续 vcpkg Registry 路径
+
+如果用户在 curated registry 接受之前需要 vcpkg 版本管理，下一步可以为同一个
+SDK-only port 准备独立或仓库托管的 custom Git registry。未来配置形状示例在：
+
+```text
+packaging/vcpkg/vcpkg-configuration.git-registry-future-example.json
+```
+
+这个文件只是示例，不代表当前已经存在可用 registry。使用前需要把 repository URL
+和两个 baseline placeholder 都替换成真实 registry commit。
+
+重新提交 curated-registry PR 的条件由
+[Ecosystem maturity evidence](ecosystem_maturity_evidence.md) 约束，不能只因为
+overlay port 存在就提交。
+
+未来提交 vcpkg curated-registry PR 时，应和当前本地 overlay port 做这些区别：
+
+- 用 `vcpkg_from_github()` 从 release tag 和 SHA512 source archive hash 拉取源码，
+  而不是把本地 checkout 当作 `SOURCE_PATH`；
+  `packaging/vcpkg/curated-portfile.future.cmake` 是当前 review sketch；
+- 在 SDK libraries 仍显式构建为 static、且不声明 shared-library ABI 支持时保留
+  `vcpkg_check_linkage(ONLY_STATIC_LIBRARY)`；portfile 不再强制
+  `-DBUILD_SHARED_LIBS=OFF`；
+- 继续只启用 SDK 构建，并关闭 runtime、gateway、CLI、examples、tests 和 docs；
+- 保持 `jsonrpcpp` 是 cxxmcp 包内私有实现细节，不导出 public third-party target；
+- 默认 `cpp-httplib` 仍按不带 TLS 的 loopback HTTP 消费，除非后续明确增加依赖
+  `cpp-httplib[openssl]` 的 `ssl` 或 `https` feature；
+- OAuth/DPoP auth 等 OpenSSL-backed 实现落地之后再作为 opt-in feature，不提前把
+  OpenSSL 拉入默认 SDK package；
+- package smoke 要覆盖两个状态：默认安装不能暴露 `cxxmcp::auth`，auth-enabled
+  安装必须允许外部 consumer 显式链接 `cxxmcp::auth`。
+
 ## FetchContent
 
 优先使用 release workflow 生成的 SDK source archive，而不是 GitHub 自动生成的
@@ -127,6 +215,18 @@ templates/external_consumer
 以及一个窄 SDK target 链接。`package_smoke` 会用安装后的 SDK 产物配置并编译
 这个模板，确保 release candidate 里的模板始终可用。
 
+## Conan
+
+根目录 `conanfile.py` 默认关闭 auth。需要可选 auth scaffold 的消费者必须显式启用：
+
+```powershell
+conan create . -o cxxmcp/*:with_auth=True
+```
+
+`with_auth=True` 会映射到 `CXXMCP_ENABLE_AUTH=ON` 并暴露 `cxxmcp::auth`
+component。默认 Conan package 仍然是 SDK-only，不导出 auth headers 或 OpenSSL
+requirements。
+
 ## xmake-repo
 
 xmake-repo recipe 草案在：
@@ -136,4 +236,6 @@ packaging/xmake/packages/c/cxxmcp/xmake.lua
 ```
 
 它构建同一个 SDK source archive，并关闭 runtime、gateway、CLI、examples、
-tests 和 docs。等 package interface 稳定后，可以把它提交到 xmake-repo。
+tests 和 docs。recipe 有一个 opt-in `auth` config，会映射到
+`CXXMCP_ENABLE_AUTH=ON`；默认仍然关闭 auth。等 package interface 稳定后，可以把它
+提交到 xmake-repo。
