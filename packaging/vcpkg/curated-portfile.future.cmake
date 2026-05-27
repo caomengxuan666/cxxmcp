@@ -19,6 +19,9 @@ if("auth" IN_LIST FEATURES)
     set(CXXMCP_VCPKG_ENABLE_AUTH ON)
 endif()
 
+# This sketch is for after-jsonrpcpp-vcpkg-acceptance curated registry work.
+# The repository overlay port intentionally keeps using the bundled private
+# jsonrpcpp header and must not pass CXXMCP_USE_SYSTEM_JSONRPCPP.
 vcpkg_cmake_configure(
     SOURCE_PATH "${SOURCE_PATH}"
     OPTIONS
@@ -32,6 +35,7 @@ vcpkg_cmake_configure(
         -DCXXMCP_BUILD_DOCS=OFF
         -DCXXMCP_ENABLE_AUTH=${CXXMCP_VCPKG_ENABLE_AUTH}
         -DCXXMCP_USE_SYSTEM_DEPS=ON
+        -DCXXMCP_USE_SYSTEM_JSONRPCPP=ON
 )
 
 vcpkg_cmake_install()

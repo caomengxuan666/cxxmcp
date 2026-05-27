@@ -20,7 +20,10 @@ Attach or link all artifacts from `.github/workflows/release-gates.yml`:
 - `cxxmcp-release-gates-linux-clang-ninja`
 - `cxxmcp-release-gates-macos-appleclang-ninja`
 - `cxxmcp-release-gates-windows-msvc-ninja-static-runtime`
+- `cxxmcp-release-gates-windows-clangcl-ninja-static-runtime`
 - `cxxmcp-release-gates-windows-msvc-vs-dynamic-runtime`
+- `cxxmcp-auth-release-gate-linux-gcc-ninja`
+- `cxxmcp-auth-release-gate-windows-msvc-ninja`
 - `cxxmcp-doxygen-html`
 - `cxxmcp-source`
 - `cxxmcp-release-evidence`
@@ -28,11 +31,11 @@ Attach or link all artifacts from `.github/workflows/release-gates.yml`:
 Each release-gate artifact must contain `CMakeCache.txt`, CTest JUnit XML, and
 CTest logs. The source artifact must contain `SHA256SUMS.txt`. The release
 evidence artifact must contain the README, README_zh, changelog, contribution
-guide, security policy, code of conduct, compatibility policy, dependency
-policy, protocol model audit, release process, Peer/Service migration guide,
-release gates, release candidate checklist, release notes template, request
-lifecycle notes, TODO, the external consumer template, and example source files
-used for the canonical SDK path review.
+guide, security policy, code of conduct, compatibility policy, public API
+stability policy, dependency policy, protocol model audit, release process,
+Peer/Service migration guide, release gates, release candidate checklist,
+release notes template, request lifecycle notes, TODO, the external consumer
+template, and example source files used for the canonical SDK path review.
 
 ## Gate Review
 
@@ -57,6 +60,14 @@ used for the canonical SDK path review.
 - [ ] Protocol model audit matches the pinned MCP/RMCP reference versions.
 - [ ] Public headers under `sdk/**/include/cxxmcp` were reviewed for accidental
       runtime, gateway, policy, discovery, profile, or transport-backend leaks.
+- [ ] Public API diff review followed
+      [Public API Stability](public_api_stability.md) and classified every
+      public change as stable additive, experimental, deprecated, behavior
+      clarification, bug/security/protocol fix, or breaking.
+- [ ] New public API has an explicit stable or experimental status in docs or
+      release notes.
+- [ ] Experimental APIs are not required by stable entry points and are not
+      presented as the first-choice SDK path.
 - [ ] Public target list still matches README and CMake package exports.
 - [ ] Deprecated APIs have migration text and use `CXXMCP_DEPRECATED`.
 - [ ] Public renames keep old aliases until the next major release.
@@ -82,7 +93,8 @@ used for the canonical SDK path review.
 - [ ] Release stage matches the rules in [Release process](release_process.md).
 - [ ] Include the supported compiler/generator/runtime matrix.
 - [ ] Include protocol snapshot support and unsupported-version behavior.
-- [ ] Include source compatibility notes for public API changes.
+- [ ] Include source compatibility notes and API diff classifications for
+      public API changes.
 - [ ] Include dependency/reference versions used by conformance tests.
 - [ ] Include checksums for published source artifacts.
 - [ ] Include package metadata or package recipe references for advertised

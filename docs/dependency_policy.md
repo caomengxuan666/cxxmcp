@@ -22,7 +22,7 @@ SDK package dependencies are intentionally narrow:
 - `tl-expected`
 - `nlohmann-json`
 - `cpp-httplib`
-- the in-tree `jsonrpcpp` single-header implementation
+- `jsonrpcpp` as a private protocol implementation header
 
 Default source/archive builds may vendor header-only SDK dependencies for easy
 FetchContent and CPM.cmake consumption. Registry builds should use
@@ -48,10 +48,12 @@ path until the project has enough maturity evidence for a curated-registry PR.
 That port must stay SDK-only: no runtime, gateway, CLI, examples, tests, docs,
 spdlog, or CLI11 in the default package dependency closure.
 
-`jsonrpcpp` is private to cxxmcp package builds. It may be installed under the
-`cxxmcp/third_party` prefix if exported targets need it internally, but cxxmcp
-must not present it as a public package target or top-level third-party SDK
-surface.
+`jsonrpcpp` is private to cxxmcp package builds. The bundled copy is used only
+to compile `cxxmcp::protocol` and must not be installed as a public SDK header
+or exported as a cxxmcp-owned third-party target. Once the vcpkg `jsonrpcpp`
+port is accepted, curated-registry builds should enable
+`CXXMCP_USE_SYSTEM_JSONRPCPP=ON` and depend on that port instead of the bundled
+copy.
 
 ## Update Cadence
 

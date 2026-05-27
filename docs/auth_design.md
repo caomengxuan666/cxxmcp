@@ -3,6 +3,10 @@
 This document records the design decisions for OAuth 2.1 authorization support
 in the cxxmcp Streamable HTTP transport layer.
 
+For application-facing usage, see `docs/auth_user_guide.md`. This design note
+focuses on ownership boundaries, dependency policy, and the next-stage OAuth
+delivery plan.
+
 ## Feature Gate
 
 OAuth protocol scaffolding is an **optional feature**, gated by CMake options:
@@ -16,11 +20,18 @@ option(MCP_ENABLE_AUTH "OAuth 2.1 / DPoP authorization scaffolding" OFF)
 - `OFF` (default): no optional `cxxmcp::auth` OAuth target is exported and no
   crypto dependency is pulled. The lightweight server auth contracts in
   `cxxmcp::server` remain available because HTTP auth policy has to integrate
-  with normal server dispatch.
+  with normal server dispatch. Client HTTP bearer helpers and refresh-on-401
+  hooks also remain available through `cxxmcp::client` / `cxxmcp::transport`.
 - `ON`: compiles the `cxxmcp::auth` CMake target. The current scaffold exposes
   transport-neutral auth contracts without requiring OpenSSL or MiniOAuth2.
   The full OAuth implementation will add MiniOAuth2 and OpenSSL only behind
   this opt-in feature gate.
+
+The feature gate is a packaging contract, not a runtime policy switch. Code
+that needs OAuth metadata, lifecycle, token, registration, or
+`WWW-Authenticate` parser contracts must link `cxxmcp::auth` explicitly.
+Default `cxxmcp::sdk` consumers must not receive OpenSSL, optional auth
+headers, or the `cxxmcp::auth` target by accident.
 
 ## Dependency Decision: Planned Vendored MiniOAuth2
 
@@ -217,6 +228,35 @@ by OpenSSL/JWKS-aware implementation code before it is shipped as a first-party
 provider. Deeper refresh-on-401 OAuth orchestration remains separate
 implementation work.
 
+## Current Supported Runtime Behavior
+
+The SDK currently supports an auth-lite runtime surface without full OAuth
+execution:
+
+- Server applications install `mcp::server::AuthProvider` to authenticate
+  transport headers and remote metadata.
+- Successful authentication writes `mcp::server::AuthIdentity` into
+  `SessionContext::auth_identity` before handlers run.
+- Auth failures built with `mcp::server::make_auth_error()` use the auth error
+  category so HTTP transports can map them to `401 Unauthorized`.
+- `HttpTransportOptions::auth_challenge` controls the emitted
+  `WWW-Authenticate` value and defaults to `Bearer`.
+- Client HTTP transports treat `auth_header` as a raw bearer token and emit
+  `Authorization: Bearer <token>`.
+- An explicit `Authorization` entry in the custom header map has priority over
+  the bearer helper.
+- Client HTTP transports expose an application-owned refresh hook for a single
+  retry after `401 Unauthorized`; the hook receives status, headers, method,
+  and the first `WWW-Authenticate` value.
+- With the optional auth target enabled, `DefaultWwwAuthenticateParser` parses
+  challenges and exposes MCP OAuth helpers for `resource_metadata` and
+  `insufficient_scope`.
+
+These behaviors are stable enough for user documentation and package smoke
+coverage. They do not imply that cxxmcp owns token issuance, browser UX,
+persistent storage, DPoP proof generation, JWKS retrieval, or JWT validation
+today.
+
 ### Intentional Non-Goals (belong in application code)
 
 - Opening a browser or starting a localhost loopback redirect receiver
@@ -299,18 +339,25 @@ possible without changing the helper contract.
 
 ## Delivery
 
-The full crypto-backed auth implementation should ship the following together
-as a single deliverable:
+The full crypto-backed auth implementation should ship behind the opt-in auth
+feature as a coherent deliverable:
 
 - Vendored MiniOAuth2 integration under `third_party/MiniOAuth2`, private to
-  the auth implementation
-- Protocol models: PKCE wrappers, DPoP, RFC 9728/8414 metadata, client
-  registration
+  the auth implementation.
+- Protocol models and implementations for PKCE, DPoP, RFC 9728/8414 metadata,
+  client registration, token refresh, and JWKS-aware verification boundaries.
 - HTTP transport natively integrates auth lifecycle:
-  discovery → authorize → token exchange → refresh-on-401 → retry
+  discovery -> authorize -> token exchange -> refresh-on-401 -> retry.
 - A default DPoP-aware Bearer token verifier is provided as an `AuthProvider`
   implementation for server-side deployments.
 - TokenStore abstraction with in-memory default (applications may provide
   persistent storage by implementing the interface).
+- OpenSSL-backed DPoP/JWT/JWKS code is compiled only when the auth feature is
+  enabled, resolves OpenSSL through the active package manager or system
+  install, and never vendors OpenSSL into `third_party`.
+- Default SDK/package installs continue to prove that optional auth headers are
+  absent and OpenSSL is not pulled unless the consumer opts in.
 
-No incremental rollout; no manual wiring phase for users.
+No incremental rollout of fake-security pieces: decode-only JWT helpers,
+non-verifying DPoP paths, and placeholder JWKS checks must not be shipped as
+security features.

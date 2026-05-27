@@ -56,7 +56,13 @@ jobs:
           cp -a docs/doxygen/html/. public/api/
           touch public/.nojekyll
           test -f public/index.html
+          test -f public/getting-started.html
+          test -f public/auth.html
+          test -f public/stability.html
           test -f public/api/index.html
+          grep -q 'href="./getting-started.html"' public/index.html
+          grep -q 'href="./auth.html"' public/index.html
+          grep -q 'href="./stability.html"' public/index.html
 
       - name: Upload Pages artifact
         uses: actions/upload-pages-artifact@v3

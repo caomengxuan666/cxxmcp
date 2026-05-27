@@ -1,0 +1,324 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Getting Started | cxxmcp</title>
+    <meta
+      name="description"
+      content="Install, build, and consume cxxmcp as a C++17 Model Context Protocol SDK.">
+    <style>
+      :root {
+        color-scheme: light dark;
+        --bg: #f7f8fa;
+        --panel: #ffffff;
+        --text: #17202a;
+        --muted: #596579;
+        --line: #d9dee7;
+        --accent: #0f766e;
+        --accent-strong: #0b5f59;
+        --code: #eef3f5;
+      }
+
+      @media (prefers-color-scheme: dark) {
+        :root {
+          --bg: #101317;
+          --panel: #171b21;
+          --text: #edf2f7;
+          --muted: #aab4c3;
+          --line: #2a313a;
+          --accent: #2dd4bf;
+          --accent-strong: #5eead4;
+          --code: #20262e;
+        }
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        margin: 0;
+        font-family:
+          Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont,
+          "Segoe UI", sans-serif;
+        line-height: 1.6;
+        color: var(--text);
+        background: var(--bg);
+      }
+
+      a {
+        color: var(--accent-strong);
+        text-decoration-thickness: 0.08em;
+        text-underline-offset: 0.18em;
+      }
+
+      header,
+      main,
+      footer {
+        width: min(960px, calc(100% - 32px));
+        margin: 0 auto;
+      }
+
+      header {
+        padding: 28px 0 18px;
+        display: flex;
+        justify-content: space-between;
+        gap: 16px;
+        align-items: center;
+      }
+
+      .brand {
+        font-weight: 750;
+        font-size: 1.05rem;
+        letter-spacing: 0;
+      }
+
+      nav {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 14px;
+        font-size: 0.95rem;
+      }
+
+      .hero {
+        padding: 46px 0 34px;
+        border-top: 1px solid var(--line);
+        border-bottom: 1px solid var(--line);
+      }
+
+      .eyebrow {
+        color: var(--accent-strong);
+        font-size: 0.9rem;
+        font-weight: 700;
+        text-transform: uppercase;
+        letter-spacing: 0;
+      }
+
+      h1 {
+        max-width: 820px;
+        margin: 12px 0 16px;
+        font-size: clamp(2.1rem, 5vw, 3.6rem);
+        line-height: 1.05;
+        letter-spacing: 0;
+      }
+
+      .lede {
+        max-width: 760px;
+        margin: 0;
+        color: var(--muted);
+        font-size: 1.12rem;
+      }
+
+      .section {
+        padding: 30px 0 8px;
+      }
+
+      .section h2 {
+        margin: 0 0 12px;
+        font-size: 1.35rem;
+        letter-spacing: 0;
+      }
+
+      .section p,
+      .section li {
+        color: var(--muted);
+      }
+
+      .grid {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 16px;
+      }
+
+      .card {
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        background: var(--panel);
+        padding: 20px;
+      }
+
+      .card h3 {
+        margin: 0 0 8px;
+        font-size: 1rem;
+        letter-spacing: 0;
+      }
+
+      .card p {
+        margin: 0;
+      }
+
+      pre {
+        overflow-x: auto;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        background: var(--code);
+        padding: 18px;
+      }
+
+      code {
+        font-family:
+          ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono",
+          monospace;
+        font-size: 0.95em;
+      }
+
+      footer {
+        padding: 24px 0 36px;
+        color: var(--muted);
+        border-top: 1px solid var(--line);
+        font-size: 0.95rem;
+        margin-top: 32px;
+      }
+
+      @media (max-width: 760px) {
+        header {
+          align-items: flex-start;
+          flex-direction: column;
+        }
+
+        .hero {
+          padding: 34px 0 28px;
+        }
+
+        .grid {
+          grid-template-columns: 1fr;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <header>
+      <div class="brand">cxxmcp</div>
+      <nav aria-label="Primary">
+        <a href="./">Home</a>
+        <a href="./auth.html">Auth</a>
+        <a href="./stability.html">Release and API Stability</a>
+        <a href="./api/">API Reference</a>
+      </nav>
+    </header>
+
+    <main>
+      <section class="hero">
+        <div class="eyebrow">Getting Started</div>
+        <h1>Build a C++17 MCP client or server from the SDK package.</h1>
+        <p class="lede">
+          Start with the public package targets, keep runtime tooling optional,
+          and use Peer/Service as the first-choice SDK boundary for new code.
+        </p>
+      </section>
+
+      <section class="section">
+        <h2>Install Locally</h2>
+        <p>
+          A source checkout can install the SDK targets into a local prefix.
+          The SDK headers and public package targets are C++17-compatible.
+        </p>
+        <pre><code>cmake -S . -B build -DCXXMCP_BUILD_SDK=ON -DCXXMCP_BUILD_CLIENT=ON -DCXXMCP_BUILD_SERVER=ON
+cmake --build build --config Release
+cmake --install build --config Release --prefix out/install/cxxmcp</code></pre>
+      </section>
+
+      <section class="section">
+        <h2>Consume From CMake</h2>
+        <p>
+          Downstream projects should link the narrowest target they need.
+          Use <code>cxxmcp::sdk</code> only when one binary intentionally needs
+          protocol, client, and server APIs together.
+        </p>
+        <pre><code>find_package(cxxmcp CONFIG REQUIRED)
+
+add_executable(my_server server.cpp)
+target_link_libraries(my_server PRIVATE cxxmcp::server)
+
+add_executable(my_client client.cpp)
+target_link_libraries(my_client PRIVATE cxxmcp::client)</code></pre>
+      </section>
+
+      <section class="section">
+        <h2>Canonical Server Shape</h2>
+        <p>
+          Register server capabilities with the server builder, wrap the built
+          server in <code>mcp::ServerPeer</code>, add a transport, and serve it.
+        </p>
+        <pre><code>#include &lt;iostream&gt;
+#include &lt;memory&gt;
+#include &lt;utility&gt;
+
+#include &lt;cxxmcp/peer.hpp&gt;
+#include &lt;cxxmcp/server.hpp&gt;
+#include &lt;cxxmcp/service.hpp&gt;
+#include &lt;cxxmcp/transport/stdio_transport.hpp&gt;
+
+int main() {
+    mcp::server::ServerBuilder builder;
+    builder.name("demo-server")
+        .version("1.0.0")
+        .add_tool(
+            mcp::protocol::ToolDefinition{
+                .name = "echo",
+                .description = "Echo the incoming payload",
+                .input_schema = mcp::protocol::Json{{"type", "object"}},
+            },
+            [](const mcp::server::ToolContext&amp; context) {
+                mcp::protocol::ToolResult result;
+                result.structured_content = context.arguments;
+                return result;
+            });
+
+    auto server = builder.build();
+    if (!server) {
+        return 1;
+    }
+
+    mcp::ServerPeer peer(std::move(*server));
+    peer.add_transport(
+        std::make_unique&lt;mcp::transport::ServerStdioTransport&gt;(
+            std::cin, std::cout));
+
+    auto running = mcp::serve(std::move(peer));
+    if (!running) {
+        return 1;
+    }
+
+    return running-&gt;wait().has_value() ? 0 : 1;
+}</code></pre>
+      </section>
+
+      <section class="section">
+        <h2>Package Routes</h2>
+        <div class="grid">
+          <article class="card">
+            <h3>vcpkg overlay</h3>
+            <p>
+              Use the repository-hosted overlay port until cxxmcp is accepted
+              into a curated registry.
+            </p>
+            <pre><code>vcpkg install cxxmcp --overlay-ports=C:\path\to\MCPServer.cpp\packaging\vcpkg\ports</code></pre>
+          </article>
+          <article class="card">
+            <h3>FetchContent or CPM</h3>
+            <p>
+              Prefer the SDK source release archive because it carries the
+              bundled header-only SDK dependencies used by default builds.
+            </p>
+          </article>
+        </div>
+      </section>
+
+      <section class="section">
+        <h2>Next Steps</h2>
+        <ul>
+          <li>Use <a href="./auth.html">Auth</a> for Streamable HTTP bearer token and OAuth scaffold behavior.</li>
+          <li>Use <a href="./stability.html">Release and API Stability</a> before depending on a release claim.</li>
+          <li>Use <a href="./api/">API Reference</a> for generated symbol-level documentation.</li>
+        </ul>
+      </section>
+    </main>
+
+    <footer>
+      cxxmcp is a community SDK candidate and is not an official MCP SDK unless
+      accepted or listed by the MCP maintainers.
+    </footer>
+  </body>
+</html>

@@ -49,18 +49,19 @@ registered through `cxxmcp_mark_release_blocking()`.
   runtime, gateway, CLI, tests, and docs disabled. This keeps release-mode
   compile coverage in CI without doubling the full cross-SDK conformance
   matrix.
-- `clang-tidy-public-headers`: the release-gates workflow configures a compile
-  database, builds the public-header compile fixtures, and runs clang-tidy over
-  those fixtures. The scope is intentionally the public SDK entry headers first;
-  broader implementation clang-tidy can be added after its noise level is
-  managed.
+- `clang-tidy-public-headers`: the release-gates workflow configures an
+  auth-enabled compile database, builds the public-header compile fixtures, and
+  runs clang-tidy over those fixtures. The scope is intentionally the public SDK
+  entry headers first; broader implementation clang-tidy can be added after its
+  noise level is managed.
 - `sanitizer-asan-ubsan` and `sanitizer-tsan`: the release-gates workflow runs
   dedicated Linux/Clang Ninja builds with ASan/UBSan and TSan enabled through
-  `CMakePresets.json`. These sanitizer builds run the release-blocking native
-  subset and intentionally skip `package_smoke` plus external process-stdio
-  interop tests, so sanitizer flags do not become part of the default package
-  consumer path. Windows/MSVC and normal Linux/macOS release-matrix legs remain
-  unsanitized by default.
+  `CMakePresets.json`, after checking out the pinned RMCP reference required by
+  RMCP conformance coverage. These sanitizer builds run the practical
+  release-blocking subset, including RMCP conformance, and intentionally skip
+  `package_smoke` plus external process-stdio interop tests, so sanitizer flags
+  do not become part of the default package consumer path. Windows/MSVC and
+  normal Linux/macOS release-matrix legs remain unsanitized by default.
 
 ## Protocol, Transport, And Interop Gates
 
@@ -128,15 +129,18 @@ runtime examples are not labelled as non-canonical SDK paths.
 The same workflow uploads:
 
 - `cxxmcp-doxygen-html`: generated public API documentation.
+- `cxxmcp-auth-release-gate-*`: auth-enabled SDK/package-smoke evidence for
+  the optional `cxxmcp::auth` target without making auth part of the default
+  SDK package path.
 - `cxxmcp-source`: a source archive with recursive submodule contents and a
   `SHA256SUMS.txt` file.
 - `cxxmcp-release-evidence`: the README, Chinese README, changelog,
-  contribution guide, security policy, code of conduct, compatibility policy,
-  dependency policy, ecosystem maturity ledger, protocol model audit, release
-  process, Peer/Service migration guide, release gates, release candidate
-  checklist, release notes template, request lifecycle notes, TODO, the
-  external consumer template, and example source files used for the release
-  decision.
+  contribution guide, security policy, code of conduct, auth design and user
+  guide, compatibility policy, public API stability policy, dependency policy,
+  ecosystem maturity ledger, protocol model audit, release process,
+  Peer/Service migration guide, release gates, release candidate checklist,
+  release notes template, request lifecycle notes, TODO, the external consumer
+  template, and example source files used for the release decision.
 
 Release candidates must attach the source, documentation, and release evidence
 artifacts, or replace them with equivalent versioned artifacts built from the

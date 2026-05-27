@@ -36,8 +36,9 @@ Remaining non-P1/P2 proof gates before claiming fact-standard status:
 - Public generated API docs, source archives, checksums, and release artifacts
   have to be built by the release-gates workflow and attached to an actual
   release candidate.
-- README, examples, changelog, compatibility policy, release notes,
-  CTest/JUnit evidence artifacts, release artifacts, and the
+- README, examples, changelog, compatibility policy, public API stability
+  policy, release notes, CTest/JUnit evidence artifacts, release artifacts, and
+  the
   `cxxmcp-release-evidence` artifact have to be audited together after the next
   successful release-blocking matrix run using
   `docs/release_candidate_checklist.md`.
@@ -279,6 +280,8 @@ true:
 - [x] Freeze public include paths under `cxxmcp/...`.
 - [x] Define the supported C++ standard and compiler matrix.
 - [x] Define source compatibility expectations for public headers.
+- [x] Define stable, experimental, and deprecated public API classes in
+      `docs/public_api_stability.md`.
 - [x] Decide whether ABI stability is explicitly out of scope for static builds,
   or define an ABI policy if shared libraries are supported later.
 - [x] Add deprecation macros or documented deprecation markers for public API
@@ -732,7 +735,7 @@ true:
 - [x] For alpha: allow API movement but require clear changelog.
 - [x] For beta: require API mostly settled and breaking changes rare.
 - [x] For rc: only bug fixes and docs.
-- [x] For stable: freeze public contract for the minor line.
+- [x] For stable: freeze public contract for the major version.
 - [x] Include versioned source artifacts for every release.
 - [x] Include generated API documentation for every release.
 - [x] Include changelog entries for every release.
@@ -740,6 +743,9 @@ true:
 - [x] Include package metadata for every release.
 - [x] Publish prebuilt or source package artifacts as appropriate.
 - [x] Add a public API diff review step.
+- [x] Require API diff review to classify each public change as stable,
+      experimental, deprecated, behavior clarification, bug/security/protocol
+      fix, or breaking.
 - [x] Add a public dependency update review step.
 - [x] Add a security/advisory process for vulnerabilities.
 
@@ -779,6 +785,14 @@ true:
 - [x] Make `jsonrpcpp` a private implementation detail for package consumers:
   do not export a public `jsonrpcpp` target or install it as a visible
   third-party SDK surface unless vcpkg explicitly accepts that shape.
+- [x] Add a future curated-registry switch for vcpkg's `jsonrpcpp` port:
+  `CXXMCP_USE_SYSTEM_JSONRPCPP=ON` lets the curated port depend on
+  `jsonrpcpp` after `microsoft/vcpkg#52045` or an equivalent port is accepted,
+  while current overlay builds keep the private bundled header.
+- [x] Guard the overlay/curated split in package checks: overlay builds must
+  not depend on `jsonrpcpp` or pass `CXXMCP_USE_SYSTEM_JSONRPCPP`, while the
+  future curated sketch documents that the switch is for after vcpkg accepts
+  the `jsonrpcpp` port.
 - [x] Decide the vcpkg HTTPS/TLS feature model for `cpp-httplib`: default
   loopback HTTP only, or an opt-in `ssl` / `https` feature depending on
   `cpp-httplib[openssl]`.
@@ -791,6 +805,11 @@ true:
   user adoption signals.
   - [x] Track the required evidence categories in
         `docs/ecosystem_maturity_evidence.md`.
+  - [x] Record the exact reason `microsoft/vcpkg#51972` was closed and track
+        `microsoft/vcpkg#52045` as the jsonrpcpp dependency unblocker.
+  - [x] Document `../cxxmcp-examples` as the external downstream example suite
+        and list the minimum green scenarios required for release/vcpkg
+        maturity evidence.
 - [ ] Resubmit to the vcpkg curated registry only after the maturity evidence is
   strong enough to address `microsoft/vcpkg#51972` without relying on policy
   exceptions.
@@ -806,6 +825,8 @@ true:
 - [x] Require design notes/RFCs for breaking public API changes.
 - [x] Require every new public surface to state core, optional, or experimental
   status.
+- [x] Require every new public SDK surface to state stable or experimental
+      source-compatibility status before release notes present it.
 - [x] Require every runtime/gateway concern in SDK headers to be justified.
 - [x] Require every naming change to include migration docs.
 - [x] Track pinned MCP/RMCP reference versions.
@@ -831,6 +852,8 @@ true:
 - [x] Keep example APIs aligned with canonical `Peer` / `Service` docs.
 - [x] Track the in-tree example taxonomy and canonical/non-canonical split in
   `docs/examples.md`.
+- [x] Track the external `cxxmcp-examples` repository as downstream validation
+  in `docs/examples.md` without making it part of the in-tree examples contract.
 
 ## P2: Runtime, Gateway, CLI Separation
 
@@ -900,6 +923,24 @@ true:
   `cxxmcp::auth` explicitly.
 - [x] Keep full OAuth/DPoP out of the default package path until the optional
   auth feature has package-manager smoke coverage.
+- [x] Add a user-facing auth guide that documents the supported auth-lite
+  behavior: server `AuthProvider`, `SessionContext` identity propagation,
+  bearer helpers, explicit `Authorization` precedence, `WWW-Authenticate`
+  parsing, refresh-on-401 hooks, and the auth feature gate.
+
+## P3: Full OAuth / DPoP Auth Implementation
+
+- [ ] Next-stage auth: ship full OAuth/DPoP/JWKS only as an opt-in
+  `cxxmcp::auth` implementation; default SDK/package builds must continue to
+  avoid OpenSSL and optional auth headers.
+- [ ] Next-stage auth: add OpenSSL-backed DPoP proof signing/verification and
+  JWT/JWKS validation without decode-only security shortcuts.
+- [ ] Next-stage auth: wire OAuth discovery, authorization-code + PKCE token
+  exchange, refresh-on-401 orchestration, and one-shot HTTP retry into the
+  optional auth lifecycle without requiring browser or loopback UX in SDK core.
+- [ ] Next-stage auth: provide a built-in bearer/DPoP `AuthProvider` for
+  server deployments while keeping custom providers as the primary extension
+  point.
 
 ## P2: Performance, Load, And Reliability
 

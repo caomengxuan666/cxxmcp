@@ -12,6 +12,20 @@ SDK evidence and package-manager smoke coverage, but still needs public release
 history and sustained green release-gate evidence before the curated-registry
 review can be answered without policy exceptions.
 
+The previous curated-registry attempt was
+`microsoft/vcpkg#51972`. It passed the technical vcpkg checks, but the PR was
+closed by a maintainer on 2026-05-27 because cxxmcp did not yet meet vcpkg's
+minimum project maturity requirement. Resubmission must therefore lead with
+maturity evidence, not only a corrected portfile.
+
+`jsonrpcpp` is being tracked separately as `microsoft/vcpkg#52045`. A local
+`jsonrpcpp:x64-windows-static` vcpkg install from that branch has passed. If
+that port is accepted, the future cxxmcp curated port should depend on
+`jsonrpcpp` and configure cxxmcp with `CXXMCP_USE_SYSTEM_JSONRPCPP=ON`, while
+keeping the dependency private to the protocol implementation. Until that port
+is accepted, the repository overlay port continues to use the bundled private
+header and must not depend on `jsonrpcpp`.
+
 ## Evidence Ledger
 
 | Area | Required Evidence | Current Evidence | Status |
@@ -19,10 +33,11 @@ review can be answered without policy exceptions.
 | Stable release history | Multiple tagged SDK source releases with source archives, checksums, and compatibility notes. | `release-sdk` publishes SDK source archive, `SHA256SUMS.txt`, and `RELEASE_NOTES.md` on `v*` tags. | In progress |
 | Green release gates over time | Repeated successful `release-gates` runs for the exact release commits being advertised. | The workflow declares release-blocking matrix legs and uploads CTest/JUnit/log artifacts. | In progress |
 | Installed package evidence | Package smoke from installed output across supported compiler/generator/runtime matrix entries. | `package_smoke` is release-blocking; local vcpkg default/auth overlay smoke has passed on `x64-windows-static`. | In progress |
-| Downstream examples | External consumer or example repository using normal package consumption. | `templates/external_consumer` is package-smoke checked; `cxxmcp-examples` is documented as downstream validation. | In progress |
+| Downstream examples | External consumer or example repository using normal package consumption. | `templates/external_consumer` is package-smoke checked; `../cxxmcp-examples` is the external downstream example suite and minimum green scenario list. | In progress |
 | Changelog discipline | Every release has a matching `CHANGELOG.md` section and compatibility notes. | `check_release_evidence.py` verifies the current project version appears in `CHANGELOG.md`; `release-sdk` emits compatibility notes. | In progress |
 | Public user adoption | Reproducible downstream users, issues, or integration reports that can be cited in a registry PR. | Not yet recorded in this repository. | Missing |
-| Curated port shape | Future port uses `vcpkg_from_github()`, a release tag, SHA512 source hash, SDK-only options, and no forced `BUILD_SHARED_LIBS`. | `packaging/vcpkg/curated-portfile.future.cmake` records the intended shape. | Prepared |
+| Curated dependency shape | Registry build uses vcpkg dependencies where available and does not expose private implementation dependencies as cxxmcp public targets. | `CXXMCP_USE_SYSTEM_JSONRPCPP` is prepared for use after `microsoft/vcpkg#52045` or an equivalent jsonrpcpp port is accepted; the overlay port keeps bundled private jsonrpcpp until then; local `jsonrpcpp:x64-windows-static` smoke passed. | Prepared |
+| Curated port shape | Future port uses `vcpkg_from_github()`, a release tag, SHA512 source hash, SDK-only options, system jsonrpcpp after the jsonrpcpp port is accepted, and no forced `BUILD_SHARED_LIBS`. | `packaging/vcpkg/curated-portfile.future.cmake` records the intended shape. | Prepared |
 
 ## Resubmission Rule
 
@@ -36,8 +51,63 @@ true:
   release claims;
 - the curated port uses a release source archive and SHA512 hash, not the local
   overlay `SOURCE_PATH`;
+- the curated port depends on the accepted `jsonrpcpp` port and sets
+  `CXXMCP_USE_SYSTEM_JSONRPCPP=ON`, or records why that port is still
+  unavailable;
 - at least one downstream example or consumer can be cited;
 - `CHANGELOG.md`, `RELEASE_NOTES.md`, package docs, and compatibility policy
   describe the same SDK contract.
 
 Until then, the overlay port remains the supported vcpkg path.
+
+## Downstream Examples Evidence
+
+The external `../cxxmcp-examples` repository is evidence for ecosystem maturity
+only when it is treated as a downstream consumer, not as extra in-tree tests.
+Do not modify that repository from this ledger. For a release candidate, record
+the exact commit tested, the cxxmcp commit or release tag consumed, the build
+mode, and whether it used an adjacent source checkout or an installed package.
+
+The installed-package mode is the most relevant vcpkg signal:
+
+```powershell
+cmake -S ../cxxmcp-examples -B ../cxxmcp-examples/build-installed -DCXXMCP_EXAMPLES_USE_ADJACENT_SDK=OFF -DCMAKE_PREFIX_PATH=<install-prefix>
+cmake --build ../cxxmcp-examples/build-installed --config Release
+ctest --test-dir ../cxxmcp-examples/build-installed -C Release --output-on-failure
+```
+
+Adjacent-source mode is still useful before a package is installed, especially
+for detecting public-header and target regressions while the SDK branch is in
+motion. It should not be the only evidence cited in a vcpkg curated-registry
+resubmission.
+
+Minimum green downstream scenarios:
+
+- `cxxmcp_sdk_smoke` for the broad SDK loopback surface: tools, prompts,
+  resources, templates, completion, sampling, logging, raw requests,
+  notifications, and task-backed tools.
+- `cxxmcp_minimal_stdio_server` and `cxxmcp_process_stdio_client_probe` for
+  stdio authoring, child-process launch, `ClientPeer::connect_stdio`, and
+  `mcp::serve`.
+- `cxxmcp_streamable_http_client`,
+  `cxxmcp_direct_http_legacy_sse_matrix`, and
+  `cxxmcp_http_auth_lite_matrix` for Streamable HTTP, legacy SSE compatibility,
+  and bearer-token/auth identity propagation.
+- `cxxmcp_async_request_matrix`,
+  `cxxmcp_timeout_cancellation_client`,
+  `cxxmcp_client_inbound_cancellation_matrix`,
+  `cxxmcp_pagination_cursor_matrix`,
+  `cxxmcp_client_subscription_helper_matrix`, and
+  `cxxmcp_task_cancel_matrix` for request handles, timeout/cancel behavior,
+  inbound cancellation, pagination, subscriptions, and task cancellation.
+- `cxxmcp_typed_tool_server`, `cxxmcp_handler_interface_matrix`,
+  `cxxmcp_server_to_client_context_matrix`,
+  `cxxmcp_native_server_transport_matrix`,
+  `cxxmcp_rich_content_cancellation_matrix`, and
+  `cxxmcp_transport_adapter_matrix` for authoring ergonomics, handler
+  contracts, server-to-client callbacks, custom role-generic transports, rich
+  content, and adapter compatibility.
+- `cxxmcp_http_gateway_runtime_matrix` and
+  `cxxmcp_runtime_services_matrix` when the consumed build exposes gateway and
+  runtime targets. A curated SDK-only vcpkg package may skip these optional
+  targets, but the skip must be explicit in the evidence note.
