@@ -214,6 +214,9 @@
     <header>
       <div class="brand">cxxmcp</div>
       <nav aria-label="Primary">
+        <a href="./getting-started.html">Getting Started</a>
+        <a href="./auth.html">Auth</a>
+        <a href="./stability.html">Stability</a>
         <a href="./api/">API Reference</a>
         <a href="https://github.com/caomengxuan666/cxxmcp">GitHub</a>
         <a href="https://modelcontextprotocol.io/">MCP</a>
@@ -230,10 +233,9 @@
           and release-gated interoperability checks.
         </p>
         <div class="actions">
-          <a class="button primary" href="./api/">Open API Reference</a>
-          <a class="button" href="https://github.com/caomengxuan666/cxxmcp#quick-start">
-            Quick Start
-          </a>
+          <a class="button primary" href="./getting-started.html">Get Started</a>
+          <a class="button" href="./api/">Open API Reference</a>
+          <a class="button" href="./stability.html">Release Stability</a>
         </div>
       </section>
 
@@ -266,6 +268,30 @@
         <pre><code>find_package(cxxmcp CONFIG REQUIRED)
 target_link_libraries(my_server PRIVATE cxxmcp::server)
 target_link_libraries(my_client PRIVATE cxxmcp::client)</code></pre>
+      </section>
+
+      <section class="grid" aria-label="Manual guides">
+        <article class="card">
+          <h2><a href="./getting-started.html">Getting Started</a></h2>
+          <p>
+            Install the SDK, choose narrow CMake targets, and use the canonical
+            Peer/Service server shape.
+          </p>
+        </article>
+        <article class="card">
+          <h2><a href="./auth.html">Auth</a></h2>
+          <p>
+            Understand bearer-token helpers, server auth hooks, optional OAuth
+            scaffolding, and HTTPS expectations.
+          </p>
+        </article>
+        <article class="card">
+          <h2><a href="./stability.html">Release and API Stability</a></h2>
+          <p>
+            Read the public SDK contract, source compatibility rules, ABI note,
+            and release evidence requirements.
+          </p>
+        </article>
       </section>
     </main>
 

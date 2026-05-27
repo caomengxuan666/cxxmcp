@@ -98,6 +98,9 @@ cxxmcp_build_option(CXXMCP_ENABLE_AUTH MCP_ENABLE_AUTH
 option(CXXMCP_USE_SYSTEM_DEPS
     "Use package-manager provided SDK dependencies instead of bundled headers"
     OFF)
+option(CXXMCP_USE_SYSTEM_JSONRPCPP
+    "Use a package-manager provided jsonrpcpp header instead of the bundled private header"
+    OFF)
 
 unset(CXXMCP_BUILD_GUI CACHE)
 unset(MCP_BUILD_GUI CACHE)
@@ -169,22 +172,22 @@ else()
     set(CXXMCP_HTTPLIB_TARGET "")
 endif()
 
-add_library(jsonrpcpp INTERFACE)
-target_include_directories(jsonrpcpp INTERFACE
-    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/third_party/jsonrpcpp>
-    $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}/cxxmcp/third_party/jsonrpcpp>
-)
 if(CXXMCP_USE_SYSTEM_DEPS)
-    target_link_libraries(jsonrpcpp INTERFACE "${CXXMCP_JSON_TARGET}")
+    if(CXXMCP_USE_SYSTEM_JSONRPCPP)
+        find_path(CXXMCP_JSONRPCPP_INCLUDE_DIR
+            NAMES jsonrpcpp.hpp
+            PATH_SUFFIXES jsonrpcpp
+            REQUIRED
+        )
+        set(CXXMCP_JSONRPCPP_INCLUDE_DIRS "${CXXMCP_JSONRPCPP_INCLUDE_DIR}")
+    else()
+        set(CXXMCP_JSONRPCPP_INCLUDE_DIRS
+            "${CMAKE_CURRENT_SOURCE_DIR}/third_party/jsonrpcpp")
+    endif()
 else()
-    target_include_directories(jsonrpcpp INTERFACE
-        $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/third_party>
-        $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>
-    )
+    set(CXXMCP_JSONRPCPP_INCLUDE_DIRS
+        "${CMAKE_CURRENT_SOURCE_DIR}/third_party/jsonrpcpp")
 endif()
-
-cxxmcp_require_sdk_cxx(jsonrpcpp)
-set(CXXMCP_JSONRPCPP_TARGET jsonrpcpp)
 
 # Internal implementation dependency for HTTP transports and tests. It is not
 # installed or exported as part of the public SDK package contract.
@@ -225,11 +228,13 @@ if(MCP_ENABLE_PROTOCOL)
             $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/third_party>
         )
     endif()
+    target_include_directories(mcp_protocol PRIVATE
+        ${CXXMCP_JSONRPCPP_INCLUDE_DIRS}
+    )
     target_link_libraries(mcp_protocol PUBLIC mcp_core)
     if(CXXMCP_JSON_TARGET)
         target_link_libraries(mcp_protocol PUBLIC "${CXXMCP_JSON_TARGET}")
     endif()
-    target_link_libraries(mcp_protocol PRIVATE "${CXXMCP_JSONRPCPP_TARGET}")
     cxxmcp_require_sdk_cxx(mcp_protocol)
 endif()
 
@@ -557,9 +562,6 @@ if(CXXMCP_BUILD_DOCS)
 endif()
 
 set(CXXMCP_INSTALL_TARGETS mcp_core)
-if(TARGET jsonrpcpp)
-    list(APPEND CXXMCP_INSTALL_TARGETS jsonrpcpp)
-endif()
 if(TARGET mcp_protocol)
     list(APPEND CXXMCP_INSTALL_TARGETS mcp_protocol)
 endif()
@@ -635,10 +637,6 @@ if(NOT CXXMCP_USE_SYSTEM_DEPS)
         DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/nlohmann
     )
 endif()
-install(FILES
-    third_party/jsonrpcpp/jsonrpcpp.hpp
-    DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/cxxmcp/third_party/jsonrpcpp
-)
 
 write_basic_package_version_file(
     "${CMAKE_CURRENT_BINARY_DIR}/cxxmcpConfigVersion.cmake"

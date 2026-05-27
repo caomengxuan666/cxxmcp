@@ -9,16 +9,15 @@ SDK 支持两种依赖模式：
 
 - 默认源码包 / archive 构建使用仓库内 bundled header-only SDK 依赖，让
   FetchContent、CPM.cmake 和直接源码安装不依赖包管理器。安装树会包含
-  `tl/expected.hpp`、`nlohmann/json.hpp`，以及
-  `cxxmcp/third_party/jsonrpcpp/jsonrpcpp.hpp` 下的 jsonrpcpp 实现头。
+  `tl/expected.hpp` 和 `nlohmann/json.hpp`。`jsonrpcpp` 只在构建
+  `cxxmcp::protocol` 时作为私有实现头使用，不作为 SDK header 安装。
 - 注册表包构建应设置 `CXXMCP_USE_SYSTEM_DEPS=ON`，并使用包管理器提供的
   `tl-expected`、`nlohmann-json` 和 `cpp-httplib`。这种模式下安装树不能再
-  vendor `tl` 或 `nlohmann` 头文件。
+  vendor `tl`、`nlohmann` 或 `jsonrpcpp` 头文件。
 
-`jsonrpcpp` 仍然是仓库内实现细节，因为当前项目维护的是一个小的 patched
-single-header copy，而不是依赖外部 registry package。它安装在
-`cxxmcp/third_party` include 前缀下，供导出的 CMake targets 使用，但不占用顶层
-public include namespace。
+`jsonrpcpp` 仍然是私有实现细节。当前 overlay 构建继续使用 bundled
+single-header copy，因为 vcpkg 的 `jsonrpcpp` port 还在审核中。等该 port 被接受后，
+curated cxxmcp port 应依赖它，并用 `CXXMCP_USE_SYSTEM_JSONRPCPP=ON` 配置 cxxmcp。
 
 `cpp-httplib` 是 transport 实现依赖，不作为 public SDK header 安装。下游代码应
 包含 `cxxmcp/transport/http_transport.hpp`、
@@ -68,8 +67,11 @@ packaging/vcpkg/vcpkg-configuration.overlay-example.json
 
 这个 overlay port 只构建 C++17 SDK package targets。它设置
 `CXXMCP_USE_SYSTEM_DEPS=ON`，关闭 runtime、gateway、CLI、examples、tests 和
-docs，并使用 vcpkg 提供的 `tl-expected`、`nlohmann-json` 和 `cpp-httplib`。它不会
-把 spdlog、CLI11、runtime、gateway 或 CLI targets 变成 SDK 包的默认消费面。
+docs，并使用 vcpkg 提供的 `tl-expected`、`nlohmann-json` 和 `cpp-httplib`。在
+`jsonrpcpp` 进入 vcpkg 之前，overlay port 仍只在 protocol library 构建阶段使用
+bundled private jsonrpcpp 实现头；它不会依赖 `jsonrpcpp`，也不会传入
+`CXXMCP_USE_SYSTEM_JSONRPCPP=ON`。它不会把 spdlog、CLI11、runtime、gateway 或
+CLI targets 变成 SDK 包的默认消费面。
 
 可选 auth scaffold 是显式 feature，不属于默认 vcpkg package 路径：
 
@@ -109,7 +111,10 @@ overlay port 存在就提交。
   `vcpkg_check_linkage(ONLY_STATIC_LIBRARY)`；portfile 不再强制
   `-DBUILD_SHARED_LIBS=OFF`；
 - 继续只启用 SDK 构建，并关闭 runtime、gateway、CLI、examples、tests 和 docs；
-- 保持 `jsonrpcpp` 是 cxxmcp 包内私有实现细节，不导出 public third-party target；
+- 在 `microsoft/vcpkg#52045` 或等价 jsonrpcpp port 被接受后，把 `jsonrpcpp` 作为
+  普通 vcpkg dependency，并传入 `CXXMCP_USE_SYSTEM_JSONRPCPP=ON`；它仍保持私有，
+  不导出 cxxmcp 自己的 third-party target。如果 curated cxxmcp PR 已经准备好但
+  jsonrpcpp port 仍不可用，则保持这个开关关闭，并在 PR 中记录例外原因；
 - 默认 `cpp-httplib` 仍按不带 TLS 的 loopback HTTP 消费，除非后续明确增加依赖
   `cpp-httplib[openssl]` 的 `ssl` 或 `https` feature；
 - OAuth/DPoP auth 等 OpenSSL-backed 实现落地之后再作为 opt-in feature，不提前把

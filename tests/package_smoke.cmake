@@ -67,9 +67,9 @@ else()
             "default package smoke must not install optional auth headers")
     endif()
 endif()
-if(NOT EXISTS
-   "${installed_include_dir}/cxxmcp/third_party/jsonrpcpp/jsonrpcpp.hpp")
-    message(FATAL_ERROR "installed jsonrpcpp implementation header is missing")
+if(EXISTS "${installed_include_dir}/cxxmcp/third_party/jsonrpcpp/jsonrpcpp.hpp")
+    message(FATAL_ERROR
+        "jsonrpcpp must stay private and must not be installed as an SDK header")
 endif()
 if(EXISTS "${installed_include_dir}/httplib.h" OR
    EXISTS "${installed_include_dir}/httplib/httplib.h")

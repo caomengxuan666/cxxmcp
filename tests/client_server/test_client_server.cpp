@@ -3400,20 +3400,20 @@ void test_server_tool_task_support_validation() {
   mcp::server::Server server(options);
   server.use_task_manager();
 
-  int forbidden_calls = 0;
+  std::atomic_int forbidden_calls{0};
   const auto forbidden_added = server.tools().add(
       mcp::protocol::ToolDefinition{
           .name = "forbidden",
           .input_schema = Json::object(),
       },
       [&](const mcp::server::ToolContext& context) {
-        ++forbidden_calls;
+        forbidden_calls.fetch_add(1, std::memory_order_relaxed);
         require(!context.task.has_value(), "forbidden tool task mismatch");
         return mcp::protocol::ToolResult{};
       });
   require(forbidden_added.has_value(), "failed to add forbidden tool");
 
-  int optional_calls = 0;
+  std::atomic_int optional_calls{0};
   const auto optional_added = server.tools().add(
       mcp::protocol::ToolDefinition{
           .name = "optional",
@@ -3422,14 +3422,14 @@ void test_server_tool_task_support_validation() {
               mcp::protocol::TaskSupport::Optional),
       },
       [&](const mcp::server::ToolContext& context) {
-        ++optional_calls;
+        optional_calls.fetch_add(1, std::memory_order_relaxed);
         require(context.task.has_value(), "optional tool task missing");
         require(context.task->ttl == 30, "optional tool ttl mismatch");
         return mcp::protocol::ToolResult{};
       });
   require(optional_added.has_value(), "failed to add optional tool");
 
-  int required_calls = 0;
+  std::atomic_int required_calls{0};
   const auto required_added = server.tools().add(
       mcp::protocol::ToolDefinition{
           .name = "required",
@@ -3438,7 +3438,7 @@ void test_server_tool_task_support_validation() {
               mcp::protocol::TaskSupport::Required),
       },
       [&](const mcp::server::ToolContext& context) {
-        ++required_calls;
+        required_calls.fetch_add(1, std::memory_order_relaxed);
         require(context.task.has_value(), "required tool task missing");
         require(context.task->ttl == 90, "required tool ttl mismatch");
         return mcp::protocol::ToolResult{};
@@ -3461,7 +3461,8 @@ void test_server_tool_task_support_validation() {
   require(forbidden_task->error->code ==
               static_cast<int>(mcp::protocol::ErrorCode::InvalidParams),
           "forbidden task error code mismatch");
-  require(forbidden_calls == 0, "forbidden task should not call handler");
+  require(forbidden_calls.load(std::memory_order_relaxed) == 0,
+          "forbidden task should not call handler");
 
   const auto required_without_task =
       server.call_tool("required", Json::object(), "session-1");
@@ -3470,7 +3471,8 @@ void test_server_tool_task_support_validation() {
   require(required_without_task.error().message ==
               "tool requires task-based invocation",
           "required tool direct-call error mismatch");
-  require(required_calls == 0, "required non-task should not call handler");
+  require(required_calls.load(std::memory_order_relaxed) == 0,
+          "required non-task should not call handler");
 
   const auto optional_task = server.handle_request(
       mcp::protocol::JsonRpcRequest{
@@ -3485,8 +3487,9 @@ void test_server_tool_task_support_validation() {
   require(optional_task->result.has_value(), "optional task result missing");
   require(optional_task->result->contains("task"),
           "optional task should create a task");
-  wait_until([&] { return optional_calls == 1; },
-             "optional task should call handler once");
+  wait_until(
+      [&] { return optional_calls.load(std::memory_order_relaxed) == 1; },
+      "optional task should call handler once");
 
   const auto required_task = server.handle_request(
       mcp::protocol::JsonRpcRequest{
@@ -3501,10 +3504,12 @@ void test_server_tool_task_support_validation() {
   require(required_task->result.has_value(), "required task result missing");
   require(required_task->result->contains("task"),
           "required task should create a task");
-  wait_until([&] { return required_calls == 1; },
-             "required task should call handler once");
+  wait_until(
+      [&] { return required_calls.load(std::memory_order_relaxed) == 1; },
+      "required task should call handler once");
 
-  const auto optional_calls_before_invalid = optional_calls;
+  const auto optional_calls_before_invalid =
+      optional_calls.load(std::memory_order_relaxed);
   const auto invalid_task_params = server.handle_request(
       mcp::protocol::JsonRpcRequest{
           .method = std::string(mcp::protocol::ToolsCallMethod),
@@ -3521,7 +3526,8 @@ void test_server_tool_task_support_validation() {
   require(invalid_task_params->error->code ==
               static_cast<int>(mcp::protocol::ErrorCode::InvalidParams),
           "invalid task params error code mismatch");
-  require(optional_calls == optional_calls_before_invalid,
+  require(optional_calls.load(std::memory_order_relaxed) ==
+              optional_calls_before_invalid,
           "invalid task params should not call handler");
 
   const auto negative_ttl = server.handle_request(
@@ -3541,7 +3547,8 @@ void test_server_tool_task_support_validation() {
           "negative task ttl error code mismatch");
   require(negative_ttl->error->message == "task ttl must be non-negative",
           "negative task ttl error message mismatch");
-  require(optional_calls == optional_calls_before_invalid,
+  require(optional_calls.load(std::memory_order_relaxed) ==
+              optional_calls_before_invalid,
           "negative task ttl should not call handler");
 }
 

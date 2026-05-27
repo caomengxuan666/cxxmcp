@@ -131,6 +131,12 @@ jobs:
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable
 
+      - name: Checkout pinned RMCP reference
+        run: |
+          mkdir -p reference
+          git clone https://github.com/modelcontextprotocol/rust-sdk.git reference/rmcp
+          git -C reference/rmcp checkout c330fede90e4729c234f8e87fdbc5ea27a1dd10c
+
       - name: Configure sanitizer build
         run: cmake --preset ${{ matrix.configure_preset }}
 
@@ -172,11 +178,13 @@ jobs:
             -DCXXMCP_BUILD_CLI=OFF \
             -DCXXMCP_BUILD_EXAMPLES=OFF \
             -DCXXMCP_BUILD_TESTS=ON \
+            -DCXXMCP_ENABLE_AUTH=ON \
             -DCXXMCP_BUILD_DOCS=OFF
 
       - name: Build public header fixtures
         run: |
           cmake --build build-clang-tidy --parallel --target \
+            mcp_public_header_auth \
             mcp_public_header_client \
             mcp_public_header_config \
             mcp_public_header_error \
@@ -194,6 +202,94 @@ jobs:
             --source . \
             --build-dir build-clang-tidy \
             tests/sdk/public_headers
+
+  auth-release-gate:
+    name: auth-${{ matrix.name }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: linux-gcc-ninja
+            os: ubuntu-latest
+            generator: Ninja
+            build_type: Debug
+            cc: gcc
+            cxx: g++
+          - name: windows-msvc-ninja
+            os: windows-latest
+            generator: Ninja
+            build_type: Debug
+            cc: cl
+            cxx: cl
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Setup MSVC developer environment
+        if: runner.os == 'Windows'
+        uses: ilammy/msvc-dev-cmd@v1
+
+      - name: Install Ninja
+        shell: bash
+        run: |
+          if [[ "${RUNNER_OS}" == "Linux" ]]; then
+            sudo apt-get update
+            sudo apt-get install -y ninja-build
+          elif [[ "${RUNNER_OS}" == "Windows" ]]; then
+            choco install ninja --no-progress
+          fi
+
+      - name: Configure auth-enabled SDK
+        shell: pwsh
+        env:
+          CC: ${{ matrix.cc }}
+          CXX: ${{ matrix.cxx }}
+        run: |
+          cmake `
+            -S . `
+            -B build-auth-release-gate `
+            -G "${{ matrix.generator }}" `
+            -DCMAKE_BUILD_TYPE=${{ matrix.build_type }} `
+            -DCXXMCP_BUILD_SDK=ON `
+            -DCXXMCP_BUILD_CLIENT=ON `
+            -DCXXMCP_BUILD_SERVER=ON `
+            -DCXXMCP_BUILD_RUNTIME=OFF `
+            -DCXXMCP_BUILD_APP=OFF `
+            -DCXXMCP_BUILD_GATEWAY=OFF `
+            -DCXXMCP_BUILD_CLI=OFF `
+            -DCXXMCP_BUILD_EXAMPLES=OFF `
+            -DCXXMCP_BUILD_TESTS=ON `
+            -DCXXMCP_ENABLE_AUTH=ON
+
+      - name: Build auth tests
+        shell: pwsh
+        run: cmake --build build-auth-release-gate --parallel
+
+      - name: Run auth release gate
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path "build-auth-release-gate/test-results" | Out-Null
+          ctest `
+            --test-dir build-auth-release-gate `
+            -R "^(auth|public_header_auth|package_smoke)$" `
+            --output-on-failure `
+            --timeout 240 `
+            --output-junit build-auth-release-gate/test-results/auth-release-gate.xml
+
+      - name: Upload auth release gate evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: cxxmcp-auth-release-gate-${{ matrix.name }}
+          path: |
+            build-auth-release-gate/CMakeCache.txt
+            build-auth-release-gate/test-results/auth-release-gate.xml
+            build-auth-release-gate/Testing/Temporary/*.log
+          if-no-files-found: warn
 
   release-blocking:
     name: ${{ matrix.name }}
@@ -451,6 +547,7 @@ jobs:
             release-evidence/
           cp \
             docs/auth_design.md \
+            docs/auth_user_guide.md \
             docs/compatibility_policy.md \
             docs/dependency_policy.md \
             docs/elicitation_lifecycle.md \
@@ -461,6 +558,7 @@ jobs:
             docs/package_consumption.md \
             docs/package_consumption_zh.md \
             docs/protocol_model_audit.md \
+            docs/public_api_stability.md \
             docs/release_process.md \
             docs/release_gates.md \
             docs/release_candidate_checklist.md \
@@ -470,6 +568,11 @@ jobs:
             docs/sdk_peer_service_migration.md \
             docs/task_lifecycle.md \
             release-evidence/docs/
+          cp -r docs/pages release-evidence/docs/pages
+          test -f release-evidence/docs/pages/index.html
+          test -f release-evidence/docs/pages/getting-started.html
+          test -f release-evidence/docs/pages/auth.html
+          test -f release-evidence/docs/pages/stability.html
           cp examples/*.cpp examples/CMakeLists.txt release-evidence/examples/
           cp -r templates/external_consumer release-evidence/templates/
           {

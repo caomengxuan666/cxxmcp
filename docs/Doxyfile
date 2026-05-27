@@ -11,6 +11,7 @@ INPUT                  = README.md \
                          CONTRIBUTING.md \
                          SECURITY.md \
                          docs/auth_design.md \
+                         docs/auth_user_guide.md \
                          docs/compatibility_policy.md \
                          docs/dependency_policy.md \
                          docs/elicitation_lifecycle.md \
@@ -18,6 +19,7 @@ INPUT                  = README.md \
                          docs/package_consumption.md \
                          docs/package_consumption_zh.md \
                          docs/protocol_model_audit.md \
+                         docs/public_api_stability.md \
                          docs/release_process.md \
                          docs/release_gates.md \
                          docs/release_candidate_checklist.md \

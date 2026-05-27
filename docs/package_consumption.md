@@ -10,18 +10,18 @@ The SDK has two supported dependency modes:
 
 - Default source/archive builds use bundled header-only SDK dependencies so
   FetchContent, CPM.cmake, and direct source installs work without a package
-  manager. The install tree includes `tl/expected.hpp`, `nlohmann/json.hpp`,
-  and the jsonrpcpp implementation header under
-  `cxxmcp/third_party/jsonrpcpp/jsonrpcpp.hpp`.
+  manager. The install tree includes `tl/expected.hpp` and
+  `nlohmann/json.hpp`. `jsonrpcpp` is used only while building
+  `cxxmcp::protocol` and is not installed as an SDK header.
 - Registry builds should set `CXXMCP_USE_SYSTEM_DEPS=ON` and use package
   manager dependencies for `tl-expected`, `nlohmann-json`, and `cpp-httplib`.
-  In this mode the install tree must not vendor `tl` or `nlohmann` headers.
+  In this mode the install tree must not vendor `tl`, `nlohmann`, or
+  `jsonrpcpp` headers.
 
-`jsonrpcpp` remains an in-tree implementation detail because this project keeps
-a small patched single-header copy rather than depending on an external package
-registry entry. It is installed under the `cxxmcp/third_party` include prefix so
-exported CMake targets can consume it without claiming a top-level public
-include namespace.
+`jsonrpcpp` remains a private implementation detail. Current overlay builds use
+the bundled single-header copy because the vcpkg `jsonrpcpp` port is still under
+review. Once that port is accepted, the curated cxxmcp port should depend on it
+and configure cxxmcp with `CXXMCP_USE_SYSTEM_JSONRPCPP=ON`.
 
 `cpp-httplib` is a transport implementation dependency. It is intentionally not
 installed as a public SDK header. Downstream code should use
@@ -75,8 +75,11 @@ Copy it next to your downstream `vcpkg.json` and replace the
 The overlay port builds only the C++17 SDK package targets. It sets
 `CXXMCP_USE_SYSTEM_DEPS=ON`, disables runtime, gateway, CLI, examples, tests,
 and docs, and depends on vcpkg packages for `tl-expected`, `nlohmann-json`, and
-`cpp-httplib`. It does not make spdlog, CLI11, runtime, gateway, or CLI targets
-part of SDK package consumption.
+`cpp-httplib`. Until `jsonrpcpp` is accepted into vcpkg, the overlay port keeps
+using the bundled private jsonrpcpp implementation header for the protocol
+library build only. It intentionally does not depend on `jsonrpcpp` or pass
+`CXXMCP_USE_SYSTEM_JSONRPCPP=ON`. It does not make spdlog, CLI11, runtime,
+gateway, or CLI targets part of SDK package consumption.
 
 The optional auth scaffold is exposed as an opt-in feature and is not part of
 the default vcpkg package path:
@@ -123,8 +126,12 @@ overlay port in these ways:
   claimed; do not force `-DBUILD_SHARED_LIBS=OFF` in the portfile;
 - keep SDK-only build options enabled and runtime, gateway, CLI, examples,
   tests, and docs disabled;
-- keep `jsonrpcpp` private to the cxxmcp package instead of exporting a public
-  third-party target;
+- after `microsoft/vcpkg#52045` or an equivalent jsonrpcpp port is accepted,
+  add `jsonrpcpp` as a normal vcpkg dependency and pass
+  `CXXMCP_USE_SYSTEM_JSONRPCPP=ON`; keep it private and do not export a
+  cxxmcp-owned third-party target. If the jsonrpcpp port is still unavailable
+  when the curated cxxmcp PR is otherwise ready, leave this switch off and
+  document the exception in the PR;
 - keep default `cpp-httplib` consumption as loopback HTTP without TLS unless a
   deliberate `ssl` or `https` feature is added for `cpp-httplib[openssl]`;
 - keep OAuth/DPoP auth as a later opt-in feature after the OpenSSL-backed

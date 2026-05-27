@@ -373,6 +373,10 @@ class ProcessStdioTransport::Impl {
 
 #ifdef _WIN32
     std::lock_guard<std::mutex> lock(write_mutex_);
+    if (!running_ || !stdin_write_) {
+      return std::unexpected(
+          make_process_error("process stdio transport closed"));
+    }
     const std::string payload = line + "\n";
     DWORD written = 0;
     if (!WriteFile(stdin_write_.get(), payload.data(),
@@ -385,6 +389,10 @@ class ProcessStdioTransport::Impl {
     return core::Unit{};
 #else
     std::lock_guard<std::mutex> lock(write_mutex_);
+    if (!running_ || !stdin_write_) {
+      return std::unexpected(
+          make_process_error("process stdio transport closed"));
+    }
     const std::string payload = line + "\n";
     const ScopedSigpipeBlock sigpipe_block;
     std::size_t written = 0;
@@ -587,7 +595,17 @@ class ProcessStdioTransport::Impl {
       return std::unexpected(started.error());
     }
 
+    std::lock_guard<std::mutex> lock(read_mutex_);
+    if (!running_) {
+      return std::unexpected(
+          make_process_error("process stdio transport closed"));
+    }
+
 #ifdef _WIN32
+    if (!stdout_read_) {
+      return std::unexpected(make_process_error(
+          "failed to read process stdout", "process stdout pipe is closed"));
+    }
     std::string line;
     char ch = '\0';
     DWORD read = 0;
@@ -606,6 +624,10 @@ class ProcessStdioTransport::Impl {
     }
     return line;
 #else
+    if (!stdout_read_) {
+      return std::unexpected(make_process_error(
+          "failed to read process stdout", "process stdout pipe is closed"));
+    }
     std::string line;
     char ch = '\0';
     while (true) {
@@ -634,8 +656,13 @@ class ProcessStdioTransport::Impl {
 
  private:
   core::Result<core::Unit> ensure_started() {
+    std::lock_guard<std::mutex> stop_lock(stop_mutex_);
 #ifdef _WIN32
     std::lock_guard<std::mutex> process_lock(process_mutex_);
+    if (!running_) {
+      return std::unexpected(
+          make_process_error("process stdio transport closed"));
+    }
     if (process_) {
       return core::Unit{};
     }
@@ -701,6 +728,10 @@ class ProcessStdioTransport::Impl {
     return core::Unit{};
 #else
     std::lock_guard<std::mutex> process_lock(process_mutex_);
+    if (!running_) {
+      return std::unexpected(
+          make_process_error("process stdio transport closed"));
+    }
     if (process_pid_ > 0) {
       return core::Unit{};
     }
@@ -762,11 +793,15 @@ class ProcessStdioTransport::Impl {
 
  public:
   void stop() noexcept {
+    std::lock_guard<std::mutex> stop_lock(stop_mutex_);
 #ifdef _WIN32
     running_ = false;
     {
-      std::lock_guard<std::mutex> process_lock(process_mutex_);
+      std::lock_guard<std::mutex> write_lock(write_mutex_);
       stdin_write_.reset();
+    }
+    {
+      std::lock_guard<std::mutex> process_lock(process_mutex_);
       if (process_) {
         const DWORD wait_result = WaitForSingleObject(process_.get(), 1000);
         if (wait_result == WAIT_TIMEOUT) {
@@ -774,47 +809,63 @@ class ProcessStdioTransport::Impl {
           WaitForSingleObject(process_.get(), 1000);
         }
       }
-      stdout_read_.reset();
-      thread_.reset();
-      process_.reset();
-    }
-    if (reader_thread_.joinable()) {
-      reader_thread_.join();
-    }
-#else
-    running_ = false;
-    {
-      std::lock_guard<std::mutex> process_lock(process_mutex_);
-      stdin_write_.reset();
-      if (process_pid_ > 0) {
-        if (!wait_for_process_exit(process_pid_, std::chrono::seconds(1))) {
-          ::kill(process_pid_, SIGTERM);
-          if (!wait_for_process_exit(process_pid_, std::chrono::seconds(1))) {
-            ::kill(process_pid_, SIGKILL);
-            reap_process(process_pid_);
-          }
-        }
-        process_pid_ = -1;
-      }
-      stdout_read_.reset();
     }
     if (reader_thread_.joinable() &&
         reader_thread_.get_id() != std::this_thread::get_id()) {
       reader_thread_.join();
+    }
+    {
+      std::lock_guard<std::mutex> read_lock(read_mutex_);
+      std::lock_guard<std::mutex> process_lock(process_mutex_);
+      stdout_read_.reset();
+      thread_.reset();
+      process_.reset();
+    }
+#else
+    running_ = false;
+    pid_t process_pid = -1;
+    {
+      std::lock_guard<std::mutex> write_lock(write_mutex_);
+      stdin_write_.reset();
+    }
+    {
+      std::lock_guard<std::mutex> process_lock(process_mutex_);
+      process_pid = process_pid_;
+    }
+    if (process_pid > 0) {
+      if (!wait_for_process_exit(process_pid, std::chrono::seconds(1))) {
+        ::kill(process_pid, SIGTERM);
+        if (!wait_for_process_exit(process_pid, std::chrono::seconds(1))) {
+          ::kill(process_pid, SIGKILL);
+          reap_process(process_pid);
+        }
+      }
+    }
+    if (reader_thread_.joinable() &&
+        reader_thread_.get_id() != std::this_thread::get_id()) {
+      reader_thread_.join();
+    }
+    {
+      std::lock_guard<std::mutex> read_lock(read_mutex_);
+      std::lock_guard<std::mutex> process_lock(process_mutex_);
+      stdout_read_.reset();
+      process_pid_ = -1;
     }
 #endif
   }
 
  private:
   ProcessStdioTransportOptions options_;
-  bool started_ = false;
+  std::atomic_bool started_{false};
   std::atomic_bool running_{true};
   TransportRequestHandler request_handler_;
   TransportNotificationHandler notification_handler_;
   std::thread reader_thread_;
   std::mutex write_mutex_;
+  std::mutex read_mutex_;
   std::mutex pending_mutex_;
   std::mutex process_mutex_;
+  std::mutex stop_mutex_;
   std::map<protocol::RequestId, std::promise<protocol::JsonRpcResponse>>
       pending_responses_;
 

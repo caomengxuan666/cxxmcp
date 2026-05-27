@@ -2,8 +2,8 @@
 
 This process defines when a cxxmcp release can be published and what evidence
 has to travel with it. It is part of the SDK compatibility contract together
-with the compatibility policy, release gates, release notes template, and
-release candidate checklist.
+with the compatibility policy, public API stability policy, release gates,
+release notes template, and release candidate checklist.
 
 ## Versioning
 
@@ -13,7 +13,7 @@ cxxmcp uses semantic versioning for public SDK releases:
   or change source-level behavior that stable consumers can observe.
 - `MINOR` changes may add public APIs, protocol families, transports, package
   manager routes, and compatibility adapters while preserving source
-  compatibility for the supported minor line.
+  compatibility for the supported major version.
 - `PATCH` changes are bug fixes, documentation fixes, compatibility fixes, and
   packaging fixes that do not add large public API surfaces.
 
@@ -26,12 +26,14 @@ checklist is complete for the exact release commit.
 Each public release has one of these stages:
 
 - Alpha: API movement is allowed, but every public SDK movement must be called
-  out in `CHANGELOG.md` and release notes.
+  out in `CHANGELOG.md` and release notes with stable, experimental, or
+  deprecated classification.
 - Beta: public SDK APIs should be mostly settled. Breaking changes require a
   design note or issue, migration text, and explicit release notes.
 - RC: only bug fixes, release evidence fixes, documentation fixes, and package
   metadata fixes are allowed unless a failed gate forces a targeted code fix.
-- Stable: public source compatibility is frozen for the minor line. Breaking
+  New public API requires release owner approval and must be additive.
+- Stable: public source compatibility is frozen for the major version. Breaking
   public API changes move to the next major release unless they fix a security
   vulnerability or a protocol compliance issue that cannot be solved
   additively.
@@ -67,10 +69,21 @@ Before tagging a beta, rc, or stable release, review public header diffs under:
 - `sdk/server/include/cxxmcp`
 - `sdk/transport/include/cxxmcp`
 
-The review must classify every public change as additive, compatible
-deprecation, behavior clarification, or breaking change. Breaking changes
-require migration notes and must follow the compatibility policy before they
-ship in a stable line.
+The review must follow [Public API Stability](public_api_stability.md). It must
+classify every public change as additive stable API, experimental API,
+compatible deprecation, behavior clarification, bug/security/protocol fix, or
+breaking change. For beta, rc, and stable releases, the review record must
+include:
+
+- the public header diff range or compared tags
+- the classification for each public change
+- any design note or issue linked to a new stable or experimental surface
+- migration notes for deprecations and breaking changes
+- evidence that package-smoke, public-header compile tests, and generated API
+  docs were produced from the same commit
+
+Breaking changes require migration notes and must follow the compatibility and
+public API stability policies before they ship in a stable line.
 
 ## Dependency Review
 

@@ -1,8 +1,9 @@
 # Compatibility Policy
 
 This policy defines what cxxmcp treats as the stable SDK contract. It is part
-of the release decision together with the README, examples, changelog, release
-gates, and release candidate checklist.
+of the release decision together with the README, examples, changelog,
+[public API stability](public_api_stability.md), release gates, and release
+candidate checklist.
 
 ## Canonical SDK Surface
 
@@ -34,12 +35,18 @@ above the SDK. They are not allowed to define the core SDK contract, and their
 types must not enter public SDK headers without a design note and release
 review.
 
-## Source Compatibility
+## Source Compatibility And API Classes
 
 Public headers compile as C++17 by default. The
 `CXXMCP_SDK_CXX_STANDARD` CMake cache value may be raised by downstream builds,
 but stable public headers must not require a standard newer than the configured
 SDK standard.
+
+Public APIs are classified as stable, experimental, or deprecated by
+[Public API Stability](public_api_stability.md). Stable APIs are source-frozen
+within a stable major version. Experimental APIs must be explicitly labeled and
+cannot be required by stable entry points. Deprecated APIs remain public until
+their documented removal window.
 
 Public include paths stay under `cxxmcp/...`. Public API renames must follow
 this sequence:
@@ -52,7 +59,7 @@ this sequence:
 
 Source compatibility follows semantic versioning once a stable release line is
 declared. Until then, pre-release builds may move APIs, but every public move
-must be visible in the changelog.
+must be visible in the changelog and release notes.
 
 ## ABI Policy
 
@@ -107,7 +114,8 @@ the same commit:
 - generated public API documentation
 - source archive with checksums
 - release evidence documents containing README, examples, changelog, release
-  gates, release candidate checklist, and this compatibility policy
+  gates, release candidate checklist, public API stability policy, and this
+  compatibility policy
 
 The release candidate checklist is the binding audit record. Do not publish a
 stable release or claim fact-standard status while any required evidence

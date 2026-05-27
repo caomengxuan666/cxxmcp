@@ -60,6 +60,11 @@ def main() -> None:
     deps = data.get("dependencies", [])
     if any(dependency_name(dep) == "openssl" for dep in deps):
         fail("vcpkg default dependencies must not pull OpenSSL for auth")
+    if any(dependency_name(dep) == "jsonrpcpp" for dep in deps):
+        fail(
+            "overlay vcpkg port must not depend on jsonrpcpp "
+            "before the port is accepted"
+        )
     for dep in deps:
         if dependency_name(dep) == "cpp-httplib":
             if dep.get("default-features", True) is not False:
@@ -72,10 +77,13 @@ def main() -> None:
     require_contains(vcpkg_portfile, "-DCXXMCP_ENABLE_AUTH=${CXXMCP_VCPKG_ENABLE_AUTH}")
     require_contains(vcpkg_portfile, "vcpkg_check_linkage(ONLY_STATIC_LIBRARY)")
     require_not_contains(vcpkg_portfile, "-DBUILD_SHARED_LIBS=OFF")
+    require_not_contains(vcpkg_portfile, "CXXMCP_USE_SYSTEM_JSONRPCPP")
 
     curated_portfile = source / "packaging/vcpkg/curated-portfile.future.cmake"
     require_contains(curated_portfile, "vcpkg_from_github(")
     require_contains(curated_portfile, "SHA512 @CXXMCP_RELEASE_ARCHIVE_SHA512@")
+    require_contains(curated_portfile, "after-jsonrpcpp-vcpkg-acceptance")
+    require_contains(curated_portfile, "-DCXXMCP_USE_SYSTEM_JSONRPCPP=ON")
     require_contains(curated_portfile, "vcpkg_check_linkage(ONLY_STATIC_LIBRARY)")
     require_not_contains(curated_portfile, "-DBUILD_SHARED_LIBS=OFF")
 

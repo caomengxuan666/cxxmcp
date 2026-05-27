@@ -33,7 +33,10 @@ Attach or link these artifacts for the same commit:
 - `cxxmcp-release-gates-linux-clang-ninja`
 - `cxxmcp-release-gates-macos-appleclang-ninja`
 - `cxxmcp-release-gates-windows-msvc-ninja-static-runtime`
+- `cxxmcp-release-gates-windows-clangcl-ninja-static-runtime`
 - `cxxmcp-release-gates-windows-msvc-vs-dynamic-runtime`
+- `cxxmcp-auth-release-gate-linux-gcc-ninja`
+- `cxxmcp-auth-release-gate-windows-msvc-ninja`
 - `cxxmcp-doxygen-html`
 - `cxxmcp-source`
 - `cxxmcp-release-evidence`
