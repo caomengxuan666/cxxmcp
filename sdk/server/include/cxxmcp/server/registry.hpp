@@ -15,6 +15,7 @@
 #include "cxxmcp/protocol/resource.hpp"
 #include "cxxmcp/protocol/tool.hpp"
 #include "cxxmcp/server/peer.hpp"
+#include "cxxmcp/server/schema_validator.hpp"
 #include "cxxmcp/server/transport.hpp"
 
 /// @file
@@ -52,6 +53,11 @@ struct PromptContext : SessionContext {
 
   /// JSON arguments supplied with the prompt request.
   protocol::Json arguments = protocol::Json::object();
+  /// Cooperative cancellation token for this request.
+  CancellationToken cancellation;
+
+  /// @brief Convenience check for cancellation-aware handlers.
+  bool cancelled() const noexcept { return cancellation.cancelled(); }
 };
 
 /// @brief Invocation context passed to resource read handlers.
@@ -63,6 +69,11 @@ struct ResourceContext : SessionContext {
   std::string uri;
   /// Raw resource read parameters supplied by the client.
   protocol::Json params = protocol::Json::object();
+  /// Cooperative cancellation token for this request.
+  CancellationToken cancellation;
+
+  /// @brief Convenience check for cancellation-aware handlers.
+  bool cancelled() const noexcept { return cancellation.cancelled(); }
 };
 
 /// @brief Application callback that executes a tool.
@@ -145,6 +156,10 @@ class ToolRegistry {
   core::Result<protocol::ToolResult> call(protocol::ToolCall call,
                                           const SessionContext& session_context,
                                           CancellationToken cancellation) const;
+  core::Result<protocol::ToolResult> call(
+      protocol::ToolCall call, const SessionContext& session_context,
+      CancellationToken cancellation,
+      const JsonSchemaValidator* schema_validator) const;
 
   /// @brief Invoke a tool with only a session id.
   /// @param name Registered tool name.
@@ -189,6 +204,10 @@ class PromptRegistry {
   core::Result<protocol::PromptsGetResult> get(
       std::string_view name, protocol::Json arguments,
       const SessionContext& session_context) const;
+  core::Result<protocol::PromptsGetResult> get(
+      std::string_view name, protocol::Json arguments,
+      const SessionContext& session_context,
+      CancellationToken cancellation) const;
 
   /// @brief Return registered prompt definitions sorted by name.
   std::vector<protocol::Prompt> list() const;
@@ -225,6 +244,10 @@ class ResourceRegistry {
   core::Result<protocol::ResourcesReadResult> read(
       std::string_view uri, protocol::Json params,
       const SessionContext& session_context) const;
+  core::Result<protocol::ResourcesReadResult> read(
+      std::string_view uri, protocol::Json params,
+      const SessionContext& session_context,
+      CancellationToken cancellation) const;
 
   /// @brief Return registered resources sorted by URI.
   std::vector<protocol::Resource> list() const;

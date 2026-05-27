@@ -1,0 +1,16 @@
+{
+  "ref": {
+    "type": "ref/prompt",
+    "name": "summarize"
+  },
+  "argument": {
+    "name": "text",
+    "value": "hel"
+  },
+  "context": {
+    "previous": "hello"
+  },
+  "_meta": {
+    "source": "fixture"
+  }
+}

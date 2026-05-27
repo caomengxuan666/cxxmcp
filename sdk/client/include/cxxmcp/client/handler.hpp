@@ -57,18 +57,42 @@ struct ClientHandlerInterface {
   on_list_roots_request() const {
     return std::nullopt;
   }
+  virtual std::optional<core::Result<protocol::RootsListResult>>
+  on_list_roots_request(CancellationToken cancellation) const {
+    (void)cancellation;
+    return on_list_roots_request();
+  }
   virtual std::optional<core::Result<protocol::CreateMessageResult>>
   on_create_message_request(const protocol::CreateMessageParams&) const {
     return std::nullopt;
+  }
+  virtual std::optional<core::Result<protocol::CreateMessageResult>>
+  on_create_message_request(const protocol::CreateMessageParams& params,
+                            CancellationToken cancellation) const {
+    (void)cancellation;
+    return on_create_message_request(params);
   }
   virtual std::optional<core::Result<protocol::CreateElicitationResult>>
   on_create_elicitation_request(
       const protocol::CreateElicitationRequestParam&) const {
     return std::nullopt;
   }
+  virtual std::optional<core::Result<protocol::CreateElicitationResult>>
+  on_create_elicitation_request(
+      const protocol::CreateElicitationRequestParam& params,
+      CancellationToken cancellation) const {
+    (void)cancellation;
+    return on_create_elicitation_request(params);
+  }
   virtual std::optional<core::Result<protocol::Json>> on_custom_request(
       const protocol::JsonRpcRequest&) const {
     return std::nullopt;
+  }
+  virtual std::optional<core::Result<protocol::Json>> on_custom_request(
+      const protocol::JsonRpcRequest& request,
+      CancellationToken cancellation) const {
+    (void)cancellation;
+    return on_custom_request(request);
   }
   virtual void on_raw_notification(const protocol::JsonRpcNotification&) const {
   }
@@ -118,18 +142,31 @@ struct ClientHandler {
   ChangedHandler on_roots_list_changed;
   /// Handles server list-roots requests.
   RootsListRequestHandler on_list_roots_request;
+  Client::RootsListRequestCancellationHandler
+      on_list_roots_request_with_cancellation;
   /// Handles server sampling createMessage requests.
   SamplingRequestHandler on_create_message_request;
+  Client::SamplingRequestCancellationHandler
+      on_create_message_request_with_cancellation;
   /// Handles server elicitation requests.
   ElicitationRequestHandler on_create_elicitation_request;
+  Client::ElicitationRequestCancellationHandler
+      on_create_elicitation_request_with_cancellation;
   /// Handles custom server requests.
   CustomRequestHandler on_custom_request;
+  Client::CustomRequestCancellationHandler on_custom_request_with_cancellation;
   /// Compatibility alias for on_list_roots_request.
   RootsListRequestHandler on_roots_list_request;
+  Client::RootsListRequestCancellationHandler
+      on_roots_list_request_with_cancellation;
   /// Compatibility alias for on_create_message_request.
   SamplingRequestHandler on_sampling_request;
+  Client::SamplingRequestCancellationHandler
+      on_sampling_request_with_cancellation;
   /// Compatibility alias for on_create_elicitation_request.
   ElicitationRequestHandler on_elicitation_request;
+  Client::ElicitationRequestCancellationHandler
+      on_elicitation_request_with_cancellation;
   /// Observes raw inbound notifications after built-in dispatch.
   RawNotificationHandler on_raw_notification;
   /// Compatibility alias for on_raw_notification.
@@ -174,23 +211,46 @@ struct ClientHandler {
     if (on_list_roots_request) {
       client.on_list_roots_request(on_list_roots_request);
     }
+    if (on_list_roots_request_with_cancellation) {
+      client.on_list_roots_request(on_list_roots_request_with_cancellation);
+    }
     if (on_create_message_request) {
       client.on_create_message_request(on_create_message_request);
+    }
+    if (on_create_message_request_with_cancellation) {
+      client.on_create_message_request(
+          on_create_message_request_with_cancellation);
     }
     if (on_create_elicitation_request) {
       client.on_create_elicitation_request(on_create_elicitation_request);
     }
+    if (on_create_elicitation_request_with_cancellation) {
+      client.on_create_elicitation_request(
+          on_create_elicitation_request_with_cancellation);
+    }
     if (on_custom_request) {
       client.on_custom_request(on_custom_request);
+    }
+    if (on_custom_request_with_cancellation) {
+      client.on_custom_request(on_custom_request_with_cancellation);
     }
     if (on_roots_list_request) {
       client.on_roots_list_request(on_roots_list_request);
     }
+    if (on_roots_list_request_with_cancellation) {
+      client.on_roots_list_request(on_roots_list_request_with_cancellation);
+    }
     if (on_sampling_request) {
       client.on_sampling_request(on_sampling_request);
     }
+    if (on_sampling_request_with_cancellation) {
+      client.on_sampling_request(on_sampling_request_with_cancellation);
+    }
     if (on_elicitation_request) {
       client.on_elicitation_request(on_elicitation_request);
+    }
+    if (on_elicitation_request_with_cancellation) {
+      client.on_elicitation_request(on_elicitation_request_with_cancellation);
     }
     if (on_raw_notification) {
       client.on_raw_notification(on_raw_notification);
@@ -234,19 +294,21 @@ inline Client& Client::set_handler(const ClientHandlerInterface& handler) {
   on_task_status(
       [&handler](const protocol::Task& task) { handler.on_task_status(task); });
   on_roots_list_changed([&handler]() { handler.on_roots_list_changed(); });
-  on_list_roots_request(
-      [&handler]() -> core::Result<protocol::RootsListResult> {
-        const auto response = handler.on_list_roots_request();
-        if (response.has_value()) {
-          return std::move(*response);
-        }
-        return std::unexpected(handler_method_not_found(
-            "client handler does not handle list_roots"));
-      });
+  on_list_roots_request([&handler](CancellationToken cancellation)
+                            -> core::Result<protocol::RootsListResult> {
+    const auto response = handler.on_list_roots_request(cancellation);
+    if (response.has_value()) {
+      return std::move(*response);
+    }
+    return std::unexpected(
+        handler_method_not_found("client handler does not handle list_roots"));
+  });
   on_create_message_request(
-      [&handler](const protocol::CreateMessageParams& params)
+      [&handler](const protocol::CreateMessageParams& params,
+                 CancellationToken cancellation)
           -> core::Result<protocol::CreateMessageResult> {
-        const auto response = handler.on_create_message_request(params);
+        const auto response =
+            handler.on_create_message_request(params, cancellation);
         if (response.has_value()) {
           return std::move(*response);
         }
@@ -254,24 +316,28 @@ inline Client& Client::set_handler(const ClientHandlerInterface& handler) {
             "client handler does not handle create_message"));
       });
   on_create_elicitation_request(
-      [&handler](const protocol::CreateElicitationRequestParam& params)
+      [&handler](const protocol::CreateElicitationRequestParam& params,
+                 CancellationToken cancellation)
           -> core::Result<protocol::CreateElicitationResult> {
-        const auto response = handler.on_create_elicitation_request(params);
+        const auto response =
+            handler.on_create_elicitation_request(params, cancellation);
         if (response.has_value()) {
           return std::move(*response);
         }
         return std::unexpected(handler_method_not_found(
             "client handler does not handle elicitation"));
       });
-  on_custom_request([&handler](const protocol::JsonRpcRequest& request)
-                        -> core::Result<protocol::Json> {
-    const auto response = handler.on_custom_request(request);
-    if (response.has_value()) {
-      return std::move(*response);
-    }
-    return std::unexpected(handler_method_not_found(
-        "client handler does not handle custom request"));
-  });
+  on_custom_request(
+      [&handler](
+          const protocol::JsonRpcRequest& request,
+          CancellationToken cancellation) -> core::Result<protocol::Json> {
+        const auto response = handler.on_custom_request(request, cancellation);
+        if (response.has_value()) {
+          return std::move(*response);
+        }
+        return std::unexpected(handler_method_not_found(
+            "client handler does not handle custom request"));
+      });
   on_raw_notification(
       [&handler](const protocol::JsonRpcNotification& notification) {
         handler.on_raw_notification(notification);

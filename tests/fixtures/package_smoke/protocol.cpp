@@ -1,15 +1,51 @@
 // Copyright (c) 2025 [caomengxuan666]
 
 #include <cxxmcp/protocol.hpp>
-#include <utility>
+
+namespace example {
+
+struct SearchArgs {};
+
+struct SearchResult {};
+
+}  // namespace example
+
+namespace mcp::protocol {
+
+template <>
+struct SchemaTraits<example::SearchArgs> {
+  static Json schema() {
+    return object_schema()
+        .required_property("query", JsonSchema::string())
+        .additional_properties(false)
+        .build();
+  }
+};
+
+template <>
+struct SchemaTraits<example::SearchResult> {
+  static Json schema() {
+    return object_schema()
+        .required_property("matches", JsonSchema::array(JsonSchema::string()))
+        .build();
+  }
+};
+
+}  // namespace mcp::protocol
 
 int main() {
-  auto schema =
-      mcp::protocol::object_schema()
-          .required_property("value", mcp::protocol::JsonSchema::string())
-          .build();
-  auto tool = mcp::protocol::tool_definition("echo")
-                  .input_schema(std::move(schema))
+  auto tool = mcp::protocol::tool_definition("search")
+                  .input<const example::SearchArgs&>()
+                  .output<example::SearchResult>()
                   .build();
-  return tool.input_schema.is_object() ? 0 : 1;
+  if (!tool.input_schema.is_object() || !tool.output_schema_present) {
+    return 1;
+  }
+  if (!tool.input_schema.at("properties").contains("query")) {
+    return 1;
+  }
+  if (!tool.output_schema.at("properties").contains("matches")) {
+    return 1;
+  }
+  return 0;
 }

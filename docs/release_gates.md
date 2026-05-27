@@ -12,8 +12,13 @@ registered through `cxxmcp_mark_release_blocking()`.
 
 ## SDK And Package Gates
 
-- `sdk_boundary`: public SDK headers cannot expose runtime, gateway, policy,
-  profile, discovery, `httplib`, or compatibility transport-adapter internals.
+- `sdk_boundary`: public SDK headers cannot expose runtime, gateway, app,
+  profile, policy, registry/discovery, import/export, CLI, observability,
+  `httplib`, or compatibility transport-adapter internals. The boundary script
+  checks both forbidden includes and concrete runtime/tooling API tokens so
+  runtime state, managed server registries, discovered capability catalogs,
+  exposure profiles, trust policy, import/export services, multi-profile
+  hosting, and CLI defaults stay out of the canonical SDK headers.
 - `public_header_*`: each canonical public header compiles independently under
   the SDK C++ standard.
 - `public_targets`: narrow SDK package targets remain consumable without
@@ -21,17 +26,59 @@ registered through `cxxmcp_mark_release_blocking()`.
 - `package_smoke`: installed package output is consumed from a clean external
   CMake project with `find_package(cxxmcp CONFIG REQUIRED)`. The external
   consumer configure must use the same release-matrix generator and compiler
-  family as the matrix leg producing the evidence.
+  family as the matrix leg producing the evidence. Default package smoke must
+  prove optional auth headers are not installed; auth-enabled package smoke
+  must prove a clean consumer can explicitly link `cxxmcp::auth`.
+- `check_package_auth_features.py`: package-manager metadata keeps auth
+  opt-in for vcpkg, Conan, and xmake, and prevents OpenSSL-backed full auth
+  from becoming part of the default package path prematurely.
+
+## Source Style Gates
+
+- `source-style`: the release-gates workflow runs `scripts/format.ps1 -Check`
+  `scripts/check-cpplint.ps1`, and
+  `scripts/check_protocol_model_coverage.py` on Ubuntu before release evidence
+  is treated as clean. clang-tidy is intentionally tracked separately because it
+  depends on a configured compile database and may need a narrower source
+  scope.
+
+## Build Configuration Gates
+
+- `build-config-smoke`: the release-gates workflow builds the SDK, client,
+  server, and examples in both Debug and Release modes on Linux/Ninja with
+  runtime, gateway, CLI, tests, and docs disabled. This keeps release-mode
+  compile coverage in CI without doubling the full cross-SDK conformance
+  matrix.
+- `clang-tidy-public-headers`: the release-gates workflow configures a compile
+  database, builds the public-header compile fixtures, and runs clang-tidy over
+  those fixtures. The scope is intentionally the public SDK entry headers first;
+  broader implementation clang-tidy can be added after its noise level is
+  managed.
+- `sanitizer-asan-ubsan` and `sanitizer-tsan`: the release-gates workflow runs
+  dedicated Linux/Clang Ninja builds with ASan/UBSan and TSan enabled through
+  `CMakePresets.json`. These sanitizer builds run the release-blocking native
+  subset and intentionally skip `package_smoke` plus external process-stdio
+  interop tests, so sanitizer flags do not become part of the default package
+  consumer path. Windows/MSVC and normal Linux/macOS release-matrix legs remain
+  unsanitized by default.
 
 ## Protocol, Transport, And Interop Gates
 
+- `check_protocol_model_coverage.py`: protocol headers must keep public
+  `*_from_json` and `*_to_json` helpers paired, with only documented internal
+  helper exceptions. This guards protocol model symmetry as new MCP families or
+  fields are added.
 - `protocol`: JSON-RPC and MCP protocol serialization, parsing, version policy,
   and typed model basics.
 - `transport_contract` and `transport_stdio_contract`: role-generic transport
   contract behavior.
 - `stdio_transport`, `process_stdio_transport`, `http_transport`, and
   `transport_adapters`: concrete and compatibility transport behavior,
-  including failure-path coverage.
+  including failure-path coverage plus short HTTP concurrent-session and
+  many-in-flight request smoke coverage. The current HTTP backend decision is
+  recorded in [HTTP transport backend evidence](http_transport_backend_evidence.md);
+  another HTTP stack requires measured load, lifecycle, sanitizer, or
+  downstream workload evidence.
 - `client_server`, `sdk`: canonical Peer/Service, request lifecycle,
   cancellation, progress, and public SDK ergonomics.
 - `rmcp_conformance`, `interop_typescript_client_process_stdio`,
@@ -84,9 +131,12 @@ The same workflow uploads:
 - `cxxmcp-source`: a source archive with recursive submodule contents and a
   `SHA256SUMS.txt` file.
 - `cxxmcp-release-evidence`: the README, Chinese README, changelog,
-  compatibility policy, Peer/Service migration guide, release gates, release
-  candidate checklist, release notes template, TODO, and example source files
-  used for the release decision.
+  contribution guide, security policy, code of conduct, compatibility policy,
+  dependency policy, ecosystem maturity ledger, protocol model audit, release
+  process, Peer/Service migration guide, release gates, release candidate
+  checklist, release notes template, request lifecycle notes, TODO, the
+  external consumer template, and example source files used for the release
+  decision.
 
 Release candidates must attach the source, documentation, and release evidence
 artifacts, or replace them with equivalent versioned artifacts built from the
@@ -97,6 +147,8 @@ workflow artifacts, public API review, compatibility policy, examples, README,
 and changelog into one auditable release decision.
 Use [Release notes template](release_notes_template.md) for the release notes
 that publish that decision.
+Use [Release process](release_process.md) for semantic versioning, stage gates,
+artifact, API diff, dependency update, and security/advisory rules.
 
 ## Public API Review
 

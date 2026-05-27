@@ -8,6 +8,7 @@ it from the artifacts produced by `.github/workflows/release-gates.yml`.
 - Release tag:
 - Commit SHA:
 - Release stage: alpha / beta / rc / stable
+- Stage gate result:
 - MCP protocol snapshot:
 - RMCP reference commit:
 - TypeScript SDK reference:
@@ -60,6 +61,7 @@ optional layers outside the core SDK contract.
 - Source compatibility changes:
 - Deprecated APIs and migration notes:
 - Public header diff review result:
+- Public API diff classification:
 - ABI note: static-library releases do not claim ABI stability.
 
 ## Protocol Notes
@@ -70,6 +72,7 @@ optional layers outside the core SDK contract.
 
 ## Evidence Summary
 
+- Source style evidence:
 - `package_smoke` installed-package evidence:
 - Public-header compile evidence:
 - RMCP interoperability evidence:
@@ -77,6 +80,7 @@ optional layers outside the core SDK contract.
 - Python SDK interoperability evidence:
 - Doxygen generation evidence:
 - Release evidence verifier result:
+- Package metadata or recipe references:
 
 Do not claim fact-standard readiness in release notes unless every required
 artifact is present, every advertised matrix leg is green, and the release

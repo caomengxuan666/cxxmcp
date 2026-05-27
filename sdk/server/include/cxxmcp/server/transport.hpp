@@ -6,10 +6,12 @@
 #include <optional>
 #include <string>
 #include <string_view>
+#include <unordered_map>
 
 #include "cxxmcp/core/result.hpp"
 #include "cxxmcp/protocol/capabilities.hpp"
 #include "cxxmcp/protocol/types.hpp"
+#include "cxxmcp/server/auth.hpp"
 
 /// @file
 /// @brief Server-side transport abstraction for MCP JSON-RPC traffic.
@@ -35,6 +37,10 @@ struct SessionContext {
   std::string session_id;
   /// Best-effort remote endpoint description such as "stdio" or an address.
   std::string remote_address;
+  /// Transport-supplied request headers or metadata for this message.
+  std::unordered_map<std::string, std::string> headers;
+  /// Authenticated principal produced by the configured AuthProvider.
+  std::optional<AuthIdentity> auth_identity;
   /// Borrowed transport used to create a ClientPeer for outbound messages.
   Transport* transport = nullptr;
 

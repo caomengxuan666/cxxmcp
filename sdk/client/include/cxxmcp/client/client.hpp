@@ -16,6 +16,7 @@
 #include <cstdint>
 #include <functional>
 #include <memory>
+#include <mutex>
 #include <optional>
 #include <string>
 #include <string_view>
@@ -139,10 +140,12 @@ class Client {
     std::uint16_t port = 80;
     /// HTTP path for MCP requests or streams.
     std::string path = "/mcp";
-    /// Extra headers sent by the transport.
+    /// Extra headers sent by the transport on every outbound HTTP request.
     std::unordered_map<std::string, std::string> headers;
 
-    /// Optional bearer token inserted as an Authorization header.
+    /// Optional bearer token inserted as `Authorization: Bearer <token>` on
+    /// every outbound HTTP request unless `headers` already contains
+    /// `Authorization`.
     std::optional<std::string> auth_header;
 
     /// Per-request HTTP timeout.
@@ -201,6 +204,8 @@ class Client {
   /// @return Roots list result, or an MCP error result.
   using RootsListRequestHandler =
       std::function<core::Result<protocol::RootsListResult>()>;
+  using RootsListRequestCancellationHandler =
+      std::function<core::Result<protocol::RootsListResult>(CancellationToken)>;
 
   /// @brief Handles a server sampling request.
   /// @param params Sampling parameters supplied by the server.
@@ -208,6 +213,9 @@ class Client {
   using SamplingRequestHandler =
       std::function<core::Result<protocol::CreateMessageResult>(
           const protocol::CreateMessageParams&)>;
+  using SamplingRequestCancellationHandler =
+      std::function<core::Result<protocol::CreateMessageResult>(
+          const protocol::CreateMessageParams&, CancellationToken)>;
 
   /// @brief Handles a server elicitation request.
   /// @param params Elicitation request parameters supplied by the server.
@@ -215,12 +223,18 @@ class Client {
   using ElicitationRequestHandler =
       std::function<core::Result<protocol::CreateElicitationResult>(
           const protocol::CreateElicitationRequestParam&)>;
+  using ElicitationRequestCancellationHandler =
+      std::function<core::Result<protocol::CreateElicitationResult>(
+          const protocol::CreateElicitationRequestParam&, CancellationToken)>;
 
   /// @brief Handles non-built-in server requests.
   /// @param request Raw JSON-RPC request from the server.
   /// @return JSON value used as the response result, or an MCP error result.
   using CustomRequestHandler = std::function<core::Result<protocol::Json>(
       const protocol::JsonRpcRequest&)>;
+  using CustomRequestCancellationHandler =
+      std::function<core::Result<protocol::Json>(
+          const protocol::JsonRpcRequest&, CancellationToken)>;
   using ListRootsRequestHandler = RootsListRequestHandler;
   using CreateMessageRequestHandler = SamplingRequestHandler;
   using CreateElicitationRequestHandler = ElicitationRequestHandler;
@@ -269,6 +283,10 @@ class Client {
   /// @return Raw initialize result JSON, or an MCP/transport error.
   core::Result<protocol::Json> initialize(std::string client_name = "cxxmcp",
                                           std::string client_version = "0");
+
+  /// @brief Returns server capabilities learned from initialize(), if known.
+  const std::optional<protocol::ServerCapabilities>& server_capabilities()
+      const noexcept;
 
   /// @brief Sends the initialized notification after a successful initialize
   /// exchange.
@@ -634,26 +652,34 @@ class Client {
 
   /// @brief Registers a handler for server list-roots requests.
   Client& on_list_roots_request(ListRootsRequestHandler handler);
+  Client& on_list_roots_request(RootsListRequestCancellationHandler handler);
 
   /// @brief Registers a handler for server sampling createMessage requests.
   Client& on_create_message_request(CreateMessageRequestHandler handler);
+  Client& on_create_message_request(SamplingRequestCancellationHandler handler);
 
   /// @brief Registers a handler for server elicitation requests.
   Client& on_create_elicitation_request(
       CreateElicitationRequestHandler handler);
+  Client& on_create_elicitation_request(
+      ElicitationRequestCancellationHandler handler);
 
   /// @brief Registers a handler for custom server requests not handled by the
   /// built-in client dispatcher.
   Client& on_custom_request(CustomRequestHandler handler);
+  Client& on_custom_request(CustomRequestCancellationHandler handler);
 
   /// @brief Compatibility alias for on_list_roots_request().
   Client& on_roots_list_request(RootsListRequestHandler handler);
+  Client& on_roots_list_request(RootsListRequestCancellationHandler handler);
 
   /// @brief Compatibility alias for on_create_message_request().
   Client& on_sampling_request(SamplingRequestHandler handler);
+  Client& on_sampling_request(SamplingRequestCancellationHandler handler);
 
   /// @brief Compatibility alias for on_create_elicitation_request().
   Client& on_elicitation_request(ElicitationRequestHandler handler);
+  Client& on_elicitation_request(ElicitationRequestCancellationHandler handler);
 
   /// @brief Registers an observer for raw inbound notifications.
   Client& on_raw_notification(RawNotificationHandler handler);
@@ -699,6 +725,20 @@ class Client {
   core::Result<protocol::JsonRpcResponse> send_rpc_request(
       protocol::JsonRpcRequest request);
   core::Result<core::Unit> ensure_transport_started();
+  core::Result<core::Unit> record_server_capabilities(
+      const protocol::Json& initialize_payload);
+  bool server_capabilities_known() const noexcept;
+  bool supports_server_completion() const noexcept;
+  bool supports_server_logging() const noexcept;
+  bool supports_server_resource_subscribe() const noexcept;
+  bool supports_server_task_list() const noexcept;
+  bool supports_server_task_cancel() const noexcept;
+  bool supports_server_tasks() const noexcept;
+  bool supports_server_task_tool_call() const noexcept;
+  CancellationToken begin_request_cancellation(
+      const protocol::RequestId& request_id);
+  void end_request_cancellation(const protocol::RequestId& request_id) noexcept;
+  void cancel_request(const protocol::RequestId& request_id) noexcept;
   std::int64_t next_request_id() noexcept {
     return next_request_id_.fetch_add(1, std::memory_order_relaxed);
   }
@@ -709,6 +749,7 @@ class Client {
   std::vector<protocol::Root> roots_;
   std::optional<protocol::Json> last_initialize_params_;
   std::optional<protocol::ClientCapabilities> capabilities_;
+  std::optional<protocol::ServerCapabilities> server_capabilities_;
   InitializedHandler initialized_handler_;
   CancelledHandler cancelled_handler_;
   LoggingMessageHandler logging_message_handler_;
@@ -721,10 +762,20 @@ class Client {
   TaskStatusHandler task_status_handler_;
   ListChangedHandler roots_list_changed_handler_;
   RootsListRequestHandler roots_list_request_handler_;
+  RootsListRequestCancellationHandler roots_list_request_cancellation_handler_;
   SamplingRequestHandler sampling_request_handler_;
+  SamplingRequestCancellationHandler sampling_request_cancellation_handler_;
   ElicitationRequestHandler elicitation_request_handler_;
+  ElicitationRequestCancellationHandler
+      elicitation_request_cancellation_handler_;
   CustomRequestHandler custom_request_handler_;
+  CustomRequestCancellationHandler custom_request_cancellation_handler_;
   RawNotificationHandler raw_notification_handler_;
+  std::shared_ptr<std::mutex> active_request_cancellations_mutex_ =
+      std::make_shared<std::mutex>();
+  std::shared_ptr<std::unordered_map<std::string, CancellationSource>>
+      active_request_cancellations_ = std::make_shared<
+          std::unordered_map<std::string, CancellationSource>>();
 };
 
 }  // namespace mcp::client

@@ -11,6 +11,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <initializer_list>
 #include <nlohmann/json.hpp>
 #include <optional>
 #include <string>
@@ -195,7 +196,7 @@ struct CancelledNotificationParams {
   /// Id of the JSON-RPC request being cancelled.
   RequestId request_id;
   /// Optional human-readable cancellation reason.
-  std::string reason;
+  std::optional<std::string> reason;
 };
 
 /// @brief Parameters for `notifications/progress`.
@@ -207,7 +208,7 @@ struct ProgressNotificationParams {
   /// Optional total value using the same unit as `progress`.
   std::optional<double> total;
   /// Optional human-readable status text.
-  std::string message;
+  std::optional<std::string> message;
 };
 
 /// @brief Converts a RequestId to the JSON scalar used by JSON-RPC.
@@ -342,6 +343,46 @@ inline bool meta_is_object(const Json& meta) noexcept {
   return meta.is_object();
 }
 
+/// @brief Returns true when a JSON object key is part of a typed DTO shape.
+inline bool json_key_is_known(
+    std::string_view key, std::initializer_list<std::string_view> known_keys) {
+  for (const auto known : known_keys) {
+    if (key == known) {
+      return true;
+    }
+  }
+  return false;
+}
+
+/// @brief Collects unknown object members so typed DTOs can preserve future
+/// protocol fields and vendor extensions.
+inline Json collect_json_extensions(
+    const Json& json, std::initializer_list<std::string_view> known_keys) {
+  Json extensions = Json::object();
+  if (!json.is_object()) {
+    return extensions;
+  }
+  for (const auto& item : json.items()) {
+    if (!json_key_is_known(item.key(), known_keys)) {
+      extensions[item.key()] = item.value();
+    }
+  }
+  return extensions;
+}
+
+/// @brief Flattens extension members into a JSON object without overwriting
+/// typed fields.
+inline void append_json_extensions(Json& json, const Json& extensions) {
+  if (!json.is_object() || !extensions.is_object()) {
+    return;
+  }
+  for (const auto& item : extensions.items()) {
+    if (!json.contains(item.key())) {
+      json[item.key()] = item.value();
+    }
+  }
+}
+
 /// @brief Creates a metadata object carrying a progress token.
 inline Meta meta_with_progress_token(ProgressToken token) {
   Meta meta = Meta::object();
@@ -376,8 +417,8 @@ inline Json cancelled_notification_params_to_json(
     const CancelledNotificationParams& params) {
   Json json = Json::object();
   json["requestId"] = request_id_to_json(params.request_id);
-  if (!params.reason.empty()) {
-    json["reason"] = params.reason;
+  if (params.reason.has_value()) {
+    json["reason"] = *params.reason;
   }
   return json;
 }
@@ -416,8 +457,8 @@ inline Json progress_notification_params_to_json(
   if (params.total.has_value()) {
     json["total"] = *params.total;
   }
-  if (!params.message.empty()) {
-    json["message"] = params.message;
+  if (params.message.has_value()) {
+    json["message"] = *params.message;
   }
   return json;
 }

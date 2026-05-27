@@ -62,6 +62,54 @@ jobs:
             sha256sum "${package}" > SHA256SUMS.txt
           )
 
+      - name: Create release notes
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          tag="${GITHUB_REF_NAME}"
+          package="cxxmcp-sdk-source-${tag}.tar.gz"
+
+          cat > release-artifacts/RELEASE_NOTES.md <<EOF
+          # cxxmcp ${tag}
+
+          SDK source release for ${tag}.
+
+          This release intentionally publishes SDK source, compatibility notes,
+          and checksums only. Runtime, gateway, CLI, and other tool binaries are
+          not attached to this SDK release.
+
+          ## Artifacts
+
+          - ${package}
+          - SHA256SUMS.txt
+          - RELEASE_NOTES.md
+
+          ## Compatibility Notes
+
+          - Public SDK source compatibility follows CHANGELOG.md and
+            docs/compatibility_policy.md in the source archive.
+          - Public SDK package targets remain under the cxxmcp:: namespace.
+          - Static-library releases do not claim ABI stability.
+          - Runtime, gateway, CLI, app, adapters, and plugin SDK targets remain
+            optional layers outside the core SDK contract.
+
+          ## Evidence Notes
+
+          - Release-gate, Doxygen, source-artifact, and release-evidence
+            workflow artifacts must come from the same commit before this tag is
+            promoted as a release candidate or fact-standard-ready release.
+          - Do not claim fact-standard readiness unless
+            docs/release_candidate_checklist.md is complete for this exact
+            commit.
+
+          ## Checksums
+
+          \`\`\`text
+          $(cat release-artifacts/SHA256SUMS.txt)
+          \`\`\`
+          EOF
+
       - name: Publish GitHub release
         shell: bash
         env:
@@ -70,24 +118,20 @@ jobs:
           set -euo pipefail
 
           tag="${GITHUB_REF_NAME}"
-          notes="$(cat <<EOF
-          SDK source release for ${tag}.
-
-          This release intentionally publishes SDK source and checksums only. Runtime,
-          gateway, CLI, and other tool binaries are not attached to this SDK release.
-          EOF
-          )"
 
           if gh release view "${tag}" >/dev/null 2>&1; then
             gh release upload "${tag}" \
               "release-artifacts/cxxmcp-sdk-source-${tag}.tar.gz" \
               "release-artifacts/SHA256SUMS.txt" \
+              "release-artifacts/RELEASE_NOTES.md" \
               --clobber
+            gh release edit "${tag}" --notes-file "release-artifacts/RELEASE_NOTES.md"
           else
             gh release create "${tag}" \
               "release-artifacts/cxxmcp-sdk-source-${tag}.tar.gz" \
               "release-artifacts/SHA256SUMS.txt" \
+              "release-artifacts/RELEASE_NOTES.md" \
               --title "cxxmcp ${tag}" \
-              --notes "${notes}" \
+              --notes-file "release-artifacts/RELEASE_NOTES.md" \
               --verify-tag
           fi

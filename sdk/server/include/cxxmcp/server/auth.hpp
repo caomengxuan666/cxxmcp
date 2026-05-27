@@ -3,14 +3,23 @@
 #pragma once
 
 #include <string>
+#include <string_view>
 #include <unordered_map>
+#include <utility>
 
 #include "cxxmcp/core/result.hpp"
+#include "cxxmcp/protocol/types.hpp"
 
 /// @file
 /// @brief Authentication extension points for server transports.
 
 namespace mcp::server {
+
+/// @brief Stable core::Error category used for server authentication failures.
+inline constexpr std::string_view AuthErrorCategory = "auth";
+
+/// @brief Default HTTP challenge used when a transport has no custom policy.
+inline constexpr std::string_view DefaultAuthChallenge = "Bearer";
 
 /// @brief Transport-neutral authentication input.
 ///
@@ -52,5 +61,16 @@ class AuthProvider {
   virtual core::Result<AuthIdentity> authenticate(
       const AuthRequest& request) = 0;
 };
+
+/// @brief Build a structured authentication failure for transports.
+inline core::Error make_auth_error(std::string message,
+                                   std::string detail = {}) {
+  return core::Error{
+      static_cast<int>(protocol::ErrorCode::PermissionDenied),
+      std::move(message),
+      std::move(detail),
+      std::string(AuthErrorCategory),
+  };
+}
 
 }  // namespace mcp::server

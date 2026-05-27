@@ -9,6 +9,7 @@
 #include "cxxmcp/protocol/capabilities.hpp"
 #include "cxxmcp/protocol/completion.hpp"
 #include "cxxmcp/protocol/elicitation.hpp"
+#include "cxxmcp/protocol/initialize.hpp"
 #include "cxxmcp/protocol/logging.hpp"
 #include "cxxmcp/protocol/prompt.hpp"
 #include "cxxmcp/protocol/resource.hpp"

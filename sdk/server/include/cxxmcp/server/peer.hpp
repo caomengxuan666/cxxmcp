@@ -39,6 +39,7 @@ class ClientPeer {
  public:
   /// @brief Construct a peer from a borrowed transport pointer.
   /// @param transport Transport used for outbound messages; may be nullptr.
+  /// @param session_id Session identifier used for capability lookup.
   explicit ClientPeer(Transport* transport = nullptr,
                       std::string session_id = {}) noexcept
       : transport_(transport), session_id_(std::move(session_id)) {}
@@ -46,12 +47,12 @@ class ClientPeer {
   /// @brief Report whether this peer has a transport to send through.
   bool available() const noexcept { return transport_ != nullptr; }
 
-  /// @brief Report whether the client advertised roots/listChanged support.
+  /// @brief Report whether the client advertised roots/list support.
   bool supports_roots() const noexcept {
     const auto capabilities =
         transport_ ? transport_->client_capabilities_for_session(session_id_)
                    : std::optional<protocol::ClientCapabilities>{};
-    return capabilities.has_value() && capabilities->roots.list_changed;
+    return capabilities.has_value() && capabilities->roots.enabled;
   }
 
   /// @brief Report whether the client advertised sampling support.
@@ -83,6 +84,32 @@ class ClientPeer {
     return supports_elicitation_form() || supports_elicitation_url();
   }
 
+  /// @brief Report whether the client advertised task listing support.
+  bool supports_task_list() const noexcept {
+    const auto capabilities =
+        transport_ ? transport_->client_capabilities_for_session(session_id_)
+                   : std::optional<protocol::ClientCapabilities>{};
+    return capabilities.has_value() && capabilities->tasks.has_value() &&
+           capabilities->tasks->list;
+  }
+
+  /// @brief Report whether the client advertised task cancellation support.
+  bool supports_task_cancel() const noexcept {
+    const auto capabilities =
+        transport_ ? transport_->client_capabilities_for_session(session_id_)
+                   : std::optional<protocol::ClientCapabilities>{};
+    return capabilities.has_value() && capabilities->tasks.has_value() &&
+           capabilities->tasks->cancel;
+  }
+
+  /// @brief Report whether the client advertised any task support.
+  bool supports_tasks() const noexcept {
+    const auto capabilities =
+        transport_ ? transport_->client_capabilities_for_session(session_id_)
+                   : std::optional<protocol::ClientCapabilities>{};
+    return capabilities.has_value() && capabilities->tasks.has_value();
+  }
+
   /// @brief Notify the client that a request was cancelled.
   core::Result<core::Unit> notify_cancelled(protocol::RequestId request_id,
                                             std::string reason = {}) const {
@@ -94,7 +121,9 @@ class ClientPeer {
     }
     protocol::CancelledNotificationParams params;
     params.request_id = std::move(request_id);
-    params.reason = std::move(reason);
+    if (!reason.empty()) {
+      params.reason = std::move(reason);
+    }
     protocol::JsonRpcNotification notification;
     notification.method = std::string(protocol::CancelledNotificationMethod);
     notification.params =
@@ -169,6 +198,14 @@ class ClientPeer {
   RequestHandle<protocol::RootsListResult> list_roots_async(
       RequestOptions options = {}) const {
     const auto request_id = next_request_id();
+    if (!supports_roots()) {
+      return RequestHandle<protocol::RootsListResult>::ready(
+          request_id, std::unexpected(core::Error{
+                          static_cast<int>(protocol::ErrorCode::MethodNotFound),
+                          "client does not support roots",
+                          {},
+                      }));
+    }
     ClientPeer peer = *this;
     return RequestHandle<protocol::RootsListResult>::spawn(
         request_id, options.timeout, options.cancellation_token,
@@ -222,6 +259,14 @@ class ClientPeer {
       const protocol::CreateMessageParams& params,
       RequestOptions options = {}) const {
     const auto request_id = next_request_id();
+    if (!supports_sampling_tools()) {
+      return RequestHandle<protocol::CreateMessageResult>::ready(
+          request_id, std::unexpected(core::Error{
+                          static_cast<int>(protocol::ErrorCode::MethodNotFound),
+                          "client does not support sampling",
+                          {},
+                      }));
+    }
     ClientPeer peer = *this;
     return RequestHandle<protocol::CreateMessageResult>::spawn(
         request_id, options.timeout, options.cancellation_token,
@@ -287,6 +332,25 @@ class ClientPeer {
       const protocol::CreateElicitationRequestParam& params,
       RequestOptions options = {}) const {
     const auto request_id = next_request_id();
+    if (params.mode == protocol::ElicitationMode::Url &&
+        !supports_elicitation_url()) {
+      return RequestHandle<protocol::CreateElicitationResult>::ready(
+          request_id,
+          std::unexpected(core::Error{
+              static_cast<int>(protocol::ErrorCode::UrlElicitationRequired),
+              "client does not support url elicitation",
+              {},
+          }));
+    }
+    if (params.mode == protocol::ElicitationMode::Form &&
+        !supports_elicitation_form()) {
+      return RequestHandle<protocol::CreateElicitationResult>::ready(
+          request_id, std::unexpected(core::Error{
+                          static_cast<int>(protocol::ErrorCode::MethodNotFound),
+                          "client does not support elicitation",
+                          {},
+                      }));
+    }
     ClientPeer peer = *this;
     return RequestHandle<protocol::CreateElicitationResult>::spawn(
         request_id, options.timeout, options.cancellation_token,
@@ -315,6 +379,13 @@ class ClientPeer {
   /// @return Tasks from the first returned page, or a core::Error from
   /// transport, protocol, or parsing.
   core::Result<std::vector<protocol::Task>> list_tasks() const {
+    if (!supports_task_list()) {
+      return std::unexpected(core::Error{
+          static_cast<int>(protocol::ErrorCode::MethodNotFound),
+          "client does not support task listing",
+          {},
+      });
+    }
     auto payload = request(std::string(protocol::TasksListMethod),
                            protocol::Json::object());
     if (!payload) {
@@ -331,6 +402,13 @@ class ClientPeer {
   /// @return Aggregated tasks in server-observed page order, or the first
   /// core::Error encountered.
   core::Result<std::vector<protocol::Task>> list_all_tasks() const {
+    if (!supports_task_list()) {
+      return std::unexpected(core::Error{
+          static_cast<int>(protocol::ErrorCode::MethodNotFound),
+          "client does not support task listing",
+          {},
+      });
+    }
     std::vector<protocol::Task> all;
     std::optional<std::string> cursor;
     do {
@@ -356,6 +434,13 @@ class ClientPeer {
   /// @return Parsed task, or a core::Error from transport, protocol, or
   /// parsing.
   core::Result<protocol::Task> get_task(std::string_view task_id) const {
+    if (!supports_tasks()) {
+      return std::unexpected(core::Error{
+          static_cast<int>(protocol::ErrorCode::MethodNotFound),
+          "client does not support tasks",
+          {},
+      });
+    }
     protocol::TaskGetParams params;
     params.task_id = std::string(task_id);
     auto payload = request(std::string(protocol::TasksGetMethod),
@@ -374,6 +459,13 @@ class ClientPeer {
   /// @param task_id Client task identifier.
   /// @return Parsed task state returned by the client, or a core::Error.
   core::Result<protocol::Task> cancel_task(std::string_view task_id) const {
+    if (!supports_task_cancel()) {
+      return std::unexpected(core::Error{
+          static_cast<int>(protocol::ErrorCode::MethodNotFound),
+          "client does not support task cancellation",
+          {},
+      });
+    }
     protocol::TaskCancelParams params;
     params.task_id = std::string(task_id);
     auto payload = request(std::string(protocol::TasksCancelMethod),
@@ -392,10 +484,17 @@ class ClientPeer {
   /// @param task_id Client task identifier.
   /// @return Raw JSON result payload, or a core::Error.
   core::Result<protocol::Json> task_result(std::string_view task_id) const {
+    if (!supports_tasks()) {
+      return std::unexpected(core::Error{
+          static_cast<int>(protocol::ErrorCode::MethodNotFound),
+          "client does not support tasks",
+          {},
+      });
+    }
     protocol::TaskResultParams params;
     params.task_id = std::string(task_id);
     return request(std::string(protocol::TasksResultMethod),
-                   protocol::task_get_params_to_json(params));
+                   protocol::task_result_params_to_json(params));
   }
 
   /// @brief Notify the client that an elicitation flow has completed.

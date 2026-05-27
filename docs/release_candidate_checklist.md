@@ -27,13 +27,20 @@ Attach or link all artifacts from `.github/workflows/release-gates.yml`:
 
 Each release-gate artifact must contain `CMakeCache.txt`, CTest JUnit XML, and
 CTest logs. The source artifact must contain `SHA256SUMS.txt`. The release
-evidence artifact must contain the README, README_zh, changelog,
-compatibility policy, Peer/Service migration guide, release gates, release
-candidate checklist, release notes template, TODO, and example source files
+evidence artifact must contain the README, README_zh, changelog, contribution
+guide, security policy, code of conduct, compatibility policy, dependency
+policy, protocol model audit, release process, Peer/Service migration guide,
+release gates, release candidate checklist, release notes template, request
+lifecycle notes, TODO, the external consumer template, and example source files
 used for the canonical SDK path review.
 
 ## Gate Review
 
+- [ ] `source-style` passed formatting and cpplint checks.
+- [ ] Protocol model coverage check passed for `*_from_json` / `*_to_json`
+      pairing.
+- [ ] `build-config-smoke` built the SDK Debug and Release configurations.
+- [ ] `clang-tidy-public-headers` passed on public SDK header fixtures.
 - [ ] All release-blocking CTest labels passed on every advertised matrix leg.
 - [ ] `package_smoke` passed from installed output on every advertised matrix
       leg, using the same generator and compiler family as that matrix leg.
@@ -47,6 +54,7 @@ used for the canonical SDK path review.
 
 ## Public Surface Review
 
+- [ ] Protocol model audit matches the pinned MCP/RMCP reference versions.
 - [ ] Public headers under `sdk/**/include/cxxmcp` were reviewed for accidental
       runtime, gateway, policy, discovery, profile, or transport-backend leaks.
 - [ ] Public target list still matches README and CMake package exports.
@@ -71,11 +79,14 @@ used for the canonical SDK path review.
 
 ## Release Notes
 
+- [ ] Release stage matches the rules in [Release process](release_process.md).
 - [ ] Include the supported compiler/generator/runtime matrix.
 - [ ] Include protocol snapshot support and unsupported-version behavior.
 - [ ] Include source compatibility notes for public API changes.
 - [ ] Include dependency/reference versions used by conformance tests.
 - [ ] Include checksums for published source artifacts.
+- [ ] Include package metadata or package recipe references for advertised
+      package-manager routes.
 - [ ] Link generated API documentation.
 - [ ] Use [Release notes template](release_notes_template.md) so release notes,
       artifacts, and compatibility policy stay aligned.

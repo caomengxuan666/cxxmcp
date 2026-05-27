@@ -25,6 +25,10 @@ struct ToolCapabilities {
   bool enabled = false;
   /// Whether `notifications/tools/list_changed` may be emitted.
   bool list_changed = false;
+  /// Whether `listChanged` was explicitly present on the wire.
+  bool list_changed_present = false;
+  /// Raw capability object preserved for future fields.
+  Json raw = Json::object();
 };
 
 /// @brief Server capability flags for resources.
@@ -33,8 +37,14 @@ struct ResourceCapabilities {
   bool enabled = false;
   /// Whether `notifications/resources/list_changed` may be emitted.
   bool list_changed = false;
+  /// Whether `listChanged` was explicitly present on the wire.
+  bool list_changed_present = false;
   /// Whether the server supports resource subscribe/unsubscribe methods.
   bool subscribe = false;
+  /// Whether `subscribe` was explicitly present on the wire.
+  bool subscribe_present = false;
+  /// Raw capability object preserved for future fields.
+  Json raw = Json::object();
 };
 
 /// @brief Server capability flags for prompts.
@@ -43,6 +53,10 @@ struct PromptCapabilities {
   bool enabled = false;
   /// Whether `notifications/prompts/list_changed` may be emitted.
   bool list_changed = false;
+  /// Whether `listChanged` was explicitly present on the wire.
+  bool list_changed_present = false;
+  /// Raw capability object preserved for future fields.
+  Json raw = Json::object();
 };
 
 /// @brief Server capability flags for logging.
@@ -50,6 +64,8 @@ struct LoggingCapabilities {
   /// Whether `logging/setLevel` and logging message notifications are
   /// supported.
   bool enabled = false;
+  /// Raw capability object preserved for future fields.
+  Json raw = Json::object();
 };
 
 /// @brief Client capability flags for sampling requests from the server.
@@ -60,12 +76,16 @@ struct SamplingCapabilities {
   bool tools = false;
   /// Whether sampling requests may use broader context.
   bool context = false;
+  /// Raw capability object preserved for future fields.
+  Json raw = Json::object();
 };
 
 /// @brief Server capability flags for completion requests.
 struct CompletionCapabilities {
   /// Whether `completion/complete` is supported.
   bool enabled = false;
+  /// Raw capability object preserved for future fields.
+  Json raw = Json::object();
 };
 
 /// @brief Client capability flags for roots.
@@ -74,16 +94,24 @@ struct RootCapabilities {
   bool enabled = false;
   /// Whether `notifications/roots/list_changed` may be emitted.
   bool list_changed = false;
+  /// Whether `listChanged` was explicitly present on the wire.
+  bool list_changed_present = false;
+  /// Raw capability object preserved for future fields.
+  Json raw = Json::object();
 };
 
 /// @brief Client capability flags for elicitation.
 struct ElicitationCapabilities {
+  /// Whether the `elicitation` capability family was explicitly advertised.
+  bool present = false;
   /// Whether form-based `elicitation/create` requests are supported.
   bool form = false;
   /// Whether form elicitation can validate schemas locally.
   std::optional<bool> form_schema_validation;
   /// Whether URL-based elicitation requests are supported.
   bool url = false;
+  /// Raw capability object preserved for future fields.
+  Json raw = Json::object();
 
   /// @brief Returns true when any elicitation mode is supported.
   /// @return True if either `form` or `url` is enabled.
@@ -105,29 +133,51 @@ struct TaskCapabilities {
   bool sampling_create_message = false;
   /// Whether `elicitation/create` requests may include task parameters.
   bool elicitation_create = false;
+  /// Raw capability object preserved for future fields.
+  Json raw = Json::object();
 };
+
+inline Json capability_raw_object(const Json& raw) {
+  return raw.is_object() ? raw : Json::object();
+}
+
+inline Json capability_member_object(const Json& object,
+                                     const std::string& key) {
+  if (object.is_object() && object.contains(key) &&
+      object.at(key).is_object()) {
+    return object.at(key);
+  }
+  return Json::object();
+}
 
 /// @brief Serializes task capability flags using object presence semantics.
 /// @param capabilities Task capability flags.
 /// @return JSON object suitable for the `tasks` capability member.
 inline Json task_capabilities_to_json(const TaskCapabilities& capabilities) {
-  Json tasks = Json::object();
+  Json tasks = capability_raw_object(capabilities.raw);
   if (capabilities.list) {
-    tasks["list"] = Json::object();
+    tasks["list"] = capability_member_object(tasks, "list");
   }
   if (capabilities.cancel) {
-    tasks["cancel"] = Json::object();
+    tasks["cancel"] = capability_member_object(tasks, "cancel");
   }
 
-  Json requests = Json::object();
+  Json requests = capability_member_object(tasks, "requests");
   if (capabilities.tools_call) {
-    requests["tools"] = Json{{"call", Json::object()}};
+    Json tools = capability_member_object(requests, "tools");
+    tools["call"] = capability_member_object(tools, "call");
+    requests["tools"] = std::move(tools);
   }
   if (capabilities.sampling_create_message) {
-    requests["sampling"] = Json{{"createMessage", Json::object()}};
+    Json sampling = capability_member_object(requests, "sampling");
+    sampling["createMessage"] =
+        capability_member_object(sampling, "createMessage");
+    requests["sampling"] = std::move(sampling);
   }
   if (capabilities.elicitation_create) {
-    requests["elicitation"] = Json{{"create", Json::object()}};
+    Json elicitation = capability_member_object(requests, "elicitation");
+    elicitation["create"] = capability_member_object(elicitation, "create");
+    requests["elicitation"] = std::move(elicitation);
   }
   if (!requests.empty()) {
     tasks["requests"] = std::move(requests);
@@ -150,6 +200,7 @@ inline TaskCapabilities task_capabilities_from_json(const Json& tasks) {
   if (!tasks.is_object()) {
     return task_capabilities;
   }
+  task_capabilities.raw = tasks;
 
   if (tasks.contains("list")) {
     task_capabilities.list = capability_member_enabled(tasks.at("list"));
@@ -185,6 +236,62 @@ inline TaskCapabilities task_capabilities_from_json(const Json& tasks) {
   return task_capabilities;
 }
 
+inline bool task_capability_member_valid(const Json& json) {
+  return json.is_object() || json.is_boolean();
+}
+
+inline bool task_capabilities_are_valid(const Json& tasks) {
+  if (!tasks.is_object()) {
+    return false;
+  }
+  if (tasks.contains("list") &&
+      !task_capability_member_valid(tasks.at("list"))) {
+    return false;
+  }
+  if (tasks.contains("cancel") &&
+      !task_capability_member_valid(tasks.at("cancel"))) {
+    return false;
+  }
+  if (!tasks.contains("requests")) {
+    return true;
+  }
+  if (!tasks.at("requests").is_object()) {
+    return false;
+  }
+  const auto& requests = tasks.at("requests");
+  if (requests.contains("tools")) {
+    if (!requests.at("tools").is_object()) {
+      return false;
+    }
+    const auto& tools = requests.at("tools");
+    if (tools.contains("call") &&
+        !task_capability_member_valid(tools.at("call"))) {
+      return false;
+    }
+  }
+  if (requests.contains("sampling")) {
+    if (!requests.at("sampling").is_object()) {
+      return false;
+    }
+    const auto& sampling = requests.at("sampling");
+    if (sampling.contains("createMessage") &&
+        !task_capability_member_valid(sampling.at("createMessage"))) {
+      return false;
+    }
+  }
+  if (requests.contains("elicitation")) {
+    if (!requests.at("elicitation").is_object()) {
+      return false;
+    }
+    const auto& elicitation = requests.at("elicitation");
+    if (elicitation.contains("create") &&
+        !task_capability_member_valid(elicitation.at("create"))) {
+      return false;
+    }
+  }
+  return true;
+}
+
 /// @brief Capabilities advertised by an MCP client during initialization.
 struct ClientCapabilities {
   /// Roots feature support.
@@ -207,6 +314,7 @@ class ClientCapabilitiesBuilder {
   ClientCapabilitiesBuilder& roots(bool list_changed = false) {
     capabilities_.roots.enabled = true;
     capabilities_.roots.list_changed = list_changed;
+    capabilities_.roots.list_changed_present = list_changed;
     return *this;
   }
 
@@ -220,12 +328,14 @@ class ClientCapabilitiesBuilder {
 
   ClientCapabilitiesBuilder& elicitation_form(
       std::optional<bool> schema_validation = std::nullopt) {
+    capabilities_.elicitation.present = true;
     capabilities_.elicitation.form = true;
     capabilities_.elicitation.form_schema_validation = schema_validation;
     return *this;
   }
 
   ClientCapabilitiesBuilder& elicitation_url() {
+    capabilities_.elicitation.present = true;
     capabilities_.elicitation.url = true;
     return *this;
   }
@@ -295,28 +405,29 @@ inline Json client_capabilities_to_json(
     const ClientCapabilities& capabilities) {
   Json json = Json::object();
 
-  Json roots = Json::object();
-  if (capabilities.roots.list_changed) {
-    roots["listChanged"] = true;
+  Json roots = capability_raw_object(capabilities.roots.raw);
+  if (capabilities.roots.list_changed ||
+      capabilities.roots.list_changed_present) {
+    roots["listChanged"] = capabilities.roots.list_changed;
   }
   if (capabilities.roots.enabled || !roots.empty()) {
     json["roots"] = std::move(roots);
   }
 
-  if (capabilities.sampling.enabled) {
-    Json sampling = Json::object();
-    if (capabilities.sampling.tools) {
-      sampling["tools"] = Json::object();
-    }
-    if (capabilities.sampling.context) {
-      sampling["context"] = Json::object();
-    }
+  Json sampling = capability_raw_object(capabilities.sampling.raw);
+  if (capabilities.sampling.tools) {
+    sampling["tools"] = capability_member_object(sampling, "tools");
+  }
+  if (capabilities.sampling.context) {
+    sampling["context"] = capability_member_object(sampling, "context");
+  }
+  if (capabilities.sampling.enabled || !sampling.empty()) {
     json["sampling"] = std::move(sampling);
   }
 
-  Json elicitation = Json::object();
+  Json elicitation = capability_raw_object(capabilities.elicitation.raw);
   if (capabilities.elicitation.form) {
-    Json form = Json::object();
+    Json form = capability_member_object(elicitation, "form");
     if (capabilities.elicitation.form_schema_validation.has_value()) {
       form["schemaValidation"] =
           *capabilities.elicitation.form_schema_validation;
@@ -324,9 +435,9 @@ inline Json client_capabilities_to_json(
     elicitation["form"] = std::move(form);
   }
   if (capabilities.elicitation.url) {
-    elicitation["url"] = Json::object();
+    elicitation["url"] = capability_member_object(elicitation, "url");
   }
-  if (!elicitation.empty()) {
+  if (capabilities.elicitation.present || !elicitation.empty()) {
     json["elicitation"] = std::move(elicitation);
   }
   if (capabilities.experimental.has_value() &&
@@ -369,6 +480,7 @@ class ServerCapabilitiesBuilder {
   ServerCapabilitiesBuilder& tools(bool list_changed = false) {
     capabilities_.tools.enabled = true;
     capabilities_.tools.list_changed = list_changed;
+    capabilities_.tools.list_changed_present = list_changed;
     return *this;
   }
 
@@ -376,13 +488,16 @@ class ServerCapabilitiesBuilder {
                                        bool subscribe = false) {
     capabilities_.resources.enabled = true;
     capabilities_.resources.list_changed = list_changed;
+    capabilities_.resources.list_changed_present = list_changed;
     capabilities_.resources.subscribe = subscribe;
+    capabilities_.resources.subscribe_present = subscribe;
     return *this;
   }
 
   ServerCapabilitiesBuilder& prompts(bool list_changed = false) {
     capabilities_.prompts.enabled = true;
     capabilities_.prompts.list_changed = list_changed;
+    capabilities_.prompts.list_changed_present = list_changed;
     return *this;
   }
 
@@ -461,38 +576,45 @@ inline Json server_capabilities_to_json(
     const ServerCapabilities& capabilities) {
   Json json = Json::object();
 
-  Json tools = Json::object();
-  if (capabilities.tools.list_changed) {
-    tools["listChanged"] = true;
+  Json tools = capability_raw_object(capabilities.tools.raw);
+  if (capabilities.tools.list_changed ||
+      capabilities.tools.list_changed_present) {
+    tools["listChanged"] = capabilities.tools.list_changed;
   }
   if (capabilities.tools.enabled || !tools.empty()) {
     json["tools"] = std::move(tools);
   }
 
-  Json resources = Json::object();
-  if (capabilities.resources.list_changed) {
-    resources["listChanged"] = true;
+  Json resources = capability_raw_object(capabilities.resources.raw);
+  if (capabilities.resources.list_changed ||
+      capabilities.resources.list_changed_present) {
+    resources["listChanged"] = capabilities.resources.list_changed;
   }
-  if (capabilities.resources.subscribe) {
-    resources["subscribe"] = true;
+  if (capabilities.resources.subscribe ||
+      capabilities.resources.subscribe_present) {
+    resources["subscribe"] = capabilities.resources.subscribe;
   }
   if (capabilities.resources.enabled || !resources.empty()) {
     json["resources"] = std::move(resources);
   }
 
-  Json prompts = Json::object();
-  if (capabilities.prompts.list_changed) {
-    prompts["listChanged"] = true;
+  Json prompts = capability_raw_object(capabilities.prompts.raw);
+  if (capabilities.prompts.list_changed ||
+      capabilities.prompts.list_changed_present) {
+    prompts["listChanged"] = capabilities.prompts.list_changed;
   }
   if (capabilities.prompts.enabled || !prompts.empty()) {
     json["prompts"] = std::move(prompts);
   }
 
-  if (capabilities.logging.enabled) {
-    json["logging"] = Json::object();
+  if (capabilities.logging.enabled || (capabilities.logging.raw.is_object() &&
+                                       !capabilities.logging.raw.empty())) {
+    json["logging"] = capability_raw_object(capabilities.logging.raw);
   }
-  if (capabilities.completions.enabled) {
-    json["completions"] = Json::object();
+  if (capabilities.completions.enabled ||
+      (capabilities.completions.raw.is_object() &&
+       !capabilities.completions.raw.empty())) {
+    json["completions"] = capability_raw_object(capabilities.completions.raw);
   }
   if (capabilities.tasks.has_value()) {
     Json tasks = task_capabilities_to_json(*capabilities.tasks);
@@ -518,46 +640,174 @@ inline std::optional<ClientCapabilities> client_capabilities_from_json(
   }
 
   ClientCapabilities capabilities;
-  if (json.contains("roots") && json.at("roots").is_object()) {
+  if (json.contains("roots")) {
+    if (!json.at("roots").is_object()) {
+      return std::nullopt;
+    }
     capabilities.roots.enabled = true;
     const auto& roots = json.at("roots");
-    if (roots.contains("listChanged") && roots.at("listChanged").is_boolean()) {
+    capabilities.roots.raw = roots;
+    if (roots.contains("listChanged")) {
+      if (!roots.at("listChanged").is_boolean()) {
+        return std::nullopt;
+      }
       capabilities.roots.list_changed = roots.at("listChanged").get<bool>();
+      capabilities.roots.list_changed_present = true;
     }
   }
   if (json.contains("sampling")) {
+    if (!json.at("sampling").is_object()) {
+      return std::nullopt;
+    }
     capabilities.sampling.enabled = true;
-    if (json.at("sampling").is_object()) {
-      const auto& sampling = json.at("sampling");
-      capabilities.sampling.tools =
-          sampling.contains("tools") && sampling.at("tools").is_object();
-      capabilities.sampling.context =
-          sampling.contains("context") && sampling.at("context").is_object();
+    const auto& sampling = json.at("sampling");
+    capabilities.sampling.raw = sampling;
+    if (sampling.contains("tools")) {
+      if (!sampling.at("tools").is_object()) {
+        return std::nullopt;
+      }
+      capabilities.sampling.tools = true;
+    }
+    if (sampling.contains("context")) {
+      if (!sampling.at("context").is_object()) {
+        return std::nullopt;
+      }
+      capabilities.sampling.context = true;
     }
   }
   if (json.contains("elicitation")) {
     const auto& elicitation = json.at("elicitation");
-    if (elicitation.is_object()) {
-      if (elicitation.contains("form") && elicitation.at("form").is_object()) {
-        capabilities.elicitation.form = true;
-        const auto& form = elicitation.at("form");
-        if (form.contains("schemaValidation") &&
-            form.at("schemaValidation").is_boolean()) {
-          capabilities.elicitation.form_schema_validation =
-              form.at("schemaValidation").get<bool>();
-        }
+    if (!elicitation.is_object()) {
+      return std::nullopt;
+    }
+    capabilities.elicitation.present = true;
+    capabilities.elicitation.raw = elicitation;
+    if (elicitation.contains("form")) {
+      if (!elicitation.at("form").is_object()) {
+        return std::nullopt;
       }
-      if (elicitation.contains("url") && elicitation.at("url").is_object()) {
-        capabilities.elicitation.url = true;
-      }
-      if (!capabilities.elicitation.enabled()) {
-        capabilities.elicitation.form = true;
-      }
-    } else {
       capabilities.elicitation.form = true;
+      const auto& form = elicitation.at("form");
+      if (form.contains("schemaValidation")) {
+        if (!form.at("schemaValidation").is_boolean()) {
+          return std::nullopt;
+        }
+        capabilities.elicitation.form_schema_validation =
+            form.at("schemaValidation").get<bool>();
+      }
+    }
+    if (elicitation.contains("url")) {
+      if (!elicitation.at("url").is_object()) {
+        return std::nullopt;
+      }
+      capabilities.elicitation.url = true;
     }
   }
-  if (json.contains("tasks") && json.at("tasks").is_object()) {
+  if (json.contains("tasks")) {
+    if (!task_capabilities_are_valid(json.at("tasks"))) {
+      return std::nullopt;
+    }
+    capabilities.tasks = task_capabilities_from_json(json.at("tasks"));
+  }
+  if (json.contains("experimental")) {
+    if (!json.at("experimental").is_object()) {
+      return std::nullopt;
+    }
+    capabilities.experimental = json.at("experimental");
+  }
+  if (json.contains("extensions")) {
+    if (!json.at("extensions").is_object()) {
+      return std::nullopt;
+    }
+    capabilities.extensions = json.at("extensions");
+  }
+  return capabilities;
+}
+
+/// @brief Parses server capabilities from an initialize result.
+/// @param json JSON object from `initialize.result.capabilities`.
+/// @return Parsed capabilities, or nullopt if the top-level value is invalid.
+inline std::optional<ServerCapabilities> server_capabilities_from_json(
+    const Json& json) {
+  if (!json.is_object()) {
+    return std::nullopt;
+  }
+
+  ServerCapabilities capabilities;
+  if (json.contains("tools")) {
+    if (!json.at("tools").is_object()) {
+      return std::nullopt;
+    }
+    capabilities.tools.enabled = true;
+    const auto& tools = json.at("tools");
+    capabilities.tools.raw = tools;
+    if (tools.contains("listChanged")) {
+      if (!tools.at("listChanged").is_boolean()) {
+        return std::nullopt;
+      }
+      capabilities.tools.list_changed = tools.at("listChanged").get<bool>();
+      capabilities.tools.list_changed_present = true;
+    }
+  }
+
+  if (json.contains("resources")) {
+    if (!json.at("resources").is_object()) {
+      return std::nullopt;
+    }
+    capabilities.resources.enabled = true;
+    const auto& resources = json.at("resources");
+    capabilities.resources.raw = resources;
+    if (resources.contains("listChanged")) {
+      if (!resources.at("listChanged").is_boolean()) {
+        return std::nullopt;
+      }
+      capabilities.resources.list_changed =
+          resources.at("listChanged").get<bool>();
+      capabilities.resources.list_changed_present = true;
+    }
+    if (resources.contains("subscribe")) {
+      if (!resources.at("subscribe").is_boolean()) {
+        return std::nullopt;
+      }
+      capabilities.resources.subscribe = resources.at("subscribe").get<bool>();
+      capabilities.resources.subscribe_present = true;
+    }
+  }
+
+  if (json.contains("prompts")) {
+    if (!json.at("prompts").is_object()) {
+      return std::nullopt;
+    }
+    capabilities.prompts.enabled = true;
+    const auto& prompts = json.at("prompts");
+    capabilities.prompts.raw = prompts;
+    if (prompts.contains("listChanged")) {
+      if (!prompts.at("listChanged").is_boolean()) {
+        return std::nullopt;
+      }
+      capabilities.prompts.list_changed = prompts.at("listChanged").get<bool>();
+      capabilities.prompts.list_changed_present = true;
+    }
+  }
+
+  if (json.contains("logging")) {
+    if (!json.at("logging").is_object()) {
+      return std::nullopt;
+    }
+    capabilities.logging.enabled = true;
+    capabilities.logging.raw = json.at("logging");
+  }
+  if (json.contains("completions")) {
+    if (!json.at("completions").is_object()) {
+      return std::nullopt;
+    }
+    capabilities.completions.enabled = true;
+    capabilities.completions.raw = json.at("completions");
+  }
+  if (json.contains("tasks")) {
+    if (!task_capabilities_are_valid(json.at("tasks"))) {
+      return std::nullopt;
+    }
     capabilities.tasks = task_capabilities_from_json(json.at("tasks"));
   }
   if (json.contains("experimental")) {

@@ -106,6 +106,7 @@
       "description": "Build the example executables in Debug mode.",
       "inherits": "base-ninja-debug",
       "cacheVariables": {
+        "BUILD_TESTING": "ON",
         "CXXMCP_BUILD_SDK": "ON",
         "CXXMCP_BUILD_CLIENT": "ON",
         "CXXMCP_BUILD_SERVER": "ON",
@@ -122,6 +123,7 @@
       "description": "Build the example executables in Release mode.",
       "inherits": "base-ninja-release",
       "cacheVariables": {
+        "BUILD_TESTING": "ON",
         "CXXMCP_BUILD_SDK": "ON",
         "CXXMCP_BUILD_CLIENT": "ON",
         "CXXMCP_BUILD_SERVER": "ON",
@@ -161,6 +163,44 @@
         "CXXMCP_BUILD_EXAMPLES": "OFF",
         "CXXMCP_BUILD_TESTS": "ON"
       }
+    },
+    {
+      "name": "tests-asan-ubsan",
+      "displayName": "Tests (Linux Clang ASan/UBSan)",
+      "description": "Build the test stack on Linux/Clang with AddressSanitizer and UndefinedBehaviorSanitizer enabled.",
+      "inherits": "tests",
+      "condition": {
+        "type": "equals",
+        "lhs": "${hostSystemName}",
+        "rhs": "Linux"
+      },
+      "cacheVariables": {
+        "CMAKE_C_COMPILER": "clang",
+        "CMAKE_CXX_COMPILER": "clang++",
+        "CMAKE_C_FLAGS": "-fsanitize=address,undefined -fno-omit-frame-pointer -fno-sanitize-recover=all",
+        "CMAKE_CXX_FLAGS": "-fsanitize=address,undefined -fno-omit-frame-pointer -fno-sanitize-recover=all",
+        "CMAKE_EXE_LINKER_FLAGS": "-fsanitize=address,undefined",
+        "CMAKE_SHARED_LINKER_FLAGS": "-fsanitize=address,undefined"
+      }
+    },
+    {
+      "name": "tests-tsan",
+      "displayName": "Tests (Linux Clang TSan)",
+      "description": "Build the test stack on Linux/Clang with ThreadSanitizer enabled.",
+      "inherits": "tests",
+      "condition": {
+        "type": "equals",
+        "lhs": "${hostSystemName}",
+        "rhs": "Linux"
+      },
+      "cacheVariables": {
+        "CMAKE_C_COMPILER": "clang",
+        "CMAKE_CXX_COMPILER": "clang++",
+        "CMAKE_C_FLAGS": "-fsanitize=thread -fno-omit-frame-pointer",
+        "CMAKE_CXX_FLAGS": "-fsanitize=thread -fno-omit-frame-pointer",
+        "CMAKE_EXE_LINKER_FLAGS": "-fsanitize=thread",
+        "CMAKE_SHARED_LINKER_FLAGS": "-fsanitize=thread"
+      }
     }
   ],
   "buildPresets": [
@@ -195,9 +235,51 @@
     {
       "name": "tests-release",
       "configurePreset": "tests-release"
+    },
+    {
+      "name": "tests-asan-ubsan",
+      "configurePreset": "tests-asan-ubsan",
+      "condition": {
+        "type": "equals",
+        "lhs": "${hostSystemName}",
+        "rhs": "Linux"
+      }
+    },
+    {
+      "name": "tests-tsan",
+      "configurePreset": "tests-tsan",
+      "condition": {
+        "type": "equals",
+        "lhs": "${hostSystemName}",
+        "rhs": "Linux"
+      }
     }
   ],
   "testPresets": [
+    {
+      "name": "examples",
+      "configurePreset": "examples",
+      "filter": {
+        "include": {
+          "label": "examples"
+        }
+      },
+      "output": {
+        "outputOnFailure": true
+      }
+    },
+    {
+      "name": "examples-release",
+      "configurePreset": "examples-release",
+      "filter": {
+        "include": {
+          "label": "examples"
+        }
+      },
+      "output": {
+        "outputOnFailure": true
+      }
+    },
     {
       "name": "tests",
       "configurePreset": "tests",
@@ -222,6 +304,59 @@
       },
       "output": {
         "outputOnFailure": true
+      }
+    },
+    {
+      "name": "sanitizer-asan-ubsan",
+      "configurePreset": "tests-asan-ubsan",
+      "condition": {
+        "type": "equals",
+        "lhs": "${hostSystemName}",
+        "rhs": "Linux"
+      },
+      "filter": {
+        "include": {
+          "label": "release-blocking"
+        },
+        "exclude": {
+          "name": "package_smoke|interop_.*"
+        }
+      },
+      "execution": {
+        "timeout": 600
+      },
+      "output": {
+        "outputOnFailure": true
+      },
+      "environment": {
+        "ASAN_OPTIONS": "detect_leaks=1:strict_string_checks=1:check_initialization_order=1",
+        "UBSAN_OPTIONS": "print_stacktrace=1:halt_on_error=1"
+      }
+    },
+    {
+      "name": "sanitizer-tsan",
+      "configurePreset": "tests-tsan",
+      "condition": {
+        "type": "equals",
+        "lhs": "${hostSystemName}",
+        "rhs": "Linux"
+      },
+      "filter": {
+        "include": {
+          "label": "release-blocking"
+        },
+        "exclude": {
+          "name": "package_smoke|interop_.*"
+        }
+      },
+      "execution": {
+        "timeout": 900
+      },
+      "output": {
+        "outputOnFailure": true
+      },
+      "environment": {
+        "TSAN_OPTIONS": "halt_on_error=1:second_deadlock_stack=1"
       }
     }
   ]

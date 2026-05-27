@@ -246,18 +246,20 @@ TaskOperationProcessor::submit_operation(TaskOperationDescriptor descriptor,
 }
 
 core::Result<protocol::CreateTaskResult>
-TaskOperationProcessor::submit_tool_call(const ToolRegistry& tools,
-                                         protocol::ToolCall call,
-                                         const SessionContext& context) {
+TaskOperationProcessor::submit_tool_call(
+    const ToolRegistry& tools, protocol::ToolCall call,
+    const SessionContext& context,
+    const JsonSchemaValidator* schema_validator) {
   TaskOperationDescriptor descriptor;
   descriptor.name = call.name;
   descriptor.task = call.task;
   return submit_operation(
       std::move(descriptor),
-      [&tools, call = std::move(call),
+      [&tools, call = std::move(call), schema_validator,
        context](const CancellationToken& cancellation) mutable
           -> core::Result<protocol::Json> {
-        auto result = tools.call(std::move(call), context, cancellation);
+        auto result = tools.call(std::move(call), context, cancellation,
+                                 schema_validator);
         if (!result) {
           return std::unexpected(result.error());
         }
@@ -279,6 +281,7 @@ core::Result<protocol::TaskListResult> TaskOperationProcessor::list_tasks(
       result.tasks.push_back(record->task);
     }
   }
+  result.total = static_cast<std::int64_t>(result.tasks.size());
   return result;
 }
 

@@ -2,6 +2,11 @@ get_filename_component(SOURCE_PATH "${CURRENT_PORT_DIR}/../../../.." ABSOLUTE)
 
 vcpkg_check_linkage(ONLY_STATIC_LIBRARY)
 
+set(CXXMCP_VCPKG_ENABLE_AUTH OFF)
+if("auth" IN_LIST FEATURES)
+    set(CXXMCP_VCPKG_ENABLE_AUTH ON)
+endif()
+
 vcpkg_cmake_configure(
     SOURCE_PATH "${SOURCE_PATH}"
     OPTIONS
@@ -13,8 +18,8 @@ vcpkg_cmake_configure(
         -DCXXMCP_BUILD_EXAMPLES=OFF
         -DCXXMCP_BUILD_TESTS=OFF
         -DCXXMCP_BUILD_DOCS=OFF
+        -DCXXMCP_ENABLE_AUTH=${CXXMCP_VCPKG_ENABLE_AUTH}
         -DCXXMCP_USE_SYSTEM_DEPS=ON
-        -DBUILD_SHARED_LIBS=OFF
 )
 
 vcpkg_cmake_install()

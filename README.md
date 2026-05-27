@@ -14,13 +14,10 @@
 
 `cxxmcp` is a modern C++17 SDK for building
 [Model Context Protocol](https://modelcontextprotocol.io/) clients and servers.
-Optional C++20 runtime, gateway, CLI, and example targets are layered above the
-embeddable SDK.
 
 The public SDK surface is intentionally narrow and package-friendly:
 `protocol`, `transport`, `handler`, `peer`, `service`, `client`, and `server`
-are the core library layers. Gateway, app, and CLI code are optional runtime
-tools built on top of the SDK.
+are the core library layers.
 
 Read this in [Chinese](README_zh.md).
 
@@ -35,6 +32,7 @@ Read this in [Chinese](README_zh.md).
 - [Quick Start](#quick-start)
 - [Package Targets](#package-targets)
 - [Protocol Boundary](#protocol-boundary)
+- [Capability Classification](#capability-classification)
 - [HTTP Transport Policy](#http-transport-policy)
 - [Compatibility Contract](#compatibility-contract)
 - [Examples](#examples)
@@ -52,7 +50,6 @@ Read this in [Chinese](README_zh.md).
   paths
 - Typed tool, prompt, resource, completion, elicitation, sampling, task,
   progress, and cancellation surfaces
-- Optional gateway and CLI runtime for local MCP server management
 - Local RMCP interoperability and package-smoke tests used as release gates
 
 ## Quick Install
@@ -73,8 +70,8 @@ target_link_libraries(my_server PRIVATE cxxmcp::server)
 target_link_libraries(my_client PRIVATE cxxmcp::client)
 ```
 
-Public SDK headers and package targets are C++17. Optional runtime, gateway,
-CLI, examples, and tests require C++20.
+Public SDK headers and package targets are C++17. Optional non-SDK targets,
+examples, and tests require C++20.
 
 Package-manager work starts from the SDK-only contract:
 
@@ -84,9 +81,19 @@ Package-manager work starts from the SDK-only contract:
 - FetchContent / CPM.cmake snippets:
   [Package consumption](docs/package_consumption.md)
 
-These paths build the C++17 SDK targets and keep runtime, gateway, and CLI
-disabled. The vcpkg port is an overlay port for this checkout; an upstream
-registry port will need a fixed release URL and checksum.
+These paths build the C++17 SDK targets and leave optional tooling disabled.
+The vcpkg port is an overlay port for this checkout:
+
+```powershell
+vcpkg install cxxmcp --overlay-ports=C:\path\to\MCPServer.cpp\packaging\vcpkg\ports
+```
+
+Manifest-mode projects can use
+`packaging/vcpkg/vcpkg-configuration.overlay-example.json` as a starting point
+and pin their own vcpkg `builtin-baseline`. cxxmcp is not in the curated
+registry today; a future registry port will need a release tag, SHA512 source
+archive hash, triplet-controlled linkage, and the same SDK-only dependency
+contract.
 
 ## Quality Signals
 
@@ -192,6 +199,7 @@ Build examples:
 ```powershell
 cmake --preset examples
 cmake --build --preset examples
+ctest --preset examples
 ```
 
 Build and run the full smoke test set:
@@ -324,6 +332,7 @@ int main() {
 | `cxxmcp::service` | Service lifecycle boundary around peers |
 | `cxxmcp::client` | Embeddable MCP client SDK |
 | `cxxmcp::server` | Embeddable MCP server SDK |
+| `cxxmcp::auth` | Optional OAuth 2.1 / DPoP contract scaffold when `CXXMCP_ENABLE_AUTH=ON` |
 | `cxxmcp::sdk` | Aggregate public SDK target |
 | `cxxmcp::runtime` | Optional runtime application layer |
 | `cxxmcp::gateway` | Optional local gateway layer |
@@ -350,7 +359,29 @@ optional feature families. A milestone that targets core MCP parity must not
 force applications to implement task or elicitation handlers unless that
 milestone explicitly covers those capabilities. Capability negotiation and raw
 JSON-RPC escape hatches remain the compatibility path for partial or future
-feature support.
+feature support. Server-side task lifecycle semantics are documented in
+[Task lifecycle](docs/task_lifecycle.md). Elicitation lifecycle and capability
+semantics are documented in
+[Elicitation lifecycle](docs/elicitation_lifecycle.md). Request timeout,
+cancellation, progress, and shutdown semantics are documented in
+[Request lifecycle](docs/request_lifecycle.md).
+
+## Capability Classification
+
+cxxmcp treats protocol capabilities as negotiated contracts, not as global
+feature promises. Once `initialize` capabilities are known, typed helpers fail
+locally with a protocol error instead of sending a method that the peer did not
+advertise. Raw JSON-RPC APIs remain available for vendor extensions and future
+protocol fields.
+
+| Classification | Capability families | SDK rule |
+|---|---|---|
+| Core protocol | initialize, initialized, ping, JSON-RPC errors, raw request/notification escape hatches, cancellation, progress, and the typed model/serialization layer | Always part of the SDK contract. These are not optional product features, though individual transports may still report transport-level failures. |
+| Core advertised server features | tools, prompts, resources, resource templates, completion, logging, resource subscribe/unsubscribe | Public typed helpers are stable. Helpers that depend on advertised server capabilities are gated after initialize. |
+| Core advertised client features | roots, sampling, elicitation, cancellation and progress callbacks | Public typed handlers/helpers are stable. Server-side `ClientPeer` helpers are gated by the connected client's negotiated capabilities. |
+| Optional task lifecycle | task-aware tool calls, task list/get/cancel/result, task status notifications, task request parameters on supported feature calls | Stable typed protocol models and helpers exist, but applications only need to implement them when they advertise or require task support. |
+| Optional advanced interaction | elicitation form/URL flows and sampling details beyond basic request handling | Stable typed helpers exist, but implementations should keep them capability-gated and document user-facing behavior. |
+| Experimental or vendor extension | `experimental`, `extensions`, unknown JSON members, and vendor-specific methods | Raw JSON is preserved where modeled. Semantics are not guaranteed as stable SDK behavior until promoted into a documented capability family. |
 
 ## Protocol Version Policy
 
@@ -389,9 +420,23 @@ elicitation, cancellation, and progress notifications are routed to the correct
 HTTP client. One live real-time SSE stream is accepted per session; reconnects
 with `Last-Event-ID` can replay retained events while an old stream is closing.
 
+HTTP auth is intentionally exposed as SDK contracts rather than a bundled
+identity provider. Server applications can install `server::AuthProvider`; the
+Streamable HTTP transport passes request headers into `SessionContext`, stores a
+successful `AuthIdentity`, and maps auth-category failures to
+`401 Unauthorized` with `HttpTransportOptions::auth_challenge` as the
+`WWW-Authenticate` value. Client transports can set fixed request headers and a
+bearer token through `StreamableHttpClientTransportOptions`; the bearer helper
+is applied to POST, SSE GET, and session DELETE requests unless an explicit
+`Authorization` header is already present. The fuller OAuth 2.1 / DPoP
+direction is tracked in [Auth design](docs/auth_design.md).
+
 Legacy SSE compatibility is compatibility-only. New code should use the
 Streamable HTTP POST/GET/DELETE behavior and treat raw SSE endpoints as an
 adapter concern, not a separate SDK protocol.
+
+The current `cpp-httplib` backend decision and replacement trigger are tracked
+in [HTTP transport backend evidence](docs/http_transport_backend_evidence.md).
 
 ## CMake Options
 
@@ -408,6 +453,7 @@ adapter concern, not a separate SDK protocol.
 | `CXXMCP_BUILD_EXAMPLES` | `OFF` | Build example executables |
 | `CXXMCP_BUILD_TESTS` | `BUILD_TESTING` | Build tests for enabled layers |
 | `CXXMCP_BUILD_DOCS` | `OFF` | Build Doxygen API documentation |
+| `CXXMCP_ENABLE_AUTH` | `OFF` | Build the optional OAuth 2.1 / DPoP auth contract target |
 
 `CXXMCP_BUILD_SDK` enables the protocol, client, and server layers.
 `CXXMCP_BUILD_CLI` enables the gateway, runtime, server, client, and protocol
@@ -460,10 +506,19 @@ request semantics remain stable.
 The in-tree examples preset builds compact SDK entry points:
 
 - First-choice Peer/Service examples: `server_peer`, `client_peer`,
-  `process_stdio_client`
-- Compatibility and low-level examples: `stdio_server`, `typed_stdio_server`,
-  `client_loopback`, `task_async_client_server`
+  `process_stdio_client`, `timeout_cancellation`, `elicitation_client`
+- Focused capability examples: `handler_contracts`, `task_async_client_server`,
+  `typed_stdio_server`, `streamable_http_client`
+- Compatibility and low-level examples: `stdio_server`, `client_loopback`
 - Optional runtime tooling example: `gateway_runtime`
+
+`ctest --preset examples` runs only self-contained smoke examples. Long-running
+stdio servers and external Streamable HTTP samples are build-checked but not run
+as standalone CTest cases.
+
+The example taxonomy is maintained in [Examples](docs/examples.md). Runtime and
+gateway tooling is documented separately in
+[Runtime and gateway tools](docs/runtime_gateway.md).
 
 The separate
 [cxxmcp-examples](https://github.com/caomengxuan666/cxxmcp-examples)
@@ -472,8 +527,8 @@ the SDK through a normal external CMake project and covers advanced surfaces
 that are intentionally broader than the compact in-tree samples: direct
 Streamable HTTP and legacy SSE, process stdio, custom transports, transport
 adapters, async request handles, cursor pagination, subscriptions,
-server-to-client callbacks, tasks and cancellation, plugin/adapters, gateway
-runtime, and app service management.
+server-to-client callbacks, HTTP auth-lite, tasks and cancellation,
+plugin/adapters, gateway runtime, and app service management.
 
 ## Quality Bar
 
@@ -506,11 +561,18 @@ fixtures for RMCP, TypeScript SDK, and Python SDK clients.
 
 - [GitHub Pages documentation](https://caomengxuan666.github.io/cxxmcp/)
 - [Fact-standard TODO](todo.md)
+- [Contributing](CONTRIBUTING.md)
+- [Security policy](SECURITY.md)
 - [Compatibility policy](docs/compatibility_policy.md)
+- [Dependency and reference policy](docs/dependency_policy.md)
+- [Protocol model audit](docs/protocol_model_audit.md)
+- [External consumer template](templates/external_consumer)
+- [Release process](docs/release_process.md)
 - [Release gates](docs/release_gates.md)
 - [Release candidate checklist](docs/release_candidate_checklist.md)
 - [Release notes template](docs/release_notes_template.md)
 - [Official SDK candidate process](docs/official_sdk_candidate_process.md)
+- [Request lifecycle](docs/request_lifecycle.md)
 - [Peer/Service migration guide](docs/sdk_peer_service_migration.md)
 - [Changelog](CHANGELOG.md)
 

@@ -7,6 +7,7 @@
 #include <ctime>
 #include <deque>
 #include <exception>
+#include <functional>
 #include <map>
 #include <mutex>
 #include <optional>
@@ -78,11 +79,45 @@ std::optional<std::string> header_name_from_request(
   return std::nullopt;
 }
 
+bool header_name_equals(std::string_view lhs, std::string_view rhs) {
+  if (lhs.size() != rhs.size()) {
+    return false;
+  }
+  for (std::size_t index = 0; index < lhs.size(); ++index) {
+    char left = lhs[index];
+    char right = rhs[index];
+    if (left >= 'A' && left <= 'Z') {
+      left = static_cast<char>(left - 'A' + 'a');
+    }
+    if (right >= 'A' && right <= 'Z') {
+      right = static_cast<char>(right - 'A' + 'a');
+    }
+    if (left != right) {
+      return false;
+    }
+  }
+  return true;
+}
+
+bool has_header_name(const httplib::Headers& headers, std::string_view name) {
+  for (const auto& [key, _] : headers) {
+    if (header_name_equals(key, name)) {
+      return true;
+    }
+  }
+  return false;
+}
+
 httplib::Headers to_headers(
-    const std::unordered_map<std::string, std::string>& headers) {
+    const std::unordered_map<std::string, std::string>& headers,
+    const std::optional<std::string>& bearer_token = std::nullopt) {
   httplib::Headers result;
   for (const auto& [key, value] : headers) {
     result.emplace(key, value);
+  }
+  if (bearer_token.has_value() && !bearer_token->empty() &&
+      !has_header_name(result, "Authorization")) {
+    result.emplace("Authorization", "Bearer " + *bearer_token);
   }
   return result;
 }
@@ -102,6 +137,29 @@ bool has_event_stream_content_type(const httplib::Response& response) {
   }
   return response.get_header_value("Content-Type").find("text/event-stream") !=
          std::string::npos;
+}
+
+std::unordered_map<std::string, std::string> copy_response_headers(
+    const httplib::Response& response) {
+  std::unordered_map<std::string, std::string> headers;
+  for (const auto& header : response.headers) {
+    headers.emplace(header.first, header.second);
+  }
+  return headers;
+}
+
+core::Error make_http_auth_error(const httplib::Response& response) {
+  std::string detail = std::to_string(response.status);
+  if (response.has_header("WWW-Authenticate")) {
+    detail = response.get_header_value("WWW-Authenticate");
+  }
+  return core::Error{
+      static_cast<int>(protocol::ErrorCode::PermissionDenied),
+      response.status == 403 ? "http transport request has insufficient scope"
+                             : "http transport request requires authorization",
+      std::move(detail),
+      "auth",
+  };
 }
 
 struct ResolvedEndpoint {
@@ -252,7 +310,7 @@ struct HttpTransport::Impl {
 
     if (!session_id_to_terminate.empty() && options_error == std::nullopt) {
       auto client = make_client();
-      auto headers = to_headers(options.headers);
+      auto headers = make_base_headers();
       headers.emplace("Accept", "application/json");
       headers.emplace("MCP-Protocol-Version", protocol_version_to_send);
       headers.emplace(std::string(SessionHeader), session_id_to_terminate);
@@ -274,6 +332,7 @@ struct HttpTransport::Impl {
     }
 
     bool retried_after_session_reset = false;
+    bool retried_after_auth_refresh = false;
     while (true) {
       auto client = make_client();
       const bool include_protocol_version =
@@ -308,6 +367,16 @@ struct HttpTransport::Impl {
             static_cast<int>(protocol::ErrorCode::InvalidRequest),
             "http transport session was terminated",
             std::to_string(response->status)));
+      }
+      if (response->status == 401 && !retried_after_auth_refresh) {
+        auto refreshed = refresh_bearer_token_once(*response, request.method);
+        if (refreshed.has_value()) {
+          retried_after_auth_refresh = true;
+          continue;
+        }
+      }
+      if (response->status == 401 || response->status == 403) {
+        return std::unexpected(make_http_auth_error(*response));
       }
 
       const auto remembered_session = remember_session(
@@ -344,11 +413,23 @@ struct HttpTransport::Impl {
       return std::unexpected(serialized.error());
     }
 
-    auto client = make_client();
-    auto headers = make_headers(notification.method, std::nullopt,
-                                /*json_body=*/true, /*event_stream=*/true);
-    const auto response =
-        client.Post(path, headers, *serialized, "application/json");
+    bool retried_after_auth_refresh = false;
+    httplib::Result response;
+    while (true) {
+      auto client = make_client();
+      auto headers = make_headers(notification.method, std::nullopt,
+                                  /*json_body=*/true, /*event_stream=*/true);
+      response = client.Post(path, headers, *serialized, "application/json");
+      if (!response || response->status != 401 || retried_after_auth_refresh) {
+        break;
+      }
+      auto refreshed =
+          refresh_bearer_token_once(*response, notification.method);
+      if (!refreshed.has_value()) {
+        break;
+      }
+      retried_after_auth_refresh = true;
+    }
     if (!response) {
       return std::unexpected(make_transport_error(
           static_cast<int>(protocol::ErrorCode::InternalError),
@@ -361,6 +442,9 @@ struct HttpTransport::Impl {
           static_cast<int>(protocol::ErrorCode::InvalidRequest),
           "http transport session was terminated",
           std::to_string(response->status)));
+    }
+    if (response->status == 401 || response->status == 403) {
+      return std::unexpected(make_http_auth_error(*response));
     }
 
     const auto remembered_session =
@@ -418,14 +502,24 @@ struct HttpTransport::Impl {
     return client;
   }
 
-  httplib::Headers make_headers(std::optional<std::string_view> method,
-                                std::optional<std::string> name, bool json_body,
-                                bool event_stream,
-                                bool include_protocol_version = true) const {
-    auto headers = to_headers(options.headers);
-    if (options.auth_header.has_value()) {
-      headers.emplace("Authorization", "Bearer " + *options.auth_header);
+  httplib::Headers make_base_headers(
+      std::optional<std::string> bearer_override = std::nullopt) const {
+    std::unordered_map<std::string, std::string> headers;
+    std::optional<std::string> auth_header;
+    {
+      std::lock_guard lock(mutex);
+      headers = options.headers;
+      auth_header = bearer_override.has_value() ? std::move(bearer_override)
+                                                : options.auth_header;
     }
+    return to_headers(headers, auth_header);
+  }
+
+  httplib::Headers make_headers(
+      std::optional<std::string_view> method, std::optional<std::string> name,
+      bool json_body, bool event_stream, bool include_protocol_version = true,
+      std::optional<std::string> bearer_override = std::nullopt) const {
+    auto headers = make_base_headers(std::move(bearer_override));
     if (json_body) {
       headers.emplace("Content-Type", "application/json");
     }
@@ -447,6 +541,37 @@ struct HttpTransport::Impl {
       headers.emplace(std::string(SessionHeader), session_id);
     }
     return headers;
+  }
+
+  std::optional<std::string> refresh_bearer_token_once(
+      const httplib::Response& response, std::string_view method) {
+    HttpAuthRefreshHandler refresh_handler;
+    {
+      std::lock_guard lock(mutex);
+      refresh_handler = options.auth_refresh_handler;
+    }
+    if (!refresh_handler || response.status != 401) {
+      return std::nullopt;
+    }
+
+    HttpAuthChallenge challenge;
+    challenge.status_code = response.status;
+    challenge.method = std::string(method);
+    challenge.headers = copy_response_headers(response);
+    if (response.has_header("WWW-Authenticate")) {
+      challenge.www_authenticate =
+          response.get_header_value("WWW-Authenticate");
+    }
+
+    auto refreshed = refresh_handler(challenge);
+    if (!refreshed.has_value() || refreshed->empty()) {
+      return std::nullopt;
+    }
+    {
+      std::lock_guard lock(mutex);
+      options.auth_header = *refreshed;
+    }
+    return refreshed;
   }
 
   core::Result<core::Unit> remember_session(const httplib::Response& response,
@@ -488,7 +613,7 @@ struct HttpTransport::Impl {
       }
       stream_client = std::make_unique<httplib::Client>(origin);
       apply_timeout(*stream_client, options.timeout);
-      auto headers = to_headers(options.headers);
+      auto headers = to_headers(options.headers, options.auth_header);
       headers.emplace("Accept", "text/event-stream");
       headers.emplace("MCP-Protocol-Version", protocol_version);
       headers.emplace(std::string(SessionHeader), session_id);
@@ -756,6 +881,19 @@ client::HttpTransportOptions to_legacy_options(
   legacy.path = std::move(options.path);
   legacy.headers = std::move(options.headers);
   legacy.auth_header = std::move(options.auth_header);
+  if (options.auth_refresh_handler) {
+    legacy.auth_refresh_handler =
+        [handler = std::move(options.auth_refresh_handler)](
+            const client::HttpAuthChallenge& challenge)
+        -> std::optional<std::string> {
+      StreamableHttpAuthChallenge native_challenge;
+      native_challenge.status_code = challenge.status_code;
+      native_challenge.method = challenge.method;
+      native_challenge.headers = challenge.headers;
+      native_challenge.www_authenticate = challenge.www_authenticate;
+      return handler(native_challenge);
+    };
+  }
   legacy.timeout = options.timeout;
   return legacy;
 }

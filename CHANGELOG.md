@@ -1,10 +1,32 @@
 # Changelog
 
+## 2.0.2
+
+- Added explicit protocol-version coverage for the `2025-11-25` MCP snapshot
+  and closed the P1 protocol model evidence gaps for required-field,
+  type-constraint, and object-presence capability behavior.
+- Added a lightweight default `WWW-Authenticate` parser to the optional
+  `cxxmcp::auth` public surface, including support for quoted parameters,
+  escaped strings, token68 payloads, case-insensitive parameter lookup, and
+  focused auth tests.
+- Changed the default in-memory token store to keep entries separated by the
+  complete resource/issuer/client token key instead of overwriting unrelated
+  credentials.
+- Documented the external `cxxmcp-examples` auth-lite coverage and kept the
+  examples path aligned with `Peer` / `Service` as the canonical SDK entry.
+
 ## 2.0.0
 
 - Reframed the public SDK around `Peer` / `Service` entry points.
 - Kept `client` / `server` as compatibility and convenience wrappers.
 - Added HTTP URI support and auth header support for client transport setup.
+- Added HTTP auth-lite server behavior: authentication failures are reported as
+  auth-category JSON-RPC errors and Streamable HTTP maps them to
+  `401 Unauthorized` with configurable `WWW-Authenticate`.
+- Added the optional `cxxmcp::auth` scaffold target for OAuth 2.1 / DPoP
+  contracts and public header smoke coverage.
+- Applied client HTTP bearer-token helpers consistently to Streamable HTTP POST,
+  SSE GET, and session DELETE requests.
 - Added `ClientPeer` and `ServerPeer` examples.
 - Aligned `process_stdio_client` with the peer/service path.
 - Routed native `ClientPeer` initialize, synchronous helpers, paginated helpers,
@@ -52,4 +74,10 @@
   through the `ServerPeer` boundary.
 - Routed Peer-registered task lifecycle request handlers through the
   `ServerPeer` boundary.
+- Added cancellation-aware client inbound handler overloads for roots,
+  sampling, elicitation, and custom server-to-client requests on both
+  `Client` and `ClientPeer`.
+- Added `ServerBuilder::with_handler()` so aggregate and contract-style server
+  handlers can be installed during construction instead of through a long
+  mutable setter sequence.
 - Added a dedicated SDK umbrella test for `cxxmcp/sdk.hpp`.

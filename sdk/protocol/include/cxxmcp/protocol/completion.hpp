@@ -9,6 +9,9 @@
 /// variables by sending a `completion/complete` request for a referenced MCP
 /// object and one argument value prefix.
 
+#include <cstddef>
+#include <cstdint>
+#include <limits>
 #include <optional>
 #include <string>
 #include <utility>
@@ -30,6 +33,8 @@ struct CompletionReference {
   std::optional<std::string> uri;
   /// Optional human-readable reference title.
   std::string title;
+  /// Unknown JSON members preserved for forward-compatible round trips.
+  Json extensions = Json::object();
 };
 
 /// @brief Builds a prompt completion reference.
@@ -52,6 +57,8 @@ struct CompletionArgument {
   std::string name;
   /// Current argument value or prefix supplied by the caller.
   std::string value;
+  /// Unknown JSON members preserved for forward-compatible round trips.
+  Json extensions = Json::object();
 };
 
 /// @brief Parameters for `completion/complete`.
@@ -64,16 +71,26 @@ struct CompleteParams {
   Json context = Json::object();
   /// Optional `_meta` extension object preserved on the wire.
   std::optional<Json> meta;
+  /// Unknown JSON members preserved for forward-compatible round trips.
+  Json extensions = Json::object();
 };
 
 /// @brief Completion candidates returned by the server.
 struct CompletionResult {
+  /// Maximum number of completion values allowed by the MCP model.
+  static constexpr std::size_t kMaxValues = 100;
   /// Candidate values.
   std::vector<std::string> values;
   /// Optional total number of matches known to the server.
   std::optional<int> total;
-  /// Whether additional matches are available beyond the returned values.
-  bool has_more = false;
+  /// Optional pagination signal. Missing means the peer did not state whether
+  /// more matches exist; explicit false is preserved on the wire.
+  std::optional<bool> has_more;
+  /// Unknown JSON members preserved for forward-compatible round trips.
+  Json extensions = Json::object();
+
+  /// @brief Convenience predicate treating a missing signal as false.
+  bool has_more_results() const noexcept { return has_more.value_or(false); }
 };
 
 /// @brief Result object for `completion/complete`.
@@ -82,6 +99,8 @@ struct CompleteResult {
   CompletionResult completion;
   /// Optional `_meta` extension object preserved on the wire.
   std::optional<Json> meta;
+  /// Unknown JSON members preserved for forward-compatible round trips.
+  Json extensions = Json::object();
 };
 
 /// @brief Builds an InvalidRequest error for completion JSON validation
@@ -103,6 +122,7 @@ inline Json completion_reference_to_json(const CompletionReference& ref) {
   if (!ref.title.empty()) {
     json["title"] = ref.title;
   }
+  append_json_extensions(json, ref.extensions);
   return json;
 }
 
@@ -118,42 +138,53 @@ inline core::Result<CompletionReference> completion_reference_from_json(
     return std::unexpected(
         completion_json_error("completion ref requires a string type"));
   }
-  if (!json.contains("name") && !json.contains("uri")) {
-    return std::unexpected(
-        completion_json_error("completion ref requires a string name or uri"));
-  }
   CompletionReference ref;
   ref.type = json.at("type").get<std::string>();
-  if (json.contains("name")) {
-    if (!json.at("name").is_string()) {
+  if (ref.type == "ref/prompt") {
+    if (!json.contains("name") || !json.at("name").is_string()) {
       return std::unexpected(
-          completion_json_error("completion ref name must be a string"));
+          completion_json_error("completion prompt ref requires string name"));
     }
     ref.name = json.at("name").get<std::string>();
-  }
-  if (json.contains("uri")) {
-    if (!json.at("uri").is_string()) {
+    if (json.contains("uri")) {
       return std::unexpected(
-          completion_json_error("completion ref uri must be a string"));
+          completion_json_error("completion prompt ref must not contain uri"));
+    }
+  } else if (ref.type == "ref/resource") {
+    if (!json.contains("uri") || !json.at("uri").is_string()) {
+      return std::unexpected(
+          completion_json_error("completion resource ref requires string uri"));
     }
     ref.uri = json.at("uri").get<std::string>();
-    if (ref.name.empty()) {
-      ref.name = *ref.uri;
+    if (json.contains("name")) {
+      return std::unexpected(completion_json_error(
+          "completion resource ref must not contain name"));
     }
+  } else {
+    return std::unexpected(
+        completion_json_error("completion ref type is not supported"));
   }
   if (json.contains("title")) {
+    if (ref.type != "ref/prompt") {
+      return std::unexpected(completion_json_error(
+          "completion resource ref must not contain title"));
+    }
     if (!json.at("title").is_string()) {
       return std::unexpected(
           completion_json_error("completion ref title must be a string"));
     }
     ref.title = json.at("title").get<std::string>();
   }
+  ref.extensions =
+      collect_json_extensions(json, {"type", "name", "uri", "title"});
   return ref;
 }
 
 /// @brief Serializes a completion argument.
 inline Json completion_argument_to_json(const CompletionArgument& argument) {
-  return Json{{"name", argument.name}, {"value", argument.value}};
+  Json json = Json{{"name", argument.name}, {"value", argument.value}};
+  append_json_extensions(json, argument.extensions);
+  return json;
 }
 
 /// @brief Parses a completion argument.
@@ -172,8 +203,11 @@ inline core::Result<CompletionArgument> completion_argument_from_json(
     return std::unexpected(
         completion_json_error("completion argument requires a string value"));
   }
-  return CompletionArgument{json.at("name").get<std::string>(),
-                            json.at("value").get<std::string>()};
+  CompletionArgument argument;
+  argument.name = json.at("name").get<std::string>();
+  argument.value = json.at("value").get<std::string>();
+  argument.extensions = collect_json_extensions(json, {"name", "value"});
+  return argument;
 }
 
 /// @brief Serializes `completion/complete` params.
@@ -187,6 +221,7 @@ inline Json complete_params_to_json(const CompleteParams& params) {
   if (params.meta.has_value()) {
     json["_meta"] = *params.meta;
   }
+  append_json_extensions(json, params.extensions);
   return json;
 }
 
@@ -233,6 +268,8 @@ inline core::Result<CompleteParams> complete_params_from_json(
     }
     params.meta = json.at("_meta");
   }
+  params.extensions =
+      collect_json_extensions(json, {"ref", "argument", "context", "_meta"});
   return params;
 }
 
@@ -243,9 +280,10 @@ inline Json completion_result_to_json(const CompletionResult& completion) {
   if (completion.total.has_value()) {
     json["total"] = *completion.total;
   }
-  if (completion.has_more) {
-    json["hasMore"] = true;
+  if (completion.has_more.has_value()) {
+    json["hasMore"] = *completion.has_more;
   }
+  append_json_extensions(json, completion.extensions);
   return json;
 }
 
@@ -261,6 +299,10 @@ inline core::Result<CompletionResult> completion_result_from_json(
     return std::unexpected(
         completion_json_error("completion result requires a values array"));
   }
+  if (json.at("values").size() > CompletionResult::kMaxValues) {
+    return std::unexpected(
+        completion_json_error("completion result has too many values"));
+  }
 
   CompletionResult completion;
   for (const auto& item : json.at("values")) {
@@ -272,10 +314,15 @@ inline core::Result<CompletionResult> completion_result_from_json(
   }
   if (json.contains("total")) {
     if (!json.at("total").is_number_integer()) {
-      return std::unexpected(
-          completion_json_error("completion total must be an integer"));
+      return std::unexpected(completion_json_error(
+          "completion total must be a non-negative integer"));
     }
-    completion.total = json.at("total").get<int>();
+    const auto total = json.at("total").get<std::int64_t>();
+    if (total < 0 || total > std::numeric_limits<int>::max()) {
+      return std::unexpected(completion_json_error(
+          "completion total must be a non-negative integer"));
+    }
+    completion.total = static_cast<int>(total);
   }
   if (json.contains("hasMore")) {
     if (!json.at("hasMore").is_boolean()) {
@@ -284,6 +331,8 @@ inline core::Result<CompletionResult> completion_result_from_json(
     }
     completion.has_more = json.at("hasMore").get<bool>();
   }
+  completion.extensions =
+      collect_json_extensions(json, {"values", "total", "hasMore"});
   return completion;
 }
 
@@ -294,6 +343,7 @@ inline Json complete_result_to_json(const CompleteResult& result) {
   if (result.meta.has_value()) {
     json["_meta"] = *result.meta;
   }
+  append_json_extensions(json, result.extensions);
   return json;
 }
 
@@ -322,6 +372,7 @@ inline core::Result<CompleteResult> complete_result_from_json(
     }
     result.meta = json.at("_meta");
   }
+  result.extensions = collect_json_extensions(json, {"completion", "_meta"});
   return result;
 }
 

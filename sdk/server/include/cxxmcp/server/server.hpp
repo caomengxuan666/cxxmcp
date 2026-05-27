@@ -28,15 +28,28 @@
 
 #include "cxxmcp/core/result.hpp"
 #include "cxxmcp/protocol/capabilities.hpp"
+#include "cxxmcp/protocol/completion.hpp"
 #include "cxxmcp/protocol/logging.hpp"
 #include "cxxmcp/protocol/task.hpp"
 #include "cxxmcp/server/auth.hpp"
 #include "cxxmcp/server/rate_limit.hpp"
 #include "cxxmcp/server/registry.hpp"
+#include "cxxmcp/server/schema_validator.hpp"
 #include "cxxmcp/server/task_manager.hpp"
 #include "cxxmcp/server/transport.hpp"
 
 namespace mcp::server {
+
+/// @brief Completion request context passed to typed completion handlers.
+struct CompletionContext : SessionContext {
+  /// Parsed `completion/complete` request parameters.
+  protocol::CompleteParams params;
+  /// Cooperative cancellation token for this request.
+  CancellationToken cancellation;
+
+  /// @brief Convenience check for cancellation-aware completion handlers.
+  bool cancelled() const noexcept { return cancellation.cancelled(); }
+};
 
 namespace detail {
 
@@ -157,6 +170,20 @@ inline protocol::PromptsGetResult value_to_prompt_result(std::string text) {
   return result;
 }
 
+inline protocol::PromptsGetResult value_to_prompt_result(
+    protocol::PromptMessage message) {
+  protocol::PromptsGetResult result;
+  result.messages.push_back(std::move(message));
+  return result;
+}
+
+inline protocol::PromptsGetResult value_to_prompt_result(
+    std::vector<protocol::PromptMessage> messages) {
+  protocol::PromptsGetResult result;
+  result.messages = std::move(messages);
+  return result;
+}
+
 inline protocol::ResourcesReadResult value_to_resource_read_result(
     protocol::ResourcesReadResult result, std::string_view) {
   return result;
@@ -170,6 +197,13 @@ inline protocol::ResourcesReadResult value_to_resource_read_result(
 }
 
 inline protocol::ResourcesReadResult value_to_resource_read_result(
+    std::vector<protocol::ResourceContents> contents, std::string_view) {
+  protocol::ResourcesReadResult result;
+  result.contents = std::move(contents);
+  return result;
+}
+
+inline protocol::ResourcesReadResult value_to_resource_read_result(
     std::string text, std::string_view uri) {
   protocol::ResourcesReadResult result;
   protocol::ResourceContents contents;
@@ -178,6 +212,52 @@ inline protocol::ResourcesReadResult value_to_resource_read_result(
   contents.text = std::move(text);
   result.contents.push_back(std::move(contents));
   return result;
+}
+
+inline protocol::Json value_to_complete_result_json(protocol::Json json) {
+  return json;
+}
+
+inline protocol::Json value_to_complete_result_json(
+    protocol::CompleteResult result) {
+  return protocol::complete_result_to_json(result);
+}
+
+inline protocol::Json value_to_complete_result_json(
+    protocol::CompletionResult result) {
+  protocol::CompleteResult envelope;
+  envelope.completion = std::move(result);
+  return protocol::complete_result_to_json(envelope);
+}
+
+inline protocol::Json value_to_complete_result_json(
+    std::vector<std::string> values) {
+  protocol::CompletionResult completion;
+  completion.values = std::move(values);
+  return value_to_complete_result_json(std::move(completion));
+}
+
+inline protocol::Json value_to_complete_result_json(std::string value) {
+  return value_to_complete_result_json(
+      std::vector<std::string>{std::move(value)});
+}
+
+inline protocol::Json value_to_complete_result_json(const char* value) {
+  return value_to_complete_result_json(
+      std::string(value == nullptr ? "" : value));
+}
+
+template <class T>
+inline core::Result<protocol::Json> completion_response_to_json(T&& value) {
+  using Value = std::decay_t<T>;
+  if constexpr (is_result<Value>::value) {
+    if (!value) {
+      return std::unexpected(value.error());
+    }
+    return completion_response_to_json(std::move(*value));
+  } else {
+    return value_to_complete_result_json(std::forward<T>(value));
+  }
 }
 
 template <class Arg>
@@ -205,6 +285,7 @@ inline void apply_default_output_schema(protocol::ToolDefinition& definition) {
                 !std::is_same_v<std::decay_t<Result>, char*>) {
     if (definition.output_schema.empty()) {
       definition.output_schema = protocol::schema_for<Result>();
+      definition.output_schema_present = true;
     }
   }
 }
@@ -235,6 +316,35 @@ decltype(auto) invoke_tool_handler(Handler& handler, Args&& args,
   }
 }
 
+template <class Handler, class Args, class Context>
+decltype(auto) invoke_typed_context_handler(Handler& handler, Args&& args,
+                                            const Context& context) {
+  using Arg = std::decay_t<Args>;
+  if constexpr (std::is_invocable_v<Handler&, Arg, const Context&>) {
+    return handler(std::forward<Args>(args), context);
+  } else if constexpr (std::is_invocable_v<Handler&, const Context&, Arg>) {
+    return handler(context, std::forward<Args>(args));
+  } else if constexpr (std::is_invocable_v<Handler&, Arg, CancellationToken>) {
+    return handler(std::forward<Args>(args), context.cancellation);
+  } else if constexpr (std::is_invocable_v<Handler&, CancellationToken, Arg>) {
+    return handler(context.cancellation, std::forward<Args>(args));
+  } else if constexpr (std::is_invocable_v<Handler&, Arg>) {
+    return handler(std::forward<Args>(args));
+  } else if constexpr (std::is_invocable_v<Handler&, const Context&>) {
+    return handler(context);
+  } else if constexpr (std::is_invocable_v<Handler&, CancellationToken>) {
+    return handler(context.cancellation);
+  } else if constexpr (std::is_invocable_v<Handler&>) {
+    return handler();
+  } else {
+    static_assert(always_false_v<Handler>,
+                  "typed handler must accept Args, Args+Context, "
+                  "Context+Args, Args+CancellationToken, "
+                  "CancellationToken+Args, Context, CancellationToken, "
+                  "or no arguments");
+  }
+}
+
 template <class Handler>
 decltype(auto) invoke_prompt_handler(Handler& handler,
                                      const PromptContext& context) {
@@ -262,6 +372,24 @@ decltype(auto) invoke_prompt_handler(Handler& handler,
     return handler(std::move(text));
   } else if constexpr (callable_arguments_match_v<Handler, PromptContext>) {
     return handler(context);
+  } else if constexpr (callable_arguments_match_v<Handler, Json,
+                                                  CancellationToken>) {
+    return handler(context.arguments, context.cancellation);
+  } else if constexpr (callable_arguments_match_v<Handler, CancellationToken,
+                                                  Json>) {
+    return handler(context.cancellation, context.arguments);
+  } else if constexpr (callable_arguments_match_v<Handler, std::string,
+                                                  CancellationToken>) {
+    auto text = argument_from_json<std::string>(context.arguments,
+                                                std::string_view("text"));
+    return handler(std::move(text), context.cancellation);
+  } else if constexpr (callable_arguments_match_v<Handler, CancellationToken,
+                                                  std::string>) {
+    auto text = argument_from_json<std::string>(context.arguments,
+                                                std::string_view("text"));
+    return handler(context.cancellation, std::move(text));
+  } else if constexpr (callable_arguments_match_v<Handler, CancellationToken>) {
+    return handler(context.cancellation);
   } else if constexpr (std::is_invocable_v<Handler&, const Json&,
                                            const PromptContext&>) {
     return handler(context.arguments, context);
@@ -292,7 +420,8 @@ decltype(auto) invoke_prompt_handler(Handler& handler,
     static_assert(always_false_v<Handler>,
                   "prompt handler must accept Json, Json+PromptContext, "
                   "PromptContext+Json, string, string+PromptContext, "
-                  "PromptContext+string, PromptContext, or no arguments");
+                  "PromptContext+string, PromptContext, Json/string plus "
+                  "CancellationToken, CancellationToken, or no arguments");
   }
 }
 
@@ -317,6 +446,20 @@ decltype(auto) invoke_resource_handler(Handler& handler,
     return handler(context.uri);
   } else if constexpr (callable_arguments_match_v<Handler, ResourceContext>) {
     return handler(context);
+  } else if constexpr (callable_arguments_match_v<Handler, Json,
+                                                  CancellationToken>) {
+    return handler(context.params, context.cancellation);
+  } else if constexpr (callable_arguments_match_v<Handler, CancellationToken,
+                                                  Json>) {
+    return handler(context.cancellation, context.params);
+  } else if constexpr (callable_arguments_match_v<Handler, std::string,
+                                                  CancellationToken>) {
+    return handler(context.uri, context.cancellation);
+  } else if constexpr (callable_arguments_match_v<Handler, CancellationToken,
+                                                  std::string>) {
+    return handler(context.cancellation, context.uri);
+  } else if constexpr (callable_arguments_match_v<Handler, CancellationToken>) {
+    return handler(context.cancellation);
   } else if constexpr (std::is_invocable_v<Handler&, const Json&,
                                            const ResourceContext&>) {
     return handler(context.params, context);
@@ -341,7 +484,147 @@ decltype(auto) invoke_resource_handler(Handler& handler,
     static_assert(always_false_v<Handler>,
                   "resource handler must accept Json, Json+ResourceContext, "
                   "ResourceContext+Json, string, string+ResourceContext, "
-                  "ResourceContext+string, ResourceContext, or no arguments");
+                  "ResourceContext+string, ResourceContext, Json/string plus "
+                  "CancellationToken, CancellationToken, or no arguments");
+  }
+}
+
+template <class Handler>
+decltype(auto) invoke_json_extension_handler(Handler& handler,
+                                             const protocol::Json& request,
+                                             const SessionContext& context,
+                                             CancellationToken cancellation) {
+  using Json = protocol::Json;
+  if constexpr (std::is_invocable_v<Handler&, const Json&,
+                                    const SessionContext&, CancellationToken>) {
+    return handler(request, context, cancellation);
+  } else if constexpr (std::is_invocable_v<Handler&, const Json&,
+                                           const SessionContext&>) {
+    return handler(request, context);
+  } else if constexpr (std::is_invocable_v<Handler&, const SessionContext&,
+                                           const Json&, CancellationToken>) {
+    return handler(context, request, cancellation);
+  } else if constexpr (std::is_invocable_v<Handler&, const SessionContext&,
+                                           const Json&>) {
+    return handler(context, request);
+  } else if constexpr (std::is_invocable_v<Handler&, const Json&,
+                                           CancellationToken>) {
+    return handler(request, cancellation);
+  } else if constexpr (std::is_invocable_v<Handler&, CancellationToken,
+                                           const Json&>) {
+    return handler(cancellation, request);
+  } else if constexpr (std::is_invocable_v<Handler&, const Json&>) {
+    return handler(request);
+  } else if constexpr (std::is_invocable_v<Handler&, const SessionContext&,
+                                           CancellationToken>) {
+    return handler(context, cancellation);
+  } else if constexpr (std::is_invocable_v<Handler&, CancellationToken,
+                                           const SessionContext&>) {
+    return handler(cancellation, context);
+  } else if constexpr (std::is_invocable_v<Handler&, const SessionContext&>) {
+    return handler(context);
+  } else if constexpr (std::is_invocable_v<Handler&, CancellationToken>) {
+    return handler(cancellation);
+  } else if constexpr (std::is_invocable_v<Handler&>) {
+    return handler();
+  } else {
+    static_assert(always_false_v<Handler>,
+                  "JSON extension handler must accept Json, "
+                  "Json+SessionContext, SessionContext+Json, "
+                  "Json/SessionContext plus CancellationToken, "
+                  "CancellationToken, or no arguments");
+  }
+}
+
+template <class Handler>
+inline constexpr bool is_typed_completion_handler_v =
+    !callable_arguments_match_v<Handler, protocol::Json, SessionContext> &&
+    !callable_arguments_match_v<Handler, SessionContext, protocol::Json> &&
+    !callable_arguments_match_v<Handler, protocol::Json> &&
+    (callable_arguments_match_v<Handler, protocol::CompleteParams,
+                                CompletionContext> ||
+     callable_arguments_match_v<Handler, CompletionContext,
+                                protocol::CompleteParams> ||
+     callable_arguments_match_v<Handler, protocol::CompletionArgument,
+                                CompletionContext> ||
+     callable_arguments_match_v<Handler, CompletionContext,
+                                protocol::CompletionArgument> ||
+     callable_arguments_match_v<Handler, std::string, CompletionContext> ||
+     callable_arguments_match_v<Handler, CompletionContext, std::string> ||
+     callable_arguments_match_v<Handler, protocol::CompleteParams,
+                                CancellationToken> ||
+     callable_arguments_match_v<Handler, CancellationToken,
+                                protocol::CompleteParams> ||
+     callable_arguments_match_v<Handler, protocol::CompletionArgument,
+                                CancellationToken> ||
+     callable_arguments_match_v<Handler, CancellationToken,
+                                protocol::CompletionArgument> ||
+     callable_arguments_match_v<Handler, std::string, CancellationToken> ||
+     callable_arguments_match_v<Handler, CancellationToken, std::string> ||
+     callable_arguments_match_v<Handler, protocol::CompleteParams> ||
+     callable_arguments_match_v<Handler, protocol::CompletionArgument> ||
+     callable_arguments_match_v<Handler, std::string> ||
+     callable_arguments_match_v<Handler, CancellationToken>);
+
+template <class Handler>
+decltype(auto) invoke_completion_handler(Handler& handler,
+                                         const CompletionContext& context) {
+  if constexpr (std::is_invocable_v<Handler&, const protocol::CompleteParams&,
+                                    const CompletionContext&>) {
+    return handler(context.params, context);
+  } else if constexpr (std::is_invocable_v<Handler&, const CompletionContext&,
+                                           const protocol::CompleteParams&>) {
+    return handler(context, context.params);
+  } else if constexpr (std::is_invocable_v<Handler&,
+                                           const protocol::CompletionArgument&,
+                                           const CompletionContext&>) {
+    return handler(context.params.argument, context);
+  } else if constexpr (std::is_invocable_v<
+                           Handler&, const CompletionContext&,
+                           const protocol::CompletionArgument&>) {
+    return handler(context, context.params.argument);
+  } else if constexpr (std::is_invocable_v<Handler&, std::string,
+                                           const CompletionContext&>) {
+    return handler(context.params.argument.value, context);
+  } else if constexpr (std::is_invocable_v<Handler&, const CompletionContext&,
+                                           std::string>) {
+    return handler(context, context.params.argument.value);
+  } else if constexpr (std::is_invocable_v<Handler&,
+                                           const protocol::CompleteParams&,
+                                           CancellationToken>) {
+    return handler(context.params, context.cancellation);
+  } else if constexpr (std::is_invocable_v<Handler&, CancellationToken,
+                                           const protocol::CompleteParams&>) {
+    return handler(context.cancellation, context.params);
+  } else if constexpr (std::is_invocable_v<Handler&,
+                                           const protocol::CompletionArgument&,
+                                           CancellationToken>) {
+    return handler(context.params.argument, context.cancellation);
+  } else if constexpr (std::is_invocable_v<
+                           Handler&, CancellationToken,
+                           const protocol::CompletionArgument&>) {
+    return handler(context.cancellation, context.params.argument);
+  } else if constexpr (std::is_invocable_v<Handler&, std::string,
+                                           CancellationToken>) {
+    return handler(context.params.argument.value, context.cancellation);
+  } else if constexpr (std::is_invocable_v<Handler&, CancellationToken,
+                                           std::string>) {
+    return handler(context.cancellation, context.params.argument.value);
+  } else if constexpr (std::is_invocable_v<Handler&,
+                                           const protocol::CompleteParams&>) {
+    return handler(context.params);
+  } else if constexpr (std::is_invocable_v<
+                           Handler&, const protocol::CompletionArgument&>) {
+    return handler(context.params.argument);
+  } else if constexpr (std::is_invocable_v<Handler&, std::string>) {
+    return handler(context.params.argument.value);
+  } else if constexpr (std::is_invocable_v<Handler&, CancellationToken>) {
+    return handler(context.cancellation);
+  } else {
+    static_assert(always_false_v<Handler>,
+                  "completion handler must accept CompleteParams, "
+                  "CompletionArgument, string, or those plus "
+                  "CompletionContext or CancellationToken");
   }
 }
 
@@ -429,6 +712,9 @@ class Server {
       std::string_view name,
       protocol::Json arguments = protocol::Json::object(),
       const std::string& session_id = {}) const;
+  core::Result<protocol::ToolResult> call_tool(
+      std::string_view name, protocol::Json arguments,
+      const SessionContext& context, CancellationToken cancellation = {}) const;
 
   /// @brief Enables the built-in SDK task processor.
   Server& use_task_manager(TaskOperationProcessorOptions options = {});
@@ -457,6 +743,9 @@ class Server {
       std::string_view name,
       protocol::Json arguments = protocol::Json::object(),
       const std::string& session_id = {}) const;
+  core::Result<protocol::PromptsGetResult> get_prompt(
+      std::string_view name, protocol::Json arguments,
+      const SessionContext& context, CancellationToken cancellation = {}) const;
 
   /// @brief Returns the mutable resource registry.
   ResourceRegistry& resources() noexcept;
@@ -475,6 +764,9 @@ class Server {
   core::Result<protocol::ResourcesReadResult> read_resource(
       std::string_view uri, protocol::Json params = protocol::Json::object(),
       const std::string& session_id = {}) const;
+  core::Result<protocol::ResourcesReadResult> read_resource(
+      std::string_view uri, protocol::Json params,
+      const SessionContext& context, CancellationToken cancellation = {}) const;
 
   /// @brief Returns the mutable resource-template registry.
   ResourceTemplateRegistry& resource_templates() noexcept;
@@ -498,6 +790,15 @@ class Server {
   /// @return JSON-RPC response, or an error before response construction.
   core::Result<protocol::JsonRpcResponse> handle_request(
       const protocol::JsonRpcRequest& request, const SessionContext& context);
+
+  /// @brief Applies the configured AuthProvider to a session context.
+  ///
+  /// Returns the input context unchanged when no provider is configured or the
+  /// context already contains an authenticated identity. ServerPeer uses this
+  /// hook before native dispatch so peer-boundary handlers cannot bypass
+  /// server auth policy.
+  core::Result<SessionContext> authenticate_context(
+      const SessionContext& context);
 
   /// @brief Dispatches an inbound JSON-RPC notification from a transport.
   core::Result<core::Unit> handle_notification(
@@ -559,6 +860,15 @@ class Server {
   /// @brief Installs a rate limiter used by supported transports.
   void set_rate_limiter(std::unique_ptr<RateLimiter> rate_limiter);
 
+  /// @brief Installs an optional JSON Schema validator.
+  void set_schema_validator(
+      std::shared_ptr<const JsonSchemaValidator> validator);
+
+  /// @brief Returns the configured JSON Schema validator, if any.
+  std::shared_ptr<const JsonSchemaValidator> schema_validator() const noexcept {
+    return schema_validator_;
+  }
+
   /// @brief Starts every registered transport.
   core::Result<core::Unit> start();
 
@@ -569,6 +879,10 @@ class Server {
   /// sampling.
   using JsonHandler =
       std::function<core::Result<protocol::Json>(const protocol::Json&)>;
+  using JsonContextHandler = std::function<core::Result<protocol::Json>(
+      const protocol::Json&, const SessionContext&)>;
+  using JsonRequestContextHandler = std::function<core::Result<protocol::Json>(
+      const protocol::Json&, const SessionContext&, CancellationToken)>;
 
   /// @brief Handles logging messages from clients.
   using LoggingHandler =
@@ -580,6 +894,10 @@ class Server {
   using RawRequestHandler =
       std::function<std::optional<protocol::JsonRpcResponse>(
           const protocol::JsonRpcRequest&, const SessionContext&)>;
+  using RawRequestContextHandler =
+      std::function<std::optional<protocol::JsonRpcResponse>(
+          const protocol::JsonRpcRequest&, const SessionContext&,
+          CancellationToken)>;
 
   /// @brief Handles raw or custom notifications.
   using RawNotificationHandler = std::function<core::Result<core::Unit>(
@@ -619,21 +937,27 @@ class Server {
 
   /// @brief Registers the completion request handler.
   void set_completion_handler(JsonHandler handler);
+  void set_completion_handler(JsonContextHandler handler);
+  void set_completion_handler(JsonRequestContextHandler handler);
 
   /// @brief Registers the sampling request handler.
   void set_sampling_handler(JsonHandler handler);
+  void set_sampling_handler(JsonContextHandler handler);
+  void set_sampling_handler(JsonRequestContextHandler handler);
 
   /// @brief Registers the logging notification handler.
   void set_logging_handler(LoggingHandler handler);
 
   /// @brief Registers a raw request hook.
   void set_raw_request_handler(RawRequestHandler handler);
+  void set_raw_request_handler(RawRequestContextHandler handler);
 
   /// @brief Registers a raw notification hook.
   void set_raw_notification_handler(RawNotificationHandler handler);
 
   /// @brief Registers a custom request handler.
   void set_custom_request_handler(RawRequestHandler handler);
+  void set_custom_request_handler(RawRequestContextHandler handler);
 
   /// @brief Registers a custom notification handler.
   void set_custom_notification_handler(RawNotificationHandler handler);
@@ -688,11 +1012,13 @@ class Server {
   std::shared_ptr<TaskOperationProcessor> task_processor_;
   std::unique_ptr<AuthProvider> auth_provider_;
   std::unique_ptr<RateLimiter> rate_limiter_;
+  std::shared_ptr<const JsonSchemaValidator> schema_validator_;
   std::vector<std::unique_ptr<Transport>> transports_;
-  JsonHandler completion_handler_;
-  JsonHandler sampling_handler_;
+  JsonRequestContextHandler completion_handler_;
+  JsonRequestContextHandler sampling_handler_;
   LoggingHandler logging_handler_;
   RawRequestHandler raw_request_handler_;
+  RawRequestContextHandler raw_request_context_handler_;
   RawNotificationHandler raw_notification_handler_;
   TaskListHandler task_list_handler_;
   TaskGetHandler task_get_handler_;
@@ -754,6 +1080,10 @@ class ServerBuilder {
   /// @brief Sets the rate limiter owned by the built server.
   ServerBuilder& with_rate_limiter(std::unique_ptr<RateLimiter> rate_limiter);
 
+  /// @brief Sets the optional JSON Schema validator used by the built server.
+  ServerBuilder& with_schema_validator(
+      std::shared_ptr<const JsonSchemaValidator> validator);
+
   /// @brief Enables the built-in SDK task processor on the built server.
   ServerBuilder& with_task_manager(TaskOperationProcessorOptions options = {});
 
@@ -789,9 +1119,13 @@ class ServerBuilder {
 
   /// @brief Sets the completion request handler.
   ServerBuilder& on_completion(Server::JsonHandler handler);
+  ServerBuilder& on_completion(Server::JsonContextHandler handler);
+  ServerBuilder& on_completion(Server::JsonRequestContextHandler handler);
 
   /// @brief Sets the sampling request handler.
   ServerBuilder& on_sampling(Server::JsonHandler handler);
+  ServerBuilder& on_sampling(Server::JsonContextHandler handler);
+  ServerBuilder& on_sampling(Server::JsonRequestContextHandler handler);
 
   /// @brief Sets the logging notification handler.
   ServerBuilder& on_logging(Server::LoggingHandler handler);
@@ -838,6 +1172,15 @@ class ServerBuilder {
   /// @brief Sets the resource-updated notification handler.
   ServerBuilder& on_resource_updated(Server::ResourceUpdatedHandler handler);
 
+  /// @brief Installs every non-empty callback from a handler aggregate.
+  ServerBuilder& with_handler(ServerHandler handler);
+
+  /// @brief Installs callbacks from a contract-style handler interface.
+  ///
+  /// The referenced handler must outlive the built server because installed
+  /// callbacks delegate to it by reference, matching Server::set_handler().
+  ServerBuilder& with_handler(const ServerHandlerInterface& handler);
+
   /// @brief Builds a configured server.
   /// @return Owned server on success, or the first registration/configuration
   /// error.
@@ -849,11 +1192,12 @@ class ServerBuilder {
   ServerOptions options_;
   std::unique_ptr<AuthProvider> auth_provider_;
   std::unique_ptr<RateLimiter> rate_limiter_;
+  std::shared_ptr<const JsonSchemaValidator> schema_validator_;
   std::shared_ptr<TaskOperationProcessor> task_processor_;
   std::vector<std::unique_ptr<Transport>> transports_;
   std::vector<ServerRegistration> registrations_;
-  Server::JsonHandler completion_handler_;
-  Server::JsonHandler sampling_handler_;
+  Server::JsonRequestContextHandler completion_handler_;
+  Server::JsonRequestContextHandler sampling_handler_;
   Server::LoggingHandler logging_handler_;
   Server::RawRequestHandler raw_request_handler_;
   Server::RawNotificationHandler raw_notification_handler_;
@@ -901,9 +1245,20 @@ class TypedToolBuilder {
     return *this;
   }
 
+  template <class T>
+  TypedToolBuilder& input() {
+    return input_schema(protocol::schema_for<T>());
+  }
+
   TypedToolBuilder& output_schema(protocol::Json schema) {
     definition_.output_schema = std::move(schema);
+    definition_.output_schema_present = true;
     return *this;
+  }
+
+  template <class T>
+  TypedToolBuilder& output() {
+    return output_schema(protocol::schema_for<T>());
   }
 
   TypedToolBuilder& streaming(bool value = true) {
@@ -921,6 +1276,11 @@ class TypedToolBuilder {
       definition_.execution = protocol::ToolExecution{};
     }
     definition_.execution->task_support = value;
+    return *this;
+  }
+
+  TypedToolBuilder& execution(protocol::ToolExecution value) {
+    definition_.execution = std::move(value);
     return *this;
   }
 
@@ -993,6 +1353,10 @@ class App {
     /// @brief Enables server-side task processing for task-aware tools.
     Builder& tasks(TaskOperationProcessorOptions options = {});
 
+    /// @brief Installs an optional JSON Schema validator.
+    Builder& schema_validator(
+        std::shared_ptr<const JsonSchemaValidator> validator);
+
     /// @brief Registers a tool using a typed argument adapter.
     /// @tparam Args Type decoded from the JSON arguments object.
     /// @tparam Result Expected handler result type.
@@ -1020,7 +1384,12 @@ class App {
     /// @param name Prompt name advertised to clients.
     /// @param handler Callable accepting Json, string, PromptContext, one of
     /// the Json/string plus PromptContext combinations, or no argument. Returns
-    /// prompt text/result or core::Result of either.
+    /// prompt text/result or core::Result of either. CancellationToken may be
+    /// accepted directly with Json/string where cooperative cancellation is
+    /// useful.
+    template <class Args, class Handler>
+    Builder& prompt(std::string name, Handler handler);
+
     template <class Handler>
     Builder& prompt(std::string name, Handler handler);
 
@@ -1032,7 +1401,12 @@ class App {
     /// @param handler Callable accepting Json params, requested URI string,
     /// ResourceContext, one of the Json/string plus ResourceContext
     /// combinations, or no argument. Returns resource text/contents/result,
-    /// protocol::Resource metadata, or core::Result of these.
+    /// protocol::Resource metadata, or core::Result of these. CancellationToken
+    /// may be accepted directly with Json/string where cooperative
+    /// cancellation is useful.
+    template <class Args, class Handler>
+    Builder& resource(std::string name, Handler handler);
+
     template <class Handler>
     Builder& resource(std::string name, Handler handler);
 
@@ -1135,6 +1509,37 @@ App::Builder& App::Builder::tool(
                             std::move(registration.handler));
 }
 
+template <class Args, class Handler>
+App::Builder& App::Builder::prompt(std::string name, Handler handler) {
+  detail::require_callable(handler, "prompt");
+  protocol::Prompt prompt;
+  prompt.name = std::move(name);
+  return this->prompt(
+      std::move(prompt),
+      [handler = std::move(handler)](const PromptContext& context)
+          -> core::Result<protocol::PromptsGetResult> {
+        try {
+          auto args = context.arguments.get<Args>();
+          auto handled = detail::invoke_typed_context_handler(
+              handler, std::move(args), context);
+          if constexpr (detail::is_result<decltype(handled)>::value) {
+            if (!handled) {
+              return std::unexpected(handled.error());
+            }
+            return detail::value_to_prompt_result(*handled);
+          } else {
+            return detail::value_to_prompt_result(std::move(handled));
+          }
+        } catch (const std::exception& exception) {
+          return std::unexpected(core::Error{
+              static_cast<int>(protocol::ErrorCode::InvalidParams),
+              "failed to decode prompt arguments",
+              exception.what(),
+          });
+        }
+      });
+}
+
 template <class Handler>
 App::Builder& App::Builder::prompt(std::string name, Handler handler) {
   detail::require_callable(handler, "prompt");
@@ -1158,6 +1563,39 @@ App::Builder& App::Builder::prompt(std::string name, Handler handler) {
           return std::unexpected(core::Error{
               static_cast<int>(protocol::ErrorCode::InvalidParams),
               "failed to run prompt handler",
+              exception.what(),
+          });
+        }
+      });
+}
+
+template <class Args, class Handler>
+App::Builder& App::Builder::resource(std::string name, Handler handler) {
+  detail::require_callable(handler, "resource");
+  protocol::Resource resource;
+  resource.uri = std::move(name);
+  resource.name = resource.uri;
+  return this->resource(
+      std::move(resource),
+      [handler = std::move(handler)](const ResourceContext& context)
+          -> core::Result<protocol::ResourcesReadResult> {
+        try {
+          auto args = context.params.get<Args>();
+          auto handled = detail::invoke_typed_context_handler(
+              handler, std::move(args), context);
+          if constexpr (detail::is_result<decltype(handled)>::value) {
+            if (!handled) {
+              return std::unexpected(handled.error());
+            }
+            return detail::value_to_resource_read_result(*handled, context.uri);
+          } else {
+            return detail::value_to_resource_read_result(std::move(handled),
+                                                         context.uri);
+          }
+        } catch (const std::exception& exception) {
+          return std::unexpected(core::Error{
+              static_cast<int>(protocol::ErrorCode::InvalidParams),
+              "failed to decode resource parameters",
               exception.what(),
           });
         }
@@ -1239,12 +1677,32 @@ template <class Handler>
 App::Builder& App::Builder::completion(Handler handler) {
   detail::require_callable(handler, "completion");
   builder_.on_completion(
-      [handler = std::move(handler)](
-          const protocol::Json& request) -> core::Result<protocol::Json> {
-        if constexpr (detail::is_result<decltype(handler(request))>::value) {
-          return handler(request);
+      [handler = std::move(handler)](const protocol::Json& request,
+                                     const SessionContext& context,
+                                     CancellationToken cancellation) mutable
+          -> core::Result<protocol::Json> {
+        if constexpr (detail::is_typed_completion_handler_v<Handler>) {
+          const auto params = protocol::complete_params_from_json(request);
+          if (!params) {
+            return std::unexpected(core::Error{
+                static_cast<int>(protocol::ErrorCode::InvalidParams),
+                params.error().message, params.error().detail, "protocol"});
+          }
+          CompletionContext completion_context;
+          static_cast<SessionContext&>(completion_context) = context;
+          completion_context.params = *params;
+          completion_context.cancellation = cancellation;
+          auto handled =
+              detail::invoke_completion_handler(handler, completion_context);
+          return detail::completion_response_to_json(std::move(handled));
         } else {
-          return detail::value_to_json(handler(request));
+          auto handled = detail::invoke_json_extension_handler(
+              handler, request, context, cancellation);
+          if constexpr (detail::is_result<decltype(handled)>::value) {
+            return handled;
+          } else {
+            return detail::value_to_json(std::move(handled));
+          }
         }
       });
   return *this;
@@ -1254,12 +1712,16 @@ template <class Handler>
 App::Builder& App::Builder::sampling(Handler handler) {
   detail::require_callable(handler, "sampling");
   builder_.on_sampling(
-      [handler = std::move(handler)](
-          const protocol::Json& request) -> core::Result<protocol::Json> {
-        if constexpr (detail::is_result<decltype(handler(request))>::value) {
-          return handler(request);
+      [handler = std::move(handler)](const protocol::Json& request,
+                                     const SessionContext& context,
+                                     CancellationToken cancellation) mutable
+          -> core::Result<protocol::Json> {
+        auto handled = detail::invoke_json_extension_handler(
+            handler, request, context, cancellation);
+        if constexpr (detail::is_result<decltype(handled)>::value) {
+          return handled;
         } else {
-          return detail::value_to_json(handler(request));
+          return detail::value_to_json(std::move(handled));
         }
       });
   return *this;

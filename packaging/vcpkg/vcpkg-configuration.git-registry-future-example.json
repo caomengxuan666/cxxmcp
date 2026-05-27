@@ -1,0 +1,14 @@
+{
+  "$schema": "https://raw.githubusercontent.com/microsoft/vcpkg-tool/main/docs/vcpkg-configuration.schema.json",
+  "builtin-baseline": "0000000000000000000000000000000000000000",
+  "registries": [
+    {
+      "kind": "git",
+      "repository": "https://github.com/caomengxuan666/cxxmcp-vcpkg-registry",
+      "baseline": "0000000000000000000000000000000000000000",
+      "packages": [
+        "cxxmcp"
+      ]
+    }
+  ]
+}

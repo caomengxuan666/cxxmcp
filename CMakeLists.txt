@@ -92,6 +92,8 @@ cxxmcp_build_option(CXXMCP_BUILD_TESTS MCP_BUILD_TESTS
     "Build tests for enabled layers" ${BUILD_TESTING})
 cxxmcp_build_option(CXXMCP_BUILD_DOCS MCP_BUILD_DOCS
     "Build Doxygen API documentation" OFF)
+cxxmcp_build_option(CXXMCP_ENABLE_AUTH MCP_ENABLE_AUTH
+    "Build optional OAuth 2.1 / DPoP authorization scaffolding" OFF)
 
 option(CXXMCP_USE_SYSTEM_DEPS
     "Use package-manager provided SDK dependencies instead of bundled headers"
@@ -108,6 +110,7 @@ set(MCP_ENABLE_APP ${CXXMCP_BUILD_APP})
 set(MCP_ENABLE_GATEWAY ${CXXMCP_BUILD_GATEWAY})
 set(MCP_ENABLE_CLI ${CXXMCP_BUILD_CLI})
 set(MCP_ENABLE_SDK ${CXXMCP_BUILD_SDK})
+set(MCP_ENABLE_AUTH ${CXXMCP_ENABLE_AUTH})
 
 if(MCP_ENABLE_SDK)
     set(MCP_ENABLE_PROTOCOL ON)
@@ -324,6 +327,25 @@ if(TARGET mcp_protocol)
     cxxmcp_require_sdk_cxx(mcp_transport)
 endif()
 
+if(MCP_ENABLE_AUTH)
+    add_library(mcp_auth INTERFACE)
+    set_target_properties(mcp_auth PROPERTIES EXPORT_NAME auth)
+    target_include_directories(mcp_auth INTERFACE
+        $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/sdk/auth/include>
+        $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>
+    )
+    if(NOT CXXMCP_USE_SYSTEM_DEPS)
+        target_include_directories(mcp_auth INTERFACE
+            $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/third_party>
+        )
+    endif()
+    target_link_libraries(mcp_auth INTERFACE mcp_core)
+    if(CXXMCP_JSON_TARGET)
+        target_link_libraries(mcp_auth INTERFACE "${CXXMCP_JSON_TARGET}")
+    endif()
+    cxxmcp_require_sdk_cxx(mcp_auth)
+endif()
+
 if(TARGET mcp_sdk AND TARGET mcp_transport)
     target_link_libraries(mcp_sdk INTERFACE mcp_transport)
 endif()
@@ -383,6 +405,10 @@ endif()
 
 if(TARGET mcp_transport)
     add_library(cxxmcp::transport ALIAS mcp_transport)
+endif()
+
+if(TARGET mcp_auth)
+    add_library(cxxmcp::auth ALIAS mcp_auth)
 endif()
 
 if(TARGET mcp_peer)
@@ -549,6 +575,9 @@ endif()
 if(TARGET mcp_transport)
     list(APPEND CXXMCP_INSTALL_TARGETS mcp_transport)
 endif()
+if(TARGET mcp_auth)
+    list(APPEND CXXMCP_INSTALL_TARGETS mcp_auth)
+endif()
 if(TARGET mcp_peer)
     list(APPEND CXXMCP_INSTALL_TARGETS mcp_peer)
 endif()
@@ -585,6 +614,9 @@ if(TARGET mcp_server)
 endif()
 if(TARGET mcp_transport)
     install(DIRECTORY sdk/transport/include/ DESTINATION ${CMAKE_INSTALL_INCLUDEDIR})
+endif()
+if(TARGET mcp_auth)
+    install(DIRECTORY sdk/auth/include/ DESTINATION ${CMAKE_INSTALL_INCLUDEDIR})
 endif()
 if(TARGET mcp_plugin_sdk)
     install(DIRECTORY extensions/plugin-sdk/include/ DESTINATION ${CMAKE_INSTALL_INCLUDEDIR})

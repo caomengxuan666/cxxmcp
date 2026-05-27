@@ -73,6 +73,44 @@ core::Result<std::optional<Json>> meta_from_document(const Json& document) {
   return std::optional<Json>{document.at("_meta")};
 }
 
+Json normalized_params(Json params) {
+  if (params.is_null()) {
+    return Json::object();
+  }
+  return params;
+}
+
+core::Result<std::optional<Json>> meta_from_params(const Json& params) {
+  if (!params.is_object() || !params.contains("_meta")) {
+    return std::optional<Json>{};
+  }
+  if (!params.at("_meta").is_object()) {
+    return std::unexpected(
+        make_protocol_error(static_cast<int>(ErrorCode::InvalidRequest),
+                            "params _meta must be an object"));
+  }
+  return std::optional<Json>{params.at("_meta")};
+}
+
+core::Result<Json> params_with_meta(Json params,
+                                    const std::optional<Json>& meta) {
+  params = normalized_params(std::move(params));
+  if (!meta.has_value()) {
+    return params;
+  }
+  if (!params.is_object()) {
+    return std::unexpected(
+        make_protocol_error(static_cast<int>(ErrorCode::InvalidRequest),
+                            "params must be an object when _meta is present"));
+  }
+  params["_meta"] = *meta;
+  return params;
+}
+
+bool should_serialize_params(const Json& params) {
+  return !params.is_object() || !params.empty();
+}
+
 std::optional<RequestId> from_rpc_id(const jsonrpcpp::Id& id) {
   using ValueType = jsonrpcpp::Id::value_t;
 
@@ -89,10 +127,11 @@ std::optional<RequestId> from_rpc_id(const jsonrpcpp::Id& id) {
 
 core::Result<JsonRpcRequest> from_request(const jsonrpcpp::Request& request,
                                           const Json& document) {
+  (void)document;
   JsonRpcRequest message;
   message.method = request.method();
-  message.params = request.params().to_json();
-  const auto meta = meta_from_document(document);
+  message.params = normalized_params(request.params().to_json());
+  const auto meta = meta_from_params(message.params);
   if (!meta) {
     return std::unexpected(meta.error());
   }
@@ -109,10 +148,11 @@ core::Result<JsonRpcRequest> from_request(const jsonrpcpp::Request& request,
 
 core::Result<JsonRpcNotification> from_notification(
     const jsonrpcpp::Notification& notification, const Json& document) {
+  (void)document;
   JsonRpcNotification message;
   message.method = notification.method();
-  message.params = notification.params().to_json();
-  const auto meta = meta_from_document(document);
+  message.params = normalized_params(notification.params().to_json());
+  const auto meta = meta_from_params(message.params);
   if (!meta) {
     return std::unexpected(meta.error());
   }
@@ -299,9 +339,12 @@ core::Result<std::string> serialize_message(const JsonRpcMessage& message) {
           json["jsonrpc"] = std::string(JsonRpcVersion);
           json["id"] = request_id_to_json(value.id);
           json["method"] = value.method;
-          json["params"] = value.params;
-          if (value.meta.has_value()) {
-            json["_meta"] = *value.meta;
+          const auto params = params_with_meta(value.params, value.meta);
+          if (!params) {
+            return std::unexpected(params.error());
+          }
+          if (should_serialize_params(*params)) {
+            json["params"] = *params;
           }
           return json.dump();
         } else if constexpr (std::is_same_v<T, JsonRpcResponse>) {
@@ -337,9 +380,12 @@ core::Result<std::string> serialize_message(const JsonRpcMessage& message) {
           Json json = Json::object();
           json["jsonrpc"] = std::string(JsonRpcVersion);
           json["method"] = value.method;
-          json["params"] = value.params;
-          if (value.meta.has_value()) {
-            json["_meta"] = *value.meta;
+          const auto params = params_with_meta(value.params, value.meta);
+          if (!params) {
+            return std::unexpected(params.error());
+          }
+          if (should_serialize_params(*params)) {
+            json["params"] = *params;
           }
           return json.dump();
         }

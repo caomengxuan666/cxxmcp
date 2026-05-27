@@ -71,6 +71,8 @@ struct ContentBlock {
   Json annotations = Json::object();
   /// Optional `_meta` extension object preserved on the wire.
   std::optional<Json> meta;
+  /// Unknown JSON members preserved for forward-compatible round trips.
+  Json extensions = Json::object();
 
   /// @brief Creates a text content block.
   static ContentBlock text_content(std::string value) {
@@ -182,6 +184,8 @@ struct ToolDefinition {
   Json input_schema = Json::object();
   /// Optional JSON Schema object describing structured result content.
   Json output_schema = Json::object();
+  /// Whether output_schema was explicitly present on the wire or configured.
+  bool output_schema_present = false;
   /// Whether the tool may stream partial results outside a single response.
   bool streaming = false;
   /// Optional icon descriptors for client presentation.
@@ -192,6 +196,8 @@ struct ToolDefinition {
   Json annotations = Json::object();
   /// Optional `_meta` extension object preserved on the wire.
   std::optional<Json> meta;
+  /// Unknown JSON members preserved for forward-compatible round trips.
+  Json extensions = Json::object();
 
   /// @brief Returns the effective task support mode for this tool.
   TaskSupport task_support() const noexcept {
@@ -231,6 +237,7 @@ class ToolDefinitionBuilder {
 
   ToolDefinitionBuilder& output_schema(Json schema) {
     definition_.output_schema = std::move(schema);
+    definition_.output_schema_present = true;
     return *this;
   }
 
@@ -290,6 +297,8 @@ struct ToolCall {
   std::optional<TaskRequestParameters> task;
   /// Optional `_meta` extension object preserved on the wire.
   std::optional<Json> meta;
+  /// Unknown JSON members preserved for forward-compatible round trips.
+  Json extensions = Json::object();
 };
 
 /// @brief Result object for `tools/list`.
@@ -300,6 +309,8 @@ struct ToolsListResult {
   std::optional<std::string> next_cursor;
   /// Optional `_meta` extension object preserved on the wire.
   std::optional<Json> meta;
+  /// Unknown JSON members preserved for forward-compatible round trips.
+  Json extensions = Json::object();
 };
 
 /// @brief Result object for `tools/call`.
@@ -308,10 +319,31 @@ struct ToolResult {
   std::vector<ContentBlock> content;
   /// Optional machine-readable result matching the tool output schema.
   std::optional<Json> structured_content;
-  /// True when the tool call completed with a domain-level error result.
-  bool is_error = false;
+  /// Optional domain-level error signal. Missing means the peer did not state
+  /// whether the tool call produced an error; explicit false is preserved.
+  std::optional<bool> is_error;
   /// Optional `_meta` extension object preserved on the wire.
   std::optional<Json> meta;
+  /// Unknown JSON members preserved for forward-compatible round trips.
+  Json extensions = Json::object();
+
+  /// @brief Convenience predicate treating a missing signal as success.
+  bool is_error_result() const noexcept { return is_error.value_or(false); }
+
+  /// @brief Creates a successful text-only tool result.
+  static ToolResult text(std::string value) {
+    ToolResult result;
+    result.content.push_back(ContentBlock::text_content(std::move(value)));
+    result.is_error = false;
+    return result;
+  }
+
+  /// @brief Creates an error text-only tool result.
+  static ToolResult error_text(std::string value) {
+    ToolResult result = text(std::move(value));
+    result.is_error = true;
+    return result;
+  }
 };
 
 /// @brief Builds an InvalidRequest error for tool JSON validation failures.
@@ -409,6 +441,7 @@ inline Json content_block_to_json(const ContentBlock& block) {
   if (block.meta.has_value()) {
     json["_meta"] = *block.meta;
   }
+  append_json_extensions(json, block.extensions);
   return json;
 }
 
@@ -430,13 +463,11 @@ inline core::Result<ContentBlock> content_block_from_json(const Json& json) {
   }
 
   ContentBlock block;
-  if (json.contains("type")) {
-    if (!json.at("type").is_string()) {
-      return std::unexpected(
-          tool_json_error("content block type must be a string"));
-    }
-    block.type = json.at("type").get<std::string>();
+  if (!json.contains("type") || !json.at("type").is_string()) {
+    return std::unexpected(
+        tool_json_error("content block requires a string type"));
   }
+  block.type = json.at("type").get<std::string>();
 
   if (block.type == "image" || block.type == "audio") {
     const auto data = required_content_string(
@@ -468,34 +499,36 @@ inline core::Result<ContentBlock> content_block_from_json(const Json& json) {
       return std::unexpected(resource.error());
     }
     block.resource_link = *resource;
+  } else if (block.type == "text") {
+    const auto text = required_content_string(
+        json, "text", "text content block requires string text");
+    if (!text) {
+      return std::unexpected(text.error());
+    }
+    block.text = *text;
   } else {
-    if (json.contains("text")) {
-      if (!json.at("text").is_string()) {
-        return std::unexpected(
-            tool_json_error("content block text must be a string"));
-      }
-      block.text = json.at("text").get<std::string>();
-    }
-
-    if (json.contains("data")) {
-      block.data = json.at("data");
-    }
-
-    if (json.contains("mimeType")) {
-      if (!json.at("mimeType").is_string()) {
-        return std::unexpected(
-            tool_json_error("content block mimeType must be a string"));
-      }
-      block.mime_type = json.at("mimeType").get<std::string>();
-    }
+    return std::unexpected(
+        tool_json_error("content block type is not supported"));
   }
 
   if (json.contains("annotations")) {
+    if (!json.at("annotations").is_object()) {
+      return std::unexpected(
+          tool_json_error("content block annotations must be an object"));
+    }
     block.annotations = json.at("annotations");
   }
   if (json.contains("_meta")) {
+    if (!json.at("_meta").is_object()) {
+      return std::unexpected(
+          tool_json_error("content block _meta must be an object"));
+    }
     block.meta = json.at("_meta");
   }
+  block.extensions = collect_json_extensions(
+      json,
+      {"type", "text", "data", "mimeType", "resource", "uri", "name", "title",
+       "description", "mimeType", "size", "icons", "annotations", "_meta"});
 
   return block;
 }
@@ -507,12 +540,16 @@ inline Json tool_definition_to_json(const ToolDefinition& definition) {
     json["title"] = definition.title;
   }
   json["name"] = definition.name;
-  json["description"] = definition.description;
+  if (!definition.description.empty()) {
+    json["description"] = definition.description;
+  }
   json["inputSchema"] = definition.input_schema;
-  if (!definition.output_schema.empty()) {
+  if (definition.output_schema_present || !definition.output_schema.empty()) {
     json["outputSchema"] = definition.output_schema;
   }
-  json["streaming"] = definition.streaming;
+  if (definition.streaming) {
+    json["streaming"] = definition.streaming;
+  }
   if (!definition.icons.empty()) {
     json["icons"] = Json::array();
     for (const auto& icon : definition.icons) {
@@ -528,6 +565,7 @@ inline Json tool_definition_to_json(const ToolDefinition& definition) {
   if (definition.meta.has_value()) {
     json["_meta"] = *definition.meta;
   }
+  append_json_extensions(json, definition.extensions);
   return json;
 }
 
@@ -562,12 +600,19 @@ inline core::Result<ToolDefinition> tool_definition_from_json(
     definition.description = json.at("description").get<std::string>();
   }
 
-  if (json.contains("inputSchema")) {
-    definition.input_schema = json.at("inputSchema");
+  if (!json.contains("inputSchema") || !json.at("inputSchema").is_object()) {
+    return std::unexpected(
+        tool_json_error("tool definition requires object inputSchema"));
   }
+  definition.input_schema = json.at("inputSchema");
 
   if (json.contains("outputSchema")) {
+    if (!json.at("outputSchema").is_object()) {
+      return std::unexpected(
+          tool_json_error("tool definition outputSchema must be an object"));
+    }
     definition.output_schema = json.at("outputSchema");
+    definition.output_schema_present = true;
   }
 
   if (json.contains("streaming")) {
@@ -602,12 +647,23 @@ inline core::Result<ToolDefinition> tool_definition_from_json(
   }
 
   if (json.contains("annotations")) {
+    if (!json.at("annotations").is_object()) {
+      return std::unexpected(
+          tool_json_error("tool definition annotations must be an object"));
+    }
     definition.annotations = json.at("annotations");
   }
 
   if (json.contains("_meta")) {
+    if (!json.at("_meta").is_object()) {
+      return std::unexpected(
+          tool_json_error("tool definition _meta must be an object"));
+    }
     definition.meta = json.at("_meta");
   }
+  definition.extensions = collect_json_extensions(
+      json, {"title", "name", "description", "inputSchema", "outputSchema",
+             "streaming", "icons", "execution", "annotations", "_meta"});
 
   return definition;
 }
@@ -625,6 +681,7 @@ inline Json tools_list_result_to_json(const ToolsListResult& result) {
   if (result.meta.has_value()) {
     json["_meta"] = *result.meta;
   }
+  append_json_extensions(json, result.extensions);
   return json;
 }
 
@@ -663,6 +720,8 @@ inline core::Result<ToolsListResult> tools_list_result_from_json(
     }
     result.meta = json.at("_meta");
   }
+  result.extensions =
+      collect_json_extensions(json, {"tools", "nextCursor", "_meta"});
   return result;
 }
 
@@ -679,6 +738,7 @@ inline Json tool_call_to_json(const ToolCall& call) {
   if (call.meta.has_value()) {
     json["_meta"] = *call.meta;
   }
+  append_json_extensions(json, call.extensions);
   return json;
 }
 
@@ -717,6 +777,8 @@ inline core::Result<ToolCall> tool_call_from_json(const Json& json) {
     }
     call.meta = json.at("_meta");
   }
+  call.extensions =
+      collect_json_extensions(json, {"name", "arguments", "task", "_meta"});
   return call;
 }
 
@@ -730,12 +792,13 @@ inline Json tool_result_to_json(const ToolResult& result) {
   if (result.structured_content.has_value()) {
     json["structuredContent"] = *result.structured_content;
   }
-  if (result.is_error) {
-    json["isError"] = true;
+  if (result.is_error.has_value()) {
+    json["isError"] = *result.is_error;
   }
   if (result.meta.has_value()) {
     json["_meta"] = *result.meta;
   }
+  append_json_extensions(json, result.extensions);
   return json;
 }
 
@@ -744,6 +807,11 @@ inline Json tool_result_to_json(const ToolResult& result) {
 inline core::Result<ToolResult> tool_result_from_json(const Json& json) {
   if (!json.is_object()) {
     return std::unexpected(tool_json_error("tool result must be an object"));
+  }
+  if (!json.contains("content") && !json.contains("structuredContent") &&
+      !json.contains("isError") && !json.contains("_meta")) {
+    return std::unexpected(tool_json_error(
+        "tool result requires content, structuredContent, isError, or _meta"));
   }
 
   ToolResult result;
@@ -780,6 +848,8 @@ inline core::Result<ToolResult> tool_result_from_json(const Json& json) {
     }
     result.meta = json.at("_meta");
   }
+  result.extensions = collect_json_extensions(
+      json, {"content", "structuredContent", "isError", "_meta"});
 
   return result;
 }

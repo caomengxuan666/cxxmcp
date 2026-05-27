@@ -10,8 +10,10 @@
 /// optional model preferences, and generation controls; the response carries
 /// one generated message and the model that produced it.
 
+#include <algorithm>
 #include <optional>
 #include <string>
+#include <string_view>
 #include <utility>
 #include <vector>
 
@@ -36,6 +38,8 @@ enum class ToolChoiceMode {
 struct ToolChoice {
   /// Optional selection mode. Missing preserves an empty object if present.
   std::optional<ToolChoiceMode> mode;
+  /// Unknown JSON members preserved for forward-compatible round trips.
+  Json extensions = Json::object();
 
   /// @brief Lets the model decide whether to use tools.
   static ToolChoice auto_choice() { return ToolChoice{ToolChoiceMode::Auto}; }
@@ -57,6 +61,8 @@ struct ToolUseContent {
   Json input = Json::object();
   /// Optional `_meta` extension object preserved on the wire.
   std::optional<Json> meta;
+  /// Unknown JSON members preserved for forward-compatible round trips.
+  Json extensions = Json::object();
 };
 
 /// @brief User-side result for a prior sampling tool call.
@@ -71,6 +77,8 @@ struct ToolResultContent {
   std::optional<bool> is_error;
   /// Optional `_meta` extension object preserved on the wire.
   std::optional<Json> meta;
+  /// Unknown JSON members preserved for forward-compatible round trips.
+  Json extensions = Json::object();
 };
 
 /// @brief One sampling message content item.
@@ -133,12 +141,24 @@ struct SamplingMessage {
   std::vector<SamplingMessageContent> contents;
   /// Optional `_meta` extension object preserved on the wire.
   std::optional<Json> meta;
+  /// Unknown JSON members preserved for forward-compatible round trips.
+  Json extensions = Json::object();
+
+  /// @brief Creates a text-only sampling message for the given role.
+  static SamplingMessage text(std::string role, std::string value) {
+    SamplingMessage message;
+    message.role = std::move(role);
+    message.content = ContentBlock::text_content(std::move(value));
+    return message;
+  }
 };
 
 /// @brief Soft model name hint for sampling.
 struct ModelHint {
   /// Model family, name, or alias preferred by the requester.
   std::string name;
+  /// Unknown JSON members preserved for forward-compatible round trips.
+  Json extensions = Json::object();
 };
 
 /// @brief Preferences used by the client when choosing a model.
@@ -151,6 +171,8 @@ struct ModelPreferences {
   std::optional<double> speed_priority;
   /// Optional priority for model capability, typically normalized by the peer.
   std::optional<double> intelligence_priority;
+  /// Unknown JSON members preserved for forward-compatible round trips.
+  Json extensions = Json::object();
 };
 
 /// @brief Parameters for `sampling/createMessage`.
@@ -179,6 +201,8 @@ struct CreateMessageParams {
   std::vector<ToolDefinition> tools;
   /// Optional tool selection behavior.
   std::optional<ToolChoice> tool_choice;
+  /// Unknown JSON members preserved for forward-compatible round trips.
+  Json extensions = Json::object();
 };
 
 /// @brief Result object for `sampling/createMessage`.
@@ -195,12 +219,95 @@ struct CreateMessageResult {
   std::string stop_reason;
   /// Optional `_meta` extension object preserved on the wire.
   std::optional<Json> meta;
+  /// Unknown JSON members preserved for forward-compatible round trips.
+  Json extensions = Json::object();
+
+  /// @brief Creates a text-only sampling result for the given role and model.
+  static CreateMessageResult text(std::string role, std::string value,
+                                  std::string model = {}) {
+    CreateMessageResult result;
+    result.role = std::move(role);
+    result.content = ContentBlock::text_content(std::move(value));
+    result.model = std::move(model);
+    return result;
+  }
 };
 
 /// @brief Builds an InvalidRequest error for sampling JSON validation failures.
 inline core::Error sampling_json_error(std::string message) {
   return core::Error{
       static_cast<int>(ErrorCode::InvalidRequest), std::move(message), {}};
+}
+
+/// @brief Returns true for the MCP sampling message roles.
+inline bool sampling_role_is_valid(std::string_view role) noexcept {
+  return role == "user" || role == "assistant";
+}
+
+/// @brief Returns true for the MCP sampling includeContext values.
+inline bool sampling_include_context_is_valid(std::string_view value) noexcept {
+  return value == "allServers" || value == "none" || value == "thisServer";
+}
+
+/// @brief Validates SEP-1577 tool-use/tool-result placement for one message.
+inline core::Result<core::Unit> validate_sampling_message_content_roles(
+    const SamplingMessage& message) {
+  bool has_tool_result = false;
+  bool has_non_tool_result = false;
+  for (const auto& content : message.contents) {
+    if (content.is_tool_use() && message.role != "assistant") {
+      return std::unexpected(sampling_json_error(
+          "sampling tool_use content is only allowed in assistant messages"));
+    }
+    if (content.is_tool_result() && message.role != "user") {
+      return std::unexpected(sampling_json_error(
+          "sampling tool_result content is only allowed in user messages"));
+    }
+    has_tool_result = has_tool_result || content.is_tool_result();
+    has_non_tool_result = has_non_tool_result || !content.is_tool_result();
+  }
+  if (has_tool_result && has_non_tool_result) {
+    return std::unexpected(sampling_json_error(
+        "sampling tool_result messages must not mix other content types"));
+  }
+  return core::Unit{};
+}
+
+/// @brief Validates that every sampling tool result answers a prior tool use.
+inline core::Result<core::Unit> validate_sampling_tool_use_result_balance(
+    const std::vector<SamplingMessage>& messages) {
+  std::vector<std::string> pending_tool_use_ids;
+  for (const auto& message : messages) {
+    if (message.role == "assistant") {
+      for (const auto& content : message.contents) {
+        if (content.tool_use.has_value()) {
+          pending_tool_use_ids.push_back(content.tool_use->id);
+        }
+      }
+      continue;
+    }
+    if (message.role != "user") {
+      continue;
+    }
+    for (const auto& content : message.contents) {
+      if (!content.tool_result.has_value()) {
+        continue;
+      }
+      const auto found =
+          std::find(pending_tool_use_ids.begin(), pending_tool_use_ids.end(),
+                    content.tool_result->tool_use_id);
+      if (found == pending_tool_use_ids.end()) {
+        return std::unexpected(sampling_json_error(
+            "sampling tool_result content has no matching tool_use"));
+      }
+      pending_tool_use_ids.erase(found);
+    }
+  }
+  if (!pending_tool_use_ids.empty()) {
+    return std::unexpected(sampling_json_error(
+        "sampling tool_use content is missing a matching tool_result"));
+  }
+  return core::Unit{};
 }
 
 /// @brief Converts a tool-choice mode to the lowercase wire value.
@@ -237,6 +344,7 @@ inline Json tool_choice_to_json(const ToolChoice& choice) {
   if (choice.mode.has_value()) {
     json["mode"] = tool_choice_mode_to_string(*choice.mode);
   }
+  append_json_extensions(json, choice.extensions);
   return json;
 }
 
@@ -259,6 +367,7 @@ inline core::Result<ToolChoice> tool_choice_from_json(const Json& json) {
     }
     choice.mode = *mode;
   }
+  choice.extensions = collect_json_extensions(json, {"mode"});
   return choice;
 }
 
@@ -272,6 +381,7 @@ inline Json tool_use_content_to_json(const ToolUseContent& content) {
   if (content.meta.has_value()) {
     json["_meta"] = *content.meta;
   }
+  append_json_extensions(json, content.extensions);
   return json;
 }
 
@@ -305,6 +415,8 @@ inline core::Result<ToolUseContent> tool_use_content_from_json(
     }
     content.meta = json.at("_meta");
   }
+  content.extensions =
+      collect_json_extensions(json, {"type", "id", "name", "input", "_meta"});
   return content;
 }
 
@@ -328,6 +440,7 @@ inline Json tool_result_content_to_json(const ToolResultContent& content) {
   if (content.meta.has_value()) {
     json["_meta"] = *content.meta;
   }
+  append_json_extensions(json, content.extensions);
   return json;
 }
 
@@ -378,6 +491,9 @@ inline core::Result<ToolResultContent> tool_result_content_from_json(
     }
     content.meta = json.at("_meta");
   }
+  content.extensions =
+      collect_json_extensions(json, {"type", "toolUseId", "content",
+                                     "structuredContent", "isError", "_meta"});
   return content;
 }
 
@@ -419,6 +535,10 @@ inline core::Result<SamplingMessageContent> sampling_message_content_from_json(
   if (!block) {
     return std::unexpected(block.error());
   }
+  if (block->type == "resource" || block->type == "resource_link") {
+    return std::unexpected(sampling_json_error(
+        "sampling message content does not support resource content"));
+  }
   return SamplingMessageContent::from_content(*block);
 }
 
@@ -441,6 +561,7 @@ inline Json sampling_message_to_json(const SamplingMessage& message) {
   if (message.meta.has_value()) {
     json["_meta"] = *message.meta;
   }
+  append_json_extensions(json, message.extensions);
   return json;
 }
 
@@ -462,6 +583,10 @@ inline core::Result<SamplingMessage> sampling_message_from_json(
   }
   SamplingMessage message;
   message.role = json.at("role").get<std::string>();
+  if (!sampling_role_is_valid(message.role)) {
+    return std::unexpected(
+        sampling_json_error("sampling message role is not supported"));
+  }
   if (json.at("content").is_array()) {
     for (const auto& item : json.at("content")) {
       const auto content = sampling_message_content_from_json(item);
@@ -487,6 +612,12 @@ inline core::Result<SamplingMessage> sampling_message_from_json(
     }
     message.meta = json.at("_meta");
   }
+  message.extensions =
+      collect_json_extensions(json, {"role", "content", "_meta"});
+  if (const auto valid = validate_sampling_message_content_roles(message);
+      !valid) {
+    return std::unexpected(valid.error());
+  }
   return message;
 }
 
@@ -496,6 +627,7 @@ inline Json model_hint_to_json(const ModelHint& hint) {
   if (!hint.name.empty()) {
     json["name"] = hint.name;
   }
+  append_json_extensions(json, hint.extensions);
   return json;
 }
 
@@ -513,6 +645,7 @@ inline core::Result<ModelHint> model_hint_from_json(const Json& json) {
     }
     hint.name = json.at("name").get<std::string>();
   }
+  hint.extensions = collect_json_extensions(json, {"name"});
   return hint;
 }
 
@@ -534,6 +667,7 @@ inline Json model_preferences_to_json(const ModelPreferences& preferences) {
   if (preferences.intelligence_priority.has_value()) {
     json["intelligencePriority"] = *preferences.intelligence_priority;
   }
+  append_json_extensions(json, preferences.extensions);
   return json;
 }
 
@@ -586,6 +720,8 @@ inline core::Result<ModelPreferences> model_preferences_from_json(
       !ok) {
     return std::unexpected(ok.error());
   }
+  preferences.extensions = collect_json_extensions(
+      json, {"hints", "costPriority", "speedPriority", "intelligencePriority"});
   return preferences;
 }
 
@@ -631,6 +767,7 @@ inline Json create_message_params_to_json(const CreateMessageParams& params) {
   if (params.tool_choice.has_value()) {
     json["toolChoice"] = tool_choice_to_json(*params.tool_choice);
   }
+  append_json_extensions(json, params.extensions);
   return json;
 }
 
@@ -681,6 +818,10 @@ inline core::Result<CreateMessageParams> create_message_params_from_json(
           sampling_json_error("sampling includeContext must be a string"));
     }
     params.include_context = json.at("includeContext").get<std::string>();
+    if (!sampling_include_context_is_valid(*params.include_context)) {
+      return std::unexpected(
+          sampling_json_error("sampling includeContext is not supported"));
+    }
   }
   if (json.contains("temperature")) {
     if (!json.at("temperature").is_number()) {
@@ -744,6 +885,15 @@ inline core::Result<CreateMessageParams> create_message_params_from_json(
     }
     params.tool_choice = *tool_choice;
   }
+  params.extensions = collect_json_extensions(
+      json, {"messages", "modelPreferences", "systemPrompt", "includeContext",
+             "temperature", "maxTokens", "stopSequences", "metadata", "task",
+             "_meta", "tools", "toolChoice"});
+  if (const auto valid =
+          validate_sampling_tool_use_result_balance(params.messages);
+      !valid) {
+    return std::unexpected(valid.error());
+  }
   return params;
 }
 
@@ -771,6 +921,7 @@ inline Json create_message_result_to_json(const CreateMessageResult& result) {
   if (result.meta.has_value()) {
     json["_meta"] = *result.meta;
   }
+  append_json_extensions(json, result.extensions);
   return json;
 }
 
@@ -796,6 +947,10 @@ inline core::Result<CreateMessageResult> create_message_result_from_json(
   }
   CreateMessageResult result;
   result.role = json.at("role").get<std::string>();
+  if (result.role != "assistant") {
+    return std::unexpected(sampling_json_error(
+        "sampling/createMessage result role must be assistant"));
+  }
   if (json.at("content").is_array()) {
     for (const auto& item : json.at("content")) {
       const auto content = sampling_message_content_from_json(item);
@@ -828,6 +983,16 @@ inline core::Result<CreateMessageResult> create_message_result_from_json(
           "sampling/createMessage result _meta must be an object"));
     }
     result.meta = json.at("_meta");
+  }
+  result.extensions = collect_json_extensions(
+      json, {"role", "content", "model", "stopReason", "_meta"});
+  SamplingMessage result_message;
+  result_message.role = result.role;
+  result_message.contents = result.contents;
+  if (const auto valid =
+          validate_sampling_message_content_roles(result_message);
+      !valid) {
+    return std::unexpected(valid.error());
   }
   return result;
 }

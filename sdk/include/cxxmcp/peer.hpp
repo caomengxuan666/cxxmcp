@@ -61,6 +61,33 @@ inline protocol::JsonRpcResponse peer_error_response(
       request.id, peer_error_object_from_core_error(error));
 }
 
+inline protocol::JsonRpcResponse peer_auth_error_response(
+    const protocol::JsonRpcRequest& request, const core::Error& error) {
+  protocol::Json data = protocol::Json::object();
+  data["category"] = std::string(server::AuthErrorCategory);
+  if (!error.detail.empty()) {
+    data["detail"] = error.detail;
+  } else if (!error.message.empty()) {
+    data["detail"] = error.message;
+  }
+  return protocol::make_error_response(
+      request.id,
+      protocol::make_error(protocol::ErrorCode::PermissionDenied,
+                           "authentication failed", std::move(data)));
+}
+
+inline core::Error peer_params_error(core::Error error) {
+  if (error.code == static_cast<int>(protocol::ErrorCode::InvalidRequest)) {
+    error.code = static_cast<int>(protocol::ErrorCode::InvalidParams);
+  }
+  return error;
+}
+
+inline protocol::JsonRpcResponse peer_params_error_response(
+    const protocol::JsonRpcRequest& request, core::Error error) {
+  return peer_error_response(request, peer_params_error(std::move(error)));
+}
+
 inline std::string peer_request_cancellation_key(
     const protocol::RequestId& request_id) {
   return protocol::request_id_to_json(request_id).dump();
@@ -275,10 +302,24 @@ class Peer<RoleClient> {
       if (!payload) {
         return std::unexpected(payload.error());
       }
-      return detail::require_peer_initialize_payload(*payload);
+      auto checked = detail::require_peer_initialize_payload(*payload);
+      if (!checked) {
+        return std::unexpected(checked.error());
+      }
+      auto recorded = record_server_capabilities(*checked);
+      if (!recorded) {
+        return std::unexpected(recorded.error());
+      }
+      return *checked;
     }
     return client_.initialize(std::move(client_name),
                               std::move(client_version));
+  }
+
+  const std::optional<protocol::ServerCapabilities>& server_capabilities()
+      const noexcept {
+    return native_transport_ ? server_capabilities_
+                             : client_.server_capabilities();
   }
 
   core::Result<core::Unit> notify_initialized() {
@@ -290,7 +331,9 @@ class Peer<RoleClient> {
                                             std::string reason = {}) {
     protocol::CancelledNotificationParams params;
     params.request_id = std::move(request_id);
-    params.reason = std::move(reason);
+    if (!reason.empty()) {
+      params.reason = std::move(reason);
+    }
     return raw_notification(protocol::make_notification(
         std::string(protocol::CancelledNotificationMethod),
         protocol::cancelled_notification_params_to_json(params)));
@@ -303,7 +346,9 @@ class Peer<RoleClient> {
     params.progress_token = std::move(progress_token);
     params.progress = progress;
     params.total = total;
-    params.message = std::move(message);
+    if (!message.empty()) {
+      params.message = std::move(message);
+    }
     return raw_notification(protocol::make_notification(
         std::string(protocol::ProgressNotificationMethod),
         protocol::progress_notification_params_to_json(params)));
@@ -412,9 +457,23 @@ class Peer<RoleClient> {
     return *this;
   }
 
+  Peer& on_list_roots_request(
+      client::Client::RootsListRequestCancellationHandler handler) {
+    roots_list_request_cancellation_handler_ = handler;
+    client_.on_list_roots_request(std::move(handler));
+    return *this;
+  }
+
   Peer& on_create_message_request(
       client::Client::CreateMessageRequestHandler handler) {
     sampling_request_handler_ = handler;
+    client_.on_create_message_request(std::move(handler));
+    return *this;
+  }
+
+  Peer& on_create_message_request(
+      client::Client::SamplingRequestCancellationHandler handler) {
+    sampling_request_cancellation_handler_ = handler;
     client_.on_create_message_request(std::move(handler));
     return *this;
   }
@@ -426,8 +485,22 @@ class Peer<RoleClient> {
     return *this;
   }
 
+  Peer& on_create_elicitation_request(
+      client::Client::ElicitationRequestCancellationHandler handler) {
+    elicitation_request_cancellation_handler_ = handler;
+    client_.on_create_elicitation_request(std::move(handler));
+    return *this;
+  }
+
   Peer& on_custom_request(client::Client::CustomRequestHandler handler) {
     custom_request_handler_ = handler;
+    client_.on_custom_request(std::move(handler));
+    return *this;
+  }
+
+  Peer& on_custom_request(
+      client::Client::CustomRequestCancellationHandler handler) {
+    custom_request_cancellation_handler_ = handler;
     client_.on_custom_request(std::move(handler));
     return *this;
   }
@@ -475,23 +548,47 @@ class Peer<RoleClient> {
     if (handler.on_list_roots_request) {
       on_list_roots_request(handler.on_list_roots_request);
     }
+    if (handler.on_list_roots_request_with_cancellation) {
+      on_list_roots_request(handler.on_list_roots_request_with_cancellation);
+    }
     if (handler.on_create_message_request) {
       on_create_message_request(handler.on_create_message_request);
+    }
+    if (handler.on_create_message_request_with_cancellation) {
+      on_create_message_request(
+          handler.on_create_message_request_with_cancellation);
     }
     if (handler.on_create_elicitation_request) {
       on_create_elicitation_request(handler.on_create_elicitation_request);
     }
+    if (handler.on_create_elicitation_request_with_cancellation) {
+      on_create_elicitation_request(
+          handler.on_create_elicitation_request_with_cancellation);
+    }
     if (handler.on_custom_request) {
       on_custom_request(handler.on_custom_request);
+    }
+    if (handler.on_custom_request_with_cancellation) {
+      on_custom_request(handler.on_custom_request_with_cancellation);
     }
     if (handler.on_roots_list_request) {
       on_list_roots_request(handler.on_roots_list_request);
     }
+    if (handler.on_roots_list_request_with_cancellation) {
+      on_list_roots_request(handler.on_roots_list_request_with_cancellation);
+    }
     if (handler.on_sampling_request) {
       on_create_message_request(handler.on_sampling_request);
     }
+    if (handler.on_sampling_request_with_cancellation) {
+      on_create_message_request(handler.on_sampling_request_with_cancellation);
+    }
     if (handler.on_elicitation_request) {
       on_create_elicitation_request(handler.on_elicitation_request);
+    }
+    if (handler.on_elicitation_request_with_cancellation) {
+      on_create_elicitation_request(
+          handler.on_elicitation_request_with_cancellation);
     }
     if (handler.on_raw_notification) {
       on_raw_notification(handler.on_raw_notification);
@@ -529,19 +626,21 @@ class Peer<RoleClient> {
       handler.on_task_status(task);
     });
     on_roots_list_changed([&handler]() { handler.on_roots_list_changed(); });
-    on_list_roots_request(
-        [&handler]() -> core::Result<protocol::RootsListResult> {
-          const auto response = handler.on_list_roots_request();
-          if (response.has_value()) {
-            return std::move(*response);
-          }
-          return std::unexpected(client::handler_method_not_found(
-              "client handler does not handle list_roots"));
-        });
+    on_list_roots_request([&handler](CancellationToken cancellation)
+                              -> core::Result<protocol::RootsListResult> {
+      const auto response = handler.on_list_roots_request(cancellation);
+      if (response.has_value()) {
+        return std::move(*response);
+      }
+      return std::unexpected(client::handler_method_not_found(
+          "client handler does not handle list_roots"));
+    });
     on_create_message_request(
-        [&handler](const protocol::CreateMessageParams& params)
+        [&handler](const protocol::CreateMessageParams& params,
+                   CancellationToken cancellation)
             -> core::Result<protocol::CreateMessageResult> {
-          const auto response = handler.on_create_message_request(params);
+          const auto response =
+              handler.on_create_message_request(params, cancellation);
           if (response.has_value()) {
             return std::move(*response);
           }
@@ -549,18 +648,21 @@ class Peer<RoleClient> {
               "client handler does not handle create_message"));
         });
     on_create_elicitation_request(
-        [&handler](const protocol::CreateElicitationRequestParam& params)
+        [&handler](const protocol::CreateElicitationRequestParam& params,
+                   CancellationToken cancellation)
             -> core::Result<protocol::CreateElicitationResult> {
-          const auto response = handler.on_create_elicitation_request(params);
+          const auto response =
+              handler.on_create_elicitation_request(params, cancellation);
           if (response.has_value()) {
             return std::move(*response);
           }
           return std::unexpected(client::handler_method_not_found(
               "client handler does not handle elicitation"));
         });
-    on_custom_request([&handler](const protocol::JsonRpcRequest& request)
+    on_custom_request([&handler](const protocol::JsonRpcRequest& request,
+                                 CancellationToken cancellation)
                           -> core::Result<protocol::Json> {
-      const auto response = handler.on_custom_request(request);
+      const auto response = handler.on_custom_request(request, cancellation);
       if (response.has_value()) {
         return std::move(*response);
       }
@@ -614,6 +716,10 @@ class Peer<RoleClient> {
       return std::unexpected(errors::make(
           protocol::ErrorCode::InvalidRequest,
           "task-aware tool call requires task parameters", {}, "protocol"));
+    }
+    if (!supports_server_task_tool_call()) {
+      return std::unexpected(unsupported_server_capability(
+          "server does not support task-aware tool calls"));
     }
     auto payload = request_json(std::string(protocol::ToolsCallMethod),
                                 protocol::tool_call_to_json(call));
@@ -749,6 +855,10 @@ class Peer<RoleClient> {
 
   core::Result<protocol::CompleteResult> complete(
       const protocol::CompleteParams& request) {
+    if (!supports_server_completion()) {
+      return std::unexpected(
+          unsupported_server_capability("server does not support completion"));
+    }
     auto payload = request_json(std::string(protocol::CompletionCompleteMethod),
                                 protocol::complete_params_to_json(request));
     if (!payload) {
@@ -758,6 +868,10 @@ class Peer<RoleClient> {
   }
 
   core::Result<protocol::Json> complete(const protocol::Json& request) {
+    if (!supports_server_completion()) {
+      return std::unexpected(
+          unsupported_server_capability("server does not support completion"));
+    }
     return request_json(std::string(protocol::CompletionCompleteMethod),
                         request);
   }
@@ -860,6 +974,10 @@ class Peer<RoleClient> {
   }
 
   core::Result<std::vector<protocol::Task>> list_tasks() {
+    if (!supports_server_task_list()) {
+      return std::unexpected(unsupported_server_capability(
+          "server does not support task listing"));
+    }
     auto payload = request_json(std::string(protocol::TasksListMethod),
                                 protocol::Json::object());
     if (!payload) {
@@ -873,6 +991,10 @@ class Peer<RoleClient> {
   }
 
   core::Result<std::vector<protocol::Task>> list_all_tasks() {
+    if (!supports_server_task_list()) {
+      return std::unexpected(unsupported_server_capability(
+          "server does not support task listing"));
+    }
     return list_all_pages<protocol::Task>(
         std::string(protocol::TasksListMethod),
         [](const protocol::Json& payload) {
@@ -885,6 +1007,10 @@ class Peer<RoleClient> {
   }
 
   core::Result<protocol::Task> get_task(std::string_view task_id) {
+    if (!supports_server_tasks()) {
+      return std::unexpected(
+          unsupported_server_capability("server does not support tasks"));
+    }
     protocol::TaskGetParams params;
     params.task_id = std::string(task_id);
     auto payload = request_json(std::string(protocol::TasksGetMethod),
@@ -896,6 +1022,10 @@ class Peer<RoleClient> {
   }
 
   core::Result<protocol::Task> cancel_task(std::string_view task_id) {
+    if (!supports_server_task_cancel()) {
+      return std::unexpected(unsupported_server_capability(
+          "server does not support task cancellation"));
+    }
     protocol::TaskCancelParams params;
     params.task_id = std::string(task_id);
     auto payload = request_json(std::string(protocol::TasksCancelMethod),
@@ -907,6 +1037,10 @@ class Peer<RoleClient> {
   }
 
   core::Result<protocol::Json> task_result(std::string_view task_id) {
+    if (!supports_server_tasks()) {
+      return std::unexpected(
+          unsupported_server_capability("server does not support tasks"));
+    }
     protocol::TaskResultParams params;
     params.task_id = std::string(task_id);
     return request_json(std::string(protocol::TasksResultMethod),
@@ -920,6 +1054,10 @@ class Peer<RoleClient> {
                                           "logging/setLevel level is invalid",
                                           {}, "protocol"));
     }
+    if (!supports_server_logging()) {
+      return std::unexpected(
+          unsupported_server_capability("server does not support logging"));
+    }
     protocol::LoggingSetLevelParams params;
     params.level = *parsed;
     return request_unit(std::string(protocol::LoggingSetLevelMethod),
@@ -927,6 +1065,10 @@ class Peer<RoleClient> {
   }
 
   core::Result<core::Unit> subscribe(std::string_view uri) {
+    if (!supports_server_resource_subscribe()) {
+      return std::unexpected(unsupported_server_capability(
+          "server does not support resource subscriptions"));
+    }
     protocol::ResourcesSubscribeParams params;
     params.uri = std::string(uri);
     return request_unit(std::string(protocol::ResourcesSubscribeMethod),
@@ -934,6 +1076,10 @@ class Peer<RoleClient> {
   }
 
   core::Result<core::Unit> unsubscribe(std::string_view uri) {
+    if (!supports_server_resource_subscribe()) {
+      return std::unexpected(unsupported_server_capability(
+          "server does not support resource subscriptions"));
+    }
     protocol::ResourcesUnsubscribeParams params;
     params.uri = std::string(uri);
     return request_unit(std::string(protocol::ResourcesUnsubscribeMethod),
@@ -1099,6 +1245,12 @@ class Peer<RoleClient> {
                            "task-aware tool call requires task parameters", {},
                            "protocol")));
     }
+    if (!supports_server_task_tool_call()) {
+      return RequestHandle<protocol::CreateTaskResult>::ready(
+          next_peer_request_id(),
+          std::unexpected(unsupported_server_capability(
+              "server does not support task-aware tool calls")));
+    }
 
     return request_async<protocol::CreateTaskResult>(
         std::string(protocol::ToolsCallMethod),
@@ -1150,6 +1302,11 @@ class Peer<RoleClient> {
 
   RequestHandle<protocol::CompleteResult> complete_async(
       const protocol::CompleteParams& request, RequestOptions options = {}) {
+    if (!supports_server_completion()) {
+      return RequestHandle<protocol::CompleteResult>::ready(
+          next_peer_request_id(), std::unexpected(unsupported_server_capability(
+                                      "server does not support completion")));
+    }
     return request_async<protocol::CompleteResult>(
         std::string(protocol::CompletionCompleteMethod),
         protocol::complete_params_to_json(request),
@@ -1161,6 +1318,11 @@ class Peer<RoleClient> {
 
   RequestHandle<protocol::Json> complete_async(const protocol::Json& request,
                                                RequestOptions options = {}) {
+    if (!supports_server_completion()) {
+      return RequestHandle<protocol::Json>::ready(
+          next_peer_request_id(), std::unexpected(unsupported_server_capability(
+                                      "server does not support completion")));
+    }
     return request_async(std::string(protocol::CompletionCompleteMethod),
                          request, std::move(options));
   }
@@ -1203,6 +1365,11 @@ class Peer<RoleClient> {
 
   RequestHandle<std::vector<protocol::Task>> list_tasks_async(
       RequestOptions options = {}) {
+    if (!supports_server_task_list()) {
+      return RequestHandle<std::vector<protocol::Task>>::ready(
+          next_peer_request_id(), std::unexpected(unsupported_server_capability(
+                                      "server does not support task listing")));
+    }
     return request_async<std::vector<protocol::Task>>(
         std::string(protocol::TasksListMethod), protocol::Json::object(),
         [](const protocol::Json& payload)
@@ -1218,6 +1385,11 @@ class Peer<RoleClient> {
 
   RequestHandle<protocol::Task> get_task_async(
       const protocol::TaskGetParams& request, RequestOptions options = {}) {
+    if (!supports_server_tasks()) {
+      return RequestHandle<protocol::Task>::ready(
+          next_peer_request_id(), std::unexpected(unsupported_server_capability(
+                                      "server does not support tasks")));
+    }
     return request_async<protocol::Task>(
         std::string(protocol::TasksGetMethod),
         protocol::task_get_params_to_json(request),
@@ -1236,6 +1408,12 @@ class Peer<RoleClient> {
 
   RequestHandle<protocol::Task> cancel_task_async(
       const protocol::TaskCancelParams& request, RequestOptions options = {}) {
+    if (!supports_server_task_cancel()) {
+      return RequestHandle<protocol::Task>::ready(
+          next_peer_request_id(),
+          std::unexpected(unsupported_server_capability(
+              "server does not support task cancellation")));
+    }
     return request_async<protocol::Task>(
         std::string(protocol::TasksCancelMethod),
         protocol::task_cancel_params_to_json(request),
@@ -1254,6 +1432,11 @@ class Peer<RoleClient> {
 
   RequestHandle<protocol::Json> task_result_async(
       const protocol::TaskResultParams& request, RequestOptions options = {}) {
+    if (!supports_server_tasks()) {
+      return RequestHandle<protocol::Json>::ready(
+          next_peer_request_id(), std::unexpected(unsupported_server_capability(
+                                      "server does not support tasks")));
+    }
     return request_async(std::string(protocol::TasksResultMethod),
                          protocol::task_result_params_to_json(request),
                          std::move(options));
@@ -1346,14 +1529,39 @@ class Peer<RoleClient> {
                            : std::optional<protocol::Json>{std::move(detail)}));
   }
 
+  CancellationToken begin_client_request_cancellation(
+      const protocol::RequestId& request_id) {
+    CancellationSource source;
+    auto token = source.token();
+    std::lock_guard lock(*client_request_cancellations_mutex_);
+    (*client_request_cancellations_)[detail::peer_request_cancellation_key(
+        request_id)] = std::move(source);
+    return token;
+  }
+
+  void end_client_request_cancellation(
+      const protocol::RequestId& request_id) noexcept {
+    std::lock_guard lock(*client_request_cancellations_mutex_);
+    client_request_cancellations_->erase(
+        detail::peer_request_cancellation_key(request_id));
+  }
+
+  void cancel_client_request(const protocol::RequestId& request_id) noexcept {
+    std::lock_guard lock(*client_request_cancellations_mutex_);
+    const auto it = client_request_cancellations_->find(
+        detail::peer_request_cancellation_key(request_id));
+    if (it != client_request_cancellations_->end()) {
+      it->second.cancel();
+    }
+  }
+
   core::Result<core::Unit> handle_native_notification(
       const protocol::JsonRpcNotification& notification) try {
     if (notification.method == std::string(protocol::InitializedMethod) &&
         initialized_handler_) {
       initialized_handler_();
     } else if (notification.method ==
-                   std::string(protocol::CancelledNotificationMethod) &&
-               cancelled_handler_) {
+               std::string(protocol::CancelledNotificationMethod)) {
       const auto params = protocol::cancelled_notification_params_from_json(
           notification.params);
       if (!params) {
@@ -1361,7 +1569,11 @@ class Peer<RoleClient> {
             errors::make(protocol::ErrorCode::InvalidParams,
                          "cancelled notification requires a requestId"));
       }
-      cancelled_handler_(params->request_id, params->reason);
+      cancel_client_request(params->request_id);
+      if (cancelled_handler_) {
+        cancelled_handler_(params->request_id,
+                           params->reason.value_or(std::string{}));
+      }
     } else if (notification.method ==
                    std::string(protocol::LoggingMessageNotificationMethod) &&
                logging_message_handler_) {
@@ -1463,7 +1675,23 @@ class Peer<RoleClient> {
       return protocol::make_response(request.id, protocol::Json::object());
     }
 
+    const auto request_cancellation =
+        begin_client_request_cancellation(request.id);
+    const std::shared_ptr<void> request_cancellation_cleanup(
+        nullptr, [this, request_id = request.id](void*) noexcept {
+          end_client_request_cancellation(request_id);
+        });
+
     if (request.method == std::string(protocol::RootsListMethod)) {
+      if (roots_list_request_cancellation_handler_) {
+        const auto roots =
+            roots_list_request_cancellation_handler_(request_cancellation);
+        if (!roots) {
+          return native_error_response(request, roots.error());
+        }
+        return protocol::make_response(
+            request.id, protocol::roots_list_result_to_json(*roots));
+      }
       if (roots_list_request_handler_) {
         const auto roots = roots_list_request_handler_();
         if (!roots) {
@@ -1480,7 +1708,8 @@ class Peer<RoleClient> {
     }
 
     if (request.method == std::string(protocol::SamplingCreateMessageMethod)) {
-      if (!sampling_request_handler_) {
+      if (!sampling_request_handler_ &&
+          !sampling_request_cancellation_handler_) {
         return native_error_response(
             request, protocol::ErrorCode::MethodNotFound,
             "sampling request handler is not configured");
@@ -1488,9 +1717,12 @@ class Peer<RoleClient> {
       const auto params =
           protocol::create_message_params_from_json(request.params);
       if (!params) {
-        return native_error_response(request, params.error());
+        return detail::peer_params_error_response(request, params.error());
       }
-      const auto result = sampling_request_handler_(*params);
+      const auto result = sampling_request_cancellation_handler_
+                              ? sampling_request_cancellation_handler_(
+                                    *params, request_cancellation)
+                              : sampling_request_handler_(*params);
       if (!result) {
         return native_error_response(request, result.error());
       }
@@ -1499,26 +1731,49 @@ class Peer<RoleClient> {
     }
 
     if (request.method == std::string(protocol::ElicitationCreateMethod)) {
-      if (!elicitation_request_handler_) {
-        return native_error_response(
-            request, protocol::ErrorCode::MethodNotFound,
-            "elicitation request handler is not configured");
-      }
       const auto params =
           protocol::create_elicitation_request_param_from_json(request.params);
       if (!params) {
-        return native_error_response(request, params.error());
+        return detail::peer_params_error_response(request, params.error());
       }
-      const auto result = elicitation_request_handler_(*params);
+      if (!elicitation_request_handler_ &&
+          !elicitation_request_cancellation_handler_) {
+        protocol::CreateElicitationResult decline_result;
+        decline_result.action = protocol::ElicitationAction::Decline;
+        return protocol::make_response(
+            request.id,
+            protocol::create_elicitation_result_to_json(decline_result));
+      }
+      const auto result = elicitation_request_cancellation_handler_
+                              ? elicitation_request_cancellation_handler_(
+                                    *params, request_cancellation)
+                              : elicitation_request_handler_(*params);
       if (!result) {
         return native_error_response(request, result.error());
+      }
+      const auto capabilities =
+          detail::default_peer_client_capabilities(client_capabilities_);
+      if (params->mode == protocol::ElicitationMode::Form &&
+          capabilities.elicitation.form_schema_validation) {
+        const auto valid = protocol::validate_elicitation_result_content(
+            params->requested_schema, *result);
+        if (!valid) {
+          return native_error_response(
+              request,
+              errors::make(protocol::ErrorCode::InternalError,
+                           "elicitation result failed schema validation",
+                           valid.error().message));
+        }
       }
       return protocol::make_response(
           request.id, protocol::create_elicitation_result_to_json(*result));
     }
 
-    if (custom_request_handler_) {
-      const auto result = custom_request_handler_(request);
+    if (custom_request_cancellation_handler_ || custom_request_handler_) {
+      const auto result = custom_request_cancellation_handler_
+                              ? custom_request_cancellation_handler_(
+                                    request, request_cancellation)
+                              : custom_request_handler_(request);
       if (!result) {
         return native_error_response(request, result.error());
       }
@@ -1531,6 +1786,72 @@ class Peer<RoleClient> {
     return native_error_response(request, errors::handler_failed(ex.what()));
   } catch (...) {
     return native_error_response(request, errors::handler_unknown_exception());
+  }
+
+  static core::Error unsupported_server_capability(std::string message) {
+    return errors::make(protocol::ErrorCode::MethodNotFound, std::move(message),
+                        {}, "protocol");
+  }
+
+  core::Result<core::Unit> record_server_capabilities(
+      const protocol::Json& initialize_payload) {
+    if (!initialize_payload.is_object()) {
+      return std::unexpected(errors::make(
+          protocol::ErrorCode::InvalidRequest,
+          "initialize response must be an object", {}, "protocol"));
+    }
+    if (!initialize_payload.contains("capabilities")) {
+      server_capabilities_ = protocol::ServerCapabilities{};
+      return core::Unit{};
+    }
+    const auto parsed = protocol::server_capabilities_from_json(
+        initialize_payload.at("capabilities"));
+    if (!parsed.has_value()) {
+      return std::unexpected(errors::make(
+          protocol::ErrorCode::InvalidRequest,
+          "initialize response contains invalid server capabilities", {},
+          "protocol"));
+    }
+    server_capabilities_ = *parsed;
+    return core::Unit{};
+  }
+
+  bool supports_server_completion() const noexcept {
+    const auto& capabilities = server_capabilities();
+    return !capabilities.has_value() || capabilities->completions.enabled;
+  }
+
+  bool supports_server_logging() const noexcept {
+    const auto& capabilities = server_capabilities();
+    return !capabilities.has_value() || capabilities->logging.enabled;
+  }
+
+  bool supports_server_resource_subscribe() const noexcept {
+    const auto& capabilities = server_capabilities();
+    return !capabilities.has_value() || capabilities->resources.subscribe;
+  }
+
+  bool supports_server_task_list() const noexcept {
+    const auto& capabilities = server_capabilities();
+    return !capabilities.has_value() ||
+           (capabilities->tasks.has_value() && capabilities->tasks->list);
+  }
+
+  bool supports_server_task_cancel() const noexcept {
+    const auto& capabilities = server_capabilities();
+    return !capabilities.has_value() ||
+           (capabilities->tasks.has_value() && capabilities->tasks->cancel);
+  }
+
+  bool supports_server_tasks() const noexcept {
+    const auto& capabilities = server_capabilities();
+    return !capabilities.has_value() || capabilities->tasks.has_value();
+  }
+
+  bool supports_server_task_tool_call() const noexcept {
+    const auto& capabilities = server_capabilities();
+    return !capabilities.has_value() ||
+           (capabilities->tasks.has_value() && capabilities->tasks->tools_call);
   }
 
   core::Result<protocol::Json> request_json(std::string method,
@@ -1620,6 +1941,7 @@ class Peer<RoleClient> {
   std::shared_ptr<std::atomic<std::int64_t>> next_request_id_ =
       std::make_shared<std::atomic<std::int64_t>>(1);
   std::optional<protocol::ClientCapabilities> client_capabilities_;
+  std::optional<protocol::ServerCapabilities> server_capabilities_;
   std::vector<protocol::Root> roots_;
   client::Client::InitializedHandler initialized_handler_;
   client::Client::CancelledHandler cancelled_handler_;
@@ -1633,10 +1955,23 @@ class Peer<RoleClient> {
   client::Client::TaskStatusHandler task_status_handler_;
   client::Client::ListChangedHandler roots_list_changed_handler_;
   client::Client::RootsListRequestHandler roots_list_request_handler_;
+  client::Client::RootsListRequestCancellationHandler
+      roots_list_request_cancellation_handler_;
   client::Client::SamplingRequestHandler sampling_request_handler_;
+  client::Client::SamplingRequestCancellationHandler
+      sampling_request_cancellation_handler_;
   client::Client::ElicitationRequestHandler elicitation_request_handler_;
+  client::Client::ElicitationRequestCancellationHandler
+      elicitation_request_cancellation_handler_;
   client::Client::CustomRequestHandler custom_request_handler_;
+  client::Client::CustomRequestCancellationHandler
+      custom_request_cancellation_handler_;
   client::Client::RawNotificationHandler raw_notification_handler_;
+  std::shared_ptr<std::mutex> client_request_cancellations_mutex_ =
+      std::make_shared<std::mutex>();
+  std::shared_ptr<std::unordered_map<std::string, CancellationSource>>
+      client_request_cancellations_ = std::make_shared<
+          std::unordered_map<std::string, CancellationSource>>();
   client::Client client_;
 };
 
@@ -1675,12 +2010,38 @@ class Peer<RoleServer> {
   }
 
   Peer& set_completion_handler(server::Server::JsonHandler handler) {
+    if (handler) {
+      completion_handler_ = [handler](const protocol::Json& params,
+                                      const server::SessionContext&) mutable {
+        return handler(params);
+      };
+    } else {
+      completion_handler_ = {};
+    }
+    server_->set_completion_handler(std::move(handler));
+    return *this;
+  }
+
+  Peer& set_completion_handler(server::Server::JsonContextHandler handler) {
     completion_handler_ = handler;
     server_->set_completion_handler(std::move(handler));
     return *this;
   }
 
   Peer& set_sampling_handler(server::Server::JsonHandler handler) {
+    if (handler) {
+      sampling_handler_ = [handler](const protocol::Json& params,
+                                    const server::SessionContext&) mutable {
+        return handler(params);
+      };
+    } else {
+      sampling_handler_ = {};
+    }
+    server_->set_sampling_handler(std::move(handler));
+    return *this;
+  }
+
+  Peer& set_sampling_handler(server::Server::JsonContextHandler handler) {
     sampling_handler_ = handler;
     server_->set_sampling_handler(std::move(handler));
     return *this;
@@ -1698,6 +2059,13 @@ class Peer<RoleServer> {
     return *this;
   }
 
+  Peer& set_raw_request_handler(
+      server::Server::RawRequestContextHandler handler) {
+    raw_request_context_handler_ = handler;
+    server_->set_raw_request_handler(std::move(handler));
+    return *this;
+  }
+
   Peer& set_raw_notification_handler(
       server::Server::RawNotificationHandler handler) {
     native_notification_state_ = true;
@@ -1708,6 +2076,13 @@ class Peer<RoleServer> {
 
   Peer& set_custom_request_handler(server::Server::RawRequestHandler handler) {
     raw_request_handler_ = handler;
+    server_->set_custom_request_handler(std::move(handler));
+    return *this;
+  }
+
+  Peer& set_custom_request_handler(
+      server::Server::RawRequestContextHandler handler) {
+    raw_request_context_handler_ = handler;
     server_->set_custom_request_handler(std::move(handler));
     return *this;
   }
@@ -1843,11 +2218,28 @@ class Peer<RoleServer> {
     if (handler.on_resource_updated) {
       set_resource_updated_handler(handler.on_resource_updated);
     }
+    if (handler.on_completion_with_context) {
+      set_completion_handler(handler.on_completion_with_context);
+    }
+    if (handler.on_sampling_with_context) {
+      set_sampling_handler(handler.on_sampling_with_context);
+    }
     return *this;
   }
 
   Peer& set_handler(const server::ServerHandlerInterface& handler) {
     server_->set_handler(handler);
+    set_raw_request_handler([&handler](const protocol::JsonRpcRequest& request,
+                                       const server::SessionContext& context,
+                                       CancellationToken cancellation)
+                                -> std::optional<protocol::JsonRpcResponse> {
+      const auto handler_response = server::dispatch_server_handler_request(
+          handler, request, context, cancellation);
+      if (handler_response.has_value()) {
+        return handler_response;
+      }
+      return handler.on_custom_request(request, context);
+    });
     return *this;
   }
 
@@ -1866,6 +2258,14 @@ class Peer<RoleServer> {
     return server_->call_tool(name, std::move(arguments), session_id);
   }
 
+  core::Result<protocol::ToolResult> call_tool(
+      std::string_view name, protocol::Json arguments,
+      const server::SessionContext& context,
+      CancellationToken cancellation = {}) const {
+    return server_->call_tool(name, std::move(arguments), context,
+                              cancellation);
+  }
+
   std::vector<protocol::Prompt> list_prompts() const {
     return server_->list_prompts();
   }
@@ -1877,6 +2277,14 @@ class Peer<RoleServer> {
     return server_->get_prompt(name, std::move(arguments), session_id);
   }
 
+  core::Result<protocol::PromptsGetResult> get_prompt(
+      std::string_view name, protocol::Json arguments,
+      const server::SessionContext& context,
+      CancellationToken cancellation = {}) const {
+    return server_->get_prompt(name, std::move(arguments), context,
+                               cancellation);
+  }
+
   std::vector<protocol::Resource> list_resources() const {
     return server_->list_resources();
   }
@@ -1885,6 +2293,14 @@ class Peer<RoleServer> {
       std::string_view uri, protocol::Json params = protocol::Json::object(),
       const std::string& session_id = {}) const {
     return server_->read_resource(uri, std::move(params), session_id);
+  }
+
+  core::Result<protocol::ResourcesReadResult> read_resource(
+      std::string_view uri, protocol::Json params,
+      const server::SessionContext& context,
+      CancellationToken cancellation = {}) const {
+    return server_->read_resource(uri, std::move(params), context,
+                                  cancellation);
   }
 
   std::vector<protocol::ResourceTemplate> list_resource_templates() const {
@@ -1900,8 +2316,15 @@ class Peer<RoleServer> {
 
   core::Result<protocol::JsonRpcResponse> handle_request(
       const protocol::JsonRpcRequest& request,
-      const server::SessionContext& context = {},
+      const server::SessionContext& input_context = {},
       transport::ServerTransport* native_transport = nullptr) try {
+    auto authenticated_context = server_->authenticate_context(input_context);
+    if (!authenticated_context) {
+      return detail::peer_auth_error_response(request,
+                                              authenticated_context.error());
+    }
+    server::SessionContext context = std::move(*authenticated_context);
+
     if (request.method == protocol::InitializeMethod) {
       const auto valid =
           detail::validate_peer_server_initialize_params(request.params);
@@ -1918,6 +2341,20 @@ class Peer<RoleServer> {
     }
     if (request.method == protocol::PingMethod) {
       return protocol::make_response(request.id, protocol::Json::object());
+    }
+
+    if (raw_request_context_handler_) {
+      const auto request_cancellation =
+          begin_peer_request_cancellation(request.id);
+      const std::shared_ptr<void> request_cancellation_cleanup(
+          nullptr, [this, request_id = request.id](void*) noexcept {
+            end_peer_request_cancellation(request_id);
+          });
+      const auto raw_response =
+          raw_request_context_handler_(request, context, request_cancellation);
+      if (raw_response.has_value()) {
+        return *raw_response;
+      }
     }
 
     if (raw_request_handler_) {
@@ -1940,7 +2377,7 @@ class Peer<RoleServer> {
       if (!request.params.is_object() || !request.params.contains("name") ||
           !request.params.at("name").is_string()) {
         return detail::peer_error_response(
-            request, errors::make(protocol::ErrorCode::InvalidRequest,
+            request, errors::make(protocol::ErrorCode::InvalidParams,
                                   "tools/get requires a string name"));
       }
 
@@ -1955,12 +2392,12 @@ class Peer<RoleServer> {
     if (request.method == protocol::ToolsCallMethod) {
       const auto call = protocol::tool_call_from_json(request.params);
       if (!call) {
-        return detail::peer_error_response(request, call.error());
+        return detail::peer_params_error_response(request, call.error());
       }
       if (call->task.has_value()) {
         const auto valid = server_->tools().validate(*call);
         if (!valid) {
-          return detail::peer_error_response(request, valid.error());
+          return detail::peer_params_error_response(request, valid.error());
         }
         const auto task_manager = server_->task_manager();
         if (!task_manager) {
@@ -1969,9 +2406,10 @@ class Peer<RoleServer> {
                                     "task processor is not configured"));
         }
         const auto task =
-            task_manager->submit_tool_call(server_->tools(), *call, context);
+            task_manager->submit_tool_call(server_->tools(), *call, context,
+                                           server_->schema_validator().get());
         if (!task) {
-          return detail::peer_error_response(request, task.error());
+          return detail::peer_params_error_response(request, task.error());
         }
         return protocol::make_response(
             request.id, protocol::create_task_result_to_json(*task));
@@ -1984,7 +2422,8 @@ class Peer<RoleServer> {
             end_peer_request_cancellation(request_id);
           });
       const auto result =
-          server_->tools().call(*call, context, request_cancellation);
+          server_->tools().call(*call, context, request_cancellation,
+                                server_->schema_validator().get());
       if (!result) {
         return detail::peer_error_response(request, result.error());
       }
@@ -2004,11 +2443,17 @@ class Peer<RoleServer> {
       const auto params =
           protocol::prompts_get_params_from_json(request.params);
       if (!params) {
-        return detail::peer_error_response(request, params.error());
+        return detail::peer_params_error_response(request, params.error());
       }
 
-      const auto result =
-          server_->prompts().get(params->name, params->arguments, context);
+      const auto request_cancellation =
+          begin_peer_request_cancellation(request.id);
+      const std::shared_ptr<void> request_cancellation_cleanup(
+          nullptr, [this, request_id = request.id](void*) noexcept {
+            end_peer_request_cancellation(request_id);
+          });
+      const auto result = server_->prompts().get(
+          params->name, params->arguments, context, request_cancellation);
       if (!result) {
         return detail::peer_error_response(request, result.error());
       }
@@ -2028,11 +2473,17 @@ class Peer<RoleServer> {
       const auto params =
           protocol::resources_read_params_from_json(request.params);
       if (!params) {
-        return detail::peer_error_response(request, params.error());
+        return detail::peer_params_error_response(request, params.error());
       }
 
-      const auto result =
-          server_->resources().read(params->uri, request.params, context);
+      const auto request_cancellation =
+          begin_peer_request_cancellation(request.id);
+      const std::shared_ptr<void> request_cancellation_cleanup(
+          nullptr, [this, request_id = request.id](void*) noexcept {
+            end_peer_request_cancellation(request_id);
+          });
+      const auto result = server_->resources().read(
+          params->uri, request.params, context, request_cancellation);
       if (!result) {
         return detail::peer_error_response(request, result.error());
       }
@@ -2059,7 +2510,7 @@ class Peer<RoleServer> {
           !request.params.at("uri").is_string()) {
         return detail::peer_error_response(
             request,
-            errors::make(protocol::ErrorCode::InvalidRequest,
+            errors::make(protocol::ErrorCode::InvalidParams,
                          "resource subscription requires a string uri"));
       }
       const auto subscription = server_->set_resource_subscription(
@@ -2074,7 +2525,7 @@ class Peer<RoleServer> {
 
     if (request.method == protocol::CompletionCompleteMethod &&
         completion_handler_) {
-      const auto result = completion_handler_(request.params);
+      const auto result = completion_handler_(request.params, context);
       if (!result) {
         return detail::peer_error_response(request, result.error());
       }
@@ -2083,7 +2534,7 @@ class Peer<RoleServer> {
 
     if (request.method == protocol::SamplingCreateMessageMethod &&
         sampling_handler_) {
-      const auto result = sampling_handler_(request.params);
+      const auto result = sampling_handler_(request.params, context);
       if (!result) {
         return detail::peer_error_response(request, result.error());
       }
@@ -2094,7 +2545,7 @@ class Peer<RoleServer> {
       if (!request.params.is_object() || !request.params.contains("level") ||
           !request.params.at("level").is_string()) {
         return detail::peer_error_response(
-            request, errors::make(protocol::ErrorCode::InvalidRequest,
+            request, errors::make(protocol::ErrorCode::InvalidParams,
                                   "logging/setLevel requires a string level"));
       }
       logging_handler_(request.params.at("level").get<std::string>(),
@@ -2105,7 +2556,7 @@ class Peer<RoleServer> {
     if (request.method == protocol::TasksListMethod && task_list_handler_) {
       const auto params = protocol::task_list_params_from_json(request.params);
       if (!params) {
-        return detail::peer_error_response(request, params.error());
+        return detail::peer_params_error_response(request, params.error());
       }
       const auto result = task_list_handler_(*params, context);
       if (!result) {
@@ -2118,35 +2569,39 @@ class Peer<RoleServer> {
     if (request.method == protocol::TasksGetMethod && task_get_handler_) {
       const auto params = protocol::task_get_params_from_json(request.params);
       if (!params) {
-        return detail::peer_error_response(request, params.error());
+        return detail::peer_params_error_response(request, params.error());
       }
       const auto result = task_get_handler_(*params, context);
       if (!result) {
         return detail::peer_error_response(request, result.error());
       }
-      return protocol::make_response(request.id,
-                                     protocol::task_to_json(*result));
+      protocol::TaskGetResult response_result;
+      response_result.task = *result;
+      return protocol::make_response(
+          request.id, protocol::task_get_result_to_json(response_result));
     }
 
     if (request.method == protocol::TasksCancelMethod && task_cancel_handler_) {
       const auto params =
           protocol::task_cancel_params_from_json(request.params);
       if (!params) {
-        return detail::peer_error_response(request, params.error());
+        return detail::peer_params_error_response(request, params.error());
       }
       const auto result = task_cancel_handler_(*params, context);
       if (!result) {
         return detail::peer_error_response(request, result.error());
       }
-      return protocol::make_response(request.id,
-                                     protocol::task_to_json(*result));
+      protocol::TaskCancelResult response_result;
+      response_result.task = *result;
+      return protocol::make_response(
+          request.id, protocol::task_cancel_result_to_json(response_result));
     }
 
     if (request.method == protocol::TasksResultMethod && task_result_handler_) {
       const auto params =
           protocol::task_result_params_from_json(request.params);
       if (!params) {
-        return detail::peer_error_response(request, params.error());
+        return detail::peer_params_error_response(request, params.error());
       }
       const auto result = task_result_handler_(*params, context);
       if (!result) {
@@ -2474,8 +2929,9 @@ class Peer<RoleServer> {
           std::unordered_map<std::string, CancellationSource>>();
   bool native_notification_state_ = false;
   server::Server::RawRequestHandler raw_request_handler_;
-  server::Server::JsonHandler completion_handler_;
-  server::Server::JsonHandler sampling_handler_;
+  server::Server::RawRequestContextHandler raw_request_context_handler_;
+  server::Server::JsonContextHandler completion_handler_;
+  server::Server::JsonContextHandler sampling_handler_;
   server::Server::LoggingHandler logging_handler_;
   server::Server::TaskListHandler task_list_handler_;
   server::Server::TaskGetHandler task_get_handler_;

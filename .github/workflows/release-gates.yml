@@ -8,6 +8,193 @@ on:
       - master
 
 jobs:
+  source-style:
+    name: source-style
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Install style tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y clang-format
+
+      - name: Setup uv
+        uses: astral-sh/setup-uv@v5
+
+      - name: Check formatting
+        shell: pwsh
+        run: pwsh -NoProfile -File scripts/format.ps1 -Check
+
+      - name: Run cpplint
+        shell: pwsh
+        run: pwsh -NoProfile -File scripts/check-cpplint.ps1
+
+      - name: Check protocol model coverage
+        run: python scripts/check_protocol_model_coverage.py --source .
+
+      - name: Check SDK header boundaries
+        run: python scripts/check_sdk_header_boundaries.py --source .
+
+      - name: Check package auth features
+        run: python scripts/check_package_auth_features.py --source .
+
+      - name: Check P2 TODO status
+        run: python scripts/check_p2_todo_status.py --source .
+
+  build-config-smoke:
+    name: sdk-build-${{ matrix.build_type }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        build_type:
+          - Debug
+          - Release
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Install Ninja
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ninja-build
+
+      - name: Configure SDK build
+        run: |
+          cmake \
+            -S . \
+            -B build-config-smoke \
+            -G Ninja \
+            -DCMAKE_BUILD_TYPE=${{ matrix.build_type }} \
+            -DCXXMCP_BUILD_SDK=ON \
+            -DCXXMCP_BUILD_CLIENT=ON \
+            -DCXXMCP_BUILD_SERVER=ON \
+            -DCXXMCP_BUILD_RUNTIME=OFF \
+            -DCXXMCP_BUILD_APP=OFF \
+            -DCXXMCP_BUILD_GATEWAY=OFF \
+            -DCXXMCP_BUILD_CLI=OFF \
+            -DCXXMCP_BUILD_EXAMPLES=ON \
+            -DCXXMCP_BUILD_TESTS=OFF \
+            -DCXXMCP_BUILD_DOCS=OFF
+
+      - name: Build SDK
+        run: cmake --build build-config-smoke --parallel
+
+  sanitizer:
+    name: sanitizer-${{ matrix.name }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: asan-ubsan
+            configure_preset: tests-asan-ubsan
+            build_preset: tests-asan-ubsan
+            test_preset: sanitizer-asan-ubsan
+          - name: tsan
+            configure_preset: tests-tsan
+            build_preset: tests-tsan
+            test_preset: sanitizer-tsan
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Install sanitizer tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y clang ninja-build
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Setup uv
+        uses: astral-sh/setup-uv@v5
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Configure sanitizer build
+        run: cmake --preset ${{ matrix.configure_preset }}
+
+      - name: Build sanitizer tests
+        run: cmake --build --preset ${{ matrix.build_preset }} --parallel
+
+      - name: Run sanitizer release-blocking subset
+        run: ctest --preset ${{ matrix.test_preset }}
+
+  clang-tidy:
+    name: clang-tidy-public-headers
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Install tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y clang-tidy ninja-build
+
+      - name: Configure
+        run: |
+          cmake \
+            -S . \
+            -B build-clang-tidy \
+            -G Ninja \
+            -DCMAKE_BUILD_TYPE=Debug \
+            -DCMAKE_EXPORT_COMPILE_COMMANDS=ON \
+            -DCXXMCP_BUILD_SDK=ON \
+            -DCXXMCP_BUILD_CLIENT=ON \
+            -DCXXMCP_BUILD_SERVER=ON \
+            -DCXXMCP_BUILD_RUNTIME=OFF \
+            -DCXXMCP_BUILD_APP=OFF \
+            -DCXXMCP_BUILD_GATEWAY=OFF \
+            -DCXXMCP_BUILD_CLI=OFF \
+            -DCXXMCP_BUILD_EXAMPLES=OFF \
+            -DCXXMCP_BUILD_TESTS=ON \
+            -DCXXMCP_BUILD_DOCS=OFF
+
+      - name: Build public header fixtures
+        run: |
+          cmake --build build-clang-tidy --parallel --target \
+            mcp_public_header_client \
+            mcp_public_header_config \
+            mcp_public_header_error \
+            mcp_public_header_handler \
+            mcp_public_header_peer \
+            mcp_public_header_protocol \
+            mcp_public_header_sdk \
+            mcp_public_header_server \
+            mcp_public_header_service \
+            mcp_public_header_transport
+
+      - name: Run clang-tidy
+        run: |
+          python scripts/run_clang_tidy.py \
+            --source . \
+            --build-dir build-clang-tidy \
+            tests/sdk/public_headers
+
   release-blocking:
     name: ${{ matrix.name }}
     runs-on: ${{ matrix.os }}
@@ -252,16 +439,39 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          mkdir -p release-evidence/docs release-evidence/examples
-          cp README.md README_zh.md CHANGELOG.md todo.md release-evidence/
+          mkdir -p release-evidence/docs release-evidence/examples release-evidence/templates
           cp \
+            README.md \
+            README_zh.md \
+            CHANGELOG.md \
+            CONTRIBUTING.md \
+            SECURITY.md \
+            CODE_OF_CONDUCT.md \
+            todo.md \
+            release-evidence/
+          cp \
+            docs/auth_design.md \
             docs/compatibility_policy.md \
+            docs/dependency_policy.md \
+            docs/elicitation_lifecycle.md \
+            docs/ecosystem_maturity_evidence.md \
+            docs/examples.md \
+            docs/http_transport_backend_evidence.md \
+            docs/official_sdk_candidate_process.md \
+            docs/package_consumption.md \
+            docs/package_consumption_zh.md \
+            docs/protocol_model_audit.md \
+            docs/release_process.md \
             docs/release_gates.md \
             docs/release_candidate_checklist.md \
             docs/release_notes_template.md \
+            docs/request_lifecycle.md \
+            docs/runtime_gateway.md \
             docs/sdk_peer_service_migration.md \
+            docs/task_lifecycle.md \
             release-evidence/docs/
           cp examples/*.cpp examples/CMakeLists.txt release-evidence/examples/
+          cp -r templates/external_consumer release-evidence/templates/
           {
             echo "commit=${GITHUB_SHA}"
             echo "workflow=${GITHUB_WORKFLOW}"

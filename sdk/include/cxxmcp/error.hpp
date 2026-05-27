@@ -44,6 +44,31 @@ inline core::Error method_not_found(std::string detail = {}) {
               std::move(detail), "protocol");
 }
 
+inline core::Error tool_not_found(std::string detail = {}) {
+  return make(protocol::ErrorCode::ToolNotFound, "tool not found",
+              std::move(detail), "tool");
+}
+
+inline core::Error resource_not_found(std::string detail = {}) {
+  return make(protocol::ErrorCode::ResourceNotFound, "resource not found",
+              std::move(detail), "resource");
+}
+
+inline core::Error permission_denied(std::string detail = {}) {
+  return make(protocol::ErrorCode::PermissionDenied, "permission denied",
+              std::move(detail), "permission");
+}
+
+inline core::Error rate_limited(std::string detail = {}) {
+  return make(protocol::ErrorCode::RateLimited, "rate limited",
+              std::move(detail), "rate_limit");
+}
+
+inline core::Error url_elicitation_required(std::string detail = {}) {
+  return make(protocol::ErrorCode::UrlElicitationRequired,
+              "url elicitation required", std::move(detail), "elicitation");
+}
+
 inline core::Error handler_failed(std::string detail = {}) {
   return make(protocol::ErrorCode::InternalError, "handler failed",
               std::move(detail), "handler");

@@ -27,6 +27,8 @@ struct Root {
   std::string name;
   /// Optional `_meta` extension object preserved on the wire.
   std::optional<Json> meta;
+  /// Unknown JSON members preserved for forward-compatible round trips.
+  Json extensions = Json::object();
 };
 
 /// @brief Result object for `roots/list`.
@@ -35,6 +37,8 @@ struct RootsListResult {
   std::vector<Root> roots;
   /// Optional `_meta` extension object preserved on the wire.
   std::optional<Json> meta;
+  /// Unknown JSON members preserved for forward-compatible round trips.
+  Json extensions = Json::object();
 };
 
 /// @brief Builds an InvalidRequest error for roots JSON validation failures.
@@ -53,6 +57,7 @@ inline Json root_to_json(const Root& root) {
   if (root.meta.has_value()) {
     json["_meta"] = *root.meta;
   }
+  append_json_extensions(json, root.extensions);
   return json;
 }
 
@@ -80,6 +85,7 @@ inline core::Result<Root> root_from_json(const Json& json) {
     }
     root.meta = json.at("_meta");
   }
+  root.extensions = collect_json_extensions(json, {"uri", "name", "_meta"});
   return root;
 }
 
@@ -93,6 +99,7 @@ inline Json roots_list_result_to_json(const RootsListResult& result) {
   if (result.meta.has_value()) {
     json["_meta"] = *result.meta;
   }
+  append_json_extensions(json, result.extensions);
   return json;
 }
 
@@ -124,6 +131,7 @@ inline core::Result<RootsListResult> roots_list_result_from_json(
     }
     result.meta = json.at("_meta");
   }
+  result.extensions = collect_json_extensions(json, {"roots", "_meta"});
   return result;
 }
 

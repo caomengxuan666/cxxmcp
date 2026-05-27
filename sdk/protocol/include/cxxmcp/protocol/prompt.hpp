@@ -29,10 +29,14 @@ struct PromptArgument {
   std::string description;
   /// Whether the caller must provide this argument.
   bool required = false;
+  /// Whether `required` was explicitly present on the wire or configured.
+  bool required_present = false;
   /// Optional annotations for model or client presentation.
   Json annotations = Json::object();
   /// Optional `_meta` extension object preserved on the wire.
   std::optional<Json> meta;
+  /// Unknown JSON members preserved for forward-compatible round trips.
+  Json extensions = Json::object();
 };
 
 /// @brief Prompt descriptor returned by `prompts/list`.
@@ -51,6 +55,8 @@ struct Prompt {
   Json annotations = Json::object();
   /// Optional `_meta` extension object preserved on the wire.
   std::optional<Json> meta;
+  /// Unknown JSON members preserved for forward-compatible round trips.
+  Json extensions = Json::object();
 };
 
 /// @brief Result object for `prompts/list`.
@@ -61,6 +67,8 @@ struct PromptsListResult {
   std::optional<std::string> next_cursor;
   /// Optional `_meta` extension object preserved on the wire.
   std::optional<Json> meta;
+  /// Unknown JSON members preserved for forward-compatible round trips.
+  Json extensions = Json::object();
 };
 
 /// @brief Parameters for `prompts/get`.
@@ -71,6 +79,8 @@ struct PromptsGetParams {
   Json arguments = Json::object();
   /// Optional `_meta` extension object preserved on the wire.
   std::optional<Json> meta;
+  /// Unknown JSON members preserved for forward-compatible round trips.
+  Json extensions = Json::object();
 };
 
 /// @brief One rendered prompt message.
@@ -81,6 +91,16 @@ struct PromptMessage {
   ContentBlock content;
   /// Optional `_meta` extension object preserved on the wire.
   std::optional<Json> meta;
+  /// Unknown JSON members preserved for forward-compatible round trips.
+  Json extensions = Json::object();
+
+  /// @brief Creates a text-only prompt message for the given role.
+  static PromptMessage text(std::string role, std::string value) {
+    PromptMessage message;
+    message.role = std::move(role);
+    message.content = ContentBlock::text_content(std::move(value));
+    return message;
+  }
 };
 
 /// @brief Result object for `prompts/get`.
@@ -91,6 +111,8 @@ struct PromptsGetResult {
   std::vector<PromptMessage> messages;
   /// Optional `_meta` extension object preserved on the wire.
   std::optional<Json> meta;
+  /// Unknown JSON members preserved for forward-compatible round trips.
+  Json extensions = Json::object();
 };
 
 /// @brief Builds an InvalidRequest error for prompt JSON validation failures.
@@ -109,8 +131,8 @@ inline Json prompt_argument_to_json(const PromptArgument& argument) {
   if (!argument.description.empty()) {
     json["description"] = argument.description;
   }
-  if (argument.required) {
-    json["required"] = true;
+  if (argument.required_present || argument.required) {
+    json["required"] = argument.required;
   }
   if (!argument.annotations.empty()) {
     json["annotations"] = argument.annotations;
@@ -118,6 +140,7 @@ inline Json prompt_argument_to_json(const PromptArgument& argument) {
   if (argument.meta.has_value()) {
     json["_meta"] = *argument.meta;
   }
+  append_json_extensions(json, argument.extensions);
   return json;
 }
 
@@ -158,13 +181,25 @@ inline core::Result<PromptArgument> prompt_argument_from_json(
           prompt_json_error("prompt argument required must be a boolean"));
     }
     argument.required = json.at("required").get<bool>();
+    argument.required_present = true;
   }
   if (json.contains("annotations")) {
+    if (!json.at("annotations").is_object()) {
+      return std::unexpected(
+          prompt_json_error("prompt argument annotations must be an object"));
+    }
     argument.annotations = json.at("annotations");
   }
   if (json.contains("_meta")) {
+    if (!json.at("_meta").is_object()) {
+      return std::unexpected(
+          prompt_json_error("prompt argument _meta must be an object"));
+    }
     argument.meta = json.at("_meta");
   }
+  argument.extensions = collect_json_extensions(
+      json,
+      {"title", "name", "description", "required", "annotations", "_meta"});
   return argument;
 }
 
@@ -196,6 +231,7 @@ inline Json prompt_to_json(const Prompt& prompt) {
   if (prompt.meta.has_value()) {
     json["_meta"] = *prompt.meta;
   }
+  append_json_extensions(json, prompt.extensions);
   return json;
 }
 
@@ -254,11 +290,22 @@ inline core::Result<Prompt> prompt_from_json(const Json& json) {
     }
   }
   if (json.contains("annotations")) {
+    if (!json.at("annotations").is_object()) {
+      return std::unexpected(
+          prompt_json_error("prompt annotations must be an object"));
+    }
     prompt.annotations = json.at("annotations");
   }
   if (json.contains("_meta")) {
+    if (!json.at("_meta").is_object()) {
+      return std::unexpected(
+          prompt_json_error("prompt _meta must be an object"));
+    }
     prompt.meta = json.at("_meta");
   }
+  prompt.extensions = collect_json_extensions(
+      json, {"title", "name", "description", "arguments", "icons",
+             "annotations", "_meta"});
   return prompt;
 }
 
@@ -275,6 +322,7 @@ inline Json prompts_list_result_to_json(const PromptsListResult& result) {
   if (result.meta.has_value()) {
     json["_meta"] = *result.meta;
   }
+  append_json_extensions(json, result.extensions);
   return json;
 }
 
@@ -313,6 +361,8 @@ inline core::Result<PromptsListResult> prompts_list_result_from_json(
     }
     result.meta = json.at("_meta");
   }
+  result.extensions =
+      collect_json_extensions(json, {"prompts", "nextCursor", "_meta"});
   return result;
 }
 
@@ -326,6 +376,7 @@ inline Json prompts_get_params_to_json(const PromptsGetParams& params) {
   if (params.meta.has_value()) {
     json["_meta"] = *params.meta;
   }
+  append_json_extensions(json, params.extensions);
   return json;
 }
 
@@ -358,6 +409,8 @@ inline core::Result<PromptsGetParams> prompts_get_params_from_json(
     }
     params.meta = json.at("_meta");
   }
+  params.extensions =
+      collect_json_extensions(json, {"name", "arguments", "_meta"});
   return params;
 }
 
@@ -369,6 +422,7 @@ inline Json prompt_message_to_json(const PromptMessage& message) {
   if (message.meta.has_value()) {
     json["_meta"] = *message.meta;
   }
+  append_json_extensions(json, message.extensions);
   return json;
 }
 
@@ -403,6 +457,8 @@ inline core::Result<PromptMessage> prompt_message_from_json(const Json& json) {
     }
     message.meta = json.at("_meta");
   }
+  message.extensions =
+      collect_json_extensions(json, {"role", "content", "_meta"});
   return message;
 }
 
@@ -419,6 +475,7 @@ inline Json prompts_get_result_to_json(const PromptsGetResult& result) {
   if (result.meta.has_value()) {
     json["_meta"] = *result.meta;
   }
+  append_json_extensions(json, result.extensions);
   return json;
 }
 
@@ -457,6 +514,8 @@ inline core::Result<PromptsGetResult> prompts_get_result_from_json(
     }
     result.meta = json.at("_meta");
   }
+  result.extensions =
+      collect_json_extensions(json, {"description", "messages", "_meta"});
   return result;
 }
 

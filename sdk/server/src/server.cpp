@@ -12,6 +12,7 @@
 #include "cxxmcp/error.hpp"
 #include "cxxmcp/protocol/logging.hpp"
 #include "cxxmcp/protocol/serialization.hpp"
+#include "cxxmcp/server/handler.hpp"
 #include "cxxmcp/server/http_transport.hpp"
 #include "cxxmcp/server/stdio_transport.hpp"
 
@@ -81,6 +82,32 @@ core::Result<protocol::JsonRpcResponse> make_error_response(
                                : std::optional<protocol::Json>{detail}));
 }
 
+core::Result<protocol::JsonRpcResponse> make_auth_error_response(
+    const protocol::JsonRpcRequest& request, std::string detail) {
+  protocol::Json data = protocol::Json::object();
+  data["category"] = std::string(AuthErrorCategory);
+  if (!detail.empty()) {
+    data["detail"] = std::move(detail);
+  }
+  return protocol::make_error_response(
+      std::optional<protocol::RequestId>{request.id},
+      protocol::make_error(protocol::ErrorCode::PermissionDenied,
+                           "authentication failed", data));
+}
+
+int method_params_error_code(const core::Error& error) {
+  if (error.code == static_cast<int>(protocol::ErrorCode::InvalidRequest)) {
+    return static_cast<int>(protocol::ErrorCode::InvalidParams);
+  }
+  return error.code;
+}
+
+core::Result<protocol::JsonRpcResponse> make_params_error_response(
+    const protocol::JsonRpcRequest& request, const core::Error& error) {
+  return make_error_response(request, method_params_error_code(error),
+                             error.message, error.detail);
+}
+
 std::string request_cancellation_key(const protocol::RequestId& request_id) {
   return protocol::request_id_to_json(request_id).dump();
 }
@@ -148,7 +175,23 @@ core::Result<protocol::ToolDefinition> Server::get_tool(
 core::Result<protocol::ToolResult> Server::call_tool(
     std::string_view name, protocol::Json arguments,
     const std::string& session_id) const {
-  return tools_.call(name, std::move(arguments), session_id);
+  protocol::ToolCall call;
+  call.name = std::string(name);
+  call.arguments = std::move(arguments);
+  SessionContext context;
+  context.session_id = session_id;
+  return tools_.call(std::move(call), context, CancellationToken{},
+                     schema_validator_.get());
+}
+
+core::Result<protocol::ToolResult> Server::call_tool(
+    std::string_view name, protocol::Json arguments,
+    const SessionContext& context, CancellationToken cancellation) const {
+  protocol::ToolCall call;
+  call.name = std::string(name);
+  call.arguments = std::move(arguments);
+  return tools_.call(std::move(call), context, cancellation,
+                     schema_validator_.get());
 }
 
 Server& Server::use_task_manager(TaskOperationProcessorOptions options) {
@@ -188,6 +231,12 @@ core::Result<protocol::PromptsGetResult> Server::get_prompt(
   return prompts_.get(name, std::move(arguments), session_id);
 }
 
+core::Result<protocol::PromptsGetResult> Server::get_prompt(
+    std::string_view name, protocol::Json arguments,
+    const SessionContext& context, CancellationToken cancellation) const {
+  return prompts_.get(name, std::move(arguments), context, cancellation);
+}
+
 ResourceRegistry& Server::resources() noexcept { return resources_; }
 
 const ResourceRegistry& Server::resources() const noexcept {
@@ -202,6 +251,12 @@ core::Result<protocol::ResourcesReadResult> Server::read_resource(
     std::string_view uri, protocol::Json params,
     const std::string& session_id) const {
   return resources_.read(uri, std::move(params), session_id);
+}
+
+core::Result<protocol::ResourcesReadResult> Server::read_resource(
+    std::string_view uri, protocol::Json params, const SessionContext& context,
+    CancellationToken cancellation) const {
+  return resources_.read(uri, std::move(params), context, cancellation);
 }
 
 ResourceTemplateRegistry& Server::resource_templates() noexcept {
@@ -266,23 +321,18 @@ void Server::cancel_request(const protocol::RequestId& request_id) noexcept {
 
 core::Result<protocol::JsonRpcResponse> Server::handle_request(
     const protocol::JsonRpcRequest& request,
-    const SessionContext& context) try {
+    const SessionContext& input_context) try {
+  auto authenticated_context = authenticate_context(input_context);
+  if (!authenticated_context) {
+    return make_auth_error_response(request,
+                                    authenticated_context.error().message);
+  }
+  SessionContext context = std::move(*authenticated_context);
   const auto request_cancellation = begin_request_cancellation(request.id);
   const std::shared_ptr<void> request_cancellation_cleanup(
       nullptr, [this, request_id = request.id](void*) noexcept {
         end_request_cancellation(request_id);
       });
-
-  if (auth_provider_) {
-    AuthRequest auth_request;
-    auth_request.remote_address = context.remote_address;
-    const auto identity = auth_provider_->authenticate(auth_request);
-    if (!identity) {
-      return make_error_response(
-          request, static_cast<int>(protocol::ErrorCode::PermissionDenied),
-          "authentication failed", identity.error().message);
-    }
-  }
 
   if (rate_limiter_) {
     RateLimitRequest rate_limit_request;
@@ -321,6 +371,14 @@ core::Result<protocol::JsonRpcResponse> Server::handle_request(
     return protocol::make_response(request.id, protocol::Json::object());
   }
 
+  if (raw_request_context_handler_) {
+    const auto raw_response =
+        raw_request_context_handler_(request, context, request_cancellation);
+    if (raw_response.has_value()) {
+      return *raw_response;
+    }
+  }
+
   if (raw_request_handler_) {
     const auto raw_response = raw_request_handler_(request, context);
     if (raw_response.has_value()) {
@@ -337,8 +395,7 @@ core::Result<protocol::JsonRpcResponse> Server::handle_request(
 
     const auto params = protocol::task_list_params_from_json(request.params);
     if (!params) {
-      return make_error_response(request, params.error().code,
-                                 params.error().message, params.error().detail);
+      return make_params_error_response(request, params.error());
     }
 
     const auto result = task_list_handler_
@@ -362,8 +419,7 @@ core::Result<protocol::JsonRpcResponse> Server::handle_request(
 
     const auto params = protocol::task_get_params_from_json(request.params);
     if (!params) {
-      return make_error_response(request, params.error().code,
-                                 params.error().message, params.error().detail);
+      return make_params_error_response(request, params.error());
     }
 
     const auto result = task_get_handler_ ? task_get_handler_(*params, context)
@@ -373,7 +429,10 @@ core::Result<protocol::JsonRpcResponse> Server::handle_request(
                                  result.error().message, result.error().detail);
     }
 
-    return protocol::make_response(request.id, protocol::task_to_json(*result));
+    protocol::TaskGetResult response;
+    response.task = *result;
+    return protocol::make_response(request.id,
+                                   protocol::task_get_result_to_json(response));
   }
 
   if (request.method == protocol::TasksCancelMethod) {
@@ -385,8 +444,7 @@ core::Result<protocol::JsonRpcResponse> Server::handle_request(
 
     const auto params = protocol::task_cancel_params_from_json(request.params);
     if (!params) {
-      return make_error_response(request, params.error().code,
-                                 params.error().message, params.error().detail);
+      return make_params_error_response(request, params.error());
     }
 
     const auto result = task_cancel_handler_
@@ -397,7 +455,10 @@ core::Result<protocol::JsonRpcResponse> Server::handle_request(
                                  result.error().message, result.error().detail);
     }
 
-    return protocol::make_response(request.id, protocol::task_to_json(*result));
+    protocol::TaskCancelResult response;
+    response.task = *result;
+    return protocol::make_response(
+        request.id, protocol::task_cancel_result_to_json(response));
   }
 
   if (request.method == protocol::TasksResultMethod) {
@@ -409,8 +470,7 @@ core::Result<protocol::JsonRpcResponse> Server::handle_request(
 
     const auto params = protocol::task_result_params_from_json(request.params);
     if (!params) {
-      return make_error_response(request, params.error().code,
-                                 params.error().message, params.error().detail);
+      return make_params_error_response(request, params.error());
     }
 
     const auto result = task_result_handler_
@@ -437,7 +497,7 @@ core::Result<protocol::JsonRpcResponse> Server::handle_request(
     if (!request.params.is_object() || !request.params.contains("name") ||
         !request.params.at("name").is_string()) {
       return make_error_response(
-          request, static_cast<int>(protocol::ErrorCode::InvalidRequest),
+          request, static_cast<int>(protocol::ErrorCode::InvalidParams),
           "tools/get requires a string name");
     }
 
@@ -459,32 +519,30 @@ core::Result<protocol::JsonRpcResponse> Server::handle_request(
   if (request.method == protocol::ToolsCallMethod) {
     const auto call = protocol::tool_call_from_json(request.params);
     if (!call) {
-      return make_error_response(request, call.error().code,
-                                 call.error().message, call.error().detail);
+      return make_params_error_response(request, call.error());
     }
 
     if (call->task.has_value()) {
       const auto valid = tools_.validate(*call);
       if (!valid) {
-        return make_error_response(request, valid.error().code,
-                                   valid.error().message, valid.error().detail);
+        return make_params_error_response(request, valid.error());
       }
       if (!task_processor_) {
         return make_error_response(
             request, static_cast<int>(protocol::ErrorCode::MethodNotFound),
             "task processor is not configured");
       }
-      const auto task =
-          task_processor_->submit_tool_call(tools_, *call, context);
+      const auto task = task_processor_->submit_tool_call(
+          tools_, *call, context, schema_validator_.get());
       if (!task) {
-        return make_error_response(request, task.error().code,
-                                   task.error().message, task.error().detail);
+        return make_params_error_response(request, task.error());
       }
       return protocol::make_response(
           request.id, protocol::create_task_result_to_json(*task));
     }
 
-    const auto result = tools_.call(*call, context, request_cancellation);
+    const auto result = tools_.call(*call, context, request_cancellation,
+                                    schema_validator_.get());
     if (!result) {
       return protocol::make_error_response(
           std::optional<protocol::RequestId>{request.id},
@@ -509,11 +567,11 @@ core::Result<protocol::JsonRpcResponse> Server::handle_request(
   if (request.method == "prompts/get") {
     const auto params = protocol::prompts_get_params_from_json(request.params);
     if (!params) {
-      return make_error_response(request, params.error().code,
-                                 params.error().message, params.error().detail);
+      return make_params_error_response(request, params.error());
     }
 
-    const auto result = prompts_.get(params->name, params->arguments, context);
+    const auto result = prompts_.get(params->name, params->arguments, context,
+                                     request_cancellation);
     if (!result) {
       return protocol::make_error_response(
           std::optional<protocol::RequestId>{request.id},
@@ -539,11 +597,11 @@ core::Result<protocol::JsonRpcResponse> Server::handle_request(
     const auto params =
         protocol::resources_read_params_from_json(request.params);
     if (!params) {
-      return make_error_response(request, params.error().code,
-                                 params.error().message, params.error().detail);
+      return make_params_error_response(request, params.error());
     }
 
-    const auto result = resources_.read(params->uri, request.params, context);
+    const auto result = resources_.read(params->uri, request.params, context,
+                                        request_cancellation);
     if (!result) {
       return protocol::make_error_response(
           std::optional<protocol::RequestId>{request.id},
@@ -575,7 +633,7 @@ core::Result<protocol::JsonRpcResponse> Server::handle_request(
     if (!request.params.is_object() || !request.params.contains("uri") ||
         !request.params.at("uri").is_string()) {
       return make_error_response(
-          request, static_cast<int>(protocol::ErrorCode::InvalidRequest),
+          request, static_cast<int>(protocol::ErrorCode::InvalidParams),
           "resource subscription requires a string uri");
     }
     const auto subscription = set_resource_subscription(
@@ -595,7 +653,8 @@ core::Result<protocol::JsonRpcResponse> Server::handle_request(
           request, static_cast<int>(protocol::ErrorCode::MethodNotFound),
           "completion handler is not configured");
     }
-    const auto result = completion_handler_(request.params);
+    const auto result =
+        completion_handler_(request.params, context, request_cancellation);
     if (!result) {
       return make_error_response(request, result.error().code,
                                  result.error().message, result.error().detail);
@@ -609,7 +668,8 @@ core::Result<protocol::JsonRpcResponse> Server::handle_request(
           request, static_cast<int>(protocol::ErrorCode::MethodNotFound),
           "sampling handler is not configured");
     }
-    const auto result = sampling_handler_(request.params);
+    const auto result =
+        sampling_handler_(request.params, context, request_cancellation);
     if (!result) {
       return make_error_response(request, result.error().code,
                                  result.error().message, result.error().detail);
@@ -621,7 +681,7 @@ core::Result<protocol::JsonRpcResponse> Server::handle_request(
     if (!request.params.is_object() || !request.params.contains("level") ||
         !request.params.at("level").is_string()) {
       return make_error_response(
-          request, static_cast<int>(protocol::ErrorCode::InvalidRequest),
+          request, static_cast<int>(protocol::ErrorCode::InvalidParams),
           "logging/setLevel requires a string level");
     }
     if (logging_handler_) {
@@ -640,6 +700,25 @@ core::Result<protocol::JsonRpcResponse> Server::handle_request(
 } catch (...) {
   const auto error = errors::handler_unknown_exception();
   return make_error_response(request, error.code, error.message, error.detail);
+}
+
+core::Result<SessionContext> Server::authenticate_context(
+    const SessionContext& input_context) {
+  SessionContext context = input_context;
+  if (!auth_provider_ || context.auth_identity.has_value()) {
+    return context;
+  }
+
+  AuthRequest auth_request;
+  auth_request.headers = context.headers;
+  auth_request.remote_address = context.remote_address;
+  const auto identity = auth_provider_->authenticate(auth_request);
+  if (!identity) {
+    return std::unexpected(
+        make_auth_error(identity.error().message, identity.error().detail));
+  }
+  context.auth_identity = *identity;
+  return context;
 }
 
 core::Result<core::Unit> Server::handle_notification(
@@ -900,6 +979,11 @@ void Server::set_rate_limiter(std::unique_ptr<RateLimiter> rate_limiter) {
   rate_limiter_ = std::move(rate_limiter);
 }
 
+void Server::set_schema_validator(
+    std::shared_ptr<const JsonSchemaValidator> validator) {
+  schema_validator_ = std::move(validator);
+}
+
 core::Result<core::Unit> Server::start() {
   for (auto& transport : transports_) {
     const auto started = transport->start(
@@ -926,6 +1010,28 @@ void Server::stop() noexcept {
 }
 
 void Server::set_completion_handler(JsonHandler handler) {
+  if (!handler) {
+    completion_handler_ = {};
+    return;
+  }
+  set_completion_handler(
+      [handler = std::move(handler)](
+          const protocol::Json& params, const SessionContext&,
+          CancellationToken) mutable { return handler(params); });
+}
+
+void Server::set_completion_handler(JsonContextHandler handler) {
+  if (!handler) {
+    completion_handler_ = {};
+    return;
+  }
+  set_completion_handler(
+      [handler = std::move(handler)](
+          const protocol::Json& params, const SessionContext& context,
+          CancellationToken) mutable { return handler(params, context); });
+}
+
+void Server::set_completion_handler(JsonRequestContextHandler handler) {
   if (handler) {
     options_.capabilities.completions.enabled = true;
   }
@@ -933,6 +1039,28 @@ void Server::set_completion_handler(JsonHandler handler) {
 }
 
 void Server::set_sampling_handler(JsonHandler handler) {
+  if (!handler) {
+    sampling_handler_ = {};
+    return;
+  }
+  set_sampling_handler(
+      [handler = std::move(handler)](
+          const protocol::Json& params, const SessionContext&,
+          CancellationToken) mutable { return handler(params); });
+}
+
+void Server::set_sampling_handler(JsonContextHandler handler) {
+  if (!handler) {
+    sampling_handler_ = {};
+    return;
+  }
+  set_sampling_handler(
+      [handler = std::move(handler)](
+          const protocol::Json& params, const SessionContext& context,
+          CancellationToken) mutable { return handler(params, context); });
+}
+
+void Server::set_sampling_handler(JsonRequestContextHandler handler) {
   sampling_handler_ = std::move(handler);
 }
 
@@ -947,11 +1075,19 @@ void Server::set_raw_request_handler(RawRequestHandler handler) {
   raw_request_handler_ = std::move(handler);
 }
 
+void Server::set_raw_request_handler(RawRequestContextHandler handler) {
+  raw_request_context_handler_ = std::move(handler);
+}
+
 void Server::set_raw_notification_handler(RawNotificationHandler handler) {
   raw_notification_handler_ = std::move(handler);
 }
 
 void Server::set_custom_request_handler(RawRequestHandler handler) {
+  set_raw_request_handler(std::move(handler));
+}
+
+void Server::set_custom_request_handler(RawRequestContextHandler handler) {
   set_raw_request_handler(std::move(handler));
 }
 
@@ -1038,6 +1174,12 @@ ServerBuilder& ServerBuilder::with_rate_limiter(
   return *this;
 }
 
+ServerBuilder& ServerBuilder::with_schema_validator(
+    std::shared_ptr<const JsonSchemaValidator> validator) {
+  schema_validator_ = std::move(validator);
+  return *this;
+}
+
 ServerBuilder& ServerBuilder::with_task_manager(
     TaskOperationProcessorOptions options) {
   return with_task_manager(
@@ -1106,11 +1248,58 @@ ServerBuilder& ServerBuilder::add_resource_template(
 }
 
 ServerBuilder& ServerBuilder::on_completion(Server::JsonHandler handler) {
+  if (!handler) {
+    completion_handler_ = {};
+    return *this;
+  }
+  return on_completion(
+      [handler = std::move(handler)](
+          const protocol::Json& params, const SessionContext&,
+          CancellationToken) mutable { return handler(params); });
+}
+
+ServerBuilder& ServerBuilder::on_completion(
+    Server::JsonContextHandler handler) {
+  if (!handler) {
+    completion_handler_ = {};
+    return *this;
+  }
+  return on_completion(
+      [handler = std::move(handler)](
+          const protocol::Json& params, const SessionContext& context,
+          CancellationToken) mutable { return handler(params, context); });
+}
+
+ServerBuilder& ServerBuilder::on_completion(
+    Server::JsonRequestContextHandler handler) {
   completion_handler_ = std::move(handler);
   return *this;
 }
 
 ServerBuilder& ServerBuilder::on_sampling(Server::JsonHandler handler) {
+  if (!handler) {
+    sampling_handler_ = {};
+    return *this;
+  }
+  return on_sampling(
+      [handler = std::move(handler)](
+          const protocol::Json& params, const SessionContext&,
+          CancellationToken) mutable { return handler(params); });
+}
+
+ServerBuilder& ServerBuilder::on_sampling(Server::JsonContextHandler handler) {
+  if (!handler) {
+    sampling_handler_ = {};
+    return *this;
+  }
+  return on_sampling(
+      [handler = std::move(handler)](
+          const protocol::Json& params, const SessionContext& context,
+          CancellationToken) mutable { return handler(params, context); });
+}
+
+ServerBuilder& ServerBuilder::on_sampling(
+    Server::JsonRequestContextHandler handler) {
   sampling_handler_ = std::move(handler);
   return *this;
 }
@@ -1200,10 +1389,30 @@ ServerBuilder& ServerBuilder::on_resource_updated(
   return *this;
 }
 
+ServerBuilder& ServerBuilder::with_handler(ServerHandler handler) {
+  registrations_.push_back([handler = std::move(handler)](
+                               Server& server) -> core::Result<core::Unit> {
+    server.set_handler(handler);
+    return core::Unit{};
+  });
+  return *this;
+}
+
+ServerBuilder& ServerBuilder::with_handler(
+    const ServerHandlerInterface& handler) {
+  registrations_.push_back(
+      [&handler](Server& server) -> core::Result<core::Unit> {
+        server.set_handler(handler);
+        return core::Unit{};
+      });
+  return *this;
+}
+
 core::Result<std::unique_ptr<Server>> ServerBuilder::build() {
   auto server = std::make_unique<Server>(options_);
   server->set_auth_provider(std::move(auth_provider_));
   server->set_rate_limiter(std::move(rate_limiter_));
+  server->set_schema_validator(std::move(schema_validator_));
   server->use_task_manager(std::move(task_processor_));
   server->set_completion_handler(std::move(completion_handler_));
   server->set_sampling_handler(std::move(sampling_handler_));
@@ -1286,6 +1495,12 @@ App::Builder& App::Builder::transport(std::unique_ptr<Transport> value) {
 
 App::Builder& App::Builder::tasks(TaskOperationProcessorOptions options) {
   builder_.with_task_manager(std::move(options));
+  return *this;
+}
+
+App::Builder& App::Builder::schema_validator(
+    std::shared_ptr<const JsonSchemaValidator> validator) {
+  builder_.with_schema_validator(std::move(validator));
   return *this;
 }
 

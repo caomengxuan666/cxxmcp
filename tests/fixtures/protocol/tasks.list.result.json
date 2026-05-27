@@ -1,0 +1,15 @@
+{
+  "tasks": [
+    {
+      "taskId": "task-fixture",
+      "status": "working",
+      "createdAt": "2025-01-01T00:00:00Z",
+      "lastUpdatedAt": "2025-01-01T00:00:01Z",
+      "ttl": null
+    }
+  ],
+  "nextCursor": "tasks-next",
+  "_meta": {
+    "page": 1
+  }
+}

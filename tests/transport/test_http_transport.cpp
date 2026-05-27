@@ -1,10 +1,12 @@
 // Copyright (c) 2025 [caomengxuan666]
 
+#include <algorithm>
 #include <atomic>
 #include <chrono>
 #include <condition_variable>
 #include <cstddef>
 #include <cstdint>
+#include <exception>
 #include <functional>
 #include <iostream>
 #include <mutex>
@@ -21,6 +23,7 @@
 #include "cxxmcp/protocol/serialization.hpp"
 #include "cxxmcp/server/http_transport.hpp"
 #include "cxxmcp/server/peer.hpp"
+#include "cxxmcp/server/server.hpp"
 #include "cxxmcp/transport/http_transport.hpp"
 #include "httplib.h"
 
@@ -962,6 +965,70 @@ void test_server_http_transport_applies_outbound_backpressure() {
   server_transport.transport().stop();
 }
 
+void test_server_http_transport_bounds_outbound_queue_bytes() {
+  constexpr int kPort = 40223;
+  const std::string kPath = "/mcp";
+
+  RunningServerTransportFixture server_transport(
+      std::make_unique<mcp::server::HttpTransport>(
+          mcp::server::HttpTransportOptions{
+              .listen_host = "127.0.0.1",
+              .listen_port = kPort,
+              .path = kPath,
+              .max_pending_sse_events = 8,
+              .max_pending_sse_bytes = 512,
+          }),
+      [](const mcp::protocol::JsonRpcRequest& request,
+         const mcp::server::SessionContext&) {
+        if (request.method == mcp::protocol::InitializeMethod) {
+          return mcp::protocol::JsonRpcResponse{
+              .id = request.id,
+              .result =
+                  Json{
+                      {"protocolVersion",
+                       std::string(mcp::protocol::McpProtocolVersion)},
+                      {"capabilities", Json::object()},
+                      {"serverInfo",
+                       Json{{"name", "server-http-test"}, {"version", "1"}}},
+                  },
+          };
+        }
+        return mcp::protocol::make_error_response(
+            std::optional<mcp::protocol::RequestId>{request.id},
+            mcp::protocol::make_error(mcp::protocol::ErrorCode::MethodNotFound,
+                                      "unexpected request"));
+      });
+
+  require(!server_transport.start_error().has_value(),
+          "server transport should start");
+  require(wait_for_http_initialize(kPort, kPath),
+          "server transport should become reachable");
+  (void)initialize_http_session(kPort, kPath, 2);
+
+  const auto small_notification =
+      server_transport.transport().send_notification(
+          mcp::protocol::JsonRpcNotification{
+              .method = std::string(
+                  mcp::protocol::ToolsListChangedNotificationMethod),
+              .params = Json{{"index", 1}},
+          });
+  require(small_notification.has_value(), "small notification should queue");
+
+  const auto oversized = server_transport.transport().send_notification(
+      mcp::protocol::JsonRpcNotification{
+          .method =
+              std::string(mcp::protocol::ToolsListChangedNotificationMethod),
+          .params = Json{{"blob", std::string(1024, 'x')}},
+      });
+  require(!oversized.has_value(),
+          "oversized notification should hit byte backpressure");
+  require(oversized.error().code ==
+              static_cast<int>(mcp::protocol::ErrorCode::RateLimited),
+          "byte backpressure should map to rate limited");
+
+  server_transport.transport().stop();
+}
+
 void test_server_http_transport_keeps_pending_request_across_reconnect() {
   constexpr int kPort = 40183;
   const std::string kPath = "/mcp";
@@ -1750,6 +1817,276 @@ void test_server_http_transport_accepts_client_notification_with_202() {
   server_transport.transport().stop();
 }
 
+void test_server_http_transport_copies_headers_to_session_context() {
+  constexpr int kPort = 40220;
+  const std::string kPath = "/mcp";
+  std::string observed_authorization;
+  std::string observed_tenant;
+
+  RunningServerTransportFixture server_transport(
+      std::make_unique<mcp::server::HttpTransport>(
+          mcp::server::HttpTransportOptions{
+              .listen_host = "127.0.0.1",
+              .listen_port = kPort,
+              .path = kPath,
+          }),
+      [&](const mcp::protocol::JsonRpcRequest& request,
+          const mcp::server::SessionContext& context) {
+        observed_authorization = context.headers.at("Authorization");
+        observed_tenant = context.headers.at("X-Tenant");
+        if (request.method == mcp::protocol::InitializeMethod) {
+          return mcp::protocol::JsonRpcResponse{
+              .id = request.id,
+              .result =
+                  Json{
+                      {"protocolVersion",
+                       std::string(mcp::protocol::McpProtocolVersion)},
+                      {"capabilities", Json::object()},
+                      {"serverInfo",
+                       Json{{"name", "server-http-test"}, {"version", "1"}}},
+                  },
+          };
+        }
+        return mcp::protocol::make_error_response(
+            std::optional<mcp::protocol::RequestId>{request.id},
+            mcp::protocol::make_error(mcp::protocol::ErrorCode::MethodNotFound,
+                                      "unexpected request"));
+      });
+
+  require(!server_transport.start_error().has_value(),
+          "server transport should start");
+
+  httplib::Client http_client("127.0.0.1", kPort);
+  httplib::Result response;
+  for (int attempt = 0; attempt < 100; ++attempt) {
+    response = http_client.Post(
+        kPath,
+        httplib::Headers{
+            {"Accept", "application/json"},
+            {"Content-Type", "application/json"},
+            {"Mcp-Method", std::string(mcp::protocol::InitializeMethod)},
+            {"Authorization", "Bearer header-token"},
+            {"X-Tenant", "tenant-a"},
+        },
+        serialize_test_request(mcp::protocol::JsonRpcRequest{
+            .method = std::string(mcp::protocol::InitializeMethod),
+            .params = Json::object(),
+            .id = std::int64_t{1},
+        }),
+        "application/json");
+    if (response) {
+      break;
+    }
+    std::this_thread::sleep_for(std::chrono::milliseconds(25));
+  }
+  require(static_cast<bool>(response), "initialize should succeed");
+  require(response->status == 200, "initialize status should be 200");
+  require(observed_authorization == "Bearer header-token",
+          "session context authorization header mismatch");
+  require(observed_tenant == "tenant-a",
+          "session context custom header mismatch");
+
+  server_transport.transport().stop();
+}
+
+void test_server_http_transport_unauthorized_uses_bearer_challenge() {
+  class RejectingAuthProvider final : public mcp::server::AuthProvider {
+   public:
+    mcp::core::Result<mcp::server::AuthIdentity> authenticate(
+        const mcp::server::AuthRequest&) override {
+      return std::unexpected(mcp::server::make_auth_error(
+          "authentication failed", "missing bearer token"));
+    }
+  };
+
+  constexpr int kPort = 40221;
+  const std::string kPath = "/mcp";
+  mcp::server::Server server(mcp::server::ServerOptions{});
+  server.set_auth_provider(std::make_unique<RejectingAuthProvider>());
+
+  RunningServerTransportFixture server_transport(
+      std::make_unique<mcp::server::HttpTransport>(
+          mcp::server::HttpTransportOptions{
+              .listen_host = "127.0.0.1",
+              .listen_port = kPort,
+              .path = kPath,
+              .auth_challenge = "Bearer realm=\"cxxmcp\"",
+          }),
+      [&](const mcp::protocol::JsonRpcRequest& request,
+          const mcp::server::SessionContext& context) {
+        return server.handle_request(request, context);
+      });
+
+  httplib::Result response;
+  for (int attempt = 0; attempt < 100; ++attempt) {
+    httplib::Client http_client("127.0.0.1", kPort);
+    response = http_client.Post(
+        kPath,
+        httplib::Headers{
+            {"Accept", "application/json"},
+            {"Content-Type", "application/json"},
+            {"Mcp-Method", std::string(mcp::protocol::InitializeMethod)},
+        },
+        serialize_test_request(mcp::protocol::JsonRpcRequest{
+            .method = std::string(mcp::protocol::InitializeMethod),
+            .params = Json::object(),
+            .id = std::int64_t{41},
+        }),
+        "application/json");
+    if (response) {
+      break;
+    }
+    std::this_thread::sleep_for(std::chrono::milliseconds(25));
+  }
+
+  require(static_cast<bool>(response),
+          "unauthorized initialize should return a response");
+  require(response->status == 401, "unauthorized initialize should return 401");
+  require(response->has_header("WWW-Authenticate"),
+          "unauthorized response should include WWW-Authenticate");
+  require(response->get_header_value("WWW-Authenticate") ==
+              "Bearer realm=\"cxxmcp\"",
+          "unauthorized response challenge mismatch");
+  require(!response->has_header("Mcp-Session-Id"),
+          "unauthorized initialize must not create a session");
+
+  const auto parsed = mcp::protocol::parse_response(response->body);
+  require(parsed.has_value(), "unauthorized response body should parse");
+  require(parsed->error.has_value(), "unauthorized body should be an error");
+  require(parsed->error->code ==
+              static_cast<int>(mcp::protocol::ErrorCode::PermissionDenied),
+          "unauthorized error code mismatch");
+  require(parsed->error->data.has_value() &&
+              parsed->error->data->at("category") == "auth",
+          "unauthorized error category mismatch");
+
+  server_transport.transport().stop();
+}
+
+void test_server_http_transport_authorized_request_sets_auth_identity() {
+  class TokenAuthProvider final : public mcp::server::AuthProvider {
+   public:
+    mcp::core::Result<mcp::server::AuthIdentity> authenticate(
+        const mcp::server::AuthRequest& request) override {
+      const auto authorization = request.headers.find("Authorization");
+      if (authorization == request.headers.end() ||
+          authorization->second != "Bearer valid-token") {
+        return std::unexpected(mcp::server::make_auth_error(
+            "authentication failed", "invalid bearer token"));
+      }
+      mcp::server::AuthIdentity identity;
+      identity.subject = "http-subject";
+      identity.claims.emplace("scope", "tools:call");
+      return identity;
+    }
+  };
+
+  constexpr int kPort = 40222;
+  const std::string kPath = "/mcp";
+  mcp::server::Server server(mcp::server::ServerOptions{});
+  server.set_auth_provider(std::make_unique<TokenAuthProvider>());
+  const auto added = server.tools().add(
+      mcp::protocol::ToolDefinition{
+          .name = "whoami",
+          .description = "Return authenticated subject",
+          .input_schema = Json::object(),
+      },
+      [](const mcp::server::ToolContext& context)
+          -> mcp::core::Result<mcp::protocol::ToolResult> {
+        require(context.auth_identity.has_value(),
+                "HTTP tool context should contain auth identity");
+        require(context.auth_identity->claims.at("scope") == "tools:call",
+                "HTTP tool auth claim mismatch");
+        return mcp::protocol::ToolResult::text(context.auth_identity->subject);
+      });
+  require(added.has_value(), "failed to register authenticated HTTP tool");
+
+  RunningServerTransportFixture server_transport(
+      std::make_unique<mcp::server::HttpTransport>(
+          mcp::server::HttpTransportOptions{
+              .listen_host = "127.0.0.1",
+              .listen_port = kPort,
+              .path = kPath,
+          }),
+      [&](const mcp::protocol::JsonRpcRequest& request,
+          const mcp::server::SessionContext& context) {
+        return server.handle_request(request, context);
+      });
+
+  httplib::Client http_client("127.0.0.1", kPort);
+  httplib::Result initialize_response;
+  for (int attempt = 0; attempt < 100; ++attempt) {
+    initialize_response = http_client.Post(
+        kPath,
+        httplib::Headers{
+            {"Accept", "application/json"},
+            {"Content-Type", "application/json"},
+            {"Mcp-Method", std::string(mcp::protocol::InitializeMethod)},
+            {"Authorization", "Bearer valid-token"},
+        },
+        serialize_test_request(mcp::protocol::JsonRpcRequest{
+            .method = std::string(mcp::protocol::InitializeMethod),
+            .params =
+                Json{
+                    {"protocolVersion",
+                     std::string(mcp::protocol::McpProtocolVersion)},
+                    {"capabilities", Json::object()},
+                    {"clientInfo",
+                     Json{{"name", "auth-test"}, {"version", "1"}}},
+                },
+            .id = std::int64_t{51},
+        }),
+        "application/json");
+    if (initialize_response) {
+      break;
+    }
+    std::this_thread::sleep_for(std::chrono::milliseconds(25));
+  }
+  require(static_cast<bool>(initialize_response),
+          "authorized initialize should return a response");
+  require(initialize_response->status == 200,
+          "authorized initialize should return 200");
+  require(initialize_response->has_header("Mcp-Session-Id"),
+          "authorized initialize should create a session");
+  const auto session_id =
+      initialize_response->get_header_value("Mcp-Session-Id");
+
+  const auto tool_response = http_client.Post(
+      kPath,
+      httplib::Headers{
+          {"Accept", "application/json"},
+          {"Content-Type", "application/json"},
+          {"MCP-Protocol-Version",
+           std::string(mcp::protocol::McpProtocolVersion)},
+          {"Mcp-Session-Id", session_id},
+          {"Mcp-Method", std::string(mcp::protocol::ToolsCallMethod)},
+          {"Mcp-Name", "whoami"},
+          {"Authorization", "Bearer valid-token"},
+      },
+      serialize_test_request(mcp::protocol::JsonRpcRequest{
+          .method = std::string(mcp::protocol::ToolsCallMethod),
+          .params = mcp::protocol::tool_call_to_json(mcp::protocol::ToolCall{
+              .name = "whoami",
+              .arguments = Json::object(),
+          }),
+          .id = std::int64_t{52},
+      }),
+      "application/json");
+
+  require(static_cast<bool>(tool_response),
+          "authorized tool call should return a response");
+  require(tool_response->status == 200,
+          "authorized tool call should return 200");
+  const auto parsed = mcp::protocol::parse_response(tool_response->body);
+  require(parsed.has_value(), "authorized tool response should parse");
+  require(parsed->result.has_value(),
+          "authorized tool response should succeed");
+  require(parsed->result->at("content").at(0).at("text") == "http-subject",
+          "authorized tool subject mismatch");
+
+  server_transport.transport().stop();
+}
+
 void test_server_http_transport_rejects_mismatched_origin_when_allowlisted() {
   constexpr int kPort = 40177;
   const std::string kPath = "/mcp";
@@ -2260,6 +2597,12 @@ void test_client_http_transport_times_out_initialize() {
       .id = std::int64_t{1},
   });
   require(!response.has_value(), "initialize should honor HTTP timeout");
+  require(response.error().message == "http transport request timed out",
+          "HTTP timeout public message should be stable");
+  require(response.error().category == "transport",
+          "HTTP timeout error category mismatch");
+  require(!response.error().detail.empty(),
+          "HTTP timeout library detail should be structured as detail");
 }
 
 void test_client_http_transport_rejects_unexpected_response_id() {
@@ -2346,6 +2689,284 @@ void test_client_http_transport_uses_uri_and_auth_header() {
           "uri transport should inject authorization header");
 }
 
+void test_client_http_transport_explicit_authorization_header_wins_case_insensitive() {
+  HttpServerFixture fixture;
+  std::atomic<bool> request_seen{false};
+  std::string observed_authorization;
+  int authorization_header_count = 0;
+
+  auto header_name_equals = [](std::string_view lhs, std::string_view rhs) {
+    if (lhs.size() != rhs.size()) {
+      return false;
+    }
+    for (std::size_t index = 0; index < lhs.size(); ++index) {
+      char left = lhs[index];
+      char right = rhs[index];
+      if (left >= 'A' && left <= 'Z') {
+        left = static_cast<char>(left - 'A' + 'a');
+      }
+      if (right >= 'A' && right <= 'Z') {
+        right = static_cast<char>(right - 'A' + 'a');
+      }
+      if (left != right) {
+        return false;
+      }
+    }
+    return true;
+  };
+
+  fixture.server().Post("/explicit-auth", [&](const httplib::Request& request,
+                                              httplib::Response& response) {
+    for (const auto& header : request.headers) {
+      if (header_name_equals(header.first, "Authorization")) {
+        ++authorization_header_count;
+        observed_authorization = header.second;
+      }
+    }
+
+    const auto parsed = mcp::protocol::parse_message(request.body);
+    require(parsed.has_value(), "explicit auth request should parse");
+    const auto* rpc_request =
+        std::get_if<mcp::protocol::JsonRpcRequest>(&*parsed);
+    require(rpc_request != nullptr, "explicit auth should send a request");
+    response.set_content(serialize_test_response(mcp::protocol::JsonRpcResponse{
+                             .id = rpc_request->id,
+                             .result = Json::object(),
+                         }),
+                         "application/json");
+    request_seen.store(true);
+  });
+
+  mcp::client::HttpTransport transport(mcp::client::HttpTransportOptions{
+      .uri = "http://127.0.0.1:" + std::to_string(fixture.port()) +
+             "/explicit-auth",
+      .headers = {{"authorization", "DPoP explicit-token"}},
+      .auth_header = "token-123",
+      .timeout = std::chrono::milliseconds(2000),
+  });
+
+  const auto response = transport.send(mcp::protocol::JsonRpcRequest{
+      .method = std::string(mcp::protocol::PingMethod),
+      .params = Json::object(),
+      .id = std::int64_t{90},
+  });
+
+  require(response.has_value(), "explicit auth request should succeed");
+  require(request_seen.load(), "explicit auth request should reach server");
+  require(authorization_header_count == 1,
+          "explicit Authorization header should not be duplicated");
+  require(observed_authorization == "DPoP explicit-token",
+          "explicit Authorization value should win over bearer helper");
+}
+
+void test_client_http_transport_refreshes_bearer_once_on_401() {
+  HttpServerFixture fixture;
+  std::atomic<int> request_count{0};
+  std::vector<std::string> observed_authorizations;
+  std::mutex observed_mutex;
+
+  fixture.server().Post("/auth-refresh", [&](const httplib::Request& request,
+                                             httplib::Response& response) {
+    {
+      std::lock_guard lock(observed_mutex);
+      observed_authorizations.push_back(
+          request.has_header("Authorization")
+              ? request.get_header_value("Authorization")
+              : std::string{});
+    }
+    request_count.fetch_add(1);
+    if (!request.has_header("Authorization") ||
+        request.get_header_value("Authorization") != "Bearer fresh-token") {
+      response.status = 401;
+      response.set_header(
+          "WWW-Authenticate",
+          "Bearer error=\"invalid_token\", resource_metadata=\"https://"
+          "resource.example/.well-known/oauth-protected-resource\"");
+      return;
+    }
+
+    const auto parsed = mcp::protocol::parse_message(request.body);
+    require(parsed.has_value(), "refresh retry request should parse");
+    const auto* rpc_request =
+        std::get_if<mcp::protocol::JsonRpcRequest>(&*parsed);
+    require(rpc_request != nullptr, "refresh retry should send a request");
+    response.set_content(serialize_test_response(mcp::protocol::JsonRpcResponse{
+                             .id = rpc_request->id,
+                             .result = Json{{"ok", true}},
+                         }),
+                         "application/json");
+  });
+
+  int refresh_calls = 0;
+  mcp::client::HttpTransport transport(mcp::client::HttpTransportOptions{
+      .uri = "http://127.0.0.1:" + std::to_string(fixture.port()) +
+             "/auth-refresh",
+      .auth_header = "stale-token",
+      .auth_refresh_handler =
+          [&](const mcp::client::HttpAuthChallenge& challenge)
+          -> std::optional<std::string> {
+        ++refresh_calls;
+        require(challenge.status_code == 401,
+                "refresh challenge status mismatch");
+        require(challenge.method == mcp::protocol::PingMethod,
+                "refresh challenge method mismatch");
+        require(challenge.www_authenticate.has_value(),
+                "refresh challenge should include WWW-Authenticate");
+        return "fresh-token";
+      },
+      .timeout = std::chrono::milliseconds(2000),
+  });
+
+  const auto response = transport.send(mcp::protocol::JsonRpcRequest{
+      .method = std::string(mcp::protocol::PingMethod),
+      .params = Json::object(),
+      .id = std::int64_t{91},
+  });
+
+  require(response.has_value(), "request should succeed after auth refresh");
+  require(refresh_calls == 1, "auth refresh should be called once");
+  require(request_count.load() == 2, "auth refresh should retry once");
+  {
+    std::lock_guard lock(observed_mutex);
+    require(observed_authorizations.size() == 2,
+            "auth refresh should produce two requests");
+    require(observed_authorizations[0] == "Bearer stale-token",
+            "initial bearer token mismatch");
+    require(observed_authorizations[1] == "Bearer fresh-token",
+            "refreshed bearer token mismatch");
+  }
+}
+
+void test_client_http_transport_reports_403_as_auth_error() {
+  HttpServerFixture fixture;
+  fixture.server().Post("/auth-forbidden", [&](const httplib::Request&,
+                                               httplib::Response& response) {
+    response.status = 403;
+    response.set_header("WWW-Authenticate",
+                        "Bearer error=\"insufficient_scope\", scope=\"admin\"");
+    response.set_content("forbidden", "text/plain");
+  });
+
+  mcp::client::HttpTransport transport(mcp::client::HttpTransportOptions{
+      .uri = "http://127.0.0.1:" + std::to_string(fixture.port()) +
+             "/auth-forbidden",
+      .auth_header = "token",
+      .timeout = std::chrono::milliseconds(2000),
+  });
+
+  const auto response = transport.send(mcp::protocol::JsonRpcRequest{
+      .method = std::string(mcp::protocol::PingMethod),
+      .params = Json::object(),
+      .id = std::int64_t{92},
+  });
+  require(!response.has_value(), "403 should fail as auth error");
+  require(response.error().category == "auth",
+          "403 error category should be auth");
+  require(response.error().code ==
+              static_cast<int>(mcp::protocol::ErrorCode::PermissionDenied),
+          "403 error code should be permission denied");
+  require(response.error().detail ==
+              "Bearer error=\"insufficient_scope\", scope=\"admin\"",
+          "403 error detail should carry WWW-Authenticate");
+}
+
+void test_client_http_transport_bearer_helper_applies_to_session_requests() {
+  HttpServerFixture fixture;
+  std::atomic<bool> post_seen{false};
+  std::atomic<bool> get_seen{false};
+  std::atomic<bool> delete_seen{false};
+  std::mutex observed_mutex;
+  std::string post_authorization;
+  std::string get_authorization;
+  std::string delete_authorization;
+
+  auto capture_authorization = [&](const httplib::Request& request,
+                                   std::string* target) {
+    std::lock_guard lock(observed_mutex);
+    if (request.has_header("Authorization")) {
+      *target = request.get_header_value("Authorization");
+    }
+  };
+
+  fixture.server().Post("/mcp", [&](const httplib::Request& request,
+                                    httplib::Response& response) {
+    capture_authorization(request, &post_authorization);
+    const auto parsed = mcp::protocol::parse_message(request.body);
+    require(parsed.has_value(), "bearer helper initialize should parse");
+    const auto* rpc_request =
+        std::get_if<mcp::protocol::JsonRpcRequest>(&*parsed);
+    require(rpc_request != nullptr,
+            "bearer helper should send initialize request");
+    response.set_header("Mcp-Session-Id", "auth-session");
+    response.set_content(
+        serialize_test_response(mcp::protocol::JsonRpcResponse{
+            .id = rpc_request->id,
+            .result =
+                Json{
+                    {"protocolVersion",
+                     std::string(mcp::protocol::McpProtocolVersion)},
+                    {"capabilities", Json::object()},
+                    {"serverInfo",
+                     Json{{"name", "auth-helper"}, {"version", "1"}}},
+                },
+        }),
+        "application/json");
+    post_seen.store(true);
+  });
+
+  fixture.server().Get("/mcp", [&](const httplib::Request& request,
+                                   httplib::Response& response) {
+    capture_authorization(request, &get_authorization);
+    response.set_content(":\n\n", "text/event-stream");
+    get_seen.store(true);
+  });
+
+  fixture.server().Delete("/mcp", [&](const httplib::Request& request,
+                                      httplib::Response& response) {
+    capture_authorization(request, &delete_authorization);
+    response.status = 202;
+    delete_seen.store(true);
+  });
+
+  mcp::client::HttpTransport transport(mcp::client::HttpTransportOptions{
+      .uri = "http://127.0.0.1:" + std::to_string(fixture.port()) + "/mcp",
+      .auth_header = "token-123",
+      .timeout = std::chrono::milliseconds(2000),
+  });
+  const auto started =
+      transport.start([](const mcp::protocol::JsonRpcRequest&)
+                          -> mcp::core::Result<mcp::protocol::JsonRpcResponse> {
+        return std::unexpected(mcp::core::Error{
+            static_cast<int>(mcp::protocol::ErrorCode::MethodNotFound),
+            "unexpected request",
+        });
+      });
+  require(started.has_value(), "bearer helper transport should start");
+
+  const auto response = transport.send(mcp::protocol::JsonRpcRequest{
+      .method = std::string(mcp::protocol::InitializeMethod),
+      .params = Json::object(),
+      .id = std::int64_t{10},
+  });
+  require(response.has_value(), "bearer helper initialize should succeed");
+  require(wait_for([&]() { return post_seen.load() && get_seen.load(); },
+                   std::chrono::milliseconds(1000)),
+          "bearer helper should reach POST and SSE GET");
+
+  transport.stop();
+  require(wait_for([&]() { return delete_seen.load(); },
+                   std::chrono::milliseconds(1000)),
+          "bearer helper should terminate HTTP session");
+
+  std::lock_guard lock(observed_mutex);
+  require(post_authorization == "Bearer token-123",
+          "bearer helper should inject Authorization on POST");
+  require(get_authorization == "Bearer token-123",
+          "bearer helper should inject Authorization on SSE GET");
+  require(delete_authorization == "Bearer token-123",
+          "bearer helper should inject Authorization on DELETE");
+}
+
 void test_client_connect_streamable_http_accepts_uri_string() {
   HttpServerFixture fixture;
   std::atomic<int> request_count{0};
@@ -2393,6 +3014,436 @@ void test_client_connect_streamable_http_accepts_uri_string() {
   require(pong.has_value(), "uri string client should ping successfully");
   require(request_count.load() == 2,
           "uri string client should initialize before ping");
+}
+
+void test_http_transport_load_smoke_concurrent_sessions() {
+  constexpr int kSessionCount = 4;
+  std::atomic<int> initialize_count{0};
+  std::atomic<int> sse_count{0};
+  std::mutex sessions_mutex;
+  std::vector<std::string> sessions;
+
+  HttpServerFixture fixture;
+  fixture.server().Post("/load-sessions", [&](const httplib::Request& request,
+                                              httplib::Response& response) {
+    const auto parsed = mcp::protocol::parse_message(request.body);
+    require(parsed.has_value(), "load initialize request should parse");
+    const auto* rpc_request =
+        std::get_if<mcp::protocol::JsonRpcRequest>(&*parsed);
+    require(rpc_request != nullptr, "load client should send a request");
+    require(rpc_request->method == mcp::protocol::InitializeMethod,
+            "load client should initialize");
+
+    const auto index = initialize_count.fetch_add(1) + 1;
+    const auto session_id = "load-session-" + std::to_string(index);
+    {
+      std::lock_guard lock(sessions_mutex);
+      sessions.push_back(session_id);
+    }
+    response.set_header("Mcp-Session-Id", session_id);
+    response.set_content(
+        serialize_test_response(mcp::protocol::JsonRpcResponse{
+            .id = rpc_request->id,
+            .result =
+                Json{
+                    {"protocolVersion",
+                     std::string(mcp::protocol::McpProtocolVersion)},
+                    {"capabilities", Json::object()},
+                    {"serverInfo",
+                     Json{{"name", "load-session-test"}, {"version", "1"}}},
+                },
+        }),
+        "application/json");
+  });
+  fixture.server().Get("/load-sessions", [&](const httplib::Request& request,
+                                             httplib::Response& response) {
+    require(request.has_header("Mcp-Session-Id"),
+            "load SSE GET should include a session id");
+    sse_count.fetch_add(1);
+    response.set_chunked_content_provider(
+        "text/event-stream", [](size_t, httplib::DataSink& sink) {
+          std::this_thread::sleep_for(std::chrono::milliseconds(10));
+          if (!sink.is_writable()) {
+            sink.done();
+            return false;
+          }
+          return true;
+        });
+  });
+
+  std::vector<std::unique_ptr<mcp::client::HttpTransport>> transports;
+  transports.reserve(kSessionCount);
+  for (int i = 0; i < kSessionCount; ++i) {
+    transports.push_back(std::make_unique<mcp::client::HttpTransport>(
+        mcp::client::HttpTransportOptions{
+            .host = "127.0.0.1",
+            .port = fixture.port(),
+            .path = "/load-sessions",
+            .timeout = std::chrono::milliseconds(2000),
+        }));
+    const auto started = transports.back()->start(
+        [](const mcp::protocol::JsonRpcRequest&)
+            -> mcp::core::Result<mcp::protocol::JsonRpcResponse> {
+          return std::unexpected(mcp::core::Error{
+              static_cast<int>(mcp::protocol::ErrorCode::MethodNotFound),
+              "unexpected request",
+          });
+        });
+    require(started.has_value(), "load session transport should start");
+  }
+
+  std::vector<std::thread> threads;
+  std::vector<std::exception_ptr> failures(kSessionCount);
+  for (int i = 0; i < kSessionCount; ++i) {
+    threads.emplace_back([&, i]() {
+      try {
+        const auto initialized =
+            transports[i]->send(mcp::protocol::JsonRpcRequest{
+                .method = std::string(mcp::protocol::InitializeMethod),
+                .params = Json::object(),
+                .id = std::int64_t{i + 1},
+            });
+        require(initialized.has_value(),
+                "concurrent session initialize should succeed");
+      } catch (...) {
+        failures[i] = std::current_exception();
+      }
+    });
+  }
+  for (auto& thread : threads) {
+    thread.join();
+  }
+  for (const auto& failure : failures) {
+    if (failure) {
+      std::rethrow_exception(failure);
+    }
+  }
+
+  require(initialize_count.load() == kSessionCount,
+          "all concurrent sessions should initialize");
+  require(wait_for([&]() { return sse_count.load() == kSessionCount; },
+                   std::chrono::milliseconds(1000)),
+          "all concurrent sessions should open SSE streams");
+
+  {
+    std::lock_guard lock(sessions_mutex);
+    std::sort(sessions.begin(), sessions.end());
+    const auto unique_end = std::unique(sessions.begin(), sessions.end());
+    require(unique_end == sessions.end(),
+            "concurrent HTTP sessions should be distinct");
+  }
+
+  for (auto& transport : transports) {
+    transport->stop();
+  }
+}
+
+void test_http_transport_load_smoke_many_in_flight_requests() {
+  constexpr int kRequestCount = 6;
+  std::mutex gate_mutex;
+  std::condition_variable gate_cv;
+  int waiting_requests = 0;
+  bool release_responses = false;
+  std::atomic<int> completed_requests{0};
+
+  HttpServerFixture fixture;
+  fixture.server().Post("/load-inflight", [&](const httplib::Request& request,
+                                              httplib::Response& response) {
+    const auto parsed = mcp::protocol::parse_message(request.body);
+    require(parsed.has_value(), "in-flight request should parse");
+    const auto* rpc_request =
+        std::get_if<mcp::protocol::JsonRpcRequest>(&*parsed);
+    require(rpc_request != nullptr, "in-flight client should send a request");
+    require(rpc_request->method == mcp::protocol::PingMethod,
+            "in-flight client should send ping");
+
+    {
+      std::unique_lock lock(gate_mutex);
+      ++waiting_requests;
+      gate_cv.notify_all();
+      gate_cv.wait_for(lock, std::chrono::milliseconds(1000),
+                       [&]() { return release_responses; });
+    }
+
+    response.set_content(serialize_test_response(mcp::protocol::JsonRpcResponse{
+                             .id = rpc_request->id,
+                             .result = Json{{"ok", true}},
+                         }),
+                         "application/json");
+    completed_requests.fetch_add(1);
+  });
+
+  mcp::client::HttpTransport transport(mcp::client::HttpTransportOptions{
+      .host = "127.0.0.1",
+      .port = fixture.port(),
+      .path = "/load-inflight",
+      .timeout = std::chrono::milliseconds(2000),
+  });
+  const auto started =
+      transport.start([](const mcp::protocol::JsonRpcRequest&)
+                          -> mcp::core::Result<mcp::protocol::JsonRpcResponse> {
+        return std::unexpected(mcp::core::Error{
+            static_cast<int>(mcp::protocol::ErrorCode::MethodNotFound),
+            "unexpected request",
+        });
+      });
+  require(started.has_value(), "in-flight transport should start");
+
+  std::vector<std::thread> threads;
+  std::vector<std::exception_ptr> failures(kRequestCount);
+  for (int i = 0; i < kRequestCount; ++i) {
+    threads.emplace_back([&, i]() {
+      try {
+        const auto response = transport.send(mcp::protocol::JsonRpcRequest{
+            .method = std::string(mcp::protocol::PingMethod),
+            .params = Json::object(),
+            .id = std::int64_t{i + 1},
+        });
+        require(response.has_value(),
+                "many in-flight HTTP requests should succeed");
+        require(
+            response->result.has_value() && response->result->at("ok") == true,
+            "many in-flight HTTP response payload mismatch");
+      } catch (...) {
+        failures[i] = std::current_exception();
+      }
+    });
+  }
+
+  {
+    std::unique_lock lock(gate_mutex);
+    require(
+        gate_cv.wait_for(lock, std::chrono::milliseconds(1000),
+                         [&]() { return waiting_requests == kRequestCount; }),
+        "server should observe all in-flight HTTP requests");
+    release_responses = true;
+  }
+  gate_cv.notify_all();
+
+  for (auto& thread : threads) {
+    thread.join();
+  }
+  for (const auto& failure : failures) {
+    if (failure) {
+      std::rethrow_exception(failure);
+    }
+  }
+
+  require(completed_requests.load() == kRequestCount,
+          "server should complete all in-flight HTTP requests");
+  transport.stop();
+}
+
+void test_http_transport_load_smoke_high_volume_notifications() {
+  constexpr int kNotificationCount = 32;
+  constexpr std::string_view kSessionId = "load-notifications-session";
+  std::atomic<int> notification_count{0};
+  std::atomic<int> unexpected_count{0};
+  std::atomic<int> sse_get_count{0};
+
+  HttpServerFixture fixture;
+  fixture.server().Post(
+      "/load-notifications",
+      [&](const httplib::Request& request, httplib::Response& response) {
+        const auto parsed = mcp::protocol::parse_message(request.body);
+        require(parsed.has_value(),
+                "notification load initialize should parse");
+        const auto* rpc_request =
+            std::get_if<mcp::protocol::JsonRpcRequest>(&*parsed);
+        require(rpc_request != nullptr,
+                "notification load should send a request");
+        require(rpc_request->method == mcp::protocol::InitializeMethod,
+                "notification load should initialize");
+
+        response.set_header("Mcp-Session-Id", std::string(kSessionId));
+        response.set_content(
+            serialize_test_response(mcp::protocol::JsonRpcResponse{
+                .id = rpc_request->id,
+                .result =
+                    Json{
+                        {"protocolVersion",
+                         std::string(mcp::protocol::McpProtocolVersion)},
+                        {"capabilities", Json::object()},
+                        {"serverInfo", Json{{"name", "notification-load-test"},
+                                            {"version", "1"}}},
+                    },
+            }),
+            "application/json");
+      });
+  fixture.server().Get(
+      "/load-notifications",
+      [&](const httplib::Request& request, httplib::Response& response) {
+        require(request.has_header("Mcp-Session-Id"),
+                "notification load SSE should carry session");
+        require(request.get_header_value("Mcp-Session-Id") == kSessionId,
+                "notification load SSE session mismatch");
+        sse_get_count.fetch_add(1);
+        response.set_chunked_content_provider(
+            "text/event-stream", [sent = 0, kNotificationCount](
+                                     size_t, httplib::DataSink& sink) mutable {
+              if (sent >= kNotificationCount) {
+                sink.done();
+                return false;
+              }
+              const auto event = sse_event(serialize_test_notification(
+                  mcp::protocol::JsonRpcNotification{
+                      .method = std::string(
+                          mcp::protocol::ProgressNotificationMethod),
+                      .params = Json{{"progressToken", "load-progress"},
+                                     {"progress", sent},
+                                     {"total", kNotificationCount}},
+                  }));
+              ++sent;
+              return sink.write(event.data(), event.size());
+            });
+      });
+
+  mcp::client::HttpTransport transport(mcp::client::HttpTransportOptions{
+      .host = "127.0.0.1",
+      .port = fixture.port(),
+      .path = "/load-notifications",
+      .timeout = std::chrono::milliseconds(2000),
+  });
+  const auto started = transport.start(
+      [](const mcp::protocol::JsonRpcRequest&)
+          -> mcp::core::Result<mcp::protocol::JsonRpcResponse> {
+        return std::unexpected(mcp::core::Error{
+            static_cast<int>(mcp::protocol::ErrorCode::MethodNotFound),
+            "unexpected request",
+        });
+      },
+      [&](const mcp::protocol::JsonRpcNotification& notification) {
+        if (notification.method != mcp::protocol::ProgressNotificationMethod) {
+          unexpected_count.fetch_add(1);
+          return mcp::core::Result<mcp::core::Unit>{mcp::core::Unit{}};
+        }
+        notification_count.fetch_add(1);
+        return mcp::core::Result<mcp::core::Unit>{mcp::core::Unit{}};
+      });
+  require(started.has_value(),
+          "high-volume notification transport should start");
+
+  const auto initialized = transport.send(mcp::protocol::JsonRpcRequest{
+      .method = std::string(mcp::protocol::InitializeMethod),
+      .params = Json::object(),
+      .id = std::int64_t{1},
+  });
+  require(initialized.has_value(),
+          "high-volume notification initialize should succeed");
+  require(wait_for(
+              [&]() { return notification_count.load() == kNotificationCount; },
+              std::chrono::milliseconds(1000)),
+          "client should dispatch all high-volume SSE notifications");
+  require(unexpected_count.load() == 0,
+          "high-volume SSE stream should only deliver expected notifications");
+  require(sse_get_count.load() == 1,
+          "high-volume notification load should use one SSE stream");
+
+  transport.stop();
+}
+
+void test_http_transport_stop_returns_with_active_sse_stream() {
+  constexpr std::string_view kSessionId = "stop-load-session";
+  std::atomic<bool> stream_started{false};
+  std::atomic<bool> allow_stream_close{false};
+  std::atomic<bool> stop_done{false};
+  std::atomic<int> notifications_seen{0};
+
+  HttpServerFixture fixture;
+  fixture.server().Post("/load-stop", [&](const httplib::Request& request,
+                                          httplib::Response& response) {
+    const auto parsed = mcp::protocol::parse_message(request.body);
+    require(parsed.has_value(), "shutdown load initialize should parse");
+    const auto* rpc_request =
+        std::get_if<mcp::protocol::JsonRpcRequest>(&*parsed);
+    require(rpc_request != nullptr, "shutdown load should send a request");
+    require(rpc_request->method == mcp::protocol::InitializeMethod,
+            "shutdown load should initialize");
+
+    response.set_header("Mcp-Session-Id", std::string(kSessionId));
+    response.set_content(
+        serialize_test_response(mcp::protocol::JsonRpcResponse{
+            .id = rpc_request->id,
+            .result =
+                Json{
+                    {"protocolVersion",
+                     std::string(mcp::protocol::McpProtocolVersion)},
+                    {"capabilities", Json::object()},
+                    {"serverInfo",
+                     Json{{"name", "shutdown-load-test"}, {"version", "1"}}},
+                },
+        }),
+        "application/json");
+  });
+  fixture.server().Get("/load-stop", [&](const httplib::Request&,
+                                         httplib::Response& response) {
+    response.set_chunked_content_provider(
+        "text/event-stream",
+        [&, sent = 0](size_t, httplib::DataSink& sink) mutable {
+          stream_started.store(true);
+          if (allow_stream_close.load() || !sink.is_writable()) {
+            sink.done();
+            return false;
+          }
+
+          const auto event = sse_event(
+              serialize_test_notification(mcp::protocol::JsonRpcNotification{
+                  .method =
+                      std::string(mcp::protocol::ProgressNotificationMethod),
+                  .params = Json{{"progressToken", "shutdown-load"},
+                                 {"progress", sent++}},
+              }));
+          std::this_thread::sleep_for(std::chrono::milliseconds(5));
+          return sink.write(event.data(), event.size());
+        });
+  });
+
+  mcp::client::HttpTransport transport(mcp::client::HttpTransportOptions{
+      .host = "127.0.0.1",
+      .port = fixture.port(),
+      .path = "/load-stop",
+      .timeout = std::chrono::milliseconds(2000),
+  });
+  const auto started = transport.start(
+      [](const mcp::protocol::JsonRpcRequest&)
+          -> mcp::core::Result<mcp::protocol::JsonRpcResponse> {
+        return std::unexpected(mcp::core::Error{
+            static_cast<int>(mcp::protocol::ErrorCode::MethodNotFound),
+            "unexpected request",
+        });
+      },
+      [&](const mcp::protocol::JsonRpcNotification& notification) {
+        if (notification.method == mcp::protocol::ProgressNotificationMethod) {
+          notifications_seen.fetch_add(1);
+        }
+        return mcp::core::Result<mcp::core::Unit>{mcp::core::Unit{}};
+      });
+  require(started.has_value(), "shutdown load transport should start");
+
+  const auto initialized = transport.send(mcp::protocol::JsonRpcRequest{
+      .method = std::string(mcp::protocol::InitializeMethod),
+      .params = Json::object(),
+      .id = std::int64_t{1},
+  });
+  require(initialized.has_value(), "shutdown load initialize should succeed");
+  require(wait_for([&]() { return stream_started.load(); },
+                   std::chrono::milliseconds(1000)),
+          "shutdown load should open an active SSE stream");
+  require(wait_for([&]() { return notifications_seen.load() > 0; },
+                   std::chrono::milliseconds(1000)),
+          "shutdown load should receive at least one notification");
+
+  std::thread stopper([&]() {
+    transport.stop();
+    stop_done.store(true);
+  });
+  const bool completed = wait_for([&]() { return stop_done.load(); },
+                                  std::chrono::milliseconds(1000));
+  allow_stream_close.store(true);
+  if (stopper.joinable()) {
+    stopper.join();
+  }
+  require(completed, "transport stop should return with active SSE load");
 }
 
 void test_native_streamable_http_transport_exposes_client_contract() {
@@ -3196,6 +4247,8 @@ int main() {
        test_server_http_transport_rejects_expired_last_event_id},
       {"server http transport applies outbound backpressure",
        test_server_http_transport_applies_outbound_backpressure},
+      {"server http transport bounds outbound queue bytes",
+       test_server_http_transport_bounds_outbound_queue_bytes},
       {"server http transport keeps pending request across reconnect",
        test_server_http_transport_keeps_pending_request_across_reconnect},
       {"server http transport routes notifications by session",
@@ -3214,6 +4267,12 @@ int main() {
        test_server_http_transport_emits_sse_retry_priming},
       {"server http transport accepts client notification with 202",
        test_server_http_transport_accepts_client_notification_with_202},
+      {"server http transport copies headers to session context",
+       test_server_http_transport_copies_headers_to_session_context},
+      {"server http transport unauthorized uses bearer challenge",
+       test_server_http_transport_unauthorized_uses_bearer_challenge},
+      {"server http transport authorized request sets auth identity",
+       test_server_http_transport_authorized_request_sets_auth_identity},
       {"server http transport rejects mismatched origin when allowlisted",
        test_server_http_transport_rejects_mismatched_origin_when_allowlisted},
       {"server http transport can request client",
@@ -3230,8 +4289,25 @@ int main() {
        test_client_http_transport_rejects_unexpected_response_id},
       {"client http transport uses uri and auth header",
        test_client_http_transport_uses_uri_and_auth_header},
+      {"client http transport explicit authorization header wins case "
+       "insensitive",
+       test_client_http_transport_explicit_authorization_header_wins_case_insensitive},
+      {"client http transport refreshes bearer once on 401",
+       test_client_http_transport_refreshes_bearer_once_on_401},
+      {"client http transport reports 403 as auth error",
+       test_client_http_transport_reports_403_as_auth_error},
+      {"client http transport bearer helper applies to session requests",
+       test_client_http_transport_bearer_helper_applies_to_session_requests},
       {"client connect_streamable_http accepts uri string",
        test_client_connect_streamable_http_accepts_uri_string},
+      {"http transport load smoke concurrent sessions",
+       test_http_transport_load_smoke_concurrent_sessions},
+      {"http transport load smoke many in-flight requests",
+       test_http_transport_load_smoke_many_in_flight_requests},
+      {"http transport load smoke high-volume notifications",
+       test_http_transport_load_smoke_high_volume_notifications},
+      {"http transport stop returns with active SSE stream",
+       test_http_transport_stop_returns_with_active_sse_stream},
       {"native streamable http transport exposes client contract",
        test_native_streamable_http_transport_exposes_client_contract},
       {"native streamable http transport diagnostics timeout cleanup",

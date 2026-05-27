@@ -42,6 +42,15 @@ core::Error make_transport_error(int code, std::string message,
   return core::Error{code, std::move(message), std::move(detail), "transport"};
 }
 
+std::unordered_map<std::string, std::string> copy_request_headers(
+    const httplib::Request& request) {
+  std::unordered_map<std::string, std::string> headers;
+  for (const auto& header : request.headers) {
+    headers.emplace(header.first, header.second);
+  }
+  return headers;
+}
+
 std::optional<protocol::RequestId> request_id_from_message(
     const protocol::JsonRpcMessage& message) {
   if (const auto* request = std::get_if<protocol::JsonRpcRequest>(&message)) {
@@ -292,6 +301,51 @@ void write_error(httplib::Response& http_response, int code,
           std::move(id), protocol::make_error(code, std::move(message))));
 }
 
+void set_auth_failure_status(httplib::Response& http_response,
+                             std::string_view challenge) {
+  http_response.status = 401;
+  if (!challenge.empty()) {
+    http_response.set_header("WWW-Authenticate", std::string(challenge));
+  }
+}
+
+bool is_auth_error(const core::Error& error) {
+  return error.code ==
+             static_cast<int>(protocol::ErrorCode::PermissionDenied) &&
+         error.category == AuthErrorCategory;
+}
+
+bool is_auth_error_response(const protocol::JsonRpcResponse& response) {
+  if (!response.error.has_value()) {
+    return false;
+  }
+  const auto& error = *response.error;
+  if (error.code != static_cast<int>(protocol::ErrorCode::PermissionDenied)) {
+    return false;
+  }
+  if (!error.data.has_value() || !error.data->is_object()) {
+    return false;
+  }
+  const auto category = error.data->find("category");
+  return category != error.data->end() && category->is_string() &&
+         category->get<std::string>() == AuthErrorCategory;
+}
+
+protocol::JsonRpcResponse make_auth_error_response(
+    const core::Error& error, std::optional<protocol::RequestId> id) {
+  protocol::Json data = protocol::Json::object();
+  data["category"] = std::string(AuthErrorCategory);
+  if (!error.detail.empty()) {
+    data["detail"] = error.detail;
+  }
+  return protocol::make_error_response(
+      std::move(id),
+      protocol::make_error(
+          protocol::ErrorCode::PermissionDenied,
+          error.message.empty() ? "authentication failed" : error.message,
+          std::move(data)));
+}
+
 }  // namespace
 
 HttpTransport::HttpTransport(HttpTransportOptions options)
@@ -413,6 +467,7 @@ core::Result<core::Unit> HttpTransport::start(
         SessionContext context;
         context.session_id = active_session_id;
         context.remote_address = request.remote_addr;
+        context.headers = copy_request_headers(request);
         context.transport = this;
         core::Result<core::Unit> handled;
         try {
@@ -423,6 +478,12 @@ core::Result<core::Unit> HttpTransport::start(
           handled = std::unexpected(errors::handler_unknown_exception());
         }
         if (!handled) {
+          if (is_auth_error(handled.error())) {
+            set_auth_failure_status(response, options_.auth_challenge);
+            write_response(response, make_auth_error_response(handled.error(),
+                                                              std::nullopt));
+            return;
+          }
           write_error(response, handled.error().code, handled.error().message);
           return;
         }
@@ -521,6 +582,7 @@ core::Result<core::Unit> HttpTransport::start(
     SessionContext context;
     context.session_id = session_context_id;
     context.remote_address = request.remote_addr;
+    context.headers = copy_request_headers(request);
     context.transport = this;
     core::Result<protocol::JsonRpcResponse> rpc_response;
     try {
@@ -531,6 +593,12 @@ core::Result<core::Unit> HttpTransport::start(
       rpc_response = std::unexpected(errors::handler_unknown_exception());
     }
     if (!rpc_response) {
+      if (is_auth_error(rpc_response.error())) {
+        set_auth_failure_status(response, options_.auth_challenge);
+        write_response(response, make_auth_error_response(rpc_response.error(),
+                                                          rpc_request->id));
+        return;
+      }
       rpc_response = protocol::make_error_response(
           std::optional<protocol::RequestId>{rpc_request->id},
           protocol::make_error(rpc_response.error().code,
@@ -565,6 +633,9 @@ core::Result<core::Unit> HttpTransport::start(
       }
     }
 
+    if (is_auth_error_response(*rpc_response)) {
+      set_auth_failure_status(response, options_.auth_challenge);
+    }
     write_response(response, *rpc_response);
   });
 

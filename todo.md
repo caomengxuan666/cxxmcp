@@ -443,196 +443,305 @@ true:
 
 ## P1: Protocol Model Completeness
 
-- [ ] Audit all model structs against the pinned MCP/RMCP snapshot.
-- [ ] Add `_meta` support where the spec expects it, not only on generic
+- [x] Audit all model structs against the pinned MCP/RMCP snapshot.
+- [x] Add `_meta` support where the spec expects it, not only on generic
   JSON-RPC envelopes.
-- [ ] Ensure `_meta` round-trips symmetrically.
-- [ ] Audit annotations support for tools, prompts, prompt arguments,
+- [x] Ensure `_meta` round-trips symmetrically.
+- [x] Audit annotations support for tools, prompts, prompt arguments,
   resources, resource templates, and content blocks.
-- [ ] Audit icon support for tools, prompts, resources, and templates.
-- [ ] Audit title support for tools, prompts, prompt arguments, resources, and
+- [x] Audit icon support for tools, prompts, resources, and templates.
+- [x] Audit title support for tools, prompts, prompt arguments, resources, and
   templates.
-- [ ] Audit resource size support.
-- [ ] Audit content variants: text, image, audio, embedded resource, resource
+- [x] Audit resource size support.
+- [x] Audit content variants: text, image, audio, embedded resource, resource
   link, and future extension handling.
-- [ ] Add extension bags where RMCP/spec provides them.
-- [ ] Ensure raw JSON extension data is preserved even when typed helpers do not
+- [x] Add extension bags where RMCP/spec provides them.
+- [x] Ensure raw JSON extension data is preserved even when typed helpers do not
   understand it.
-- [ ] Make serialization/deserialization exhaustive and symmetric.
-- [ ] Add round-trip fixture tests for every protocol family.
-- [ ] Add negative parse tests for every required field and type constraint.
-- [ ] Keep helper constructors for common text-only flows.
-- [ ] Avoid bool-heavy shortcuts when the wire shape expects object presence.
+- [x] Make serialization/deserialization exhaustive and symmetric.
+- [x] Add round-trip fixture tests for every protocol family.
+- [x] Add typed initialize payload models for implementation info,
+  initialize params, and initialize result, aligned with RMCP initialize
+  payload shape.
+- [x] Add typed resource updated notification payload and tests.
+- [x] Align cancellation, progress, and logging notification optional string
+  fields with RMCP `Option<String>` semantics.
+- [x] Align completion `hasMore` with RMCP optional-bool semantics and enforce
+  completion value/total constraints.
+- [x] Align `tools/call` result `isError` with RMCP optional-bool semantics and
+  reject empty untagged tool-result objects.
+- [x] Enforce RMCP sampling role/includeContext enums plus SEP-1577
+  tool_use/tool_result role and balance constraints.
+- [x] Align elicitation string schema `minLength`/`maxLength` and restricted
+  string `format` parsing with RMCP, including content validation.
+- [x] Align elicitation enum schema wire shapes with RMCP, including
+  `enumNames`, titled `oneOf`, multi-select `items.enum`, and titled
+  multi-select `items.anyOf`/`items.oneOf` alias parsing.
+- [x] Align JSON-RPC request/notification `_meta` placement with MCP params
+  metadata and omit empty no-param `params` members.
+- [x] Align initialize implementation metadata with RMCP `title`,
+  `description`, `icons`, and `websiteUrl` fields.
+- [x] Tighten tool definition schema presence and optional field wire behavior:
+  required object `inputSchema`, explicit `outputSchema` presence, optional
+  `description`, and no default `streaming=false` emission.
+- [x] Tighten content block parsing to RMCP tagged-union behavior with required
+  supported `type` values and object-only annotations/meta.
+- [x] Reject resource and resource_link content at the sampling message content
+  boundary, matching RMCP sampling content variants.
+- [x] Preserve explicit `required=false` on prompt arguments without changing
+  the existing bool convenience field.
+- [x] Enforce completion reference tagged-union constraints for prompt and
+  resource references.
+- [x] Constrain resource and resource-template `size` parsing to the RMCP
+  `u32` range.
+- [x] Tighten capability wire parsing for RMCP object-presence semantics,
+  including explicit `false` round-trips for optional bool members and strict
+  non-object rejection for client sampling, elicitation, roots, and task
+  shapes.
+- [x] Preserve raw capability object payloads for RMCP `JsonObject` capability
+  members while keeping the existing convenience bool accessors.
+- [x] Add negative parse tests for every required field and type constraint.
+- [x] Add cross-family required-field negative parse regression coverage for
+  tools, prompts, resources, roots, completion, sampling, elicitation, and
+  tasks.
+- [x] Add initialize payload required-field negative parse coverage for
+  implementation info, initialize params, and initialize result.
+- [x] Add resource subscription required-field negative parse coverage.
+- [x] Add cross-family type-constraint negative parse regression coverage for
+  tools, prompts, resources, roots, completion, logging, sampling,
+  elicitation, and tasks.
+- [x] Add resource subscription URI type-constraint negative parse coverage.
+- [x] Add resource params/content/result metadata and scalar type-constraint
+      negative parse coverage.
+- [x] Reject non-object annotations and `_meta` on tool, prompt, resource, and
+      resource-template descriptors.
+- [x] Add nested negative parse coverage for sampling tool use/tool result,
+  tool choice, model preferences, elicitation primitive schemas, and
+  elicitation completion notifications.
+- [x] Add shared icon, pageable `nextCursor`, and create-task result `_meta`
+  type-constraint negative coverage.
+- [x] Keep helper constructors for common text-only flows.
+- [x] Avoid bool-heavy shortcuts when the wire shape expects object presence.
+  - [x] Preserve client sampling raw object payloads without requiring
+        `sampling.enabled`.
+  - [x] Preserve explicit `false` task capability members across client and
+        server capability round trips.
 
 ## P1: Capabilities
 
-- [ ] Audit client capabilities against RMCP/spec.
-- [ ] Audit server capabilities against RMCP/spec.
-- [ ] Audit task capabilities against RMCP/spec.
-- [ ] Keep object-presence semantics for active capability families.
-- [ ] Preserve present-but-empty capability objects where meaningful.
-- [ ] Preserve experimental and extension bags.
-- [ ] Reject invalid non-object experimental/extension bags where appropriate.
-- [ ] Add tests for every capability serializer and parser.
-- [ ] Add tests for capability negotiation affecting helper behavior.
-- [ ] Gate roots helpers on roots capability.
-- [ ] Gate sampling helpers on sampling capability.
-- [ ] Gate elicitation helpers on elicitation capability.
-- [ ] Gate task helpers on task capability where applicable.
-- [ ] Document which capabilities are core, optional, or experimental.
+- [x] Audit client capabilities against RMCP/spec.
+- [x] Audit server capabilities against RMCP/spec.
+- [x] Audit task capabilities against RMCP/spec.
+- [x] Keep object-presence semantics for active capability families.
+- [x] Preserve present-but-empty capability objects where meaningful.
+- [x] Preserve explicit `false` for RMCP optional-bool capability members.
+- [x] Reject non-object capability families and non-boolean optional bool
+  members instead of silently ignoring them.
+- [x] Preserve per-capability object payloads for future RMCP fields and
+  capability settings.
+- [x] Preserve experimental and extension bags.
+- [x] Reject invalid non-object experimental/extension bags where appropriate.
+- [x] Add tests for every capability serializer and parser.
+- [x] Add tests for capability negotiation affecting helper behavior.
+- [x] Gate server-side `ClientPeer` roots helper sync/async paths on the
+  negotiated client roots capability.
+- [x] Gate server-side `ClientPeer` sampling helper sync/async paths on the
+  negotiated client sampling capability.
+- [x] Gate server-side `ClientPeer` elicitation helper sync/async paths on the
+  negotiated client elicitation form/URL capabilities.
+- [x] Gate task helpers on task capability where applicable.
+- [x] Gate server-side `ClientPeer` task list/cancel/result helper paths on
+  negotiated client task capabilities where the capability model exposes a
+  method-specific flag.
+- [x] Gate client-side `Client` and native `ClientPeer` completion, logging,
+  resource subscription, task management, and task-aware tool helpers on
+  negotiated server capabilities.
+- [x] Document which capabilities are core, optional, or experimental.
 
 ## P1: Task Lifecycle
 
-- [ ] Keep task models in the SDK protocol layer.
-- [ ] Keep runtime task management separate from SDK core task protocol.
-- [ ] Complete server-side task lifecycle documentation.
-- [ ] Define task negotiation rules.
-- [ ] Define task timeout semantics.
-- [ ] Define task cancellation semantics.
-- [ ] Define terminal task retention and TTL semantics.
-- [ ] Add hard-cancellation strategy for non-cooperative running handlers or
+- [x] Keep task models in the SDK protocol layer.
+- [x] Keep runtime task management separate from SDK core task protocol.
+- [x] Complete server-side task lifecycle documentation.
+- [x] Define task negotiation rules.
+- [x] Define task timeout semantics.
+- [x] Define task cancellation semantics.
+- [x] Define terminal task retention and TTL semantics.
+- [x] Add hard-cancellation strategy for non-cooperative running handlers or
   explicitly document why only cooperative cancellation is supported.
-- [ ] Add richer typed operation result transport beyond raw JSON payload
+- [x] Add richer typed operation result transport beyond raw JSON payload
   storage where RMCP/spec expects it.
-- [ ] Add tests for task-aware `tools/call` success.
-- [ ] Add tests for missing/invalid task params.
-- [ ] Add tests for task timeout.
-- [ ] Add tests for task cancellation before start.
-- [ ] Add tests for task cancellation during execution.
-- [ ] Add tests for late result suppression after cancellation/timeout.
-- [ ] Add tests for task status notifications.
-- [ ] Add tests for task result retrieval.
-- [ ] Add tests for failed task result retrieval.
-- [ ] Add tests for retention count limits.
-- [ ] Add tests for completed task TTL cleanup.
-- [ ] Add examples for task-aware server tools.
+- [x] Add flattened `tasks/get` and `tasks/cancel` result models plus
+  `tasks/list.total`, aligned with RMCP task result shapes.
+- [x] Add tests for task-aware `tools/call` success.
+- [x] Add tests for missing/invalid task params.
+- [x] Add tests for task timeout.
+- [x] Add tests for task cancellation before start.
+- [x] Add tests for task cancellation during execution.
+- [x] Add tests for late result suppression after cancellation/timeout.
+- [x] Add tests for task status notifications.
+- [x] Add tests for task result retrieval.
+- [x] Add tests for failed task result retrieval.
+- [x] Add tests for retention count limits.
+- [x] Add tests for completed task TTL cleanup.
+- [x] Add examples for task-aware server tools.
 
 ## P1: Elicitation Lifecycle
 
-- [ ] Keep elicitation optional/feature-gated in public docs.
-- [ ] Split or clarify form and URL elicitation types if the spec/RMCP shape
+- [x] Keep elicitation optional/feature-gated in public docs.
+- [x] Split or clarify form and URL elicitation types if the spec/RMCP shape
   requires deeper structure.
-- [ ] Add stronger schema integration for form elicitation.
-- [ ] Add schema validation for elicitation content.
-- [ ] Add capability checks for form elicitation.
-- [ ] Add capability checks for URL elicitation.
-- [ ] Add server peer helpers for typed elicitation flows.
-- [ ] Add client-side default decline behavior if no handler is installed.
-- [ ] Add URL elicitation completion notification tests.
-- [ ] Add form elicitation success/decline/cancel tests.
-- [ ] Add URL elicitation success/decline/cancel tests.
-- [ ] Add raw elicitation escape-hatch tests.
-- [ ] Document which elicitation pieces are stable, optional, or experimental.
+- [x] Add stronger schema integration for form elicitation.
+- [x] Add schema validation for elicitation content.
+- [x] Add capability checks for form elicitation.
+- [x] Add capability checks for URL elicitation.
+- [x] Add server peer helpers for typed elicitation flows.
+- [x] Add client-side default decline behavior if no handler is installed.
+- [x] Add URL elicitation completion notification tests.
+- [x] Add form elicitation success/decline/cancel tests.
+- [x] Add URL elicitation success/decline/cancel tests.
+- [x] Add raw elicitation escape-hatch tests.
+- [x] Document which elicitation pieces are stable, optional, or experimental.
 
 ## P1: Handler And Authoring Ergonomics
 
-- [ ] Keep `ClientHandler` and `ServerHandler` as explicit application
+- [x] Keep `ClientHandler` and `ServerHandler` as explicit application
   contracts.
-- [ ] Keep aggregate handlers for ergonomic setup.
-- [ ] Keep interface-based handlers for durable application code.
-- [ ] Route events through explicit handler objects where possible.
-- [ ] Reduce public mutable callback setter state over time.
-- [ ] Keep registries as convenience wrappers over server handlers.
-- [ ] Deepen typed tool registration helpers.
-- [ ] Deepen typed prompt helper templates.
-- [ ] Deepen typed resource helper templates.
-- [ ] Deepen typed completion helper templates.
-- [ ] Support context injection consistently for tool, prompt, resource,
+- [x] Keep aggregate handlers for ergonomic setup.
+- [x] Keep interface-based handlers for durable application code.
+- [x] Route events through explicit handler objects where possible.
+- [x] Reduce public mutable callback setter state over time.
+  - [x] Keep `Server::set_handler()` and `ServerPeer::set_handler()` as
+        aggregate/contract install paths for durable applications.
+  - [x] Add `ServerBuilder::with_handler()` so new servers can be constructed
+        from aggregate or contract handlers without a long chain of mutable
+        callback setters.
+- [x] Keep registries as convenience wrappers over server handlers.
+  - [x] Route tool, prompt, resource, and resource-template discovery through
+    contract-style server handlers before registry fallback.
+  - [x] Route tool calls, prompt rendering, and resource reads through
+    context/cancellation-aware contract handlers before registry fallback.
+- [x] Deepen typed tool registration helpers.
+- [x] Deepen typed prompt helper templates.
+- [x] Deepen typed resource helper templates.
+- [x] Deepen typed completion helper templates.
+- [x] Support context injection consistently for tool, prompt, resource,
   completion, sampling, elicitation, and task handlers.
-- [ ] Support cooperative cancellation token injection where meaningful.
-- [ ] Keep `SchemaTraits<T>` and `schema_for<T>()` customization stable.
-- [ ] Add optional JSON Schema validator integration.
-- [ ] Validate tool input schemas where configured.
-- [ ] Validate tool output schemas where configured.
-- [ ] Validate elicitation schemas where configured.
-- [ ] Keep low-boilerplate `App::Builder` helpers as convenience, not the only
+  - [x] Pass `SessionContext` through server and peer completion handlers.
+  - [x] Pass `SessionContext` through server and peer sampling handlers.
+  - [x] Pass full `SessionContext` through direct server and server-peer tool,
+    prompt, and resource facades.
+  - [x] Pass `SessionContext` through contract-style task handlers.
+  - [x] Pass `SessionContext` through contract-style notification handlers.
+- [x] Support cooperative cancellation token injection where meaningful.
+  - [x] Pass cancellation tokens into prompt contexts and typed prompt helpers.
+  - [x] Pass cancellation tokens into resource contexts and typed resource
+    helpers.
+  - [x] Pass cancellation tokens into completion and sampling request handlers.
+  - [x] Pass cancellation tokens into contract-style completion and sampling
+    handlers.
+  - [x] Pass cancellation tokens through direct server and server-peer tool,
+    prompt, and resource facades.
+  - [x] Pass cancellation tokens into client-side inbound roots, sampling,
+    elicitation, and custom request handlers.
+- [x] Keep `SchemaTraits<T>` and `schema_for<T>()` customization stable.
+- [x] Add optional JSON Schema validator integration.
+- [x] Validate tool input schemas where configured.
+- [x] Validate tool output schemas where configured.
+- [x] Validate elicitation schemas where configured.
+- [x] Keep low-boilerplate `App::Builder` helpers as convenience, not the only
   canonical API.
-- [ ] Add examples for typed registration, handler interfaces, and raw fallback
+- [x] Add examples for typed registration, handler interfaces, and raw fallback
   in the same style.
 
 ## P1: Error Model
 
-- [ ] Keep typed error model in the protocol/core layer.
-- [ ] Map parse errors to JSON-RPC parse errors.
-- [ ] Map invalid envelope and validation failures to invalid request or invalid
+- [x] Keep typed error model in the protocol/core layer.
+- [x] Map parse errors to JSON-RPC parse errors.
+- [x] Map invalid envelope and validation failures to invalid request or invalid
   params consistently.
-- [ ] Map unknown methods to method not found.
-- [ ] Map handler exceptions to internal errors with controlled diagnostics.
-- [ ] Map permission failures to permission denied.
-- [ ] Map rate-limit failures to rate limited.
-- [ ] Map missing resources to resource not found.
-- [ ] Map missing tools to tool not found.
-- [ ] Map elicitation URL requirements to the correct SDK/protocol error.
-- [ ] Ensure transport errors do not leak transport-library-specific details
+- [x] Map server-side known-method parameter parse and parameter validation
+  failures to `InvalidParams` while preserving envelope failures as
+  `InvalidRequest`.
+- [x] Map client-side and Peer known-method parameter parse failures to
+  `InvalidParams` at public request-dispatch boundaries.
+- [x] Map unknown methods to method not found.
+- [x] Map handler exceptions to internal errors with controlled diagnostics.
+- [x] Map permission failures to permission denied.
+- [x] Map rate-limit failures to rate limited.
+- [x] Map missing resources to resource not found.
+- [x] Map missing tools to tool not found.
+- [x] Map elicitation URL requirements to the correct SDK/protocol error.
+- [x] Ensure transport errors do not leak transport-library-specific details
   unless placed in structured debug data.
-- [ ] Add tests for every public error family.
-- [ ] Add tests that errors serialize as valid JSON-RPC error responses.
-- [ ] Add tests that raw handler failures are translated and not thrown through
+- [x] Add tests for every public error family.
+- [x] Add tests that errors serialize as valid JSON-RPC error responses.
+- [x] Add tests that raw handler failures are translated and not thrown through
   public APIs.
 
 ## P1: Documentation Bar
 
-- [ ] Keep one canonical "start here" SDK path.
-- [ ] Put `Peer` / `Service` examples before concrete `Client` / `Server`
+- [x] Keep one canonical "start here" SDK path.
+- [x] Put `Peer` / `Service` examples before concrete `Client` / `Server`
   examples.
-- [ ] Document which target to link for each use case.
-- [ ] Document which headers to include for each use case.
-- [ ] Document stable vs optional vs experimental features.
-- [ ] Document transport choices and recommended defaults.
-- [ ] Document Streamable HTTP as the default HTTP path.
-- [ ] Document legacy SSE as compatibility-only.
-- [ ] Document raw JSON-RPC escape hatches.
-- [ ] Document migration from old concrete APIs to peer/service APIs.
-- [ ] Document timeout, cancellation, progress, and shutdown semantics.
-- [ ] Document task lifecycle and retention semantics.
-- [ ] Document elicitation lifecycle and capability requirements.
+- [x] Document which target to link for each use case.
+- [x] Document which headers to include for each use case.
+- [x] Document stable vs optional vs experimental features.
+- [x] Document transport choices and recommended defaults.
+- [x] Document Streamable HTTP as the default HTTP path.
+- [x] Document legacy SSE as compatibility-only.
+- [x] Document raw JSON-RPC escape hatches.
+- [x] Document migration from old concrete APIs to peer/service APIs.
+- [x] Document timeout, cancellation, progress, and shutdown semantics.
+- [x] Document task lifecycle and retention semantics.
+- [x] Document elicitation lifecycle and capability requirements.
 - [x] Document package consumption with `find_package(cxxmcp CONFIG REQUIRED)`.
-- [ ] Publish generated Doxygen docs for releases.
-- [ ] Keep README, README_zh, examples, Doxygen, and release notes in sync.
-- [ ] Add a minimal external consumer template.
+- [x] Publish generated Doxygen docs for releases.
+- [x] Keep README, README_zh, examples, Doxygen, and release notes in sync.
+- [x] Add a minimal external consumer template.
 
 ## P1: CI And Release Gates
 
-- [ ] Add public CI for Windows/MSVC.
-- [ ] Add public CI for Linux/GCC.
-- [ ] Add public CI for Linux/Clang.
-- [ ] Add public CI for macOS/AppleClang.
-- [ ] Run Debug and Release builds where practical.
-- [ ] Run Ninja and Visual Studio generators where practical.
-- [ ] Run package-smoke in CI for every supported platform.
-- [ ] Run protocol tests in CI.
-- [ ] Run client/server tests in CI.
-- [ ] Run stdio transport tests in CI.
-- [ ] Run process-stdio tests in CI.
-- [ ] Run HTTP transport tests in CI.
-- [ ] Run transport contract tests in CI.
-- [ ] Run transport adapter tests in CI.
-- [ ] Run RMCP/cross-SDK conformance tests in CI.
-- [ ] Run formatting check in CI.
-- [ ] Run cpplint in CI.
-- [ ] Run clang-tidy in CI where practical.
-- [ ] Build generated docs in CI.
-- [ ] Keep all release-blocking tests documented.
-- [ ] Add a release checklist that fails if package-smoke or conformance is
+- [x] Add public CI for Windows/MSVC.
+- [x] Add public CI for Linux/GCC.
+- [x] Add public CI for Linux/Clang.
+- [x] Add public CI for macOS/AppleClang.
+- [x] Run Debug and Release builds where practical.
+- [x] Run Ninja and Visual Studio generators where practical.
+- [x] Run package-smoke in CI for every supported platform.
+- [x] Run protocol tests in CI.
+- [x] Run client/server tests in CI.
+- [x] Run stdio transport tests in CI.
+- [x] Run process-stdio tests in CI.
+- [x] Run HTTP transport tests in CI.
+- [x] Run transport contract tests in CI.
+- [x] Run transport adapter tests in CI.
+- [x] Run RMCP/cross-SDK conformance tests in CI.
+- [x] Run formatting check in CI.
+- [x] Run cpplint in CI.
+- [x] Run clang-tidy in CI where practical.
+- [x] Build generated docs in CI.
+- [x] Keep all release-blocking tests documented.
+- [x] Add a release checklist that fails if package-smoke or conformance is
   skipped.
 
 ## P1: Release And Compatibility Process
 
-- [ ] Use semantic versioning for public releases.
-- [ ] Define alpha, beta, rc, and stable gates in release checklist form.
-- [ ] For alpha: allow API movement but require clear changelog.
-- [ ] For beta: require API mostly settled and breaking changes rare.
-- [ ] For rc: only bug fixes and docs.
-- [ ] For stable: freeze public contract for the minor line.
-- [ ] Include versioned source artifacts for every release.
-- [ ] Include generated API documentation for every release.
-- [ ] Include changelog entries for every release.
-- [ ] Include compatibility notes for every public surface change.
-- [ ] Include package metadata for every release.
-- [ ] Publish prebuilt or source package artifacts as appropriate.
-- [ ] Add a public API diff review step.
-- [ ] Add a public dependency update review step.
-- [ ] Add a security/advisory process for vulnerabilities.
+- [x] Use semantic versioning for public releases.
+- [x] Define alpha, beta, rc, and stable gates in release checklist form.
+- [x] For alpha: allow API movement but require clear changelog.
+- [x] For beta: require API mostly settled and breaking changes rare.
+- [x] For rc: only bug fixes and docs.
+- [x] For stable: freeze public contract for the minor line.
+- [x] Include versioned source artifacts for every release.
+- [x] Include generated API documentation for every release.
+- [x] Include changelog entries for every release.
+- [x] Include compatibility notes for every public surface change.
+- [x] Include package metadata for every release.
+- [x] Publish prebuilt or source package artifacts as appropriate.
+- [x] Add a public API diff review step.
+- [x] Add a public dependency update review step.
+- [x] Add a security/advisory process for vulnerabilities.
 
 ## P1: Package Manager And Consumer Experience
 
@@ -640,93 +749,173 @@ true:
 - [x] Add Conan packaging or a documented Conan recipe.
 - [x] Document FetchContent usage if supported.
 - [x] Document install-from-source usage.
-- [ ] Document consuming only `cxxmcp::protocol`.
-- [ ] Document consuming only `cxxmcp::client`.
-- [ ] Document consuming only `cxxmcp::server`.
-- [ ] Document consuming the aggregate `cxxmcp::sdk`.
-- [ ] Verify third-party header installation layout.
-- [ ] Decide and document dependency vendoring policy.
-- [ ] Decide and document whether downstream users can use system versions of
+- [x] Document consuming only `cxxmcp::protocol`.
+- [x] Document consuming only `cxxmcp::client`.
+- [x] Document consuming only `cxxmcp::server`.
+- [x] Document consuming the aggregate `cxxmcp::sdk`.
+- [x] Verify third-party header installation layout.
+- [x] Decide and document dependency vendoring policy.
+- [x] Decide and document whether downstream users can use system versions of
   dependencies.
 - [x] Add package-manager smoke tests when package recipes exist.
-- [ ] Add a tiny external consumer repository or template.
+- [x] Add a tiny external consumer repository or template.
+
+## P2: Vcpkg Curated Registry Readiness
+
+- [x] Keep `packaging/vcpkg/ports/cxxmcp` as the first-class overlay port while
+  the project does not yet meet vcpkg curated-registry maturity requirements.
+- [x] Publish clear overlay-port usage instructions in README / package docs,
+  including `--overlay-ports=<repo>/packaging/vcpkg/ports`.
+- [x] Add a `vcpkg-configuration.json` example for consuming cxxmcp from an
+  overlay or future custom Git registry with a pinned baseline.
+- [x] Prepare a standalone or repository-hosted Git registry path if users need
+  vcpkg versioning before the curated registry accepts the port.
+- [x] Prepare the future curated-registry PR replacement for local-source
+  overlay logic with `vcpkg_from_github()`, a release tag, and SHA512 source
+  archive hash placeholders.
+- [x] Remove `-DBUILD_SHARED_LIBS=OFF` from the curated-registry portfile; keep
+  `vcpkg_check_linkage(ONLY_STATIC_LIBRARY)` because current SDK libraries are
+  intentionally static-only until a shared-library ABI policy exists.
+- [x] Make `jsonrpcpp` a private implementation detail for package consumers:
+  do not export a public `jsonrpcpp` target or install it as a visible
+  third-party SDK surface unless vcpkg explicitly accepts that shape.
+- [x] Decide the vcpkg HTTPS/TLS feature model for `cpp-httplib`: default
+  loopback HTTP only, or an opt-in `ssl` / `https` feature depending on
+  `cpp-httplib[openssl]`.
+- [x] Keep full OAuth/DPoP auth as a separate future vcpkg feature after the
+  OpenSSL-backed implementation lands; do not pull OpenSSL into the default SDK
+  package path prematurely.
+- [ ] Accumulate maturity evidence before resubmitting to the vcpkg curated
+  registry: stable release history, green release-gates over time, downstream
+  examples, package-manager smoke evidence, changelog discipline, and public
+  user adoption signals.
+  - [x] Track the required evidence categories in
+        `docs/ecosystem_maturity_evidence.md`.
+- [ ] Resubmit to the vcpkg curated registry only after the maturity evidence is
+  strong enough to address `microsoft/vcpkg#51972` without relying on policy
+  exceptions.
 
 ## P1: Governance And Project Trust
 
-- [ ] Add `CONTRIBUTING.md`.
-- [ ] Add `SECURITY.md`.
-- [ ] Add a code of conduct if the project expects outside contributors.
-- [ ] Add issue templates for bug reports, feature requests, and protocol
+- [x] Add `CONTRIBUTING.md`.
+- [x] Add `SECURITY.md`.
+- [x] Add a code of conduct if the project expects outside contributors.
+- [x] Add issue templates for bug reports, feature requests, and protocol
   compatibility reports.
-- [ ] Add PR template with testing and public API checklist.
-- [ ] Require design notes/RFCs for breaking public API changes.
-- [ ] Require every new public surface to state core, optional, or experimental
+- [x] Add PR template with testing and public API checklist.
+- [x] Require design notes/RFCs for breaking public API changes.
+- [x] Require every new public surface to state core, optional, or experimental
   status.
-- [ ] Require every runtime/gateway concern in SDK headers to be justified.
-- [ ] Require every naming change to include migration docs.
-- [ ] Track pinned MCP/RMCP reference versions.
-- [ ] Track dependency versions and update cadence.
+- [x] Require every runtime/gateway concern in SDK headers to be justified.
+- [x] Require every naming change to include migration docs.
+- [x] Track pinned MCP/RMCP reference versions.
+- [x] Track dependency versions and update cadence.
 
 ## P2: Developer Experience Polish
 
-- [ ] Keep examples focused on real usable SDK flows.
-- [ ] Add minimal stdio server example.
-- [ ] Add minimal Streamable HTTP client example.
-- [ ] Add process-stdio client example for local MCP servers.
-- [ ] Add typed tool server example.
-- [ ] Add prompt/resource server example.
-- [ ] Add completion example.
-- [ ] Add sampling example.
-- [ ] Add elicitation example.
-- [ ] Add task-aware tool example.
-- [ ] Add raw JSON-RPC escape-hatch example.
-- [ ] Add handler-interface example.
-- [ ] Add graceful shutdown example.
-- [ ] Add timeout/cancellation example.
-- [ ] Keep examples compiling in CI.
-- [ ] Keep example APIs aligned with canonical `Peer` / `Service` docs.
+- [x] Keep examples focused on real usable SDK flows.
+- [x] Add minimal stdio server example.
+- [x] Add minimal Streamable HTTP client example.
+- [x] Add process-stdio client example for local MCP servers.
+- [x] Add typed tool server example.
+- [x] Add prompt/resource server example.
+- [x] Add completion example.
+- [x] Add sampling example.
+- [x] Add elicitation example.
+- [x] Add task-aware tool example.
+- [x] Add raw JSON-RPC escape-hatch example.
+- [x] Add handler-interface example.
+- [x] Add graceful shutdown example.
+- [x] Add timeout/cancellation example.
+- [x] Keep examples compiling in CI.
+- [x] Keep example APIs aligned with canonical `Peer` / `Service` docs.
+- [x] Track the in-tree example taxonomy and canonical/non-canonical split in
+  `docs/examples.md`.
 
 ## P2: Runtime, Gateway, CLI Separation
 
-- [ ] Keep gateway docs separate from SDK docs.
-- [ ] Keep runtime state out of SDK headers.
-- [ ] Keep server registry/discovery out of SDK core.
-- [ ] Keep exposure profiles out of SDK core.
-- [ ] Keep trust/approval policy out of SDK core.
-- [ ] Keep import/export out of SDK core.
-- [ ] Keep multi-profile hosting out of SDK core.
-- [ ] Make gateway depend on SDK targets, not the other way around.
-- [ ] Keep CLI defaults out of public SDK APIs.
-- [ ] Add tests that SDK package consumption does not require runtime/gateway
+- [x] Keep gateway docs separate from SDK docs and out of the README first
+  screen, which should stay SDK-first.
+  - [x] Track the runtime/gateway/tooling boundary in
+        `docs/runtime_gateway.md`.
+- [x] Keep runtime state out of SDK headers.
+- [x] Keep server registry/discovery out of SDK core.
+- [x] Keep exposure profiles out of SDK core.
+- [x] Keep trust/approval policy out of SDK core.
+- [x] Keep import/export out of SDK core.
+- [x] Keep multi-profile hosting out of SDK core.
+- [x] Make gateway depend on SDK targets, not the other way around.
+- [x] Keep CLI defaults out of public SDK APIs.
+- [x] Add a source-layout audit gate that fails if runtime/gateway/CLI types
+  are included by canonical SDK headers under `cxxmcp/protocol`,
+  `cxxmcp/transport`, `cxxmcp/handler`, `cxxmcp/peer`, `cxxmcp/service`,
+  `cxxmcp/client`, or `cxxmcp/server`.
+- [x] Add tests that SDK package consumption does not require runtime/gateway
   targets unless explicitly linked.
 
 ## P2: Security And Auth
 
-- [ ] Define HTTP auth extension points as SDK-level contracts.
-- [ ] Expose request auth context on the server side.
-- [ ] Define bearer-token behavior for client helpers.
-- [ ] Define custom header behavior.
-- [ ] Define challenge/error behavior for unauthorized HTTP requests.
-- [ ] Add scope/claims extension points.
-- [ ] Add OAuth/resource-metadata integration points if required by the MCP
+- [x] Define HTTP auth extension points as SDK-level contracts.
+- [x] Expose request auth context on the server side.
+- [x] Define bearer-token behavior for client helpers.
+- [x] Define custom header behavior.
+- [x] Define challenge/error behavior for unauthorized HTTP requests.
+- [x] Add scope/claims extension points.
+- [x] Add OAuth/resource-metadata integration points if required by the MCP
   snapshot.
-- [ ] Add tests for authorized and unauthorized HTTP requests.
-- [ ] Add tests for auth context reaching handlers.
-- [ ] Document TLS/HTTPS support and build requirements.
+- [x] Add tests for authorized and unauthorized HTTP requests.
+- [x] Add tests for auth context reaching handlers.
+- [x] Document TLS/HTTPS support and build requirements.
+- [x] Provide a lightweight default `WWW-Authenticate` parser and focused auth
+      tests for MCP OAuth challenge parameters.
+- [x] Make the default in-memory token store separate entries by token key
+      instead of overwriting unrelated resource/client credentials.
+- [x] Add RMCP-style OAuth client lifecycle scaffolding for authorization URL
+  creation, authorization-code exchange boundary, token refresh boundary, and
+  reauthorization-required state.
+- [x] Add protected-resource and authorization-server discovery planning plus a
+  transport-neutral metadata fetch boundary.
+- [x] Add concrete protected-resource and authorization-server discovery
+  executor over the `OAuthMetadataEndpoint` transport boundary.
+- [x] Add a default SDK HTTP metadata endpoint implementation for the optional
+  auth target.
+- [x] Add explicit `CredentialStore` and `StateStore` contracts for OAuth
+  credentials and PKCE/CSRF state without choosing persistent storage for
+  applications.
+- [x] Add complete scope selection policy matching the RMCP shape:
+  `WWW-Authenticate` scope first, protected-resource metadata next,
+  authorization-server metadata next, and application defaults last.
+- [x] Add scope-upgrade URL generation from `insufficient_scope`
+  `WWW-Authenticate` challenges.
+- [x] Add Streamable HTTP client integration points for `401
+  WWW-Authenticate`, `403 insufficient_scope`, refresh-on-401, and one-shot
+  retry after a successful refresh.
+- [x] Add dynamic client registration and Client ID Metadata Document
+  lifecycle boundaries without making browser launching or loopback redirect
+  receivers part of the SDK core.
+- [x] Keep DPoP/JWT verification behind the auth feature and OpenSSL-backed
+  implementation; do not ship decode-only security checks.
+- [x] Add installed-package smoke coverage proving default installs do not
+  expose optional auth headers and auth-enabled installs can consume
+  `cxxmcp::auth` explicitly.
+- [x] Keep full OAuth/DPoP out of the default package path until the optional
+  auth feature has package-manager smoke coverage.
 
 ## P2: Performance, Load, And Reliability
 
-- [ ] Add load tests for concurrent HTTP sessions.
-- [ ] Add load tests for many in-flight requests.
-- [ ] Add load tests for high-volume notifications.
-- [ ] Add memory/queue bound tests.
-- [ ] Add backpressure tests.
-- [ ] Add shutdown-under-load tests.
-- [ ] Add long-running process-stdio tests.
-- [ ] Add malformed input fuzz/smoke tests for JSON-RPC parsing.
-- [ ] Add sanitizer builds where practical.
-- [ ] Add thread sanitizer builds where practical.
-- [ ] Use load-test results before considering a different HTTP backend.
+- [x] Add load tests for concurrent HTTP sessions.
+- [x] Add load tests for many in-flight requests.
+- [x] Add load tests for high-volume notifications.
+- [x] Add memory/queue bound tests.
+- [x] Add backpressure tests.
+- [x] Add shutdown-under-load tests.
+- [x] Add long-running process-stdio tests.
+- [x] Add malformed input fuzz/smoke tests for JSON-RPC parsing.
+- [x] Add sanitizer builds where practical.
+- [x] Add thread sanitizer builds where practical.
+- [x] Use load-test results before considering a different HTTP backend.
+  - [x] Track the current HTTP backend evidence and replacement triggers in
+        `docs/http_transport_backend_evidence.md`.
 
 ## Non-Goals
 
@@ -766,10 +955,10 @@ true:
 
 ### Milestone 4: Protocol And Capability Parity
 
-- [ ] Finish `_meta`, annotations, icons, extension bags, and content variants.
-- [ ] Audit capability shapes.
-- [ ] Add multi-version protocol policy.
-- [ ] Add protocol round-trip and negative tests for every family.
+- [x] Finish `_meta`, annotations, icons, extension bags, and content variants.
+- [x] Audit capability shapes.
+- [x] Add multi-version protocol policy.
+- [x] Add protocol round-trip and negative tests for every family.
 
 ### Milestone 5: Interop Matrix
 
@@ -780,8 +969,8 @@ true:
 
 ### Milestone 6: Release And Ecosystem
 
-- [ ] Add public CI matrix.
-- [ ] Publish generated docs.
-- [ ] Add vcpkg/Conan route.
-- [ ] Add contribution/security/governance docs.
-- [ ] Publish versioned release artifacts and compatibility notes.
+- [x] Add public CI matrix.
+- [x] Publish generated docs.
+- [x] Add vcpkg/Conan route.
+- [x] Add contribution/security/governance docs.
+- [x] Publish versioned release artifacts and compatibility notes.

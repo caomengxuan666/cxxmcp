@@ -1,0 +1,18 @@
+{
+  "message": "Need a value",
+  "mode": "form",
+  "requestedSchema": {
+    "type": "object",
+    "properties": {
+      "answer": {
+        "type": "string"
+      }
+    },
+    "required": [
+      "answer"
+    ]
+  },
+  "_meta": {
+    "source": "fixture"
+  }
+}
