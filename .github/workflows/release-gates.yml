@@ -728,6 +728,7 @@ jobs:
           set -euo pipefail
           toolchain="$(find "build-package-conan-${{ matrix.name }}-deps" -name conan_toolchain.cmake -print -quit)"
           test -n "${toolchain}"
+          toolchain="$(realpath "${toolchain}")"
           cmake \
             -S tests/fixtures/package_smoke \
             -B "build-package-conan-${{ matrix.name }}" \

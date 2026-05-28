@@ -1,5 +1,5 @@
 package("cxxmcp")
-    set_homepage("https://github.com/caomengxuan666/cxxmcp")
+    set_homepage("https://caomengxuan666.github.io/cxxmcp")
     set_description("C++ MCP SDK for protocol, client, server, transport, peer, and handler APIs.")
     set_license("MIT")
 
