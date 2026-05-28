@@ -85,6 +85,15 @@ struct CompletionContext {
   std::optional<std::map<std::string, std::string>> arguments;
 };
 
+template <>
+struct Reflect<CompletionContext> {
+  static constexpr bool defined = true;
+  static auto fields() {
+    return std::make_tuple(field("arguments", &CompletionContext::arguments));
+  }
+  static std::vector<std::string> known_keys() { return {"arguments"}; }
+};
+
 /// @brief Parameters for `completion/complete`.
 struct CompleteParams {
   /// Prompt or resource-template reference.
@@ -220,41 +229,13 @@ inline core::Result<CompletionArgument> completion_argument_from_json(
 
 /// @brief Serializes a CompletionContext struct to JSON.
 inline Json completion_context_to_json(const CompletionContext& context) {
-  Json json = Json::object();
-  if (context.arguments.has_value()) {
-    json["arguments"] = Json::object();
-    for (const auto& [key, value] : *context.arguments) {
-      json["arguments"][key] = value;
-    }
-  }
-  return json;
+  return reflect_to_json(context);
 }
 
 /// @brief Parses a CompletionContext struct from JSON.
 inline core::Result<CompletionContext> completion_context_from_json(
     const Json& json) {
-  if (!json.is_object()) {
-    return mcp::core::unexpected(
-        completion_json_error("completion context must be an object"));
-  }
-
-  CompletionContext context;
-  if (json.contains("arguments")) {
-    if (!json.at("arguments").is_object()) {
-      return mcp::core::unexpected(completion_json_error(
-          "completion context arguments must be an object"));
-    }
-    std::map<std::string, std::string> arguments;
-    for (const auto& [key, value] : json.at("arguments").items()) {
-      if (!value.is_string()) {
-        return mcp::core::unexpected(completion_json_error(
-            "completion context argument values must be strings"));
-      }
-      arguments[key] = value.get<std::string>();
-    }
-    context.arguments = std::move(arguments);
-  }
-  return context;
+  return reflect_from_json<CompletionContext>(json);
 }
 
 /// @brief Serializes `completion/complete` params.

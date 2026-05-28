@@ -270,6 +270,7 @@ struct Reflect<ResourceContents> {
     return {"uri", "mimeType", "text", "blob", "_meta"};
   }
 };
+CXXMCP_REFLECT_CHECK(ResourceContents, 6);
 
 /// @brief Result object for `resources/read`.
 struct ResourcesReadResult {

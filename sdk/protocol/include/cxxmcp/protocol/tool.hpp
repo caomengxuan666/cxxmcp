@@ -61,6 +61,7 @@ struct Reflect<ToolExecution> {
   }
   static std::vector<std::string> known_keys() { return {"taskSupport"}; }
 };
+CXXMCP_REFLECT_CHECK(ToolExecution, 1);
 
 template <>
 struct JsonFieldTraits<ToolExecution> {
@@ -336,6 +337,22 @@ struct ToolCall {
   std::optional<Json> meta;
   /// Unknown JSON members preserved for forward-compatible round trips.
   Json extensions = Json::object();
+};
+
+template <>
+struct Reflect<ToolCall> {
+  static constexpr bool defined = true;
+  static auto fields() {
+    return std::make_tuple(
+        field("name", &ToolCall::name),
+        field("arguments", &ToolCall::arguments),
+        field("task", &ToolCall::task), field("_meta", &ToolCall::meta),
+        extensions_field(&ToolCall::extensions,
+                         {"name", "arguments", "task", "_meta"}));
+  }
+  static std::vector<std::string> known_keys() {
+    return {"name", "arguments", "task", "_meta"};
+  }
 };
 
 /// @brief Result object for `tools/list`.

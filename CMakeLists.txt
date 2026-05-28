@@ -329,7 +329,12 @@ if(MCP_ENABLE_AUTH)
     if(CXXMCP_JSON_TARGET)
         target_link_libraries(mcp_auth INTERFACE "${CXXMCP_JSON_TARGET}")
     endif()
+    target_compile_definitions(mcp_auth INTERFACE CXXMCP_ENABLE_AUTH=1)
     cxxmcp_require_sdk_cxx(mcp_auth)
+
+    if(TARGET mcp_server)
+        target_link_libraries(mcp_server PUBLIC mcp_auth)
+    endif()
 endif()
 
 if(TARGET mcp_auth AND CXXMCP_AUTH_CRYPTO STREQUAL "OpenSSL")

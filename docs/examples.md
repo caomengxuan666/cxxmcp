@@ -15,19 +15,22 @@ requirements into the default SDK path.
 - `process_stdio_client.cpp`: launching and talking to a local MCP server.
 - `timeout_cancellation.cpp`: request timeout and cooperative cancellation.
 - `elicitation_client.cpp`: client-side elicitation handling.
+- `stdio_server.cpp`: compact stdio server using `ServerPeer::builder()` with
+  typed tool, prompt, resource, completion, sampling, and logging registration.
+- `typed_stdio_server.cpp`: typed tool registration with reflected structs via
+  `ServerPeer::builder()` and `mcp::server::tool<>()`.
 
 ## Focused Capability Examples
 
 - `handler_contracts.cpp`: durable handler interfaces.
 - `auth_dpop_openssl.cpp`: opt-in OpenSSL DPoP/JWKS auth-provider wiring.
 - `task_async_client_server.cpp`: task-aware tool lifecycle.
-- `typed_stdio_server.cpp`: typed tool registration.
 - `streamable_http_client.cpp`: Streamable HTTP client construction.
 
 ## Compatibility Or Low-Level Examples
 
-- `stdio_server.cpp`: minimal stdio server process used by other examples.
-- `client_loopback.cpp`: local loopback compatibility coverage.
+- `client_loopback.cpp`: local loopback coverage using `ServerPeer::builder()`
+  with the deprecated `server()` accessor for client transport plumbing.
 
 ## Runtime Tooling Example
 
@@ -65,11 +68,11 @@ For release/vcpkg evidence, keep at least these downstream scenarios green:
 - Request lifecycle coverage for async requests, timeouts, cancellation,
   cancellation-aware inbound callbacks, pagination helpers, subscriptions, and
   task cancellation. Application-level signal handling should follow
-  [Graceful Shutdown](request_lifecycle.md#recommended-signal-handling-pattern) so examples and downstream services
+  [Graceful Shutdown](graceful_shutdown.md#recommended-pattern) so examples and downstream services
   call `stop()` / `close()` from normal control flow instead of from a signal
   handler.
 - Authoring ergonomics coverage for typed tools, handler interfaces,
   server-to-client context calls, rich content blocks, custom role-generic
   transports, and transport adapters. See
-  [Transport Adapter Ergonomics](runtime_gateway.md#transport-adapter-ergonomics) for the stable helper
+  [Transport Adapter Ergonomics](transport_adapters.md) for the stable helper
   layer used by custom source/sink and queue integrations.

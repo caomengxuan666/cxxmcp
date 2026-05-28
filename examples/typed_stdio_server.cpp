@@ -1,14 +1,14 @@
 // Copyright (c) 2025 [caomengxuan666]
 //
-// Compatibility example: demonstrates typed App builder registration. New SDK
-// server applications should prefer ServerPeer plus Service over App::run().
+// Demonstrates typed ServerPeer builder registration with reflected structs.
 
 #include <algorithm>
 #include <optional>
 #include <string>
 #include <vector>
 
-#include "cxxmcp/server.hpp"
+#include "cxxmcp/peer.hpp"
+#include "cxxmcp/run.hpp"
 
 namespace example {
 
@@ -29,61 +29,44 @@ struct SearchResult {
   std::vector<SearchHit> hits;
 };
 
-void from_json(const Json& json, SearchArgs& args) {
-  args.query = json.at("query").get<std::string>();
-  args.limit = json.value("limit", 3);
-}
-
-void to_json(Json& json, const SearchHit& hit) {
-  json = Json{
-      {"title", hit.title},
-      {"uri", hit.uri},
-  };
-}
-
-void to_json(Json& json, const SearchResult& result) {
-  json = Json{
-      {"session", result.session},
-      {"hits", result.hits},
-  };
-}
-
 }  // namespace example
 
 namespace mcp::protocol {
 
 template <>
-struct SchemaTraits<example::SearchArgs> {
-  static Json schema() {
-    return object_schema()
-        .required_property("query", JsonSchema::string())
-        .optional_property("limit", JsonSchema::integer())
-        .additional_properties(false)
-        .build();
+struct Reflect<example::SearchArgs> {
+  static constexpr bool defined = true;
+  static auto fields() {
+    return std::make_tuple(field("query", &example::SearchArgs::query),
+                           field("limit", &example::SearchArgs::limit));
   }
+  static std::vector<std::string> known_keys() { return {"query", "limit"}; }
 };
 
 template <>
-struct SchemaTraits<example::SearchResult> {
-  static Json schema() {
-    return object_schema()
-        .required_property("session", JsonSchema::string())
-        .required_property(
-            "hits", JsonSchema::array(
-                        object_schema()
-                            .required_property("title", JsonSchema::string())
-                            .required_property("uri", JsonSchema::string())
-                            .additional_properties(false)
-                            .build()))
-        .additional_properties(false)
-        .build();
+struct Reflect<example::SearchHit> {
+  static constexpr bool defined = true;
+  static auto fields() {
+    return std::make_tuple(field("title", &example::SearchHit::title),
+                           field("uri", &example::SearchHit::uri));
   }
+  static std::vector<std::string> known_keys() { return {"title", "uri"}; }
+};
+
+template <>
+struct Reflect<example::SearchResult> {
+  static constexpr bool defined = true;
+  static auto fields() {
+    return std::make_tuple(field("session", &example::SearchResult::session),
+                           field("hits", &example::SearchResult::hits));
+  }
+  static std::vector<std::string> known_keys() { return {"session", "hits"}; }
 };
 
 }  // namespace mcp::protocol
 
 int main() {
-  return mcp::server::App::builder()
+  return mcp::ServerPeer::builder()
       .name("cxxmcp-example-typed-stdio-server")
       .version("1.0.0")
       .instructions("Typed MCP server authoring example.")

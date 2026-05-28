@@ -128,30 +128,19 @@ target_link_libraries(my_mcp_server PRIVATE cxxmcp::server)
 Then create a peer, register typed handlers, and serve it over a transport:
 
 ```cpp
-#include <utility>
-
 #include <cxxmcp/peer.hpp>
-#include <cxxmcp/server.hpp>
-#include <cxxmcp/service.hpp>
+#include <cxxmcp/run.hpp>
 
 int main() {
-    auto peer = mcp::ServerPeer::builder()
+    return mcp::ServerPeer::builder()
         .name("demo-server")
         .version("1.0.0")
         .stdio()
-        .tool(mcp::server::tool<mcp::protocol::Json, mcp::protocol::Json>("echo")
-            .description("Echo the incoming payload")
-            .handler([](const mcp::protocol::Json& input) {
+        .tool<mcp::protocol::Json, mcp::protocol::Json>("echo",
+            [](const mcp::protocol::Json& input) {
                 return mcp::protocol::Json{{"echo", input}};
-            }))
-        .build();
-
-    if (!peer) {
-        return 1;
-    }
-
-    auto running = mcp::serve(std::move(*peer));
-    return running ? (running->wait().has_value() ? 0 : 1) : 1;
+            })
+        .run();
 }
 ```
 
@@ -350,19 +339,20 @@ int main() {
 }
 ```
 
-### Compatibility App Builder
+### Compatibility App Builder (Deprecated)
 
-The `server::App::builder()` path is a convenience wrapper for compact demos and
-legacy code. New SDK documentation and examples should use `Peer` and `Service`
-first.
+`server::App::builder()` is deprecated. Use `ServerPeer::builder()` with
+`cxxmcp/run.hpp` instead — same `.tool<Args, Result>(name, handler)` syntax,
+one-call `.run()` entry point:
 
 ```cpp
 #include <string>
 
-#include <cxxmcp/server.hpp>
+#include <cxxmcp/peer.hpp>
+#include <cxxmcp/run.hpp>
 
 int main() {
-    return mcp::server::App::builder()
+    return mcp::ServerPeer::builder()
         .name("demo-server")
         .version("1.0.0")
         .instructions("Expose local tools over MCP.")

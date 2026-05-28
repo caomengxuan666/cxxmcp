@@ -118,6 +118,7 @@ struct Reflect<TaskRequestParameters> {
   }
   static std::vector<std::string> known_keys() { return {"ttl", "_meta"}; }
 };
+CXXMCP_REFLECT_CHECK(TaskRequestParameters, 3);
 
 template <>
 struct JsonFieldTraits<TaskRequestParameters> {
@@ -180,6 +181,7 @@ struct Reflect<Task> {
             "ttl",    "pollInterval", "lastUpdatedAt"};
   }
 };
+CXXMCP_REFLECT_CHECK(Task, 8);
 
 /// @brief Parameters for `tasks/list`.
 struct TaskListParams {

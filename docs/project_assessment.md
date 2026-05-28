@@ -260,18 +260,20 @@ Developer's likely complaint: *"The struct already has all the information -- wh
 
 **Improvement direction:** Leverage the existing `reflect.hpp` system to auto-generate `SchemaTraits` from a single `REFLECT_FIELDS(...)` declaration. Simple structs should need only one declaration site.
 
-#### Pain Point 2: Two Competing API Paths
+#### Pain Point 2: Two Competing API Paths — **RESOLVED**
 
 | | App::builder() | ServerPeer::builder() |
 |---|---|---|
-| Official status | "Compatibility path" (comments say deprecated) | "Canonical path" |
-| Typed tool | `.tool<Args, Result>(...)` | Only `.add_tool(ToolHandler)` |
-| prompt/resource | `.prompt(...)`, `.resource(...)` | Not demonstrated in examples |
-| Usability | **Better** | **Worse** |
+| Official status | **Deprecated** (`CXXMCP_DEPRECATED`) | Canonical path |
+| Typed tool | `.tool<Args, Result>(...)` | `.tool<Args, Result>(...)` (same syntax) |
+| prompt/resource | `.prompt(...)`, `.resource(...)` | `.prompt(...)`, `.resource(...)` (same syntax) |
+| Usability | Deprecated | **Same or better** |
 
-The recommended path (ServerPeer) is harder to use than the deprecated path (App). Developers will be confused about which to use.
-
-**Improvement direction:** Port App's `.tool<Args, Result>()` generic registration to ServerPeer builder, then actually deprecate App with `[[deprecated]]`.
+`ServerPeer::Builder` now accepts direct-handler `.tool<Args, Result>(name, handler)`,
+`.prompt(name, handler)`, `.resource(name, handler)`, `.resource_template(name, handler)`,
+`.completion(handler)`, `.sampling(handler)`, `.logging(handler)`, and
+`.raw_request(handler)` — the same ergonomics as the old `App::Builder`. `App` is formally
+deprecated with `CXXMCP_DEPRECATED`.
 
 #### Pain Point 3: ServerHandlerInterface Too Wide
 

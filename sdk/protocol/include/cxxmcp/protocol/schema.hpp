@@ -10,6 +10,7 @@
 #include <utility>
 #include <vector>
 
+#include "cxxmcp/protocol/reflect.hpp"
 #include "cxxmcp/protocol/types.hpp"
 
 namespace mcp::protocol {
@@ -72,8 +73,74 @@ struct SchemaTraits<T, std::enable_if_t<std::is_floating_point_v<T>>> {
 
 /// @brief Returns the JSON Schema advertised for a C++ type.
 template <class T>
+inline Json schema_for();
+
+template <class T>
+struct SchemaTraits<std::vector<T>> {
+  static Json schema() { return JsonSchema::array(schema_for<T>()); }
+};
+
+template <class T>
+struct SchemaTraits<std::optional<T>> {
+  static Json schema() { return schema_for<T>(); }
+};
+
+/// @brief Auto-generates JSON Schema from a Reflect<T> specialization.
+namespace detail {
+
+template <typename Struct, typename Field>
+inline void add_reflected_field_schema(
+    Json& properties, Json& required,
+    const FieldDescriptor<Struct, Field>& fd) {
+  if constexpr (is_optional_v<Field>) {
+    properties[fd.wire_name] = schema_for<typename Field::value_type>();
+  } else {
+    properties[fd.wire_name] = schema_for<Field>();
+    required.push_back(fd.wire_name);
+  }
+}
+
+template <typename Struct>
+inline void add_reflected_field_schema(Json&, Json&,
+                                       const ExtensionsField<Struct>&) {}
+
+template <typename Struct, typename Field>
+inline void add_reflected_field_schema(
+    Json&, Json&, const DeserializeOnlyField<Struct, Field>&) {}
+
+template <class T>
+inline Json reflect_schema() {
+  Json properties = Json::object();
+  Json required = Json::array();
+
+  std::apply(
+      [&](const auto&... fds) {
+        (add_reflected_field_schema(properties, required, fds), ...);
+      },
+      Reflect<T>::fields());
+
+  Json result = {{"type", "object"}, {"properties", std::move(properties)}};
+  if (!required.empty()) {
+    result["required"] = std::move(required);
+  }
+  result["additionalProperties"] = false;
+  return result;
+}
+
+}  // namespace detail
+
+/// @brief Returns the JSON Schema advertised for a C++ type.
+///
+/// For types with a Reflect<T> specialization, generates schema from reflected
+/// fields. For all other types, delegates to SchemaTraits<T>.
+template <class T>
 inline Json schema_for() {
-  return SchemaTraits<std::decay_t<T>>::schema();
+  using Decayed = std::decay_t<T>;
+  if constexpr (has_reflect_v<Decayed>) {
+    return detail::reflect_schema<Decayed>();
+  } else {
+    return SchemaTraits<Decayed>::schema();
+  }
 }
 
 /// @brief Fluent object-schema builder for tool input and output schemas.

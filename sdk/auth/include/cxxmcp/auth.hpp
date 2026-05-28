@@ -20,6 +20,7 @@
 #include "cxxmcp/auth/metadata.hpp"
 #include "cxxmcp/auth/pkce.hpp"
 #include "cxxmcp/auth/registration.hpp"
+#include "cxxmcp/auth/server_auth_endpoints.hpp"
 #include "cxxmcp/auth/token.hpp"
 #include "cxxmcp/auth/types.hpp"
 #include "cxxmcp/auth/www_auth.hpp"

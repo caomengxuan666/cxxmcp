@@ -39,6 +39,18 @@ struct ExplicitNullableValue {
   std::variant<std::monostate, std::int64_t> value = std::monostate{};
 };
 
+struct ReflectedArgs {
+  std::string query;
+  int limit = 3;
+  std::optional<std::string> category;
+  std::vector<std::string> tags;
+};
+
+struct ReflectedResult {
+  std::string session;
+  std::vector<ReflectedArgs> items;
+};
+
 }  // namespace schema_fixture
 
 namespace mcp::protocol {
@@ -81,6 +93,32 @@ struct Reflect<schema_fixture::ExplicitNullableValue> {
         nullable_field("value", &schema_fixture::ExplicitNullableValue::value));
   }
   static std::vector<std::string> known_keys() { return {"value"}; }
+};
+
+template <>
+struct Reflect<schema_fixture::ReflectedArgs> {
+  static constexpr bool defined = true;
+  static auto fields() {
+    return std::make_tuple(
+        field("query", &schema_fixture::ReflectedArgs::query),
+        field("limit", &schema_fixture::ReflectedArgs::limit),
+        field("category", &schema_fixture::ReflectedArgs::category),
+        field("tags", &schema_fixture::ReflectedArgs::tags));
+  }
+  static std::vector<std::string> known_keys() {
+    return {"query", "limit", "category", "tags"};
+  }
+};
+
+template <>
+struct Reflect<schema_fixture::ReflectedResult> {
+  static constexpr bool defined = true;
+  static auto fields() {
+    return std::make_tuple(
+        field("session", &schema_fixture::ReflectedResult::session),
+        field("items", &schema_fixture::ReflectedResult::items));
+  }
+  static std::vector<std::string> known_keys() { return {"session", "items"}; }
 };
 
 }  // namespace mcp::protocol
@@ -4536,6 +4574,87 @@ void test_protocol_type_constraints_are_rejected() {
 
 }  // namespace
 
+void test_reflect_to_schema_bridge() {
+  // ReflectedArgs: query (string, required), limit (int, required),
+  //                category (optional<string>, not required), tags
+  //                (vector<string>, required)
+  const auto schema =
+      mcp::protocol::schema_for<schema_fixture::ReflectedArgs>();
+
+  require(schema.at("type") == "object", "reflected schema type mismatch");
+  require(schema.at("properties").contains("query"),
+          "reflected schema missing 'query' property");
+  require(schema.at("properties").contains("limit"),
+          "reflected schema missing 'limit' property");
+  require(schema.at("properties").contains("category"),
+          "reflected schema missing 'category' property");
+  require(schema.at("properties").contains("tags"),
+          "reflected schema missing 'tags' property");
+
+  require(schema.at("properties").at("query").at("type") == "string",
+          "query should be string type");
+  require(schema.at("properties").at("limit").at("type") == "integer",
+          "limit should be integer type");
+  require(schema.at("properties").at("category").at("type") == "string",
+          "category (optional<string>) should be string type");
+  require(schema.at("properties").at("tags").at("type") == "array",
+          "tags should be array type");
+  require(schema.at("properties").at("tags").at("items").at("type") == "string",
+          "tags items should be string type");
+
+  // required should contain query, limit, tags but NOT category
+  const auto& required = schema.at("required");
+  require(required.size() == 3, "expected 3 required fields");
+  require(required.at(0) == "query", "first required should be query");
+  require(required.at(1) == "limit", "second required should be limit");
+  require(required.at(2) == "tags", "third required should be tags");
+  require(schema.at("additionalProperties") == false,
+          "additionalProperties should be false");
+
+  // Nested reflected type: ReflectedResult has items: vector<ReflectedArgs>
+  const auto result_schema =
+      mcp::protocol::schema_for<schema_fixture::ReflectedResult>();
+  require(result_schema.at("properties").at("items").at("type") == "array",
+          "items should be array type");
+  const auto& item_schema =
+      result_schema.at("properties").at("items").at("items");
+  require(item_schema.at("type") == "object",
+          "nested ReflectedArgs item should be object type");
+  require(item_schema.at("properties").contains("query"),
+          "nested item should have 'query' property");
+
+  // Explicit SchemaTraits full specializations should still take priority
+  // schema_fixture::SearchArgs has an explicit SchemaTraits, not a Reflect
+  const auto explicit_schema =
+      mcp::protocol::schema_for<schema_fixture::SearchArgs>();
+  require(explicit_schema.at("properties").contains("query"),
+          "explicit SchemaTraits should be used for SearchArgs");
+  require(explicit_schema.at("required").at(0) == "query",
+          "explicit SchemaTraits required should be preserved");
+
+  // reflect_to_json / reflect_from_json round-trip
+  schema_fixture::ReflectedArgs args;
+  args.query = "test";
+  args.limit = 5;
+  args.category = "docs";
+  args.tags = {"a", "b"};
+
+  const auto json = mcp::protocol::reflect_to_json(args);
+  require(json.at("query") == "test", "serialized query mismatch");
+  require(json.at("limit") == 5, "serialized limit mismatch");
+  require(json.at("category") == "docs", "serialized category mismatch");
+  require(json.at("tags").size() == 2, "serialized tags size mismatch");
+
+  const auto parsed =
+      mcp::protocol::reflect_from_json<schema_fixture::ReflectedArgs>(json);
+  require(parsed.has_value(), "reflect_from_json should succeed");
+  require(parsed->query == "test", "round-trip query mismatch");
+  require(parsed->limit == 5, "round-trip limit mismatch");
+  require(parsed->category.has_value(), "round-trip category should be set");
+  require(*parsed->category == "docs", "round-trip category value mismatch");
+  require(parsed->tags.size() == 2, "round-trip tags size mismatch");
+}
+
 int main() {
   const std::vector<std::pair<std::string_view, void (*)()>> tests = {
       {"initialize request round trip", test_initialize_request_round_trip},
@@ -4588,6 +4707,7 @@ int main() {
        test_protocol_required_fields_are_rejected},
       {"protocol type constraints are rejected",
        test_protocol_type_constraints_are_rejected},
+      {"reflect to schema bridge", test_reflect_to_schema_bridge},
   };
 
   std::size_t failures = 0;

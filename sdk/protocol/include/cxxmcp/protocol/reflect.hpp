@@ -16,9 +16,11 @@
 /// types.
 
 #include <cstdint>
+#include <map>
 #include <optional>
 #include <string>
 #include <string_view>
+#include <tuple>
 #include <type_traits>
 #include <variant>
 #include <vector>
@@ -200,6 +202,26 @@ struct JsonFieldTraits {
       return false;
     }
     target = json.at(key).get<T>();
+    return true;
+  }
+};
+
+/// @brief Generic support for nested DTOs that opt into Reflect<T>.
+template <typename T>
+struct JsonFieldTraits<T, std::enable_if_t<has_reflect_v<T>>> {
+  static void serialize(Json& json, const char* key, const T& value) {
+    json[key] = reflect_to_json(value);
+  }
+
+  static bool deserialize(const Json& json, const char* key, T& target) {
+    if (!json.contains(key)) {
+      return false;
+    }
+    auto value = reflect_from_json<T>(json.at(key));
+    if (!value) {
+      return false;
+    }
+    target = std::move(*value);
     return true;
   }
 };
@@ -400,6 +422,7 @@ struct JsonFieldTraits<std::vector<T>> {
     if (!json.at(key).is_array()) {
       return false;
     }
+    target.clear();
     target.reserve(json.at(key).size());
     for (const auto& item : json.at(key)) {
       T element{};
@@ -459,6 +482,42 @@ struct JsonFieldTraits<std::vector<std::string>> {
 
 // Note: Icon vector traits are registered in types.hpp after Icon is defined.
 // This forward declaration is resolved by the include order.
+
+// ---------------------------------------------------------------------------
+// Traits for std::map<std::string, std::string> (string-to-string maps)
+// ---------------------------------------------------------------------------
+
+template <>
+struct JsonFieldTraits<std::map<std::string, std::string>> {
+  static void serialize(Json& json, const char* key,
+                        const std::map<std::string, std::string>& value) {
+    if (value.empty()) {
+      return;
+    }
+    json[key] = Json::object();
+    for (const auto& [k, v] : value) {
+      json[key][k] = v;
+    }
+  }
+
+  static bool deserialize(const Json& json, const char* key,
+                          std::map<std::string, std::string>& target) {
+    if (!json.contains(key)) {
+      return true;  // missing map = empty
+    }
+    if (!json.at(key).is_object()) {
+      return false;
+    }
+    target.clear();
+    for (const auto& [k, v] : json.at(key).items()) {
+      if (!v.is_string()) {
+        return false;
+      }
+      target[k] = v.get<std::string>();
+    }
+    return true;
+  }
+};
 
 // ---------------------------------------------------------------------------
 // Traits for std::variant<std::monostate, std::int64_t> (nullable int)
@@ -683,5 +742,32 @@ core::Result<T> reflect_from_json(const Json& json) {
 
   return obj;
 }
+
+// ---------------------------------------------------------------------------
+// Compile-time reflection completeness check
+// ---------------------------------------------------------------------------
+
+/// @brief Validates that a Reflect<> specialization covers the expected number
+/// of fields.
+///
+/// Place this macro immediately after the Reflect<> specialization to catch
+/// field count mismatches at compile time. Example:
+///
+/// @code
+/// template <>
+/// struct Reflect<MyStruct> { ... };
+/// CXXMCP_REFLECT_CHECK(MyStruct, 5);
+/// @endcode
+///
+/// The second argument must equal the number of field() + extensions_field()
+/// descriptors in the specialization. A mismatch produces a compile error.
+#define CXXMCP_REFLECT_CHECK(Struct, expected_count)                      \
+  static_assert(                                                          \
+      std::tuple_size_v<decltype(Reflect<Struct>::fields())> ==           \
+          (expected_count),                                               \
+      "Reflect<" #Struct                                                  \
+      ">::fields() has "                                                  \
+      "a different number of descriptors than expected (" #expected_count \
+      "). Update the count or add/remove field descriptors.")
 
 }  // namespace mcp::protocol

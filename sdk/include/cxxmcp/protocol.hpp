@@ -20,3 +20,4 @@
 #include "cxxmcp/protocol/task.hpp"
 #include "cxxmcp/protocol/tool.hpp"
 #include "cxxmcp/protocol/types.hpp"
+#include "cxxmcp/protocol/types_reflect.hpp"

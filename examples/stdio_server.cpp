@@ -1,14 +1,15 @@
 // Copyright (c) 2025 [caomengxuan666]
 //
-// Compatibility example: demonstrates the compact App builder. New SDK server
-// applications should prefer ServerPeer plus Service over App::run().
+// Demonstrates ServerPeer builder with typed tool/prompt/resource registration.
+// Uses the one-call run() helper to serve the server on stdio transport.
 
 #include <optional>
 #include <string>
 #include <string_view>
 
+#include "cxxmcp/peer.hpp"
 #include "cxxmcp/protocol/serialization.hpp"
-#include "cxxmcp/server.hpp"
+#include "cxxmcp/run.hpp"
 
 namespace {
 
@@ -42,7 +43,7 @@ mcp::protocol::Json make_sampling_result(std::string_view text) {
 }  // namespace
 
 int main() {
-  return mcp::server::App::builder()
+  return mcp::ServerPeer::builder()
       .name("cxxmcp-example-stdio-server")
       .version("1.0.0")
       .instructions("Example stdio MCP server.")

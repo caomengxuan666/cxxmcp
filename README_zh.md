@@ -121,30 +121,19 @@ target_link_libraries(my_mcp_server PRIVATE cxxmcp::server)
 然后创建 peer，注册 typed handler，并通过 transport 对外服务：
 
 ```cpp
-#include <utility>
-
 #include <cxxmcp/peer.hpp>
-#include <cxxmcp/server.hpp>
-#include <cxxmcp/service.hpp>
+#include <cxxmcp/run.hpp>
 
 int main() {
-    auto peer = mcp::ServerPeer::builder()
+    return mcp::ServerPeer::builder()
         .name("demo-server")
         .version("1.0.0")
         .stdio()
-        .tool(mcp::server::tool<mcp::protocol::Json, mcp::protocol::Json>("echo")
-            .description("Echo the incoming payload")
-            .handler([](const mcp::protocol::Json& input) {
+        .tool<mcp::protocol::Json, mcp::protocol::Json>("echo",
+            [](const mcp::protocol::Json& input) {
                 return mcp::protocol::Json{{"echo", input}};
-            }))
-        .build();
-
-    if (!peer) {
-        return 1;
-    }
-
-    auto running = mcp::serve(std::move(*peer));
-    return running ? (running->wait().has_value() ? 0 : 1) : 1;
+            })
+        .run();
 }
 ```
 
@@ -351,18 +340,20 @@ int main() {
 }
 ```
 
-### 兼容 App Builder
+### 兼容 App Builder（已弃用）
 
-`server::App::builder()` 是用于紧凑 demo 和 legacy 代码的便利封装。新的 SDK
-文档和示例应优先展示 `Peer` 与 `Service`。
+`server::App::builder()` 已弃用，请使用 `ServerPeer::builder()` 配合
+`cxxmcp/run.hpp` 替代——同样的 `.tool<Args, Result>(name, handler)` 语法，
+一行 `.run()` 启动：
 
 ```cpp
 #include <string>
 
-#include <cxxmcp/server.hpp>
+#include <cxxmcp/peer.hpp>
+#include <cxxmcp/run.hpp>
 
 int main() {
-    return mcp::server::App::builder()
+    return mcp::ServerPeer::builder()
         .name("demo-server")
         .version("1.0.0")
         .instructions("Expose local tools over MCP.")

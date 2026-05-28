@@ -1,8 +1,8 @@
 // Copyright (c) 2025 [caomengxuan666]
 //
-// Compatibility example: exercises concrete client/server loopback plumbing.
-// New SDK application examples should start from Peer/Service and role-generic
-// transports.
+// Exercises concrete client/server loopback plumbing. The server is built via
+// ServerPeer::builder(); the deprecated server() accessor exposes the
+// underlying Server for the client::Transport loopback adapter.
 
 #include <cstdint>
 #include <iostream>
@@ -58,12 +58,11 @@ class LoopbackTransport final : public mcp::client::Transport {
 
 int main() {
   try {
-    auto server =
-        mcp::server::App::builder()
+    auto server_peer =
+        mcp::ServerPeer::builder()
             .name("cxxmcp-example-loopback-server")
             .version("1.0.0")
-            .instructions(
-                "Example server used by the client compatibility example.")
+            .instructions("Example server used by the client loopback example.")
             .tool<mcp::protocol::Json, mcp::protocol::Json>(
                 "echo",
                 [](const mcp::protocol::Json& input) {
@@ -153,9 +152,12 @@ int main() {
               return std::nullopt;
             })
             .build();
-    require(server.has_value(), "failed to build example server");
+    require(server_peer.has_value(), "failed to build example server");
 
-    auto transport = std::make_unique<LoopbackTransport>(**server);
+    // The loopback transport needs the underlying Server object.
+    auto& server = server_peer->server();
+
+    auto transport = std::make_unique<LoopbackTransport>(server);
     auto* transport_ptr = transport.get();
     mcp::ClientPeer peer(mcp::client::Client(std::move(transport)));
 

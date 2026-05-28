@@ -4015,6 +4015,338 @@ class Peer<RoleServer>::Builder {
     return add_resource_template(std::move(resource_template));
   }
 
+  /// @brief Registers a tool with a typed handler.
+  /// @tparam Args Type decoded from the JSON arguments object.
+  /// @tparam Result Expected handler result type.
+  /// @tparam Handler Callable invoked with Args.
+  /// @param name Tool name advertised to clients.
+  /// @param handler Callable returning Result or core::Result<Result>.
+  template <class Args, class Result, class Handler>
+  Builder& tool(std::string name, Handler handler) {
+    auto definition =
+        protocol::tool_definition(std::move(name)).input<Args>().build();
+    server::detail::apply_default_output_schema<Result>(definition);
+    return tool<Args, Result>(std::move(definition), std::move(handler));
+  }
+
+  /// @brief Registers a tool with an explicit definition and typed handler.
+  template <class Args, class Result, class Handler>
+  Builder& tool(protocol::ToolDefinition definition, Handler handler) {
+    return add_tool(
+        std::move(definition),
+        [handler = std::move(handler)](const server::ToolContext& context)
+            -> core::Result<protocol::ToolResult> {
+          try {
+            auto args =
+                server::detail::argument_from_json<Args>(context.arguments);
+            auto handled = server::detail::invoke_tool_handler(
+                handler, std::move(args), context);
+            if constexpr (server::detail::is_result<decltype(handled)>::value) {
+              if (!handled) {
+                return mcp::core::unexpected(handled.error());
+              }
+              return server::detail::value_to_tool_result(*handled);
+            } else {
+              return server::detail::value_to_tool_result(std::move(handled));
+            }
+          } catch (const std::exception& exception) {
+            return mcp::core::unexpected(core::Error{
+                static_cast<int>(protocol::ErrorCode::InvalidParams),
+                "failed to decode tool arguments",
+                exception.what(),
+            });
+          }
+        });
+  }
+
+  /// @brief Registers a typed prompt with argument decoding.
+  template <class Args, class Handler>
+  Builder& prompt(std::string name, Handler handler) {
+    server::detail::require_unambiguous_typed_context_handler<
+        Handler, Args, server::PromptContext>("prompt");
+    protocol::Prompt prompt;
+    prompt.name = std::move(name);
+    return add_prompt(
+        std::move(prompt),
+        [handler = std::move(handler)](const server::PromptContext& context)
+            -> core::Result<protocol::PromptsGetResult> {
+          try {
+            auto args = context.arguments.get<Args>();
+            auto handled = server::detail::invoke_typed_context_handler(
+                handler, std::move(args), context);
+            if constexpr (server::detail::is_result<decltype(handled)>::value) {
+              if (!handled) {
+                return mcp::core::unexpected(handled.error());
+              }
+              return server::detail::value_to_prompt_result(*handled);
+            } else {
+              return server::detail::value_to_prompt_result(std::move(handled));
+            }
+          } catch (const std::exception& exception) {
+            return mcp::core::unexpected(core::Error{
+                static_cast<int>(protocol::ErrorCode::InvalidParams),
+                "failed to decode prompt arguments",
+                exception.what(),
+            });
+          }
+        });
+  }
+
+  /// @brief Registers a prompt with auto-detected handler signature.
+  template <class Handler>
+  Builder& prompt(std::string name, Handler handler) {
+    server::detail::require_unambiguous_prompt_handler<Handler>();
+    protocol::Prompt prompt;
+    prompt.name = std::move(name);
+    return add_prompt(
+        std::move(prompt),
+        [handler = std::move(handler)](const server::PromptContext& context)
+            -> core::Result<protocol::PromptsGetResult> {
+          try {
+            auto handled =
+                server::detail::invoke_prompt_handler(handler, context);
+            if constexpr (server::detail::is_result<decltype(handled)>::value) {
+              if (!handled) {
+                return mcp::core::unexpected(handled.error());
+              }
+              return server::detail::value_to_prompt_result(*handled);
+            } else {
+              return server::detail::value_to_prompt_result(std::move(handled));
+            }
+          } catch (const std::exception& exception) {
+            return mcp::core::unexpected(core::Error{
+                static_cast<int>(protocol::ErrorCode::InvalidParams),
+                "failed to run prompt handler",
+                exception.what(),
+            });
+          }
+        });
+  }
+
+  /// @brief Registers a typed resource with parameter decoding.
+  template <class Args, class Handler>
+  Builder& resource(std::string name, Handler handler) {
+    server::detail::require_unambiguous_typed_context_handler<
+        Handler, Args, server::ResourceContext>("resource");
+    protocol::Resource resource;
+    resource.uri = std::move(name);
+    resource.name = resource.uri;
+    return add_resource(
+        std::move(resource),
+        [handler = std::move(handler)](const server::ResourceContext& context)
+            -> core::Result<protocol::ResourcesReadResult> {
+          try {
+            auto args = context.params.get<Args>();
+            auto handled = server::detail::invoke_typed_context_handler(
+                handler, std::move(args), context);
+            if constexpr (server::detail::is_result<decltype(handled)>::value) {
+              if (!handled) {
+                return mcp::core::unexpected(handled.error());
+              }
+              return server::detail::value_to_resource_read_result(*handled,
+                                                                   context.uri);
+            } else {
+              return server::detail::value_to_resource_read_result(
+                  std::move(handled), context.uri);
+            }
+          } catch (const std::exception& exception) {
+            return mcp::core::unexpected(core::Error{
+                static_cast<int>(protocol::ErrorCode::InvalidParams),
+                "failed to decode resource parameters",
+                exception.what(),
+            });
+          }
+        });
+  }
+
+  /// @brief Registers a resource with auto-detected handler signature.
+  ///
+  /// If the handler returns ResourceContents with an empty URI, the URI
+  /// registered with .resource(name) is filled in automatically.
+  template <class Handler>
+  Builder& resource(std::string name, Handler handler) {
+    server::detail::require_unambiguous_resource_handler<Handler>();
+    auto uri = name;
+    protocol::Resource resource;
+    resource.uri = uri;
+    resource.name = uri;
+    if constexpr (std::is_invocable_v<Handler>) {
+      using Handled = decltype(handler());
+      if constexpr (std::is_same_v<std::decay_t<Handled>, protocol::Resource>) {
+        resource = handler();
+      }
+    }
+    return add_resource(
+        std::move(resource),
+        [handler = std::move(handler),
+         uri = std::move(uri)](const server::ResourceContext& context)
+            -> core::Result<protocol::ResourcesReadResult> {
+          try {
+            auto handled =
+                server::detail::invoke_resource_handler(handler, context);
+            if constexpr (std::is_same_v<std::decay_t<decltype(handled)>,
+                                         protocol::Resource>) {
+              return protocol::ResourcesReadResult{};
+            } else if constexpr (server::detail::is_result<
+                                     decltype(handled)>::value) {
+              if (!handled) {
+                return mcp::core::unexpected(handled.error());
+              }
+              auto result = server::detail::value_to_resource_read_result(
+                  *handled, context.uri);
+              for (auto& c : result.contents) {
+                if (c.uri.empty()) {
+                  c.uri = uri;
+                }
+              }
+              return result;
+            } else {
+              auto result = server::detail::value_to_resource_read_result(
+                  std::move(handled), context.uri);
+              for (auto& c : result.contents) {
+                if (c.uri.empty()) {
+                  c.uri = uri;
+                }
+              }
+              return result;
+            }
+          } catch (const std::exception& exception) {
+            return mcp::core::unexpected(core::Error{
+                static_cast<int>(protocol::ErrorCode::InvalidParams),
+                "failed to run resource handler",
+                exception.what(),
+            });
+          }
+        });
+  }
+
+  /// @brief Registers a resource template with a callable adapter.
+  template <class Handler>
+  Builder& resource_template(std::string name, Handler handler) {
+    server::detail::require_callable(handler, "resource_template");
+    protocol::ResourceTemplate tmpl;
+    if constexpr (std::is_invocable_v<Handler>) {
+      auto handled = handler();
+      if constexpr (server::detail::is_result<decltype(handled)>::value) {
+        if (!handled) {
+          throw std::runtime_error(handled.error().message);
+        }
+        tmpl = *handled;
+      } else {
+        tmpl = std::move(handled);
+      }
+    } else if constexpr (std::is_invocable_v<Handler, std::string>) {
+      tmpl = handler({});
+    } else {
+      static_assert(
+          std::is_invocable_v<Handler>,
+          "resource_template handler must accept no arguments or string");
+    }
+    if (tmpl.name.empty()) {
+      tmpl.name = name;
+    }
+    if (tmpl.uri_template.empty()) {
+      tmpl.uri_template = std::move(name);
+    }
+    return add_resource_template(std::move(tmpl));
+  }
+
+  /// @brief Registers a completion handler.
+  template <class Handler>
+  Builder& completion(Handler handler) {
+    server::detail::require_callable(handler, "completion");
+    if constexpr (server::detail::is_typed_completion_handler_v<Handler>) {
+      server::detail::require_unambiguous_completion_handler<Handler>();
+    } else {
+      server::detail::require_unambiguous_json_extension_handler<Handler>();
+    }
+    builder_.on_completion([handler = std::move(handler)](
+                               const protocol::Json& request,
+                               const server::SessionContext& context,
+                               CancellationToken cancellation) mutable
+                               -> core::Result<protocol::Json> {
+      if constexpr (server::detail::is_typed_completion_handler_v<Handler>) {
+        const auto params = protocol::complete_params_from_json(request);
+        if (!params) {
+          return mcp::core::unexpected(core::Error{
+              static_cast<int>(protocol::ErrorCode::InvalidParams),
+              params.error().message, params.error().detail, "protocol"});
+        }
+        server::CompletionContext completion_context;
+        static_cast<server::SessionContext&>(completion_context) = context;
+        completion_context.params = *params;
+        completion_context.cancellation = cancellation;
+        auto handled = server::detail::invoke_completion_handler(
+            handler, completion_context);
+        return server::detail::completion_response_to_json(std::move(handled));
+      } else {
+        auto handled = server::detail::invoke_json_extension_handler(
+            handler, request, context, cancellation);
+        if constexpr (server::detail::is_result<decltype(handled)>::value) {
+          return handled;
+        } else {
+          return server::detail::value_to_json(std::move(handled));
+        }
+      }
+    });
+    return *this;
+  }
+
+  /// @brief Registers a sampling handler.
+  template <class Handler>
+  Builder& sampling(Handler handler) {
+    server::detail::require_callable(handler, "sampling");
+    server::detail::require_unambiguous_json_extension_handler<Handler>();
+    builder_.on_sampling(
+        [handler = std::move(handler)](const protocol::Json& request,
+                                       const server::SessionContext& context,
+                                       CancellationToken cancellation) mutable
+            -> core::Result<protocol::Json> {
+          auto handled = server::detail::invoke_json_extension_handler(
+              handler, request, context, cancellation);
+          if constexpr (server::detail::is_result<decltype(handled)>::value) {
+            return handled;
+          } else {
+            return server::detail::value_to_json(std::move(handled));
+          }
+        });
+    return *this;
+  }
+
+  /// @brief Registers a logging handler.
+  template <class Handler>
+  Builder& logging(Handler handler) {
+    server::detail::require_callable(handler, "logging");
+    builder_.on_logging([handler = std::move(handler)](
+                            std::string_view level, std::string_view message) {
+      handler(level, message);
+    });
+    return *this;
+  }
+
+  /// @brief Registers a raw request handler.
+  template <class Handler>
+  Builder& raw_request(Handler handler) {
+    server::detail::require_callable(handler, "raw_request");
+    builder_.on_raw_request([handler = std::move(handler)](
+                                const protocol::JsonRpcRequest& request,
+                                const server::SessionContext& /*context*/)
+                                -> std::optional<protocol::JsonRpcResponse> {
+      if constexpr (std::is_same_v<std::decay_t<decltype(handler(request))>,
+                                   std::optional<protocol::JsonRpcResponse>>) {
+        return handler(request);
+      } else if constexpr (std::is_same_v<
+                               std::decay_t<decltype(handler(request))>,
+                               protocol::JsonRpcResponse>) {
+        return handler(request);
+      } else {
+        handler(request);
+        return std::nullopt;
+      }
+    });
+    return *this;
+  }
+
   template <class Router>
   Builder& router(const Router& router) {
     router.apply_to(builder_);
@@ -4196,6 +4528,10 @@ class Peer<RoleServer>::Builder {
     native_transports_.clear();
     return peer;
   }
+
+  /// @brief Builds the peer, serves it, and blocks until shutdown.
+  /// @return 0 on clean shutdown, 1 on build or serve error.
+  int run();
 
  private:
   server::ServerBuilder builder_;

@@ -286,6 +286,8 @@ inline protocol::Json value_to_json(T&& value) {
   using Value = std::decay_t<T>;
   if constexpr (std::is_same_v<Value, protocol::Json>) {
     return std::forward<T>(value);
+  } else if constexpr (protocol::has_reflect_v<Value>) {
+    return protocol::reflect_to_json(value);
   } else {
     return protocol::Json(std::forward<T>(value));
   }
@@ -453,17 +455,31 @@ inline core::Result<protocol::Json> completion_response_to_json(T&& value) {
 template <class Arg>
 inline Arg argument_from_json(const protocol::Json& arguments,
                               std::string_view fallback_name = {}) {
-  if constexpr (std::is_same_v<std::decay_t<Arg>, protocol::Json>) {
+  using Decayed = std::decay_t<Arg>;
+  if constexpr (std::is_same_v<Decayed, protocol::Json>) {
     return arguments;
+  } else if constexpr (protocol::has_reflect_v<Decayed>) {
+    protocol::Json effective = arguments;
+    if (!fallback_name.empty() && arguments.is_object() &&
+        arguments.contains(std::string(fallback_name))) {
+      effective = arguments.at(std::string(fallback_name));
+    } else if (arguments.is_object() && arguments.size() == 1) {
+      effective = arguments.begin().value();
+    }
+    auto result = protocol::reflect_from_json<Decayed>(effective);
+    if (!result) {
+      throw std::invalid_argument(result.error().message);
+    }
+    return std::move(*result);
   } else {
     if (!fallback_name.empty() && arguments.is_object() &&
         arguments.contains(std::string(fallback_name))) {
-      return arguments.at(std::string(fallback_name)).get<Arg>();
+      return arguments.at(std::string(fallback_name)).template get<Arg>();
     }
     if (arguments.is_object() && arguments.size() == 1) {
-      return arguments.begin().value().get<Arg>();
+      return arguments.begin().value().template get<Arg>();
     }
-    return arguments.get<Arg>();
+    return arguments.template get<Arg>();
   }
 }
 

@@ -478,4 +478,16 @@ inline core::Result<RunningService<RoleServer>> serve(
       .serve();
 }
 
+inline int Peer<RoleServer>::Builder::run() {
+  auto peer = build();
+  if (!peer) {
+    return 1;
+  }
+  auto running = serve(std::move(*peer));
+  if (!running) {
+    return 1;
+  }
+  return running->wait().has_value() ? 0 : 1;
+}
+
 }  // namespace mcp

@@ -249,9 +249,9 @@ The same workflow uploads:
   debt ledger, public API surface manifest, RMCP source mapping, release
   process, graceful shutdown guidance, Peer/Service migration guide, release
   gates, release candidate checklist, release notes template, request lifecycle
-  notes, technical audit, TODO, the release evidence verifier scripts, the
-  external consumer template, and example source files used for the release
-  decision.
+  notes, capability lifecycles, technical audit, TODO, the release evidence
+  verifier scripts, the external consumer template, and example source files
+  used for the release decision.
 
 Release candidates must attach the source, documentation, and release evidence
 artifacts, or replace them with equivalent versioned artifacts built from the
