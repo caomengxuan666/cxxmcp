@@ -432,6 +432,11 @@ class ProcessStdioTransport::Impl {
     request_handler_ = std::move(request_handler);
     notification_handler_ = std::move(notification_handler);
     started_ = true;
+    const auto started = ensure_started();
+    if (!started) {
+      started_ = false;
+      return mcp::core::unexpected(started.error());
+    }
     if (!reader_thread_.joinable()) {
       reader_thread_ = std::thread([this] { this->reader_loop(); });
     }
