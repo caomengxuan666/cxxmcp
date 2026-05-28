@@ -43,9 +43,6 @@
         "CXXMCP_BUILD_SDK": "ON",
         "CXXMCP_BUILD_CLIENT": "OFF",
         "CXXMCP_BUILD_SERVER": "OFF",
-        "CXXMCP_BUILD_APP": "OFF",
-        "CXXMCP_BUILD_GATEWAY": "OFF",
-        "CXXMCP_BUILD_CLI": "OFF",
         "CXXMCP_BUILD_EXAMPLES": "OFF",
         "CXXMCP_BUILD_TESTS": "OFF"
       }
@@ -59,43 +56,6 @@
         "CXXMCP_BUILD_SDK": "ON",
         "CXXMCP_BUILD_CLIENT": "OFF",
         "CXXMCP_BUILD_SERVER": "OFF",
-        "CXXMCP_BUILD_APP": "OFF",
-        "CXXMCP_BUILD_GATEWAY": "OFF",
-        "CXXMCP_BUILD_CLI": "OFF",
-        "CXXMCP_BUILD_EXAMPLES": "OFF",
-        "CXXMCP_BUILD_TESTS": "OFF"
-      }
-    },
-    {
-      "name": "cli",
-      "displayName": "CLI (Debug)",
-      "description": "Build the command-line application and the layers it pulls in.",
-      "inherits": "base-ninja-debug",
-      "cacheVariables": {
-        "CXXMCP_BUILD_SDK": "OFF",
-        "CXXMCP_BUILD_CLIENT": "OFF",
-        "CXXMCP_BUILD_SERVER": "OFF",
-        "CXXMCP_BUILD_RUNTIME": "ON",
-        "CXXMCP_BUILD_APP": "OFF",
-        "CXXMCP_BUILD_GATEWAY": "OFF",
-        "CXXMCP_BUILD_CLI": "ON",
-        "CXXMCP_BUILD_EXAMPLES": "OFF",
-        "CXXMCP_BUILD_TESTS": "OFF"
-      }
-    },
-    {
-      "name": "cli-release",
-      "displayName": "CLI (Release)",
-      "description": "Build the command-line application in Release mode.",
-      "inherits": "base-ninja-release",
-      "cacheVariables": {
-        "CXXMCP_BUILD_SDK": "OFF",
-        "CXXMCP_BUILD_CLIENT": "OFF",
-        "CXXMCP_BUILD_SERVER": "OFF",
-        "CXXMCP_BUILD_RUNTIME": "ON",
-        "CXXMCP_BUILD_APP": "OFF",
-        "CXXMCP_BUILD_GATEWAY": "OFF",
-        "CXXMCP_BUILD_CLI": "ON",
         "CXXMCP_BUILD_EXAMPLES": "OFF",
         "CXXMCP_BUILD_TESTS": "OFF"
       }
@@ -110,9 +70,6 @@
         "CXXMCP_BUILD_SDK": "ON",
         "CXXMCP_BUILD_CLIENT": "ON",
         "CXXMCP_BUILD_SERVER": "ON",
-        "CXXMCP_BUILD_APP": "OFF",
-        "CXXMCP_BUILD_GATEWAY": "OFF",
-        "CXXMCP_BUILD_CLI": "OFF",
         "CXXMCP_BUILD_EXAMPLES": "ON",
         "CXXMCP_BUILD_TESTS": "OFF"
       }
@@ -127,9 +84,6 @@
         "CXXMCP_BUILD_SDK": "ON",
         "CXXMCP_BUILD_CLIENT": "ON",
         "CXXMCP_BUILD_SERVER": "ON",
-        "CXXMCP_BUILD_APP": "OFF",
-        "CXXMCP_BUILD_GATEWAY": "OFF",
-        "CXXMCP_BUILD_CLI": "OFF",
         "CXXMCP_BUILD_EXAMPLES": "ON",
         "CXXMCP_BUILD_TESTS": "OFF"
       }
@@ -137,14 +91,12 @@
     {
       "name": "tests",
       "displayName": "Tests (Debug)",
-      "description": "Build the full runtime stack with tests enabled.",
+      "description": "Build the SDK with tests enabled.",
       "inherits": "base-ninja-debug",
       "cacheVariables": {
         "CXXMCP_BUILD_SDK": "ON",
         "CXXMCP_BUILD_CLIENT": "ON",
         "CXXMCP_BUILD_SERVER": "ON",
-        "CXXMCP_BUILD_RUNTIME": "ON",
-        "CXXMCP_BUILD_CLI": "OFF",
         "CXXMCP_BUILD_EXAMPLES": "OFF",
         "CXXMCP_BUILD_TESTS": "ON"
       }
@@ -152,14 +104,12 @@
     {
       "name": "tests-release",
       "displayName": "Tests (Release)",
-      "description": "Build the full runtime stack with tests enabled in Release mode.",
+      "description": "Build the SDK with tests enabled in Release mode.",
       "inherits": "base-ninja-release",
       "cacheVariables": {
         "CXXMCP_BUILD_SDK": "ON",
         "CXXMCP_BUILD_CLIENT": "ON",
         "CXXMCP_BUILD_SERVER": "ON",
-        "CXXMCP_BUILD_RUNTIME": "ON",
-        "CXXMCP_BUILD_CLI": "OFF",
         "CXXMCP_BUILD_EXAMPLES": "OFF",
         "CXXMCP_BUILD_TESTS": "ON"
       }
@@ -211,14 +161,6 @@
     {
       "name": "sdk-release",
       "configurePreset": "sdk-release"
-    },
-    {
-      "name": "cli",
-      "configurePreset": "cli"
-    },
-    {
-      "name": "cli-release",
-      "configurePreset": "cli-release"
     },
     {
       "name": "examples",

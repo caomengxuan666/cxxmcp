@@ -9,4 +9,22 @@ if(@CXXMCP_USE_SYSTEM_DEPS@)
     find_dependency(httplib CONFIG)
 endif()
 
+if("@CXXMCP_AUTH_CRYPTO@" STREQUAL "OpenSSL")
+    find_dependency(OpenSSL)
+endif()
+
 include("${CMAKE_CURRENT_LIST_DIR}/cxxmcpTargets.cmake")
+
+foreach(_cxxmcp_component IN LISTS cxxmcp_FIND_COMPONENTS)
+    if(TARGET "cxxmcp::${_cxxmcp_component}")
+        set("cxxmcp_${_cxxmcp_component}_FOUND" TRUE)
+    else()
+        set("cxxmcp_${_cxxmcp_component}_FOUND" FALSE)
+        if(cxxmcp_FIND_REQUIRED_${_cxxmcp_component})
+            set(cxxmcp_NOT_FOUND_MESSAGE
+                "cxxmcp component '${_cxxmcp_component}' was requested but is not installed")
+        endif()
+    endif()
+endforeach()
+
+check_required_components(cxxmcp)

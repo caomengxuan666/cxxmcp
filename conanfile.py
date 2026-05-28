@@ -98,6 +98,8 @@ class CxxmcpConan(ConanFile):
         self.cpp_info.libs = ["mcp_server", "mcp_client", "mcp_protocol"]
         if self.settings.os == "Windows":
             self.cpp_info.system_libs.append("ws2_32")
+        elif self.settings.os in ("Linux", "FreeBSD"):
+            self.cpp_info.system_libs.append("pthread")
 
         self.cpp_info.components["core"].set_property(
             "cmake_target_name", "cxxmcp::core")
@@ -117,6 +119,8 @@ class CxxmcpConan(ConanFile):
         self.cpp_info.components["client"].requires = ["transport"]
         if self.settings.os == "Windows":
             self.cpp_info.components["client"].system_libs.append("ws2_32")
+        elif self.settings.os in ("Linux", "FreeBSD"):
+            self.cpp_info.components["client"].system_libs.append("pthread")
 
         self.cpp_info.components["server"].set_property(
             "cmake_target_name", "cxxmcp::server")
@@ -124,6 +128,8 @@ class CxxmcpConan(ConanFile):
         self.cpp_info.components["server"].requires = ["transport"]
         if self.settings.os == "Windows":
             self.cpp_info.components["server"].system_libs.append("ws2_32")
+        elif self.settings.os in ("Linux", "FreeBSD"):
+            self.cpp_info.components["server"].system_libs.append("pthread")
 
         self.cpp_info.components["peer"].set_property(
             "cmake_target_name", "cxxmcp::peer")

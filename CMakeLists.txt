@@ -46,7 +46,7 @@ function(cxxmcp_require_sdk_cxx target_name)
 endfunction()
 
 function(cxxmcp_require_cxx20 target_name)
-    cxxmcp_require_cxx_standard("${target_name}" 20)
+    cxxmcp_require_cxx_standard("${target_name}" "20")
 endfunction()
 
 set(CXXMCP_MSVC_RUNTIME_LIBRARY "" CACHE STRING
@@ -78,14 +78,6 @@ cxxmcp_build_option(CXXMCP_BUILD_CLIENT MCP_BUILD_CLIENT
     "Build the MCP client library" OFF)
 cxxmcp_build_option(CXXMCP_BUILD_SERVER MCP_BUILD_SERVER
     "Build the MCP server library" OFF)
-cxxmcp_build_option(CXXMCP_BUILD_RUNTIME MCP_BUILD_RUNTIME
-    "Build the runtime application layer" OFF)
-cxxmcp_build_option(CXXMCP_BUILD_APP MCP_BUILD_APP
-    "Build the runtime application service library" OFF)
-cxxmcp_build_option(CXXMCP_BUILD_GATEWAY MCP_BUILD_GATEWAY
-    "Build the gateway service library" OFF)
-cxxmcp_build_option(CXXMCP_BUILD_CLI MCP_BUILD_CLI
-    "Build the command-line application" OFF)
 cxxmcp_build_option(CXXMCP_BUILD_EXAMPLES MCP_BUILD_EXAMPLES
     "Build example executables" OFF)
 cxxmcp_build_option(CXXMCP_BUILD_TESTS MCP_BUILD_TESTS
@@ -94,6 +86,17 @@ cxxmcp_build_option(CXXMCP_BUILD_DOCS MCP_BUILD_DOCS
     "Build Doxygen API documentation" OFF)
 cxxmcp_build_option(CXXMCP_ENABLE_AUTH MCP_ENABLE_AUTH
     "Build optional OAuth 2.1 / DPoP authorization scaffolding" OFF)
+cxxmcp_build_option(CXXMCP_ENABLE_PLUGIN_SDK MCP_ENABLE_PLUGIN_SDK
+    "Build optional plugin SDK extension target" OFF)
+cxxmcp_build_option(CXXMCP_ENABLE_ADAPTERS MCP_ENABLE_ADAPTERS
+    "Build optional adapter extension target" OFF)
+
+set(CXXMCP_AUTH_CRYPTO "NONE" CACHE STRING
+    "Optional crypto backend for cxxmcp auth; NONE or OpenSSL")
+set_property(CACHE CXXMCP_AUTH_CRYPTO PROPERTY STRINGS NONE OpenSSL)
+if(NOT CXXMCP_AUTH_CRYPTO MATCHES "^(NONE|OpenSSL)$")
+    message(FATAL_ERROR "CXXMCP_AUTH_CRYPTO must be NONE or OpenSSL")
+endif()
 
 option(CXXMCP_USE_SYSTEM_DEPS
     "Use package-manager provided SDK dependencies instead of bundled headers"
@@ -102,18 +105,13 @@ option(CXXMCP_USE_SYSTEM_JSONRPCPP
     "Use a package-manager provided jsonrpcpp header instead of the bundled private header"
     OFF)
 
-unset(CXXMCP_BUILD_GUI CACHE)
-unset(MCP_BUILD_GUI CACHE)
-
 set(MCP_ENABLE_PROTOCOL ${CXXMCP_BUILD_PROTOCOL})
 set(MCP_ENABLE_CLIENT ${CXXMCP_BUILD_CLIENT})
 set(MCP_ENABLE_SERVER ${CXXMCP_BUILD_SERVER})
-set(MCP_ENABLE_RUNTIME ${CXXMCP_BUILD_RUNTIME})
-set(MCP_ENABLE_APP ${CXXMCP_BUILD_APP})
-set(MCP_ENABLE_GATEWAY ${CXXMCP_BUILD_GATEWAY})
-set(MCP_ENABLE_CLI ${CXXMCP_BUILD_CLI})
 set(MCP_ENABLE_SDK ${CXXMCP_BUILD_SDK})
 set(MCP_ENABLE_AUTH ${CXXMCP_ENABLE_AUTH})
+set(MCP_ENABLE_PLUGIN_SDK ${CXXMCP_ENABLE_PLUGIN_SDK})
+set(MCP_ENABLE_ADAPTERS ${CXXMCP_ENABLE_ADAPTERS})
 
 if(MCP_ENABLE_SDK)
     set(MCP_ENABLE_PROTOCOL ON)
@@ -121,26 +119,18 @@ if(MCP_ENABLE_SDK)
     set(MCP_ENABLE_SERVER ON)
 endif()
 
-if(CXXMCP_BUILD_CLI)
-    set(MCP_ENABLE_GATEWAY ON)
-endif()
-
-if(MCP_ENABLE_GATEWAY)
-    set(MCP_ENABLE_APP ON)
-    set(MCP_ENABLE_SERVER ON)
-endif()
-
-if(MCP_ENABLE_RUNTIME)
-    set(MCP_ENABLE_APP ON)
-    set(MCP_ENABLE_GATEWAY ON)
-endif()
-
-if(MCP_ENABLE_APP)
-    set(MCP_ENABLE_CLIENT ON)
-endif()
-
-if(MCP_ENABLE_CLIENT OR MCP_ENABLE_SERVER OR MCP_ENABLE_APP OR MCP_ENABLE_GATEWAY OR MCP_ENABLE_CLI)
+if(MCP_ENABLE_CLIENT OR MCP_ENABLE_SERVER)
     set(MCP_ENABLE_PROTOCOL ON)
+endif()
+
+if(MCP_ENABLE_ADAPTERS AND NOT MCP_ENABLE_PLUGIN_SDK)
+    message(FATAL_ERROR
+        "CXXMCP_ENABLE_ADAPTERS requires CXXMCP_ENABLE_PLUGIN_SDK")
+endif()
+
+if(NOT MCP_ENABLE_AUTH AND NOT CXXMCP_AUTH_CRYPTO STREQUAL "NONE")
+    message(FATAL_ERROR
+        "CXXMCP_AUTH_CRYPTO requires CXXMCP_ENABLE_AUTH=ON")
 endif()
 
 add_library(mcp_core INTERFACE)
@@ -204,15 +194,6 @@ target_link_libraries(cpp_httplib INTERFACE
 )
 
 cxxmcp_require_sdk_cxx(cpp_httplib)
-
-set(MCP_ENABLE_OBSERVABILITY OFF)
-if(MCP_ENABLE_RUNTIME OR MCP_ENABLE_APP OR MCP_ENABLE_GATEWAY OR MCP_ENABLE_CLI)
-    set(MCP_ENABLE_OBSERVABILITY ON)
-endif()
-
-if(MCP_ENABLE_OBSERVABILITY)
-    add_subdirectory(third_party/spdlog EXCLUDE_FROM_ALL)
-endif()
 
 if(MCP_ENABLE_PROTOCOL)
     add_library(mcp_protocol STATIC)
@@ -351,6 +332,18 @@ if(MCP_ENABLE_AUTH)
     cxxmcp_require_sdk_cxx(mcp_auth)
 endif()
 
+if(TARGET mcp_auth AND CXXMCP_AUTH_CRYPTO STREQUAL "OpenSSL")
+    find_package(OpenSSL REQUIRED)
+    add_library(mcp_auth_openssl INTERFACE)
+    set_target_properties(mcp_auth_openssl PROPERTIES EXPORT_NAME auth_openssl)
+    target_include_directories(mcp_auth_openssl INTERFACE
+        $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/sdk/auth/include>
+        $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>
+    )
+    target_link_libraries(mcp_auth_openssl INTERFACE mcp_auth OpenSSL::Crypto)
+    cxxmcp_require_sdk_cxx(mcp_auth_openssl)
+endif()
+
 if(TARGET mcp_sdk AND TARGET mcp_transport)
     target_link_libraries(mcp_sdk INTERFACE mcp_transport)
 endif()
@@ -416,6 +409,10 @@ if(TARGET mcp_auth)
     add_library(cxxmcp::auth ALIAS mcp_auth)
 endif()
 
+if(TARGET mcp_auth_openssl)
+    add_library(cxxmcp::auth_openssl ALIAS mcp_auth_openssl)
+endif()
+
 if(TARGET mcp_peer)
     add_library(cxxmcp::peer ALIAS mcp_peer)
 endif()
@@ -428,19 +425,7 @@ if(TARGET mcp_service)
     add_library(cxxmcp::service ALIAS mcp_service)
 endif()
 
-if(TARGET mcp_app)
-    add_library(cxxmcp::runtime ALIAS mcp_app)
-endif()
-
-if(TARGET mcp_gateway)
-    add_library(cxxmcp::gateway ALIAS mcp_gateway)
-endif()
-
-if(TARGET mcp_cli)
-    add_library(cxxmcp::cli ALIAS mcp_cli)
-endif()
-
-if(TARGET mcp_protocol)
+if(MCP_ENABLE_PLUGIN_SDK AND TARGET mcp_protocol)
     add_library(mcp_plugin_sdk INTERFACE)
     target_include_directories(mcp_plugin_sdk INTERFACE
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/extensions/plugin-sdk/include>
@@ -452,7 +437,7 @@ if(TARGET mcp_protocol)
     add_library(cxxmcp::plugin_sdk ALIAS mcp_plugin_sdk)
 endif()
 
-if(TARGET mcp_server AND TARGET mcp_plugin_sdk)
+if(MCP_ENABLE_ADAPTERS AND TARGET mcp_server AND TARGET mcp_plugin_sdk)
     add_library(mcp_adapters INTERFACE)
     target_include_directories(mcp_adapters INTERFACE
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/extensions/adapters/include>
@@ -462,84 +447,6 @@ if(TARGET mcp_server AND TARGET mcp_plugin_sdk)
     set_target_properties(mcp_adapters PROPERTIES EXPORT_NAME adapters)
     cxxmcp_require_sdk_cxx(mcp_adapters)
     add_library(cxxmcp::adapters ALIAS mcp_adapters)
-endif()
-
-if(MCP_ENABLE_OBSERVABILITY)
-    add_library(mcp_observability INTERFACE)
-    target_include_directories(mcp_observability INTERFACE
-        $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/runtime/observability/include>
-    )
-    target_link_libraries(mcp_observability INTERFACE spdlog::spdlog_header_only)
-endif()
-
-if(MCP_ENABLE_APP)
-    add_library(mcp_app STATIC
-        runtime/src/client_discovery.cpp
-        runtime/src/exposure_management.cpp
-        runtime/src/file_stores.cpp
-        runtime/src/serialization.cpp
-        runtime/src/task_management.cpp
-        runtime/src/upstream_client.cpp
-        runtime/src/server_management.cpp
-        runtime/src/services.cpp
-        runtime/src/tool_management.cpp
-    )
-    set_target_properties(mcp_app PROPERTIES EXPORT_NAME runtime)
-    target_include_directories(mcp_app PUBLIC
-        $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/runtime/include>
-        $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>
-    )
-    target_link_libraries(mcp_app PUBLIC mcp_core mcp_protocol mcp_client)
-    cxxmcp_require_cxx20(mcp_app)
-endif()
-
-if(MCP_ENABLE_GATEWAY)
-    add_library(mcp_gateway STATIC
-        runtime/src/client_config.cpp
-        runtime/src/gateway.cpp
-        runtime/src/gateway_public.cpp
-        runtime/src/gateway_onboarding.cpp
-        runtime/src/gateway_runtime.cpp
-    )
-    set_target_properties(mcp_gateway PROPERTIES EXPORT_NAME gateway)
-    target_include_directories(mcp_gateway PUBLIC
-        $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/runtime/include>
-        $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>
-    )
-    target_link_libraries(mcp_gateway PUBLIC mcp_core mcp_app mcp_client mcp_server)
-    cxxmcp_require_cxx20(mcp_gateway)
-endif()
-
-if(MCP_ENABLE_CLI)
-    set(CLI11_BUILD_DOCS OFF CACHE BOOL "Disable CLI11 docs" FORCE)
-    set(CLI11_BUILD_EXAMPLES OFF CACHE BOOL "Disable CLI11 examples" FORCE)
-    set(CLI11_BUILD_EXAMPLES_JSON OFF CACHE BOOL "Disable CLI11 json examples" FORCE)
-    set(CLI11_BUILD_TESTS OFF CACHE BOOL "Disable CLI11 tests" FORCE)
-    set(CLI11_INSTALL OFF CACHE BOOL "Disable CLI11 install rules" FORCE)
-    set(CLI11_SINGLE_FILE OFF CACHE BOOL "Disable CLI11 single-file build" FORCE)
-    add_subdirectory(third_party/CLI11 EXCLUDE_FROM_ALL)
-
-    add_library(mcp_cli STATIC
-        tools/cli/src/commands.cpp
-    )
-    set_target_properties(mcp_cli PROPERTIES EXPORT_NAME cli)
-    target_include_directories(mcp_cli PUBLIC
-        $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/tools/cli/include>
-        $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>
-    )
-    target_include_directories(mcp_cli PRIVATE
-        ${CMAKE_CURRENT_SOURCE_DIR}/extensions/plugin-sdk/include
-        ${CMAKE_CURRENT_SOURCE_DIR}/third_party/CLI11/include
-    )
-    target_link_libraries(mcp_cli PUBLIC mcp_core mcp_app mcp_gateway mcp_client mcp_server)
-    cxxmcp_require_cxx20(mcp_cli)
-
-    add_executable(mcp_cli_app
-        tools/cli/src/main.cpp
-    )
-    target_link_libraries(mcp_cli_app PRIVATE mcp_cli)
-    target_compile_definitions(mcp_cli_app PRIVATE MCP_PROJECT_VERSION="${PROJECT_VERSION}")
-    set_target_properties(mcp_cli_app PROPERTIES OUTPUT_NAME cxxmcp)
 endif()
 
 if(CXXMCP_BUILD_TESTS)
@@ -579,6 +486,9 @@ if(TARGET mcp_transport)
 endif()
 if(TARGET mcp_auth)
     list(APPEND CXXMCP_INSTALL_TARGETS mcp_auth)
+endif()
+if(TARGET mcp_auth_openssl)
+    list(APPEND CXXMCP_INSTALL_TARGETS mcp_auth_openssl)
 endif()
 if(TARGET mcp_peer)
     list(APPEND CXXMCP_INSTALL_TARGETS mcp_peer)

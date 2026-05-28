@@ -5,4 +5,4 @@ find_package(cxxmcp CONFIG REQUIRED)
 
 add_executable(cxxmcp_external_consumer main.cpp)
 target_compile_features(cxxmcp_external_consumer PRIVATE cxx_std_17)
-target_link_libraries(cxxmcp_external_consumer PRIVATE cxxmcp::server)
+target_link_libraries(cxxmcp_external_consumer PRIVATE cxxmcp::sdk)
