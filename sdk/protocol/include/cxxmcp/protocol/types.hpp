@@ -9,6 +9,7 @@
 /// method payloads. Feature-specific headers define the `params` and `result`
 /// objects used inside these JSON-RPC messages.
 
+#include <cmath>
 #include <cstddef>
 #include <cstdint>
 #include <initializer_list>
@@ -25,12 +26,27 @@ namespace mcp::protocol {
 /// @brief JSON value type used by all protocol DTOs.
 using Json = nlohmann::json;
 
+/// @brief Returns true for finite JSON floating-point values accepted by MCP.
+inline bool protocol_number_is_finite(double value) noexcept {
+  return std::isfinite(value);
+}
+
 /// @brief Protocol `_meta` object used by request params, results, and
 /// notifications.
 ///
 /// The SDK keeps metadata as JSON for forward compatibility, while helper
 /// functions below provide typed access to well-known MCP metadata members.
 using Meta = Json;
+
+/// @brief Shared pagination params for MCP list requests that use `cursor`.
+struct PaginatedRequestParams {
+  /// Optional cursor from a prior list result.
+  std::optional<std::string> cursor;
+  /// Optional `_meta` extension object preserved on the wire.
+  std::optional<Json> meta;
+  /// Unknown JSON members preserved for forward-compatible round trips.
+  Json extensions = Json::object();
+};
 
 /// @brief JSON-RPC request or response identifier.
 ///
@@ -383,6 +399,50 @@ inline void append_json_extensions(Json& json, const Json& extensions) {
   }
 }
 
+/// @brief Serializes shared pagination params for MCP list requests.
+inline Json paginated_request_params_to_json(
+    const PaginatedRequestParams& params) {
+  Json json = Json::object();
+  if (params.cursor.has_value()) {
+    json["cursor"] = *params.cursor;
+  }
+  if (params.meta.has_value()) {
+    json["_meta"] = *params.meta;
+  }
+  append_json_extensions(json, params.extensions);
+  return json;
+}
+
+/// @brief Parses shared pagination params for MCP list requests.
+///
+/// Returns nullopt when `params` is not an object, `cursor` is not a string, or
+/// `_meta` is present but is not an object.
+inline std::optional<PaginatedRequestParams> paginated_request_params_from_json(
+    const Json& json) {
+  if (json.is_null()) {
+    return PaginatedRequestParams{};
+  }
+  if (!json.is_object()) {
+    return std::nullopt;
+  }
+
+  PaginatedRequestParams params;
+  if (json.contains("cursor")) {
+    if (!json.at("cursor").is_string()) {
+      return std::nullopt;
+    }
+    params.cursor = json.at("cursor").get<std::string>();
+  }
+  if (json.contains("_meta")) {
+    if (!meta_is_object(json.at("_meta"))) {
+      return std::nullopt;
+    }
+    params.meta = json.at("_meta");
+  }
+  params.extensions = collect_json_extensions(json, {"cursor", "_meta"});
+  return params;
+}
+
 /// @brief Creates a metadata object carrying a progress token.
 inline Meta meta_with_progress_token(ProgressToken token) {
   Meta meta = Meta::object();
@@ -480,11 +540,17 @@ progress_notification_params_from_json(const Json& json) {
   ProgressNotificationParams params;
   params.progress_token = *progress_token;
   params.progress = json.at("progress").get<double>();
+  if (!protocol_number_is_finite(params.progress)) {
+    return std::nullopt;
+  }
   if (json.contains("total")) {
     if (!json.at("total").is_number()) {
       return std::nullopt;
     }
     params.total = json.at("total").get<double>();
+    if (!protocol_number_is_finite(*params.total)) {
+      return std::nullopt;
+    }
   }
   if (json.contains("message")) {
     if (!json.at("message").is_string()) {

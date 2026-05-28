@@ -138,24 +138,24 @@ inline Json logging_set_level_params_to_json(
 inline core::Result<LoggingSetLevelParams> logging_set_level_params_from_json(
     const Json& json) {
   if (!json.is_object()) {
-    return std::unexpected(
+    return mcp::core::unexpected(
         logging_json_error("logging/setLevel params must be an object"));
   }
   if (!json.contains("level") || !json.at("level").is_string()) {
-    return std::unexpected(
+    return mcp::core::unexpected(
         logging_json_error("logging/setLevel params require a string level"));
   }
   const auto level =
       logging_level_from_string(json.at("level").get<std::string>());
   if (!level.has_value()) {
-    return std::unexpected(
+    return mcp::core::unexpected(
         logging_json_error("logging level is not supported"));
   }
   LoggingSetLevelParams params;
   params.level = *level;
   if (json.contains("_meta")) {
     if (!json.at("_meta").is_object()) {
-      return std::unexpected(
+      return mcp::core::unexpected(
           logging_json_error("logging/setLevel _meta must be an object"));
     }
     params.meta = json.at("_meta");
@@ -185,21 +185,21 @@ inline Json logging_message_notification_params_to_json(
 inline core::Result<LoggingMessageNotificationParams>
 logging_message_notification_params_from_json(const Json& json) {
   if (!json.is_object()) {
-    return std::unexpected(
+    return mcp::core::unexpected(
         logging_json_error("logging message params must be an object"));
   }
   if (!json.contains("level") || !json.at("level").is_string()) {
-    return std::unexpected(
+    return mcp::core::unexpected(
         logging_json_error("logging message params require a string level"));
   }
   if (!json.contains("data")) {
-    return std::unexpected(
+    return mcp::core::unexpected(
         logging_json_error("logging message params require data"));
   }
   const auto level =
       logging_level_from_string(json.at("level").get<std::string>());
   if (!level.has_value()) {
-    return std::unexpected(
+    return mcp::core::unexpected(
         logging_json_error("logging level is not supported"));
   }
 
@@ -207,7 +207,7 @@ logging_message_notification_params_from_json(const Json& json) {
   params.level = *level;
   if (json.contains("logger")) {
     if (!json.at("logger").is_string()) {
-      return std::unexpected(
+      return mcp::core::unexpected(
           logging_json_error("logging logger must be a string"));
     }
     params.logger = json.at("logger").get<std::string>();
@@ -215,7 +215,7 @@ logging_message_notification_params_from_json(const Json& json) {
   params.data = json.at("data");
   if (json.contains("_meta")) {
     if (!json.at("_meta").is_object()) {
-      return std::unexpected(
+      return mcp::core::unexpected(
           logging_json_error("logging message _meta must be an object"));
     }
     params.meta = json.at("_meta");

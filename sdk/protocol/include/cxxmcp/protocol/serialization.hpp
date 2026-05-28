@@ -46,17 +46,15 @@ inline constexpr bool is_supported_protocol_version(
   return false;
 }
 
-/// @brief Returns the peer-requested version when known, otherwise the
-/// fallback.
-inline constexpr std::string_view negotiate_protocol_version(
-    std::string_view requested,
-    std::string_view fallback = McpProtocolVersion) noexcept {
+/// @brief Returns the peer-requested version when known.
+inline constexpr std::optional<std::string_view> negotiate_protocol_version(
+    std::string_view requested) noexcept {
   for (const auto supported : McpSupportedProtocolVersions) {
     if (requested == supported) {
       return supported;
     }
   }
-  return fallback;
+  return std::nullopt;
 }
 
 /// @brief `initialize` request method for lifecycle negotiation.

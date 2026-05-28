@@ -97,15 +97,15 @@ inline Json implementation_info_to_json(const ImplementationInfo& info) {
 inline core::Result<ImplementationInfo> implementation_info_from_json(
     const Json& json) {
   if (!json.is_object()) {
-    return std::unexpected(
+    return mcp::core::unexpected(
         initialize_json_error("implementation info must be an object"));
   }
   if (!json.contains("name") || !json.at("name").is_string()) {
-    return std::unexpected(
+    return mcp::core::unexpected(
         initialize_json_error("implementation info requires a string name"));
   }
   if (!json.contains("version") || !json.at("version").is_string()) {
-    return std::unexpected(
+    return mcp::core::unexpected(
         initialize_json_error("implementation info requires a string version"));
   }
   ImplementationInfo info;
@@ -113,27 +113,27 @@ inline core::Result<ImplementationInfo> implementation_info_from_json(
   info.version = json.at("version").get<std::string>();
   if (json.contains("title")) {
     if (!json.at("title").is_string()) {
-      return std::unexpected(
+      return mcp::core::unexpected(
           initialize_json_error("implementation info title must be a string"));
     }
     info.title = json.at("title").get<std::string>();
   }
   if (json.contains("description")) {
     if (!json.at("description").is_string()) {
-      return std::unexpected(initialize_json_error(
+      return mcp::core::unexpected(initialize_json_error(
           "implementation info description must be a string"));
     }
     info.description = json.at("description").get<std::string>();
   }
   if (json.contains("icons")) {
     if (!json.at("icons").is_array()) {
-      return std::unexpected(
+      return mcp::core::unexpected(
           initialize_json_error("implementation info icons must be an array"));
     }
     for (const auto& item : json.at("icons")) {
       const auto icon = icon_from_json(item);
       if (!icon.has_value()) {
-        return std::unexpected(initialize_json_error(
+        return mcp::core::unexpected(initialize_json_error(
             "implementation info icons must contain valid icon objects"));
       }
       info.icons.push_back(*icon);
@@ -141,14 +141,14 @@ inline core::Result<ImplementationInfo> implementation_info_from_json(
   }
   if (json.contains("websiteUrl")) {
     if (!json.at("websiteUrl").is_string()) {
-      return std::unexpected(initialize_json_error(
+      return mcp::core::unexpected(initialize_json_error(
           "implementation info websiteUrl must be a string"));
     }
     info.website_url = json.at("websiteUrl").get<std::string>();
   }
   if (json.contains("_meta")) {
     if (!json.at("_meta").is_object()) {
-      return std::unexpected(
+      return mcp::core::unexpected(
           initialize_json_error("implementation info _meta must be an object"));
     }
     info.meta = json.at("_meta");
@@ -175,31 +175,31 @@ inline Json initialize_params_to_json(const InitializeParams& params) {
 inline core::Result<InitializeParams> initialize_params_from_json(
     const Json& json) {
   if (!json.is_object()) {
-    return std::unexpected(
+    return mcp::core::unexpected(
         initialize_json_error("initialize params must be an object"));
   }
   if (!json.contains("protocolVersion") ||
       !json.at("protocolVersion").is_string()) {
-    return std::unexpected(initialize_json_error(
+    return mcp::core::unexpected(initialize_json_error(
         "initialize params require a string protocolVersion"));
   }
   if (!json.contains("capabilities") || !json.at("capabilities").is_object()) {
-    return std::unexpected(
+    return mcp::core::unexpected(
         initialize_json_error("initialize params require object capabilities"));
   }
   if (!json.contains("clientInfo")) {
-    return std::unexpected(
+    return mcp::core::unexpected(
         initialize_json_error("initialize params require clientInfo"));
   }
   const auto capabilities =
       client_capabilities_from_json(json.at("capabilities"));
   if (!capabilities.has_value()) {
-    return std::unexpected(
+    return mcp::core::unexpected(
         initialize_json_error("initialize params capabilities are invalid"));
   }
   const auto client_info = implementation_info_from_json(json.at("clientInfo"));
   if (!client_info) {
-    return std::unexpected(client_info.error());
+    return mcp::core::unexpected(client_info.error());
   }
   InitializeParams params;
   params.protocol_version = json.at("protocolVersion").get<std::string>();
@@ -207,7 +207,7 @@ inline core::Result<InitializeParams> initialize_params_from_json(
   params.client_info = *client_info;
   if (json.contains("_meta")) {
     if (!json.at("_meta").is_object()) {
-      return std::unexpected(
+      return mcp::core::unexpected(
           initialize_json_error("initialize params _meta must be an object"));
     }
     params.meta = json.at("_meta");
@@ -233,31 +233,31 @@ inline Json initialize_result_to_json(const InitializeResult& result) {
 inline core::Result<InitializeResult> initialize_result_from_json(
     const Json& json) {
   if (!json.is_object()) {
-    return std::unexpected(
+    return mcp::core::unexpected(
         initialize_json_error("initialize result must be an object"));
   }
   if (!json.contains("protocolVersion") ||
       !json.at("protocolVersion").is_string()) {
-    return std::unexpected(initialize_json_error(
+    return mcp::core::unexpected(initialize_json_error(
         "initialize result requires a string protocolVersion"));
   }
   if (!json.contains("capabilities") || !json.at("capabilities").is_object()) {
-    return std::unexpected(initialize_json_error(
+    return mcp::core::unexpected(initialize_json_error(
         "initialize result requires object capabilities"));
   }
   if (!json.contains("serverInfo")) {
-    return std::unexpected(
+    return mcp::core::unexpected(
         initialize_json_error("initialize result requires serverInfo"));
   }
   const auto capabilities =
       server_capabilities_from_json(json.at("capabilities"));
   if (!capabilities.has_value()) {
-    return std::unexpected(
+    return mcp::core::unexpected(
         initialize_json_error("initialize result capabilities are invalid"));
   }
   const auto server_info = implementation_info_from_json(json.at("serverInfo"));
   if (!server_info) {
-    return std::unexpected(server_info.error());
+    return mcp::core::unexpected(server_info.error());
   }
   InitializeResult result;
   result.protocol_version = json.at("protocolVersion").get<std::string>();
@@ -265,7 +265,7 @@ inline core::Result<InitializeResult> initialize_result_from_json(
   result.server_info = *server_info;
   if (json.contains("instructions")) {
     if (!json.at("instructions").is_string()) {
-      return std::unexpected(initialize_json_error(
+      return mcp::core::unexpected(initialize_json_error(
           "initialize result instructions must be a string"));
     }
     result.instructions = json.at("instructions").get<std::string>();

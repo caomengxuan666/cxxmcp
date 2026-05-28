@@ -131,46 +131,46 @@ inline Json completion_reference_to_json(const CompletionReference& ref) {
 inline core::Result<CompletionReference> completion_reference_from_json(
     const Json& json) {
   if (!json.is_object()) {
-    return std::unexpected(
+    return mcp::core::unexpected(
         completion_json_error("completion ref must be an object"));
   }
   if (!json.contains("type") || !json.at("type").is_string()) {
-    return std::unexpected(
+    return mcp::core::unexpected(
         completion_json_error("completion ref requires a string type"));
   }
   CompletionReference ref;
   ref.type = json.at("type").get<std::string>();
   if (ref.type == "ref/prompt") {
     if (!json.contains("name") || !json.at("name").is_string()) {
-      return std::unexpected(
+      return mcp::core::unexpected(
           completion_json_error("completion prompt ref requires string name"));
     }
     ref.name = json.at("name").get<std::string>();
     if (json.contains("uri")) {
-      return std::unexpected(
+      return mcp::core::unexpected(
           completion_json_error("completion prompt ref must not contain uri"));
     }
   } else if (ref.type == "ref/resource") {
     if (!json.contains("uri") || !json.at("uri").is_string()) {
-      return std::unexpected(
+      return mcp::core::unexpected(
           completion_json_error("completion resource ref requires string uri"));
     }
     ref.uri = json.at("uri").get<std::string>();
     if (json.contains("name")) {
-      return std::unexpected(completion_json_error(
+      return mcp::core::unexpected(completion_json_error(
           "completion resource ref must not contain name"));
     }
   } else {
-    return std::unexpected(
+    return mcp::core::unexpected(
         completion_json_error("completion ref type is not supported"));
   }
   if (json.contains("title")) {
     if (ref.type != "ref/prompt") {
-      return std::unexpected(completion_json_error(
+      return mcp::core::unexpected(completion_json_error(
           "completion resource ref must not contain title"));
     }
     if (!json.at("title").is_string()) {
-      return std::unexpected(
+      return mcp::core::unexpected(
           completion_json_error("completion ref title must be a string"));
     }
     ref.title = json.at("title").get<std::string>();
@@ -192,15 +192,15 @@ inline Json completion_argument_to_json(const CompletionArgument& argument) {
 inline core::Result<CompletionArgument> completion_argument_from_json(
     const Json& json) {
   if (!json.is_object()) {
-    return std::unexpected(
+    return mcp::core::unexpected(
         completion_json_error("completion argument must be an object"));
   }
   if (!json.contains("name") || !json.at("name").is_string()) {
-    return std::unexpected(
+    return mcp::core::unexpected(
         completion_json_error("completion argument requires a string name"));
   }
   if (!json.contains("value") || !json.at("value").is_string()) {
-    return std::unexpected(
+    return mcp::core::unexpected(
         completion_json_error("completion argument requires a string value"));
   }
   CompletionArgument argument;
@@ -230,25 +230,25 @@ inline Json complete_params_to_json(const CompleteParams& params) {
 inline core::Result<CompleteParams> complete_params_from_json(
     const Json& json) {
   if (!json.is_object()) {
-    return std::unexpected(
+    return mcp::core::unexpected(
         completion_json_error("completion params must be an object"));
   }
   if (!json.contains("ref")) {
-    return std::unexpected(
+    return mcp::core::unexpected(
         completion_json_error("completion params require ref"));
   }
   if (!json.contains("argument")) {
-    return std::unexpected(
+    return mcp::core::unexpected(
         completion_json_error("completion params require argument"));
   }
 
   const auto ref = completion_reference_from_json(json.at("ref"));
   if (!ref) {
-    return std::unexpected(ref.error());
+    return mcp::core::unexpected(ref.error());
   }
   const auto argument = completion_argument_from_json(json.at("argument"));
   if (!argument) {
-    return std::unexpected(argument.error());
+    return mcp::core::unexpected(argument.error());
   }
 
   CompleteParams params;
@@ -256,14 +256,14 @@ inline core::Result<CompleteParams> complete_params_from_json(
   params.argument = *argument;
   if (json.contains("context")) {
     if (!json.at("context").is_object()) {
-      return std::unexpected(
+      return mcp::core::unexpected(
           completion_json_error("completion context must be an object"));
     }
     params.context = json.at("context");
   }
   if (json.contains("_meta")) {
     if (!json.at("_meta").is_object()) {
-      return std::unexpected(
+      return mcp::core::unexpected(
           completion_json_error("completion _meta must be an object"));
     }
     params.meta = json.at("_meta");
@@ -292,41 +292,41 @@ inline Json completion_result_to_json(const CompletionResult& completion) {
 inline core::Result<CompletionResult> completion_result_from_json(
     const Json& json) {
   if (!json.is_object()) {
-    return std::unexpected(
+    return mcp::core::unexpected(
         completion_json_error("completion result must be an object"));
   }
   if (!json.contains("values") || !json.at("values").is_array()) {
-    return std::unexpected(
+    return mcp::core::unexpected(
         completion_json_error("completion result requires a values array"));
   }
   if (json.at("values").size() > CompletionResult::kMaxValues) {
-    return std::unexpected(
+    return mcp::core::unexpected(
         completion_json_error("completion result has too many values"));
   }
 
   CompletionResult completion;
   for (const auto& item : json.at("values")) {
     if (!item.is_string()) {
-      return std::unexpected(
+      return mcp::core::unexpected(
           completion_json_error("completion values must be strings"));
     }
     completion.values.push_back(item.get<std::string>());
   }
   if (json.contains("total")) {
     if (!json.at("total").is_number_integer()) {
-      return std::unexpected(completion_json_error(
+      return mcp::core::unexpected(completion_json_error(
           "completion total must be a non-negative integer"));
     }
     const auto total = json.at("total").get<std::int64_t>();
     if (total < 0 || total > std::numeric_limits<int>::max()) {
-      return std::unexpected(completion_json_error(
+      return mcp::core::unexpected(completion_json_error(
           "completion total must be a non-negative integer"));
     }
     completion.total = static_cast<int>(total);
   }
   if (json.contains("hasMore")) {
     if (!json.at("hasMore").is_boolean()) {
-      return std::unexpected(
+      return mcp::core::unexpected(
           completion_json_error("completion hasMore must be a boolean"));
     }
     completion.has_more = json.at("hasMore").get<bool>();
@@ -352,22 +352,22 @@ inline Json complete_result_to_json(const CompleteResult& result) {
 inline core::Result<CompleteResult> complete_result_from_json(
     const Json& json) {
   if (!json.is_object()) {
-    return std::unexpected(
+    return mcp::core::unexpected(
         completion_json_error("completion result envelope must be an object"));
   }
   if (!json.contains("completion")) {
-    return std::unexpected(completion_json_error(
+    return mcp::core::unexpected(completion_json_error(
         "completion result envelope requires completion"));
   }
   const auto completion = completion_result_from_json(json.at("completion"));
   if (!completion) {
-    return std::unexpected(completion.error());
+    return mcp::core::unexpected(completion.error());
   }
   CompleteResult result;
   result.completion = *completion;
   if (json.contains("_meta")) {
     if (!json.at("_meta").is_object()) {
-      return std::unexpected(
+      return mcp::core::unexpected(
           completion_json_error("completion result _meta must be an object"));
     }
     result.meta = json.at("_meta");

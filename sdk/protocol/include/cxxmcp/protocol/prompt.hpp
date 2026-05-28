@@ -11,6 +11,7 @@
 
 #include <optional>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include "cxxmcp/core/result.hpp"
@@ -58,6 +59,68 @@ struct Prompt {
   /// Unknown JSON members preserved for forward-compatible round trips.
   Json extensions = Json::object();
 };
+
+/// @brief Fluent builder for prompt descriptors.
+class PromptBuilder {
+ public:
+  explicit PromptBuilder(std::string name) { prompt_.name = std::move(name); }
+
+  PromptBuilder& title(std::string value) {
+    prompt_.title = std::move(value);
+    return *this;
+  }
+
+  PromptBuilder& description(std::string value) {
+    prompt_.description = std::move(value);
+    return *this;
+  }
+
+  PromptBuilder& argument(std::string name, bool required = false,
+                          std::string description = {}) {
+    PromptArgument argument;
+    argument.name = std::move(name);
+    argument.description = std::move(description);
+    argument.required = required;
+    argument.required_present = true;
+    prompt_.arguments.push_back(std::move(argument));
+    return *this;
+  }
+
+  PromptBuilder& argument(PromptArgument argument) {
+    prompt_.arguments.push_back(std::move(argument));
+    return *this;
+  }
+
+  PromptBuilder& icon(Icon value) {
+    prompt_.icons.push_back(std::move(value));
+    return *this;
+  }
+
+  PromptBuilder& annotations(Json value) {
+    prompt_.annotations = std::move(value);
+    return *this;
+  }
+
+  PromptBuilder& meta(Json value) {
+    prompt_.meta = std::move(value);
+    return *this;
+  }
+
+  PromptBuilder& extension(std::string name, Json value) {
+    prompt_.extensions[std::move(name)] = std::move(value);
+    return *this;
+  }
+
+  Prompt build() { return std::move(prompt_); }
+
+ private:
+  Prompt prompt_;
+};
+
+/// @brief Creates a fluent builder for advertised MCP prompt metadata.
+inline PromptBuilder prompt_definition(std::string name) {
+  return PromptBuilder(std::move(name));
+}
 
 /// @brief Result object for `prompts/list`.
 struct PromptsListResult {
@@ -149,17 +212,17 @@ inline Json prompt_argument_to_json(const PromptArgument& argument) {
 inline core::Result<PromptArgument> prompt_argument_from_json(
     const Json& json) {
   if (!json.is_object()) {
-    return std::unexpected(
+    return mcp::core::unexpected(
         prompt_json_error("prompt argument must be an object"));
   }
   if (json.contains("title")) {
     if (!json.at("title").is_string()) {
-      return std::unexpected(
+      return mcp::core::unexpected(
           prompt_json_error("prompt argument title must be a string"));
     }
   }
   if (!json.contains("name") || !json.at("name").is_string()) {
-    return std::unexpected(
+    return mcp::core::unexpected(
         prompt_json_error("prompt argument requires a string name"));
   }
 
@@ -170,14 +233,14 @@ inline core::Result<PromptArgument> prompt_argument_from_json(
   argument.name = json.at("name").get<std::string>();
   if (json.contains("description")) {
     if (!json.at("description").is_string()) {
-      return std::unexpected(
+      return mcp::core::unexpected(
           prompt_json_error("prompt argument description must be a string"));
     }
     argument.description = json.at("description").get<std::string>();
   }
   if (json.contains("required")) {
     if (!json.at("required").is_boolean()) {
-      return std::unexpected(
+      return mcp::core::unexpected(
           prompt_json_error("prompt argument required must be a boolean"));
     }
     argument.required = json.at("required").get<bool>();
@@ -185,14 +248,14 @@ inline core::Result<PromptArgument> prompt_argument_from_json(
   }
   if (json.contains("annotations")) {
     if (!json.at("annotations").is_object()) {
-      return std::unexpected(
+      return mcp::core::unexpected(
           prompt_json_error("prompt argument annotations must be an object"));
     }
     argument.annotations = json.at("annotations");
   }
   if (json.contains("_meta")) {
     if (!json.at("_meta").is_object()) {
-      return std::unexpected(
+      return mcp::core::unexpected(
           prompt_json_error("prompt argument _meta must be an object"));
     }
     argument.meta = json.at("_meta");
@@ -239,16 +302,17 @@ inline Json prompt_to_json(const Prompt& prompt) {
 /// @return Parsed prompt or validation error.
 inline core::Result<Prompt> prompt_from_json(const Json& json) {
   if (!json.is_object()) {
-    return std::unexpected(prompt_json_error("prompt must be an object"));
+    return mcp::core::unexpected(prompt_json_error("prompt must be an object"));
   }
   if (json.contains("title")) {
     if (!json.at("title").is_string()) {
-      return std::unexpected(
+      return mcp::core::unexpected(
           prompt_json_error("prompt title must be a string"));
     }
   }
   if (!json.contains("name") || !json.at("name").is_string()) {
-    return std::unexpected(prompt_json_error("prompt requires a string name"));
+    return mcp::core::unexpected(
+        prompt_json_error("prompt requires a string name"));
   }
 
   Prompt prompt;
@@ -258,47 +322,48 @@ inline core::Result<Prompt> prompt_from_json(const Json& json) {
   prompt.name = json.at("name").get<std::string>();
   if (json.contains("description")) {
     if (!json.at("description").is_string()) {
-      return std::unexpected(
+      return mcp::core::unexpected(
           prompt_json_error("prompt description must be a string"));
     }
     prompt.description = json.at("description").get<std::string>();
   }
   if (json.contains("arguments")) {
     if (!json.at("arguments").is_array()) {
-      return std::unexpected(
+      return mcp::core::unexpected(
           prompt_json_error("prompt arguments must be an array"));
     }
     for (const auto& item : json.at("arguments")) {
       const auto argument = prompt_argument_from_json(item);
       if (!argument) {
-        return std::unexpected(argument.error());
+        return mcp::core::unexpected(argument.error());
       }
       prompt.arguments.push_back(*argument);
     }
   }
   if (json.contains("icons")) {
     if (!json.at("icons").is_array()) {
-      return std::unexpected(
+      return mcp::core::unexpected(
           prompt_json_error("prompt icons must be an array"));
     }
     for (const auto& item : json.at("icons")) {
       const auto icon = icon_from_json(item);
       if (!icon.has_value()) {
-        return std::unexpected(prompt_json_error("prompt icon is invalid"));
+        return mcp::core::unexpected(
+            prompt_json_error("prompt icon is invalid"));
       }
       prompt.icons.push_back(*icon);
     }
   }
   if (json.contains("annotations")) {
     if (!json.at("annotations").is_object()) {
-      return std::unexpected(
+      return mcp::core::unexpected(
           prompt_json_error("prompt annotations must be an object"));
     }
     prompt.annotations = json.at("annotations");
   }
   if (json.contains("_meta")) {
     if (!json.at("_meta").is_object()) {
-      return std::unexpected(
+      return mcp::core::unexpected(
           prompt_json_error("prompt _meta must be an object"));
     }
     prompt.meta = json.at("_meta");
@@ -331,11 +396,11 @@ inline Json prompts_list_result_to_json(const PromptsListResult& result) {
 inline core::Result<PromptsListResult> prompts_list_result_from_json(
     const Json& json) {
   if (!json.is_object()) {
-    return std::unexpected(
+    return mcp::core::unexpected(
         prompt_json_error("prompts/list result must be an object"));
   }
   if (!json.contains("prompts") || !json.at("prompts").is_array()) {
-    return std::unexpected(
+    return mcp::core::unexpected(
         prompt_json_error("prompts/list result requires a prompts array"));
   }
 
@@ -343,20 +408,20 @@ inline core::Result<PromptsListResult> prompts_list_result_from_json(
   for (const auto& item : json.at("prompts")) {
     const auto prompt = prompt_from_json(item);
     if (!prompt) {
-      return std::unexpected(prompt.error());
+      return mcp::core::unexpected(prompt.error());
     }
     result.prompts.push_back(*prompt);
   }
   if (json.contains("nextCursor")) {
     if (!json.at("nextCursor").is_string()) {
-      return std::unexpected(
+      return mcp::core::unexpected(
           prompt_json_error("prompts/list nextCursor must be a string"));
     }
     result.next_cursor = json.at("nextCursor").get<std::string>();
   }
   if (json.contains("_meta")) {
     if (!json.at("_meta").is_object()) {
-      return std::unexpected(
+      return mcp::core::unexpected(
           prompt_json_error("prompts/list result _meta must be an object"));
     }
     result.meta = json.at("_meta");
@@ -385,11 +450,11 @@ inline Json prompts_get_params_to_json(const PromptsGetParams& params) {
 inline core::Result<PromptsGetParams> prompts_get_params_from_json(
     const Json& json) {
   if (!json.is_object()) {
-    return std::unexpected(
+    return mcp::core::unexpected(
         prompt_json_error("prompts/get params must be an object"));
   }
   if (!json.contains("name") || !json.at("name").is_string()) {
-    return std::unexpected(
+    return mcp::core::unexpected(
         prompt_json_error("prompts/get params require a string name"));
   }
 
@@ -397,14 +462,14 @@ inline core::Result<PromptsGetParams> prompts_get_params_from_json(
   params.name = json.at("name").get<std::string>();
   if (json.contains("arguments")) {
     if (!json.at("arguments").is_object()) {
-      return std::unexpected(
+      return mcp::core::unexpected(
           prompt_json_error("prompts/get arguments must be an object"));
     }
     params.arguments = json.at("arguments");
   }
   if (json.contains("_meta")) {
     if (!json.at("_meta").is_object()) {
-      return std::unexpected(
+      return mcp::core::unexpected(
           prompt_json_error("prompts/get _meta must be an object"));
     }
     params.meta = json.at("_meta");
@@ -430,21 +495,21 @@ inline Json prompt_message_to_json(const PromptMessage& message) {
 /// @return Parsed message or validation error.
 inline core::Result<PromptMessage> prompt_message_from_json(const Json& json) {
   if (!json.is_object()) {
-    return std::unexpected(
+    return mcp::core::unexpected(
         prompt_json_error("prompt message must be an object"));
   }
   if (!json.contains("role") || !json.at("role").is_string()) {
-    return std::unexpected(
+    return mcp::core::unexpected(
         prompt_json_error("prompt message requires a string role"));
   }
   if (!json.contains("content")) {
-    return std::unexpected(
+    return mcp::core::unexpected(
         prompt_json_error("prompt message requires content"));
   }
 
   const auto content = content_block_from_json(json.at("content"));
   if (!content) {
-    return std::unexpected(content.error());
+    return mcp::core::unexpected(content.error());
   }
 
   PromptMessage message;
@@ -452,7 +517,7 @@ inline core::Result<PromptMessage> prompt_message_from_json(const Json& json) {
   message.content = *content;
   if (json.contains("_meta")) {
     if (!json.at("_meta").is_object()) {
-      return std::unexpected(
+      return mcp::core::unexpected(
           prompt_json_error("prompt message _meta must be an object"));
     }
     message.meta = json.at("_meta");
@@ -484,18 +549,18 @@ inline Json prompts_get_result_to_json(const PromptsGetResult& result) {
 inline core::Result<PromptsGetResult> prompts_get_result_from_json(
     const Json& json) {
   if (!json.is_object()) {
-    return std::unexpected(
+    return mcp::core::unexpected(
         prompt_json_error("prompts/get result must be an object"));
   }
   if (!json.contains("messages") || !json.at("messages").is_array()) {
-    return std::unexpected(
+    return mcp::core::unexpected(
         prompt_json_error("prompts/get result requires a messages array"));
   }
 
   PromptsGetResult result;
   if (json.contains("description")) {
     if (!json.at("description").is_string()) {
-      return std::unexpected(
+      return mcp::core::unexpected(
           prompt_json_error("prompts/get description must be a string"));
     }
     result.description = json.at("description").get<std::string>();
@@ -503,13 +568,13 @@ inline core::Result<PromptsGetResult> prompts_get_result_from_json(
   for (const auto& item : json.at("messages")) {
     const auto message = prompt_message_from_json(item);
     if (!message) {
-      return std::unexpected(message.error());
+      return mcp::core::unexpected(message.error());
     }
     result.messages.push_back(*message);
   }
   if (json.contains("_meta")) {
     if (!json.at("_meta").is_object()) {
-      return std::unexpected(
+      return mcp::core::unexpected(
           prompt_json_error("prompts/get result _meta must be an object"));
     }
     result.meta = json.at("_meta");

@@ -382,6 +382,40 @@ inline std::optional<TaskSupport> task_support_from_string(
   return std::nullopt;
 }
 
+/// @brief Returns true when value is canonical RFC 4648 base64 with padding.
+inline bool is_valid_base64(std::string_view value) noexcept {
+  if (value.empty()) {
+    return true;
+  }
+  if (value.size() % 4 != 0) {
+    return false;
+  }
+
+  std::size_t padding = 0;
+  if (value.back() == '=') {
+    ++padding;
+    if (value.size() >= 2 && value[value.size() - 2] == '=') {
+      ++padding;
+    }
+  }
+
+  for (std::size_t i = 0; i < value.size(); ++i) {
+    const unsigned char c = static_cast<unsigned char>(value[i]);
+    const bool is_base64_char = (c >= 'A' && c <= 'Z') ||
+                                (c >= 'a' && c <= 'z') ||
+                                (c >= '0' && c <= '9') || c == '+' || c == '/';
+    if (is_base64_char) {
+      continue;
+    }
+    if (c == '=' && i >= value.size() - padding) {
+      continue;
+    }
+    return false;
+  }
+
+  return true;
+}
+
 /// @brief Serializes tool execution configuration.
 inline Json tool_execution_to_json(const ToolExecution& execution) {
   Json json = Json::object();
@@ -395,19 +429,20 @@ inline Json tool_execution_to_json(const ToolExecution& execution) {
 /// @return Parsed execution configuration or validation error.
 inline core::Result<ToolExecution> tool_execution_from_json(const Json& json) {
   if (!json.is_object()) {
-    return std::unexpected(tool_json_error("tool execution must be an object"));
+    return mcp::core::unexpected(
+        tool_json_error("tool execution must be an object"));
   }
 
   ToolExecution execution;
   if (json.contains("taskSupport")) {
     if (!json.at("taskSupport").is_string()) {
-      return std::unexpected(
+      return mcp::core::unexpected(
           tool_json_error("tool execution taskSupport must be a string"));
     }
     const auto task_support = task_support_from_string(
         json.at("taskSupport").get_ref<const std::string&>());
     if (!task_support.has_value()) {
-      return std::unexpected(
+      return mcp::core::unexpected(
           tool_json_error("tool execution taskSupport is invalid"));
     }
     execution.task_support = *task_support;
@@ -428,7 +463,9 @@ inline Json content_block_to_json(const ContentBlock& block) {
     if (!block.text.empty() || block.type == "text") {
       json["text"] = block.text;
     }
-    if (!block.data.empty()) {
+    if (((block.type == "image" || block.type == "audio") &&
+         block.data.is_string()) ||
+        !block.data.empty()) {
       json["data"] = block.data;
     }
     if (!block.mime_type.empty()) {
@@ -450,7 +487,7 @@ inline core::Result<std::string> required_content_string(
     const Json& json, std::string_view member, std::string message) {
   const std::string key(member);
   if (!json.contains(key) || !json.at(key).is_string()) {
-    return std::unexpected(tool_json_error(std::move(message)));
+    return mcp::core::unexpected(tool_json_error(std::move(message)));
   }
   return json.at(key).get<std::string>();
 }
@@ -459,12 +496,13 @@ inline core::Result<std::string> required_content_string(
 /// @return Parsed block or validation error.
 inline core::Result<ContentBlock> content_block_from_json(const Json& json) {
   if (!json.is_object()) {
-    return std::unexpected(tool_json_error("content block must be an object"));
+    return mcp::core::unexpected(
+        tool_json_error("content block must be an object"));
   }
 
   ContentBlock block;
   if (!json.contains("type") || !json.at("type").is_string()) {
-    return std::unexpected(
+    return mcp::core::unexpected(
         tool_json_error("content block requires a string type"));
   }
   block.type = json.at("type").get<std::string>();
@@ -473,54 +511,58 @@ inline core::Result<ContentBlock> content_block_from_json(const Json& json) {
     const auto data = required_content_string(
         json, "data", block.type + " content block requires string data");
     if (!data) {
-      return std::unexpected(data.error());
+      return mcp::core::unexpected(data.error());
     }
     const auto mime_type = required_content_string(
         json, "mimeType",
         block.type + " content block requires string mimeType");
     if (!mime_type) {
-      return std::unexpected(mime_type.error());
+      return mcp::core::unexpected(mime_type.error());
+    }
+    if (!is_valid_base64(*data)) {
+      return mcp::core::unexpected(
+          tool_json_error(block.type + " content block data must be base64"));
     }
     block.data = *data;
     block.mime_type = *mime_type;
   } else if (block.type == "resource") {
     if (!json.contains("resource")) {
-      return std::unexpected(
+      return mcp::core::unexpected(
           tool_json_error("resource content block requires resource"));
     }
     const auto resource = resource_contents_from_json(json.at("resource"));
     if (!resource) {
-      return std::unexpected(resource.error());
+      return mcp::core::unexpected(resource.error());
     }
     block.resource = *resource;
   } else if (block.type == "resource_link") {
     const auto resource = resource_from_json(json);
     if (!resource) {
-      return std::unexpected(resource.error());
+      return mcp::core::unexpected(resource.error());
     }
     block.resource_link = *resource;
   } else if (block.type == "text") {
     const auto text = required_content_string(
         json, "text", "text content block requires string text");
     if (!text) {
-      return std::unexpected(text.error());
+      return mcp::core::unexpected(text.error());
     }
     block.text = *text;
   } else {
-    return std::unexpected(
+    return mcp::core::unexpected(
         tool_json_error("content block type is not supported"));
   }
 
   if (json.contains("annotations")) {
     if (!json.at("annotations").is_object()) {
-      return std::unexpected(
+      return mcp::core::unexpected(
           tool_json_error("content block annotations must be an object"));
     }
     block.annotations = json.at("annotations");
   }
   if (json.contains("_meta")) {
     if (!json.at("_meta").is_object()) {
-      return std::unexpected(
+      return mcp::core::unexpected(
           tool_json_error("content block _meta must be an object"));
     }
     block.meta = json.at("_meta");
@@ -574,41 +616,41 @@ inline Json tool_definition_to_json(const ToolDefinition& definition) {
 inline core::Result<ToolDefinition> tool_definition_from_json(
     const Json& json) {
   if (!json.is_object()) {
-    return std::unexpected(
+    return mcp::core::unexpected(
         tool_json_error("tool definition must be an object"));
   }
 
   ToolDefinition definition;
   if (json.contains("title")) {
     if (!json.at("title").is_string()) {
-      return std::unexpected(
+      return mcp::core::unexpected(
           tool_json_error("tool definition title must be a string"));
     }
     definition.title = json.at("title").get<std::string>();
   }
   if (!json.contains("name") || !json.at("name").is_string()) {
-    return std::unexpected(
+    return mcp::core::unexpected(
         tool_json_error("tool definition requires a string name"));
   }
   definition.name = json.at("name").get<std::string>();
 
   if (json.contains("description")) {
     if (!json.at("description").is_string()) {
-      return std::unexpected(
+      return mcp::core::unexpected(
           tool_json_error("tool definition description must be a string"));
     }
     definition.description = json.at("description").get<std::string>();
   }
 
   if (!json.contains("inputSchema") || !json.at("inputSchema").is_object()) {
-    return std::unexpected(
+    return mcp::core::unexpected(
         tool_json_error("tool definition requires object inputSchema"));
   }
   definition.input_schema = json.at("inputSchema");
 
   if (json.contains("outputSchema")) {
     if (!json.at("outputSchema").is_object()) {
-      return std::unexpected(
+      return mcp::core::unexpected(
           tool_json_error("tool definition outputSchema must be an object"));
     }
     definition.output_schema = json.at("outputSchema");
@@ -617,7 +659,7 @@ inline core::Result<ToolDefinition> tool_definition_from_json(
 
   if (json.contains("streaming")) {
     if (!json.at("streaming").is_boolean()) {
-      return std::unexpected(
+      return mcp::core::unexpected(
           tool_json_error("tool definition streaming must be a boolean"));
     }
     definition.streaming = json.at("streaming").get<bool>();
@@ -625,13 +667,13 @@ inline core::Result<ToolDefinition> tool_definition_from_json(
 
   if (json.contains("icons")) {
     if (!json.at("icons").is_array()) {
-      return std::unexpected(
+      return mcp::core::unexpected(
           tool_json_error("tool definition icons must be an array"));
     }
     for (const auto& item : json.at("icons")) {
       const auto icon = icon_from_json(item);
       if (!icon.has_value()) {
-        return std::unexpected(
+        return mcp::core::unexpected(
             tool_json_error("tool definition icon is invalid"));
       }
       definition.icons.push_back(*icon);
@@ -641,14 +683,14 @@ inline core::Result<ToolDefinition> tool_definition_from_json(
   if (json.contains("execution")) {
     const auto execution = tool_execution_from_json(json.at("execution"));
     if (!execution) {
-      return std::unexpected(execution.error());
+      return mcp::core::unexpected(execution.error());
     }
     definition.execution = *execution;
   }
 
   if (json.contains("annotations")) {
     if (!json.at("annotations").is_object()) {
-      return std::unexpected(
+      return mcp::core::unexpected(
           tool_json_error("tool definition annotations must be an object"));
     }
     definition.annotations = json.at("annotations");
@@ -656,7 +698,7 @@ inline core::Result<ToolDefinition> tool_definition_from_json(
 
   if (json.contains("_meta")) {
     if (!json.at("_meta").is_object()) {
-      return std::unexpected(
+      return mcp::core::unexpected(
           tool_json_error("tool definition _meta must be an object"));
     }
     definition.meta = json.at("_meta");
@@ -690,11 +732,11 @@ inline Json tools_list_result_to_json(const ToolsListResult& result) {
 inline core::Result<ToolsListResult> tools_list_result_from_json(
     const Json& json) {
   if (!json.is_object()) {
-    return std::unexpected(
+    return mcp::core::unexpected(
         tool_json_error("tools/list result must be an object"));
   }
   if (!json.contains("tools") || !json.at("tools").is_array()) {
-    return std::unexpected(
+    return mcp::core::unexpected(
         tool_json_error("tools/list result requires a tools array"));
   }
 
@@ -702,20 +744,20 @@ inline core::Result<ToolsListResult> tools_list_result_from_json(
   for (const auto& item : json.at("tools")) {
     const auto tool = tool_definition_from_json(item);
     if (!tool) {
-      return std::unexpected(tool.error());
+      return mcp::core::unexpected(tool.error());
     }
     result.tools.push_back(*tool);
   }
   if (json.contains("nextCursor")) {
     if (!json.at("nextCursor").is_string()) {
-      return std::unexpected(
+      return mcp::core::unexpected(
           tool_json_error("tools/list nextCursor must be a string"));
     }
     result.next_cursor = json.at("nextCursor").get<std::string>();
   }
   if (json.contains("_meta")) {
     if (!json.at("_meta").is_object()) {
-      return std::unexpected(
+      return mcp::core::unexpected(
           tool_json_error("tools/list result _meta must be an object"));
     }
     result.meta = json.at("_meta");
@@ -746,11 +788,11 @@ inline Json tool_call_to_json(const ToolCall& call) {
 /// @return Parsed call or validation error.
 inline core::Result<ToolCall> tool_call_from_json(const Json& json) {
   if (!json.is_object()) {
-    return std::unexpected(
+    return mcp::core::unexpected(
         tool_json_error("tools/call params must be an object"));
   }
   if (!json.contains("name") || !json.at("name").is_string()) {
-    return std::unexpected(
+    return mcp::core::unexpected(
         tool_json_error("tools/call params require a string name"));
   }
 
@@ -758,7 +800,7 @@ inline core::Result<ToolCall> tool_call_from_json(const Json& json) {
   call.name = json.at("name").get<std::string>();
   if (json.contains("arguments")) {
     if (!json.at("arguments").is_object()) {
-      return std::unexpected(
+      return mcp::core::unexpected(
           tool_json_error("tools/call arguments must be an object"));
     }
     call.arguments = json.at("arguments");
@@ -766,13 +808,13 @@ inline core::Result<ToolCall> tool_call_from_json(const Json& json) {
   if (json.contains("task")) {
     const auto task = task_request_parameters_from_json(json.at("task"));
     if (!task) {
-      return std::unexpected(task.error());
+      return mcp::core::unexpected(task.error());
     }
     call.task = *task;
   }
   if (json.contains("_meta")) {
     if (!json.at("_meta").is_object()) {
-      return std::unexpected(
+      return mcp::core::unexpected(
           tool_json_error("tools/call _meta must be an object"));
     }
     call.meta = json.at("_meta");
@@ -806,24 +848,25 @@ inline Json tool_result_to_json(const ToolResult& result) {
 /// @return Parsed result or validation error.
 inline core::Result<ToolResult> tool_result_from_json(const Json& json) {
   if (!json.is_object()) {
-    return std::unexpected(tool_json_error("tool result must be an object"));
+    return mcp::core::unexpected(
+        tool_json_error("tool result must be an object"));
   }
   if (!json.contains("content") && !json.contains("structuredContent") &&
       !json.contains("isError") && !json.contains("_meta")) {
-    return std::unexpected(tool_json_error(
+    return mcp::core::unexpected(tool_json_error(
         "tool result requires content, structuredContent, isError, or _meta"));
   }
 
   ToolResult result;
   if (json.contains("content")) {
     if (!json.at("content").is_array()) {
-      return std::unexpected(
+      return mcp::core::unexpected(
           tool_json_error("tool result content must be an array"));
     }
     for (const auto& item : json.at("content")) {
       const auto block = content_block_from_json(item);
       if (!block) {
-        return std::unexpected(block.error());
+        return mcp::core::unexpected(block.error());
       }
       result.content.push_back(*block);
     }
@@ -835,7 +878,7 @@ inline core::Result<ToolResult> tool_result_from_json(const Json& json) {
 
   if (json.contains("isError")) {
     if (!json.at("isError").is_boolean()) {
-      return std::unexpected(
+      return mcp::core::unexpected(
           tool_json_error("tool result isError must be a boolean"));
     }
     result.is_error = json.at("isError").get<bool>();
@@ -843,7 +886,7 @@ inline core::Result<ToolResult> tool_result_from_json(const Json& json) {
 
   if (json.contains("_meta")) {
     if (!json.at("_meta").is_object()) {
-      return std::unexpected(
+      return mcp::core::unexpected(
           tool_json_error("tool result _meta must be an object"));
     }
     result.meta = json.at("_meta");

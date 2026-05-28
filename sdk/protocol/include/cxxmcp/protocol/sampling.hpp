@@ -11,6 +11,7 @@
 /// one generated message and the model that produced it.
 
 #include <algorithm>
+#include <cmath>
 #include <optional>
 #include <string>
 #include <string_view>
@@ -185,8 +186,8 @@ struct CreateMessageParams {
   std::optional<std::string> system_prompt;
   /// Optional instruction for whether client context should be included.
   std::optional<std::string> include_context;
-  /// Optional sampling temperature. Zero means omitted during serialization.
-  double temperature = 0.0;
+  /// Optional sampling temperature. Explicit 0.0 is serialized.
+  std::optional<double> temperature;
   /// Maximum tokens the client may generate.
   int max_tokens = 0;
   /// Optional stop sequences.
@@ -249,6 +250,11 @@ inline bool sampling_include_context_is_valid(std::string_view value) noexcept {
   return value == "allServers" || value == "none" || value == "thisServer";
 }
 
+/// @brief Returns true for finite JSON numbers accepted by sampling.
+inline bool sampling_number_is_finite(double value) noexcept {
+  return std::isfinite(value);
+}
+
 /// @brief Validates SEP-1577 tool-use/tool-result placement for one message.
 inline core::Result<core::Unit> validate_sampling_message_content_roles(
     const SamplingMessage& message) {
@@ -256,18 +262,18 @@ inline core::Result<core::Unit> validate_sampling_message_content_roles(
   bool has_non_tool_result = false;
   for (const auto& content : message.contents) {
     if (content.is_tool_use() && message.role != "assistant") {
-      return std::unexpected(sampling_json_error(
+      return mcp::core::unexpected(sampling_json_error(
           "sampling tool_use content is only allowed in assistant messages"));
     }
     if (content.is_tool_result() && message.role != "user") {
-      return std::unexpected(sampling_json_error(
+      return mcp::core::unexpected(sampling_json_error(
           "sampling tool_result content is only allowed in user messages"));
     }
     has_tool_result = has_tool_result || content.is_tool_result();
     has_non_tool_result = has_non_tool_result || !content.is_tool_result();
   }
   if (has_tool_result && has_non_tool_result) {
-    return std::unexpected(sampling_json_error(
+    return mcp::core::unexpected(sampling_json_error(
         "sampling tool_result messages must not mix other content types"));
   }
   return core::Unit{};
@@ -297,14 +303,14 @@ inline core::Result<core::Unit> validate_sampling_tool_use_result_balance(
           std::find(pending_tool_use_ids.begin(), pending_tool_use_ids.end(),
                     content.tool_result->tool_use_id);
       if (found == pending_tool_use_ids.end()) {
-        return std::unexpected(sampling_json_error(
+        return mcp::core::unexpected(sampling_json_error(
             "sampling tool_result content has no matching tool_use"));
       }
       pending_tool_use_ids.erase(found);
     }
   }
   if (!pending_tool_use_ids.empty()) {
-    return std::unexpected(sampling_json_error(
+    return mcp::core::unexpected(sampling_json_error(
         "sampling tool_use content is missing a matching tool_result"));
   }
   return core::Unit{};
@@ -351,18 +357,19 @@ inline Json tool_choice_to_json(const ToolChoice& choice) {
 /// @brief Parses tool-choice behavior.
 inline core::Result<ToolChoice> tool_choice_from_json(const Json& json) {
   if (!json.is_object()) {
-    return std::unexpected(sampling_json_error("toolChoice must be an object"));
+    return mcp::core::unexpected(
+        sampling_json_error("toolChoice must be an object"));
   }
   ToolChoice choice;
   if (json.contains("mode")) {
     if (!json.at("mode").is_string()) {
-      return std::unexpected(
+      return mcp::core::unexpected(
           sampling_json_error("toolChoice mode must be a string"));
     }
     const auto mode =
         tool_choice_mode_from_string(json.at("mode").get<std::string>());
     if (!mode.has_value()) {
-      return std::unexpected(
+      return mcp::core::unexpected(
           sampling_json_error("toolChoice mode is not supported"));
     }
     choice.mode = *mode;
@@ -389,19 +396,19 @@ inline Json tool_use_content_to_json(const ToolUseContent& content) {
 inline core::Result<ToolUseContent> tool_use_content_from_json(
     const Json& json) {
   if (!json.is_object()) {
-    return std::unexpected(
+    return mcp::core::unexpected(
         sampling_json_error("tool_use content must be an object"));
   }
   if (!json.contains("id") || !json.at("id").is_string()) {
-    return std::unexpected(
+    return mcp::core::unexpected(
         sampling_json_error("tool_use content requires a string id"));
   }
   if (!json.contains("name") || !json.at("name").is_string()) {
-    return std::unexpected(
+    return mcp::core::unexpected(
         sampling_json_error("tool_use content requires a string name"));
   }
   if (!json.contains("input") || !json.at("input").is_object()) {
-    return std::unexpected(
+    return mcp::core::unexpected(
         sampling_json_error("tool_use content requires object input"));
   }
   ToolUseContent content;
@@ -410,7 +417,7 @@ inline core::Result<ToolUseContent> tool_use_content_from_json(
   content.input = json.at("input");
   if (json.contains("_meta")) {
     if (!json.at("_meta").is_object()) {
-      return std::unexpected(
+      return mcp::core::unexpected(
           sampling_json_error("tool_use content _meta must be an object"));
     }
     content.meta = json.at("_meta");
@@ -448,45 +455,45 @@ inline Json tool_result_content_to_json(const ToolResultContent& content) {
 inline core::Result<ToolResultContent> tool_result_content_from_json(
     const Json& json) {
   if (!json.is_object()) {
-    return std::unexpected(
+    return mcp::core::unexpected(
         sampling_json_error("tool_result content must be an object"));
   }
   if (!json.contains("toolUseId") || !json.at("toolUseId").is_string()) {
-    return std::unexpected(
+    return mcp::core::unexpected(
         sampling_json_error("tool_result content requires toolUseId"));
   }
   ToolResultContent content;
   content.tool_use_id = json.at("toolUseId").get<std::string>();
   if (json.contains("content")) {
     if (!json.at("content").is_array()) {
-      return std::unexpected(
+      return mcp::core::unexpected(
           sampling_json_error("tool_result content must be an array"));
     }
     for (const auto& item : json.at("content")) {
       const auto block = content_block_from_json(item);
       if (!block) {
-        return std::unexpected(block.error());
+        return mcp::core::unexpected(block.error());
       }
       content.content.push_back(*block);
     }
   }
   if (json.contains("structuredContent")) {
     if (!json.at("structuredContent").is_object()) {
-      return std::unexpected(sampling_json_error(
+      return mcp::core::unexpected(sampling_json_error(
           "tool_result structuredContent must be an object"));
     }
     content.structured_content = json.at("structuredContent");
   }
   if (json.contains("isError")) {
     if (!json.at("isError").is_boolean()) {
-      return std::unexpected(
+      return mcp::core::unexpected(
           sampling_json_error("tool_result isError must be a boolean"));
     }
     content.is_error = json.at("isError").get<bool>();
   }
   if (json.contains("_meta")) {
     if (!json.at("_meta").is_object()) {
-      return std::unexpected(
+      return mcp::core::unexpected(
           sampling_json_error("tool_result _meta must be an object"));
     }
     content.meta = json.at("_meta");
@@ -518,14 +525,14 @@ inline core::Result<SamplingMessageContent> sampling_message_content_from_json(
     if (type == "tool_use") {
       const auto tool_use = tool_use_content_from_json(json);
       if (!tool_use) {
-        return std::unexpected(tool_use.error());
+        return mcp::core::unexpected(tool_use.error());
       }
       return SamplingMessageContent::tool_use_content(*tool_use);
     }
     if (type == "tool_result") {
       const auto tool_result = tool_result_content_from_json(json);
       if (!tool_result) {
-        return std::unexpected(tool_result.error());
+        return mcp::core::unexpected(tool_result.error());
       }
       return SamplingMessageContent::tool_result_content(*tool_result);
     }
@@ -533,10 +540,10 @@ inline core::Result<SamplingMessageContent> sampling_message_content_from_json(
 
   const auto block = content_block_from_json(json);
   if (!block) {
-    return std::unexpected(block.error());
+    return mcp::core::unexpected(block.error());
   }
   if (block->type == "resource" || block->type == "resource_link") {
-    return std::unexpected(sampling_json_error(
+    return mcp::core::unexpected(sampling_json_error(
         "sampling message content does not support resource content"));
   }
   return SamplingMessageContent::from_content(*block);
@@ -570,35 +577,35 @@ inline Json sampling_message_to_json(const SamplingMessage& message) {
 inline core::Result<SamplingMessage> sampling_message_from_json(
     const Json& json) {
   if (!json.is_object()) {
-    return std::unexpected(
+    return mcp::core::unexpected(
         sampling_json_error("sampling message must be an object"));
   }
   if (!json.contains("role") || !json.at("role").is_string()) {
-    return std::unexpected(
+    return mcp::core::unexpected(
         sampling_json_error("sampling message requires a string role"));
   }
   if (!json.contains("content")) {
-    return std::unexpected(
+    return mcp::core::unexpected(
         sampling_json_error("sampling message requires content"));
   }
   SamplingMessage message;
   message.role = json.at("role").get<std::string>();
   if (!sampling_role_is_valid(message.role)) {
-    return std::unexpected(
+    return mcp::core::unexpected(
         sampling_json_error("sampling message role is not supported"));
   }
   if (json.at("content").is_array()) {
     for (const auto& item : json.at("content")) {
       const auto content = sampling_message_content_from_json(item);
       if (!content) {
-        return std::unexpected(content.error());
+        return mcp::core::unexpected(content.error());
       }
       message.contents.push_back(*content);
     }
   } else {
     const auto content = sampling_message_content_from_json(json.at("content"));
     if (!content) {
-      return std::unexpected(content.error());
+      return mcp::core::unexpected(content.error());
     }
     message.contents.push_back(*content);
   }
@@ -607,7 +614,7 @@ inline core::Result<SamplingMessage> sampling_message_from_json(
   }
   if (json.contains("_meta")) {
     if (!json.at("_meta").is_object()) {
-      return std::unexpected(
+      return mcp::core::unexpected(
           sampling_json_error("sampling message _meta must be an object"));
     }
     message.meta = json.at("_meta");
@@ -616,7 +623,7 @@ inline core::Result<SamplingMessage> sampling_message_from_json(
       collect_json_extensions(json, {"role", "content", "_meta"});
   if (const auto valid = validate_sampling_message_content_roles(message);
       !valid) {
-    return std::unexpected(valid.error());
+    return mcp::core::unexpected(valid.error());
   }
   return message;
 }
@@ -635,12 +642,13 @@ inline Json model_hint_to_json(const ModelHint& hint) {
 /// @return Parsed hint or validation error.
 inline core::Result<ModelHint> model_hint_from_json(const Json& json) {
   if (!json.is_object()) {
-    return std::unexpected(sampling_json_error("model hint must be an object"));
+    return mcp::core::unexpected(
+        sampling_json_error("model hint must be an object"));
   }
   ModelHint hint;
   if (json.contains("name")) {
     if (!json.at("name").is_string()) {
-      return std::unexpected(
+      return mcp::core::unexpected(
           sampling_json_error("model hint name must be a string"));
     }
     hint.name = json.at("name").get<std::string>();
@@ -676,19 +684,19 @@ inline Json model_preferences_to_json(const ModelPreferences& preferences) {
 inline core::Result<ModelPreferences> model_preferences_from_json(
     const Json& json) {
   if (!json.is_object()) {
-    return std::unexpected(
+    return mcp::core::unexpected(
         sampling_json_error("model preferences must be an object"));
   }
   ModelPreferences preferences;
   if (json.contains("hints")) {
     if (!json.at("hints").is_array()) {
-      return std::unexpected(
+      return mcp::core::unexpected(
           sampling_json_error("model preferences hints must be an array"));
     }
     for (const auto& item : json.at("hints")) {
       const auto hint = model_hint_from_json(item);
       if (!hint) {
-        return std::unexpected(hint.error());
+        return mcp::core::unexpected(hint.error());
       }
       preferences.hints.push_back(*hint);
     }
@@ -700,25 +708,30 @@ inline core::Result<ModelPreferences> model_preferences_from_json(
       return core::Unit{};
     }
     if (!json.at(key).is_number()) {
-      return std::unexpected(sampling_json_error(
+      return mcp::core::unexpected(sampling_json_error(
           std::string("model preferences ") + key + " must be a number"));
     }
-    target = json.at(key).get<double>();
+    const auto value = json.at(key).get<double>();
+    if (!sampling_number_is_finite(value)) {
+      return mcp::core::unexpected(sampling_json_error(
+          std::string("model preferences ") + key + " must be finite"));
+    }
+    target = value;
     return core::Unit{};
   };
   if (const auto ok = read_priority("costPriority", preferences.cost_priority);
       !ok) {
-    return std::unexpected(ok.error());
+    return mcp::core::unexpected(ok.error());
   }
   if (const auto ok =
           read_priority("speedPriority", preferences.speed_priority);
       !ok) {
-    return std::unexpected(ok.error());
+    return mcp::core::unexpected(ok.error());
   }
   if (const auto ok = read_priority("intelligencePriority",
                                     preferences.intelligence_priority);
       !ok) {
-    return std::unexpected(ok.error());
+    return mcp::core::unexpected(ok.error());
   }
   preferences.extensions = collect_json_extensions(
       json, {"hints", "costPriority", "speedPriority", "intelligencePriority"});
@@ -742,8 +755,8 @@ inline Json create_message_params_to_json(const CreateMessageParams& params) {
   if (params.include_context.has_value()) {
     json["includeContext"] = *params.include_context;
   }
-  if (params.temperature != 0.0) {
-    json["temperature"] = params.temperature;
+  if (params.temperature.has_value()) {
+    json["temperature"] = *params.temperature;
   }
   json["maxTokens"] = params.max_tokens;
   if (!params.stop_sequences.empty()) {
@@ -776,16 +789,16 @@ inline Json create_message_params_to_json(const CreateMessageParams& params) {
 inline core::Result<CreateMessageParams> create_message_params_from_json(
     const Json& json) {
   if (!json.is_object()) {
-    return std::unexpected(
+    return mcp::core::unexpected(
         sampling_json_error("sampling/createMessage params must be an object"));
   }
   if (!json.contains("messages") || !json.at("messages").is_array()) {
-    return std::unexpected(sampling_json_error(
+    return mcp::core::unexpected(sampling_json_error(
         "sampling/createMessage params require a messages array"));
   }
   if (!json.contains("maxTokens") ||
       !json.at("maxTokens").is_number_integer()) {
-    return std::unexpected(sampling_json_error(
+    return mcp::core::unexpected(sampling_json_error(
         "sampling/createMessage params require integer maxTokens"));
   }
 
@@ -793,7 +806,7 @@ inline core::Result<CreateMessageParams> create_message_params_from_json(
   for (const auto& item : json.at("messages")) {
     const auto message = sampling_message_from_json(item);
     if (!message) {
-      return std::unexpected(message.error());
+      return mcp::core::unexpected(message.error());
     }
     params.messages.push_back(*message);
   }
@@ -801,44 +814,49 @@ inline core::Result<CreateMessageParams> create_message_params_from_json(
     const auto preferences =
         model_preferences_from_json(json.at("modelPreferences"));
     if (!preferences) {
-      return std::unexpected(preferences.error());
+      return mcp::core::unexpected(preferences.error());
     }
     params.model_preferences = *preferences;
   }
   if (json.contains("systemPrompt")) {
     if (!json.at("systemPrompt").is_string()) {
-      return std::unexpected(
+      return mcp::core::unexpected(
           sampling_json_error("sampling systemPrompt must be a string"));
     }
     params.system_prompt = json.at("systemPrompt").get<std::string>();
   }
   if (json.contains("includeContext")) {
     if (!json.at("includeContext").is_string()) {
-      return std::unexpected(
+      return mcp::core::unexpected(
           sampling_json_error("sampling includeContext must be a string"));
     }
     params.include_context = json.at("includeContext").get<std::string>();
     if (!sampling_include_context_is_valid(*params.include_context)) {
-      return std::unexpected(
+      return mcp::core::unexpected(
           sampling_json_error("sampling includeContext is not supported"));
     }
   }
   if (json.contains("temperature")) {
     if (!json.at("temperature").is_number()) {
-      return std::unexpected(
+      return mcp::core::unexpected(
           sampling_json_error("sampling temperature must be a number"));
     }
-    params.temperature = json.at("temperature").get<double>();
+    const auto temperature = json.at("temperature").get<double>();
+    if (!sampling_number_is_finite(temperature)) {
+      return mcp::core::unexpected(
+          sampling_json_error("sampling temperature must be finite"));
+    }
+    params.temperature = temperature;
   }
   params.max_tokens = json.at("maxTokens").get<int>();
   if (json.contains("stopSequences")) {
     if (!json.at("stopSequences").is_array()) {
-      return std::unexpected(
+      return mcp::core::unexpected(
           sampling_json_error("sampling stopSequences must be an array"));
     }
     for (const auto& item : json.at("stopSequences")) {
       if (!item.is_string()) {
-        return std::unexpected(
+        return mcp::core::unexpected(
             sampling_json_error("sampling stopSequences must contain strings"));
       }
       params.stop_sequences.push_back(item.get<std::string>());
@@ -846,7 +864,7 @@ inline core::Result<CreateMessageParams> create_message_params_from_json(
   }
   if (json.contains("metadata")) {
     if (!json.at("metadata").is_object()) {
-      return std::unexpected(
+      return mcp::core::unexpected(
           sampling_json_error("sampling metadata must be an object"));
     }
     params.metadata = json.at("metadata");
@@ -854,26 +872,26 @@ inline core::Result<CreateMessageParams> create_message_params_from_json(
   if (json.contains("task")) {
     const auto task = task_request_parameters_from_json(json.at("task"));
     if (!task) {
-      return std::unexpected(task.error());
+      return mcp::core::unexpected(task.error());
     }
     params.task = *task;
   }
   if (json.contains("_meta")) {
     if (!json.at("_meta").is_object()) {
-      return std::unexpected(sampling_json_error(
+      return mcp::core::unexpected(sampling_json_error(
           "sampling/createMessage _meta must be an object"));
     }
     params.meta = json.at("_meta");
   }
   if (json.contains("tools")) {
     if (!json.at("tools").is_array()) {
-      return std::unexpected(
+      return mcp::core::unexpected(
           sampling_json_error("sampling tools must be an array"));
     }
     for (const auto& item : json.at("tools")) {
       const auto tool = tool_definition_from_json(item);
       if (!tool) {
-        return std::unexpected(tool.error());
+        return mcp::core::unexpected(tool.error());
       }
       params.tools.push_back(*tool);
     }
@@ -881,7 +899,7 @@ inline core::Result<CreateMessageParams> create_message_params_from_json(
   if (json.contains("toolChoice")) {
     const auto tool_choice = tool_choice_from_json(json.at("toolChoice"));
     if (!tool_choice) {
-      return std::unexpected(tool_choice.error());
+      return mcp::core::unexpected(tool_choice.error());
     }
     params.tool_choice = *tool_choice;
   }
@@ -892,7 +910,7 @@ inline core::Result<CreateMessageParams> create_message_params_from_json(
   if (const auto valid =
           validate_sampling_tool_use_result_balance(params.messages);
       !valid) {
-    return std::unexpected(valid.error());
+    return mcp::core::unexpected(valid.error());
   }
   return params;
 }
@@ -930,39 +948,39 @@ inline Json create_message_result_to_json(const CreateMessageResult& result) {
 inline core::Result<CreateMessageResult> create_message_result_from_json(
     const Json& json) {
   if (!json.is_object()) {
-    return std::unexpected(
+    return mcp::core::unexpected(
         sampling_json_error("sampling/createMessage result must be an object"));
   }
   if (!json.contains("role") || !json.at("role").is_string()) {
-    return std::unexpected(sampling_json_error(
+    return mcp::core::unexpected(sampling_json_error(
         "sampling/createMessage result requires a string role"));
   }
   if (!json.contains("content")) {
-    return std::unexpected(
+    return mcp::core::unexpected(
         sampling_json_error("sampling/createMessage result requires content"));
   }
   if (!json.contains("model") || !json.at("model").is_string()) {
-    return std::unexpected(sampling_json_error(
+    return mcp::core::unexpected(sampling_json_error(
         "sampling/createMessage result requires a string model"));
   }
   CreateMessageResult result;
   result.role = json.at("role").get<std::string>();
   if (result.role != "assistant") {
-    return std::unexpected(sampling_json_error(
+    return mcp::core::unexpected(sampling_json_error(
         "sampling/createMessage result role must be assistant"));
   }
   if (json.at("content").is_array()) {
     for (const auto& item : json.at("content")) {
       const auto content = sampling_message_content_from_json(item);
       if (!content) {
-        return std::unexpected(content.error());
+        return mcp::core::unexpected(content.error());
       }
       result.contents.push_back(*content);
     }
   } else {
     const auto content = sampling_message_content_from_json(json.at("content"));
     if (!content) {
-      return std::unexpected(content.error());
+      return mcp::core::unexpected(content.error());
     }
     result.contents.push_back(*content);
   }
@@ -972,14 +990,14 @@ inline core::Result<CreateMessageResult> create_message_result_from_json(
   result.model = json.at("model").get<std::string>();
   if (json.contains("stopReason")) {
     if (!json.at("stopReason").is_string()) {
-      return std::unexpected(
+      return mcp::core::unexpected(
           sampling_json_error("sampling stopReason must be a string"));
     }
     result.stop_reason = json.at("stopReason").get<std::string>();
   }
   if (json.contains("_meta")) {
     if (!json.at("_meta").is_object()) {
-      return std::unexpected(sampling_json_error(
+      return mcp::core::unexpected(sampling_json_error(
           "sampling/createMessage result _meta must be an object"));
     }
     result.meta = json.at("_meta");
@@ -992,7 +1010,7 @@ inline core::Result<CreateMessageResult> create_message_result_from_json(
   if (const auto valid =
           validate_sampling_message_content_roles(result_message);
       !valid) {
-    return std::unexpected(valid.error());
+    return mcp::core::unexpected(valid.error());
   }
   return result;
 }

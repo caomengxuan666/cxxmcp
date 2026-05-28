@@ -14,6 +14,7 @@
 #include <limits>
 #include <optional>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include "cxxmcp/core/result.hpp"
@@ -44,6 +45,65 @@ struct Resource {
   /// Unknown JSON members preserved for forward-compatible round trips.
   Json extensions = Json::object();
 };
+
+/// @brief Fluent builder for concrete resource descriptors.
+class ResourceBuilder {
+ public:
+  ResourceBuilder(std::string uri, std::string name) {
+    resource_.uri = std::move(uri);
+    resource_.name = std::move(name);
+  }
+
+  ResourceBuilder& title(std::string value) {
+    resource_.title = std::move(value);
+    return *this;
+  }
+
+  ResourceBuilder& description(std::string value) {
+    resource_.description = std::move(value);
+    return *this;
+  }
+
+  ResourceBuilder& mime_type(std::string value) {
+    resource_.mime_type = std::move(value);
+    return *this;
+  }
+
+  ResourceBuilder& size(std::int64_t value) {
+    resource_.size = value;
+    return *this;
+  }
+
+  ResourceBuilder& icon(Icon value) {
+    resource_.icons.push_back(std::move(value));
+    return *this;
+  }
+
+  ResourceBuilder& annotations(Json value) {
+    resource_.annotations = std::move(value);
+    return *this;
+  }
+
+  ResourceBuilder& meta(Json value) {
+    resource_.meta = std::move(value);
+    return *this;
+  }
+
+  ResourceBuilder& extension(std::string name, Json value) {
+    resource_.extensions[std::move(name)] = std::move(value);
+    return *this;
+  }
+
+  Resource build() { return std::move(resource_); }
+
+ private:
+  Resource resource_;
+};
+
+/// @brief Creates a fluent builder for advertised MCP resource metadata.
+inline ResourceBuilder resource_definition(std::string uri, std::string name) {
+  return ResourceBuilder(std::move(uri), std::move(name));
+}
 
 /// @brief Result object for `resources/list`.
 struct ResourcesListResult {
@@ -80,6 +140,66 @@ struct ResourceTemplate {
   /// Unknown JSON members preserved for forward-compatible round trips.
   Json extensions = Json::object();
 };
+
+/// @brief Fluent builder for resource-template descriptors.
+class ResourceTemplateBuilder {
+ public:
+  ResourceTemplateBuilder(std::string uri_template, std::string name) {
+    resource_template_.uri_template = std::move(uri_template);
+    resource_template_.name = std::move(name);
+  }
+
+  ResourceTemplateBuilder& title(std::string value) {
+    resource_template_.title = std::move(value);
+    return *this;
+  }
+
+  ResourceTemplateBuilder& description(std::string value) {
+    resource_template_.description = std::move(value);
+    return *this;
+  }
+
+  ResourceTemplateBuilder& mime_type(std::string value) {
+    resource_template_.mime_type = std::move(value);
+    return *this;
+  }
+
+  ResourceTemplateBuilder& size(std::int64_t value) {
+    resource_template_.size = value;
+    return *this;
+  }
+
+  ResourceTemplateBuilder& icon(Icon value) {
+    resource_template_.icons.push_back(std::move(value));
+    return *this;
+  }
+
+  ResourceTemplateBuilder& annotations(Json value) {
+    resource_template_.annotations = std::move(value);
+    return *this;
+  }
+
+  ResourceTemplateBuilder& meta(Json value) {
+    resource_template_.meta = std::move(value);
+    return *this;
+  }
+
+  ResourceTemplateBuilder& extension(std::string name, Json value) {
+    resource_template_.extensions[std::move(name)] = std::move(value);
+    return *this;
+  }
+
+  ResourceTemplate build() { return std::move(resource_template_); }
+
+ private:
+  ResourceTemplate resource_template_;
+};
+
+/// @brief Creates a fluent builder for advertised resource-template metadata.
+inline ResourceTemplateBuilder resource_template_definition(
+    std::string uri_template, std::string name) {
+  return ResourceTemplateBuilder(std::move(uri_template), std::move(name));
+}
 
 /// @brief Result object for `resources/templates/list`.
 struct ResourceTemplatesListResult {
@@ -159,14 +279,14 @@ inline core::Error resource_json_error(std::string message) {
 inline core::Result<std::int64_t> resource_size_from_json(
     const Json& json, std::string_view context) {
   if (!json.is_number_integer()) {
-    return std::unexpected(
+    return mcp::core::unexpected(
         resource_json_error(std::string(context) + " size must be an integer"));
   }
   const auto size = json.get<std::int64_t>();
   if (size < 0 || size > static_cast<std::int64_t>(
                              std::numeric_limits<std::uint32_t>::max())) {
-    return std::unexpected(resource_json_error(std::string(context) +
-                                               " size must be a uint32 value"));
+    return mcp::core::unexpected(resource_json_error(
+        std::string(context) + " size must be a uint32 value"));
   }
   return size;
 }
@@ -208,20 +328,21 @@ inline Json resource_to_json(const Resource& resource) {
 /// @return Parsed resource or validation error.
 inline core::Result<Resource> resource_from_json(const Json& json) {
   if (!json.is_object()) {
-    return std::unexpected(resource_json_error("resource must be an object"));
+    return mcp::core::unexpected(
+        resource_json_error("resource must be an object"));
   }
   if (json.contains("title")) {
     if (!json.at("title").is_string()) {
-      return std::unexpected(
+      return mcp::core::unexpected(
           resource_json_error("resource title must be a string"));
     }
   }
   if (!json.contains("uri") || !json.at("uri").is_string()) {
-    return std::unexpected(
+    return mcp::core::unexpected(
         resource_json_error("resource requires a string uri"));
   }
   if (!json.contains("name") || !json.at("name").is_string()) {
-    return std::unexpected(
+    return mcp::core::unexpected(
         resource_json_error("resource requires a string name"));
   }
 
@@ -233,14 +354,14 @@ inline core::Result<Resource> resource_from_json(const Json& json) {
   resource.name = json.at("name").get<std::string>();
   if (json.contains("description")) {
     if (!json.at("description").is_string()) {
-      return std::unexpected(
+      return mcp::core::unexpected(
           resource_json_error("resource description must be a string"));
     }
     resource.description = json.at("description").get<std::string>();
   }
   if (json.contains("mimeType")) {
     if (!json.at("mimeType").is_string()) {
-      return std::unexpected(
+      return mcp::core::unexpected(
           resource_json_error("resource mimeType must be a string"));
     }
     resource.mime_type = json.at("mimeType").get<std::string>();
@@ -248,33 +369,34 @@ inline core::Result<Resource> resource_from_json(const Json& json) {
   if (json.contains("size")) {
     const auto size = resource_size_from_json(json.at("size"), "resource");
     if (!size) {
-      return std::unexpected(size.error());
+      return mcp::core::unexpected(size.error());
     }
     resource.size = *size;
   }
   if (json.contains("icons")) {
     if (!json.at("icons").is_array()) {
-      return std::unexpected(
+      return mcp::core::unexpected(
           resource_json_error("resource icons must be an array"));
     }
     for (const auto& item : json.at("icons")) {
       const auto icon = icon_from_json(item);
       if (!icon.has_value()) {
-        return std::unexpected(resource_json_error("resource icon is invalid"));
+        return mcp::core::unexpected(
+            resource_json_error("resource icon is invalid"));
       }
       resource.icons.push_back(*icon);
     }
   }
   if (json.contains("annotations")) {
     if (!json.at("annotations").is_object()) {
-      return std::unexpected(
+      return mcp::core::unexpected(
           resource_json_error("resource annotations must be an object"));
     }
     resource.annotations = json.at("annotations");
   }
   if (json.contains("_meta")) {
     if (!json.at("_meta").is_object()) {
-      return std::unexpected(
+      return mcp::core::unexpected(
           resource_json_error("resource _meta must be an object"));
     }
     resource.meta = json.at("_meta");
@@ -324,21 +446,21 @@ inline Json resource_template_to_json(
 inline core::Result<ResourceTemplate> resource_template_from_json(
     const Json& json) {
   if (!json.is_object()) {
-    return std::unexpected(
+    return mcp::core::unexpected(
         resource_json_error("resource template must be an object"));
   }
   if (json.contains("title")) {
     if (!json.at("title").is_string()) {
-      return std::unexpected(
+      return mcp::core::unexpected(
           resource_json_error("resource template title must be a string"));
     }
   }
   if (!json.contains("uriTemplate") || !json.at("uriTemplate").is_string()) {
-    return std::unexpected(
+    return mcp::core::unexpected(
         resource_json_error("resource template requires a string uriTemplate"));
   }
   if (!json.contains("name") || !json.at("name").is_string()) {
-    return std::unexpected(
+    return mcp::core::unexpected(
         resource_json_error("resource template requires a string name"));
   }
 
@@ -350,14 +472,14 @@ inline core::Result<ResourceTemplate> resource_template_from_json(
   resource_template.name = json.at("name").get<std::string>();
   if (json.contains("description")) {
     if (!json.at("description").is_string()) {
-      return std::unexpected(resource_json_error(
+      return mcp::core::unexpected(resource_json_error(
           "resource template description must be a string"));
     }
     resource_template.description = json.at("description").get<std::string>();
   }
   if (json.contains("mimeType")) {
     if (!json.at("mimeType").is_string()) {
-      return std::unexpected(
+      return mcp::core::unexpected(
           resource_json_error("resource template mimeType must be a string"));
     }
     resource_template.mime_type = json.at("mimeType").get<std::string>();
@@ -366,19 +488,19 @@ inline core::Result<ResourceTemplate> resource_template_from_json(
     const auto size =
         resource_size_from_json(json.at("size"), "resource template");
     if (!size) {
-      return std::unexpected(size.error());
+      return mcp::core::unexpected(size.error());
     }
     resource_template.size = *size;
   }
   if (json.contains("icons")) {
     if (!json.at("icons").is_array()) {
-      return std::unexpected(
+      return mcp::core::unexpected(
           resource_json_error("resource template icons must be an array"));
     }
     for (const auto& item : json.at("icons")) {
       const auto icon = icon_from_json(item);
       if (!icon.has_value()) {
-        return std::unexpected(
+        return mcp::core::unexpected(
             resource_json_error("resource template icon is invalid"));
       }
       resource_template.icons.push_back(*icon);
@@ -386,14 +508,14 @@ inline core::Result<ResourceTemplate> resource_template_from_json(
   }
   if (json.contains("annotations")) {
     if (!json.at("annotations").is_object()) {
-      return std::unexpected(resource_json_error(
+      return mcp::core::unexpected(resource_json_error(
           "resource template annotations must be an object"));
     }
     resource_template.annotations = json.at("annotations");
   }
   if (json.contains("_meta")) {
     if (!json.at("_meta").is_object()) {
-      return std::unexpected(
+      return mcp::core::unexpected(
           resource_json_error("resource template _meta must be an object"));
     }
     resource_template.meta = json.at("_meta");
@@ -426,11 +548,11 @@ inline Json resources_list_result_to_json(const ResourcesListResult& result) {
 inline core::Result<ResourcesListResult> resources_list_result_from_json(
     const Json& json) {
   if (!json.is_object()) {
-    return std::unexpected(
+    return mcp::core::unexpected(
         resource_json_error("resources/list result must be an object"));
   }
   if (!json.contains("resources") || !json.at("resources").is_array()) {
-    return std::unexpected(resource_json_error(
+    return mcp::core::unexpected(resource_json_error(
         "resources/list result requires a resources array"));
   }
 
@@ -438,20 +560,20 @@ inline core::Result<ResourcesListResult> resources_list_result_from_json(
   for (const auto& item : json.at("resources")) {
     const auto resource = resource_from_json(item);
     if (!resource) {
-      return std::unexpected(resource.error());
+      return mcp::core::unexpected(resource.error());
     }
     result.resources.push_back(*resource);
   }
   if (json.contains("nextCursor")) {
     if (!json.at("nextCursor").is_string()) {
-      return std::unexpected(
+      return mcp::core::unexpected(
           resource_json_error("resources/list nextCursor must be a string"));
     }
     result.next_cursor = json.at("nextCursor").get<std::string>();
   }
   if (json.contains("_meta")) {
     if (!json.at("_meta").is_object()) {
-      return std::unexpected(
+      return mcp::core::unexpected(
           resource_json_error("resources/list result _meta must be an object"));
     }
     result.meta = json.at("_meta");
@@ -485,12 +607,12 @@ inline Json resource_templates_list_result_to_json(
 inline core::Result<ResourceTemplatesListResult>
 resource_templates_list_result_from_json(const Json& json) {
   if (!json.is_object()) {
-    return std::unexpected(resource_json_error(
+    return mcp::core::unexpected(resource_json_error(
         "resources/templates/list result must be an object"));
   }
   if (!json.contains("resourceTemplates") ||
       !json.at("resourceTemplates").is_array()) {
-    return std::unexpected(resource_json_error(
+    return mcp::core::unexpected(resource_json_error(
         "resources/templates/list result requires a resourceTemplates array"));
   }
 
@@ -498,20 +620,20 @@ resource_templates_list_result_from_json(const Json& json) {
   for (const auto& item : json.at("resourceTemplates")) {
     const auto resource_template = resource_template_from_json(item);
     if (!resource_template) {
-      return std::unexpected(resource_template.error());
+      return mcp::core::unexpected(resource_template.error());
     }
     result.resource_templates.push_back(*resource_template);
   }
   if (json.contains("nextCursor")) {
     if (!json.at("nextCursor").is_string()) {
-      return std::unexpected(resource_json_error(
+      return mcp::core::unexpected(resource_json_error(
           "resources/templates/list nextCursor must be a string"));
     }
     result.next_cursor = json.at("nextCursor").get<std::string>();
   }
   if (json.contains("_meta")) {
     if (!json.at("_meta").is_object()) {
-      return std::unexpected(resource_json_error(
+      return mcp::core::unexpected(resource_json_error(
           "resources/templates/list result _meta must be an object"));
     }
     result.meta = json.at("_meta");
@@ -536,18 +658,18 @@ inline Json resources_read_params_to_json(const ResourcesReadParams& params) {
 inline core::Result<ResourcesReadParams> resources_read_params_from_json(
     const Json& json) {
   if (!json.is_object()) {
-    return std::unexpected(
+    return mcp::core::unexpected(
         resource_json_error("resources/read params must be an object"));
   }
   if (!json.contains("uri") || !json.at("uri").is_string()) {
-    return std::unexpected(
+    return mcp::core::unexpected(
         resource_json_error("resources/read params require a string uri"));
   }
   ResourcesReadParams params;
   params.uri = json.at("uri").get<std::string>();
   if (json.contains("_meta")) {
     if (!json.at("_meta").is_object()) {
-      return std::unexpected(
+      return mcp::core::unexpected(
           resource_json_error("resources/read _meta must be an object"));
     }
     params.meta = json.at("_meta");
@@ -572,18 +694,18 @@ inline Json resources_subscribe_params_to_json(
 inline core::Result<ResourcesSubscribeParams>
 resources_subscribe_params_from_json(const Json& json) {
   if (!json.is_object()) {
-    return std::unexpected(
+    return mcp::core::unexpected(
         resource_json_error("resources subscribe params must be an object"));
   }
   if (!json.contains("uri") || !json.at("uri").is_string()) {
-    return std::unexpected(
+    return mcp::core::unexpected(
         resource_json_error("resources subscribe params require a string uri"));
   }
   ResourcesSubscribeParams params;
   params.uri = json.at("uri").get<std::string>();
   if (json.contains("_meta")) {
     if (!json.at("_meta").is_object()) {
-      return std::unexpected(
+      return mcp::core::unexpected(
           resource_json_error("resources subscribe _meta must be an object"));
     }
     params.meta = json.at("_meta");
@@ -631,11 +753,11 @@ inline Json resource_contents_to_json(const ResourceContents& contents) {
 inline core::Result<ResourceContents> resource_contents_from_json(
     const Json& json) {
   if (!json.is_object()) {
-    return std::unexpected(
+    return mcp::core::unexpected(
         resource_json_error("resource contents must be an object"));
   }
   if (!json.contains("uri") || !json.at("uri").is_string()) {
-    return std::unexpected(
+    return mcp::core::unexpected(
         resource_json_error("resource contents require a string uri"));
   }
 
@@ -643,28 +765,28 @@ inline core::Result<ResourceContents> resource_contents_from_json(
   contents.uri = json.at("uri").get<std::string>();
   if (json.contains("mimeType")) {
     if (!json.at("mimeType").is_string()) {
-      return std::unexpected(
+      return mcp::core::unexpected(
           resource_json_error("resource contents mimeType must be a string"));
     }
     contents.mime_type = json.at("mimeType").get<std::string>();
   }
   if (json.contains("text")) {
     if (!json.at("text").is_string()) {
-      return std::unexpected(
+      return mcp::core::unexpected(
           resource_json_error("resource contents text must be a string"));
     }
     contents.text = json.at("text").get<std::string>();
   }
   if (json.contains("blob")) {
     if (!json.at("blob").is_string()) {
-      return std::unexpected(
+      return mcp::core::unexpected(
           resource_json_error("resource contents blob must be a string"));
     }
     contents.blob = json.at("blob").get<std::string>();
   }
   if (json.contains("_meta")) {
     if (!json.at("_meta").is_object()) {
-      return std::unexpected(
+      return mcp::core::unexpected(
           resource_json_error("resource contents _meta must be an object"));
     }
     contents.meta = json.at("_meta");
@@ -672,7 +794,7 @@ inline core::Result<ResourceContents> resource_contents_from_json(
   contents.extensions = collect_json_extensions(
       json, {"uri", "mimeType", "text", "blob", "_meta"});
   if (!contents.text.has_value() && !contents.blob.has_value()) {
-    return std::unexpected(
+    return mcp::core::unexpected(
         resource_json_error("resource contents require text or blob"));
   }
   return contents;
@@ -697,11 +819,11 @@ inline Json resources_read_result_to_json(const ResourcesReadResult& result) {
 inline core::Result<ResourcesReadResult> resources_read_result_from_json(
     const Json& json) {
   if (!json.is_object()) {
-    return std::unexpected(
+    return mcp::core::unexpected(
         resource_json_error("resources/read result must be an object"));
   }
   if (!json.contains("contents") || !json.at("contents").is_array()) {
-    return std::unexpected(
+    return mcp::core::unexpected(
         resource_json_error("resources/read result requires a contents array"));
   }
 
@@ -709,13 +831,13 @@ inline core::Result<ResourcesReadResult> resources_read_result_from_json(
   for (const auto& item : json.at("contents")) {
     const auto contents = resource_contents_from_json(item);
     if (!contents) {
-      return std::unexpected(contents.error());
+      return mcp::core::unexpected(contents.error());
     }
     result.contents.push_back(*contents);
   }
   if (json.contains("_meta")) {
     if (!json.at("_meta").is_object()) {
-      return std::unexpected(
+      return mcp::core::unexpected(
           resource_json_error("resources/read result _meta must be an object"));
     }
     result.meta = json.at("_meta");
@@ -736,11 +858,11 @@ inline Json resource_updated_notification_params_to_json(
 inline core::Result<ResourceUpdatedNotificationParams>
 resource_updated_notification_params_from_json(const Json& json) {
   if (!json.is_object()) {
-    return std::unexpected(
+    return mcp::core::unexpected(
         resource_json_error("resource updated params must be an object"));
   }
   if (!json.contains("uri") || !json.at("uri").is_string()) {
-    return std::unexpected(
+    return mcp::core::unexpected(
         resource_json_error("resource updated params require a string uri"));
   }
   ResourceUpdatedNotificationParams params;

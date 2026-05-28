@@ -65,23 +65,26 @@ inline Json root_to_json(const Root& root) {
 /// @return Parsed root or validation error.
 inline core::Result<Root> root_from_json(const Json& json) {
   if (!json.is_object()) {
-    return std::unexpected(roots_json_error("root must be an object"));
+    return mcp::core::unexpected(roots_json_error("root must be an object"));
   }
   if (!json.contains("uri") || !json.at("uri").is_string()) {
-    return std::unexpected(roots_json_error("root requires a string uri"));
+    return mcp::core::unexpected(
+        roots_json_error("root requires a string uri"));
   }
 
   Root root;
   root.uri = json.at("uri").get<std::string>();
   if (json.contains("name")) {
     if (!json.at("name").is_string()) {
-      return std::unexpected(roots_json_error("root name must be a string"));
+      return mcp::core::unexpected(
+          roots_json_error("root name must be a string"));
     }
     root.name = json.at("name").get<std::string>();
   }
   if (json.contains("_meta")) {
     if (!json.at("_meta").is_object()) {
-      return std::unexpected(roots_json_error("root _meta must be an object"));
+      return mcp::core::unexpected(
+          roots_json_error("root _meta must be an object"));
     }
     root.meta = json.at("_meta");
   }
@@ -108,11 +111,11 @@ inline Json roots_list_result_to_json(const RootsListResult& result) {
 inline core::Result<RootsListResult> roots_list_result_from_json(
     const Json& json) {
   if (!json.is_object()) {
-    return std::unexpected(
+    return mcp::core::unexpected(
         roots_json_error("roots/list result must be an object"));
   }
   if (!json.contains("roots") || !json.at("roots").is_array()) {
-    return std::unexpected(
+    return mcp::core::unexpected(
         roots_json_error("roots/list result requires a roots array"));
   }
 
@@ -120,13 +123,13 @@ inline core::Result<RootsListResult> roots_list_result_from_json(
   for (const auto& item : json.at("roots")) {
     const auto root = root_from_json(item);
     if (!root) {
-      return std::unexpected(root.error());
+      return mcp::core::unexpected(root.error());
     }
     result.roots.push_back(*root);
   }
   if (json.contains("_meta")) {
     if (!json.at("_meta").is_object()) {
-      return std::unexpected(
+      return mcp::core::unexpected(
           roots_json_error("roots/list result _meta must be an object"));
     }
     result.meta = json.at("_meta");

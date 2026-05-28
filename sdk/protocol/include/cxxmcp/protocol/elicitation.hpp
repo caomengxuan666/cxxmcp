@@ -531,14 +531,14 @@ inline core::Result<core::Unit> parse_titled_enum_choices(
     const Json& choices, std::vector<std::string>& values,
     std::vector<std::string>& titles, std::string_view context) {
   if (!choices.is_array()) {
-    return std::unexpected(
+    return mcp::core::unexpected(
         elicitation_json_error(std::string(context) + " must be an array"));
   }
   for (const auto& choice : choices) {
     if (!choice.is_object() || !choice.contains("const") ||
         !choice.at("const").is_string() || !choice.contains("title") ||
         !choice.at("title").is_string()) {
-      return std::unexpected(elicitation_json_error(
+      return mcp::core::unexpected(elicitation_json_error(
           std::string(context) + " entries require string const and title"));
     }
     values.push_back(choice.at("const").get<std::string>());
@@ -568,30 +568,30 @@ inline core::Result<PrimitiveSchema> primitive_schema_from_json(
 inline core::Result<ElicitationSchema> elicitation_schema_from_json(
     const Json& json) {
   if (!json.is_object()) {
-    return std::unexpected(
+    return mcp::core::unexpected(
         elicitation_json_error("elicitation schema must be an object"));
   }
   if (!json.contains("type") || !json.at("type").is_string() ||
       json.at("type").get<std::string>() != "object") {
-    return std::unexpected(
+    return mcp::core::unexpected(
         elicitation_json_error("elicitation schema requires type object"));
   }
   if (!json.contains("properties") || !json.at("properties").is_object()) {
-    return std::unexpected(
+    return mcp::core::unexpected(
         elicitation_json_error("elicitation schema requires properties"));
   }
 
   ElicitationSchema schema;
   if (json.contains("title")) {
     if (!json.at("title").is_string()) {
-      return std::unexpected(
+      return mcp::core::unexpected(
           elicitation_json_error("elicitation schema title must be a string"));
     }
     schema.title = json.at("title").get<std::string>();
   }
   if (json.contains("description")) {
     if (!json.at("description").is_string()) {
-      return std::unexpected(elicitation_json_error(
+      return mcp::core::unexpected(elicitation_json_error(
           "elicitation schema description must be a string"));
     }
     schema.description = json.at("description").get<std::string>();
@@ -599,18 +599,18 @@ inline core::Result<ElicitationSchema> elicitation_schema_from_json(
   for (const auto& [name, property_json] : json.at("properties").items()) {
     const auto property = primitive_schema_from_json(property_json);
     if (!property) {
-      return std::unexpected(property.error());
+      return mcp::core::unexpected(property.error());
     }
     schema.properties.emplace(name, *property);
   }
   if (json.contains("required")) {
     if (!json.at("required").is_array()) {
-      return std::unexpected(elicitation_json_error(
+      return mcp::core::unexpected(elicitation_json_error(
           "elicitation schema required must be an array"));
     }
     for (const auto& item : json.at("required")) {
       if (!item.is_string()) {
-        return std::unexpected(elicitation_json_error(
+        return mcp::core::unexpected(elicitation_json_error(
             "elicitation schema required entries must be strings"));
       }
       schema.required.push_back(item.get<std::string>());
@@ -660,23 +660,23 @@ inline Json create_elicitation_request_param_to_json(
 inline core::Result<CreateElicitationRequestParam>
 create_elicitation_request_param_from_json(const Json& json) {
   if (!json.is_object()) {
-    return std::unexpected(
+    return mcp::core::unexpected(
         elicitation_json_error("elicitation request must be an object"));
   }
   if (!json.contains("message") || !json.at("message").is_string()) {
-    return std::unexpected(elicitation_json_error(
+    return mcp::core::unexpected(elicitation_json_error(
         "elicitation request requires a string message"));
   }
   ElicitationMode mode = ElicitationMode::Form;
   if (json.contains("mode")) {
     if (!json.at("mode").is_string()) {
-      return std::unexpected(
+      return mcp::core::unexpected(
           elicitation_json_error("elicitation request mode must be a string"));
     }
     const auto parsed_mode =
         elicitation_mode_from_string(json.at("mode").get<std::string>());
     if (!parsed_mode) {
-      return std::unexpected(
+      return mcp::core::unexpected(
           elicitation_json_error("elicitation request mode is not supported"));
     }
     mode = *parsed_mode;
@@ -692,13 +692,13 @@ create_elicitation_request_param_from_json(const Json& json) {
   if (json.contains("task")) {
     const auto task = task_request_parameters_from_json(json.at("task"));
     if (!task) {
-      return std::unexpected(task.error());
+      return mcp::core::unexpected(task.error());
     }
     request.task = *task;
   }
   if (json.contains("_meta")) {
     if (!json.at("_meta").is_object()) {
-      return std::unexpected(elicitation_json_error(
+      return mcp::core::unexpected(elicitation_json_error(
           "elicitation request _meta must be an object"));
     }
     request.meta = json.at("_meta");
@@ -710,11 +710,11 @@ create_elicitation_request_param_from_json(const Json& json) {
   if (mode == ElicitationMode::Url) {
     if (!json.contains("elicitationId") ||
         !json.at("elicitationId").is_string()) {
-      return std::unexpected(
+      return mcp::core::unexpected(
           elicitation_json_error("elicitation request requires elicitationId"));
     }
     if (!json.contains("url") || !json.at("url").is_string()) {
-      return std::unexpected(
+      return mcp::core::unexpected(
           elicitation_json_error("elicitation request requires url"));
     }
     request.elicitation_id = json.at("elicitationId").get<std::string>();
@@ -725,12 +725,12 @@ create_elicitation_request_param_from_json(const Json& json) {
   const auto schema_key =
       json.contains("requestedSchema") ? "requestedSchema" : "requested_schema";
   if (!json.contains(schema_key)) {
-    return std::unexpected(
+    return mcp::core::unexpected(
         elicitation_json_error("elicitation request requires requestedSchema"));
   }
   const auto schema = elicitation_schema_from_json(json.at(schema_key));
   if (!schema) {
-    return std::unexpected(schema.error());
+    return mcp::core::unexpected(schema.error());
   }
   request.requested_schema = *schema;
   return request;
@@ -756,18 +756,18 @@ inline Json create_elicitation_result_to_json(
 inline core::Result<CreateElicitationResult>
 create_elicitation_result_from_json(const Json& json) {
   if (!json.is_object()) {
-    return std::unexpected(
+    return mcp::core::unexpected(
         elicitation_json_error("elicitation result must be an object"));
   }
   if (!json.contains("action") || !json.at("action").is_string()) {
-    return std::unexpected(
+    return mcp::core::unexpected(
         elicitation_json_error("elicitation result requires a string action"));
   }
 
   const auto action =
       elicitation_action_from_string(json.at("action").get<std::string>());
   if (!action.has_value()) {
-    return std::unexpected(
+    return mcp::core::unexpected(
         elicitation_json_error("elicitation action is not supported"));
   }
 
@@ -778,7 +778,7 @@ create_elicitation_result_from_json(const Json& json) {
   }
   if (json.contains("_meta")) {
     if (!json.at("_meta").is_object()) {
-      return std::unexpected(
+      return mcp::core::unexpected(
           elicitation_json_error("elicitation result _meta must be an object"));
     }
     result.meta = json.at("_meta");
@@ -797,97 +797,101 @@ inline core::Result<core::Unit> validate_elicitation_content_property(
         using Property = std::decay_t<decltype(property)>;
         if constexpr (std::is_same_v<Property, StringSchema>) {
           if (!value.is_string()) {
-            return std::unexpected(elicitation_json_error(
+            return mcp::core::unexpected(elicitation_json_error(
                 "elicitation content field '" + name + "' must be a string"));
           }
           const auto string_value = value.get<std::string>();
           if (property.min_length.has_value() &&
               string_value.size() <
                   static_cast<std::size_t>(*property.min_length)) {
-            return std::unexpected(
+            return mcp::core::unexpected(
                 elicitation_json_error("elicitation content field '" + name +
                                        "' is shorter than minLength"));
           }
           if (property.max_length.has_value() &&
               string_value.size() >
                   static_cast<std::size_t>(*property.max_length)) {
-            return std::unexpected(
+            return mcp::core::unexpected(
                 elicitation_json_error("elicitation content field '" + name +
                                        "' is longer than maxLength"));
           }
         } else if constexpr (std::is_same_v<Property, NumberSchema>) {
           if (!value.is_number()) {
-            return std::unexpected(elicitation_json_error(
+            return mcp::core::unexpected(elicitation_json_error(
                 "elicitation content field '" + name + "' must be numeric"));
           }
           const auto number = value.get<double>();
+          if (!protocol_number_is_finite(number)) {
+            return mcp::core::unexpected(elicitation_json_error(
+                "elicitation content field '" + name + "' must be finite"));
+          }
           if (property.minimum.has_value() && number < *property.minimum) {
-            return std::unexpected(elicitation_json_error(
+            return mcp::core::unexpected(elicitation_json_error(
                 "elicitation content field '" + name + "' is below minimum"));
           }
           if (property.maximum.has_value() && number > *property.maximum) {
-            return std::unexpected(elicitation_json_error(
+            return mcp::core::unexpected(elicitation_json_error(
                 "elicitation content field '" + name + "' is above maximum"));
           }
         } else if constexpr (std::is_same_v<Property, IntegerSchema>) {
           if (!value.is_number_integer()) {
-            return std::unexpected(elicitation_json_error(
+            return mcp::core::unexpected(elicitation_json_error(
                 "elicitation content field '" + name + "' must be an integer"));
           }
           const auto integer = value.get<std::int64_t>();
           if (property.minimum.has_value() && integer < *property.minimum) {
-            return std::unexpected(elicitation_json_error(
+            return mcp::core::unexpected(elicitation_json_error(
                 "elicitation content field '" + name + "' is below minimum"));
           }
           if (property.maximum.has_value() && integer > *property.maximum) {
-            return std::unexpected(elicitation_json_error(
+            return mcp::core::unexpected(elicitation_json_error(
                 "elicitation content field '" + name + "' is above maximum"));
           }
         } else if constexpr (std::is_same_v<Property, BooleanSchema>) {
           if (!value.is_boolean()) {
-            return std::unexpected(elicitation_json_error(
+            return mcp::core::unexpected(elicitation_json_error(
                 "elicitation content field '" + name + "' must be a boolean"));
           }
         } else {
           if (property.multi_select) {
             if (!value.is_array()) {
-              return std::unexpected(elicitation_json_error(
+              return mcp::core::unexpected(elicitation_json_error(
                   "elicitation content field '" + name + "' must be an array"));
             }
             if (property.min_items.has_value() &&
                 value.size() < static_cast<std::size_t>(*property.min_items)) {
-              return std::unexpected(
+              return mcp::core::unexpected(
                   elicitation_json_error("elicitation content field '" + name +
                                          "' has too few selections"));
             }
             if (property.max_items.has_value() &&
                 value.size() > static_cast<std::size_t>(*property.max_items)) {
-              return std::unexpected(
+              return mcp::core::unexpected(
                   elicitation_json_error("elicitation content field '" + name +
                                          "' has too many selections"));
             }
             for (const auto& item : value) {
               if (!item.is_string()) {
-                return std::unexpected(elicitation_json_error(
+                return mcp::core::unexpected(elicitation_json_error(
                     "elicitation content field '" + name +
                     "' selections must be strings"));
               }
               const auto enum_value = item.get<std::string>();
               if (std::find(property.values.begin(), property.values.end(),
                             enum_value) == property.values.end()) {
-                return std::unexpected(
+                return mcp::core::unexpected(
                     elicitation_json_error("elicitation content field '" +
                                            name + "' must match enum values"));
               }
             }
           } else if (!value.is_string()) {
-            return std::unexpected(elicitation_json_error(
+            return mcp::core::unexpected(elicitation_json_error(
                 "elicitation content field '" + name + "' must be a string"));
           } else {
             const auto enum_value = value.get<std::string>();
             if (std::find(property.values.begin(), property.values.end(),
                           enum_value) == property.values.end()) {
-              return std::unexpected(
+              return mcp::core::unexpected(
                   elicitation_json_error("elicitation content field '" + name +
                                          "' must match an enum value"));
             }
@@ -908,13 +912,13 @@ inline core::Result<core::Unit> validate_elicitation_content_property(
 inline core::Result<core::Unit> validate_elicitation_content(
     const ElicitationSchema& schema, const Json& content) {
   if (!content.is_object()) {
-    return std::unexpected(
+    return mcp::core::unexpected(
         elicitation_json_error("elicitation content must be an object"));
   }
 
   for (const auto& required : schema.required) {
     if (!content.contains(required)) {
-      return std::unexpected(elicitation_json_error(
+      return mcp::core::unexpected(elicitation_json_error(
           "elicitation content requires field '" + required + "'"));
     }
   }
@@ -948,7 +952,7 @@ inline core::Result<core::Unit> validate_elicitation_result_content(
     if (schema.required.empty()) {
       return core::Unit{};
     }
-    return std::unexpected(
+    return mcp::core::unexpected(
         elicitation_json_error("accepted elicitation result requires content"));
   }
   return validate_elicitation_content(schema, *result.content);
@@ -970,19 +974,19 @@ inline Json elicitation_complete_notification_params_to_json(
 inline core::Result<ElicitationCompleteNotificationParams>
 elicitation_complete_notification_params_from_json(const Json& json) {
   if (!json.is_object()) {
-    return std::unexpected(elicitation_json_error(
+    return mcp::core::unexpected(elicitation_json_error(
         "elicitation complete notification must be an object"));
   }
   if (!json.contains("elicitationId") ||
       !json.at("elicitationId").is_string()) {
-    return std::unexpected(elicitation_json_error(
+    return mcp::core::unexpected(elicitation_json_error(
         "elicitation complete notification requires elicitationId"));
   }
   ElicitationCompleteNotificationParams params;
   params.elicitation_id = json.at("elicitationId").get<std::string>();
   if (json.contains("_meta")) {
     if (!json.at("_meta").is_object()) {
-      return std::unexpected(elicitation_json_error(
+      return mcp::core::unexpected(elicitation_json_error(
           "elicitation complete notification _meta must be an object"));
     }
     params.meta = json.at("_meta");
@@ -1149,7 +1153,7 @@ inline ElicitationSchema::Builder& ElicitationSchema::Builder::optional_enum(
 inline core::Result<ElicitationSchema> ElicitationSchema::Builder::build()
     const {
   if (properties_.empty()) {
-    return std::unexpected(elicitation_json_error(
+    return mcp::core::unexpected(elicitation_json_error(
         "elicitation schema requires at least one property"));
   }
   ElicitationSchema schema;
@@ -1187,11 +1191,11 @@ inline Json primitive_schema_to_json(const PrimitiveSchema& schema) {
 inline core::Result<PrimitiveSchema> primitive_schema_from_json(
     const Json& json) {
   if (!json.is_object()) {
-    return std::unexpected(elicitation_json_error(
+    return mcp::core::unexpected(elicitation_json_error(
         "elicitation property schema must be an object"));
   }
   if (!json.contains("type") || !json.at("type").is_string()) {
-    return std::unexpected(elicitation_json_error(
+    return mcp::core::unexpected(elicitation_json_error(
         "elicitation property schema requires a string type"));
   }
 
@@ -1201,37 +1205,37 @@ inline core::Result<PrimitiveSchema> primitive_schema_from_json(
     schema.multi_select = true;
     if (json.contains("title")) {
       if (!json.at("title").is_string()) {
-        return std::unexpected(elicitation_json_error(
+        return mcp::core::unexpected(elicitation_json_error(
             "elicitation multi-select title must be a string"));
       }
       schema.title = json.at("title").get<std::string>();
     }
     if (json.contains("description")) {
       if (!json.at("description").is_string()) {
-        return std::unexpected(elicitation_json_error(
+        return mcp::core::unexpected(elicitation_json_error(
             "elicitation multi-select description must be a string"));
       }
       schema.description = json.at("description").get<std::string>();
     }
     if (!json.contains("items") || !json.at("items").is_object()) {
-      return std::unexpected(
+      return mcp::core::unexpected(
           elicitation_json_error("elicitation multi-select requires items"));
     }
     const auto& items = json.at("items");
     if (items.contains("type") &&
         (!items.at("type").is_string() ||
          items.at("type").get<std::string>() != "string")) {
-      return std::unexpected(elicitation_json_error(
+      return mcp::core::unexpected(elicitation_json_error(
           "elicitation multi-select items type must be string"));
     }
     if (items.contains("enum")) {
       if (!items.at("enum").is_array()) {
-        return std::unexpected(elicitation_json_error(
+        return mcp::core::unexpected(elicitation_json_error(
             "elicitation multi-select enum must be an array"));
       }
       for (const auto& item : items.at("enum")) {
         if (!item.is_string()) {
-          return std::unexpected(elicitation_json_error(
+          return mcp::core::unexpected(elicitation_json_error(
               "elicitation multi-select enum values must be strings"));
         }
         schema.values.push_back(item.get<std::string>());
@@ -1242,53 +1246,53 @@ inline core::Result<PrimitiveSchema> primitive_schema_from_json(
           items.at(choices_key), schema.values, schema.value_titles,
           "elicitation multi-select choices");
       if (!parsed_choices) {
-        return std::unexpected(parsed_choices.error());
+        return mcp::core::unexpected(parsed_choices.error());
       }
     } else {
-      return std::unexpected(elicitation_json_error(
+      return mcp::core::unexpected(elicitation_json_error(
           "elicitation multi-select requires enum, anyOf, or oneOf items"));
     }
     if (json.contains("minItems")) {
       if (!json.at("minItems").is_number_integer()) {
-        return std::unexpected(elicitation_json_error(
+        return mcp::core::unexpected(elicitation_json_error(
             "elicitation multi-select minItems must be an integer"));
       }
       schema.min_items = json.at("minItems").get<std::int64_t>();
       if (*schema.min_items < 0) {
-        return std::unexpected(elicitation_json_error(
+        return mcp::core::unexpected(elicitation_json_error(
             "elicitation multi-select minItems must be non-negative"));
       }
     }
     if (json.contains("maxItems")) {
       if (!json.at("maxItems").is_number_integer()) {
-        return std::unexpected(elicitation_json_error(
+        return mcp::core::unexpected(elicitation_json_error(
             "elicitation multi-select maxItems must be an integer"));
       }
       schema.max_items = json.at("maxItems").get<std::int64_t>();
       if (*schema.max_items < 0) {
-        return std::unexpected(elicitation_json_error(
+        return mcp::core::unexpected(elicitation_json_error(
             "elicitation multi-select maxItems must be non-negative"));
       }
     }
     if (schema.min_items.has_value() && schema.max_items.has_value() &&
         *schema.min_items > *schema.max_items) {
-      return std::unexpected(elicitation_json_error(
+      return mcp::core::unexpected(elicitation_json_error(
           "elicitation multi-select minItems must be <= maxItems"));
     }
     if (json.contains("default")) {
       if (!json.at("default").is_array()) {
-        return std::unexpected(elicitation_json_error(
+        return mcp::core::unexpected(elicitation_json_error(
             "elicitation multi-select default must be an array"));
       }
       for (const auto& item : json.at("default")) {
         if (!item.is_string()) {
-          return std::unexpected(elicitation_json_error(
+          return mcp::core::unexpected(elicitation_json_error(
               "elicitation multi-select default values must be strings"));
         }
         schema.default_values.push_back(item.get<std::string>());
       }
       if (!enum_values_are_allowed(schema.values, schema.default_values)) {
-        return std::unexpected(elicitation_json_error(
+        return mcp::core::unexpected(elicitation_json_error(
             "elicitation multi-select default must match enum values"));
       }
     }
@@ -1299,21 +1303,21 @@ inline core::Result<PrimitiveSchema> primitive_schema_from_json(
   }
   if (json.contains("oneOf")) {
     if (type != "string") {
-      return std::unexpected(elicitation_json_error(
+      return mcp::core::unexpected(elicitation_json_error(
           "elicitation titled enum type must be string"));
     }
     EnumSchema schema;
     schema.titled_single_select = true;
     if (json.contains("title")) {
       if (!json.at("title").is_string()) {
-        return std::unexpected(elicitation_json_error(
+        return mcp::core::unexpected(elicitation_json_error(
             "elicitation titled enum title must be a string"));
       }
       schema.title = json.at("title").get<std::string>();
     }
     if (json.contains("description")) {
       if (!json.at("description").is_string()) {
-        return std::unexpected(elicitation_json_error(
+        return mcp::core::unexpected(elicitation_json_error(
             "elicitation titled enum description must be a string"));
       }
       schema.description = json.at("description").get<std::string>();
@@ -1322,17 +1326,17 @@ inline core::Result<PrimitiveSchema> primitive_schema_from_json(
         json.at("oneOf"), schema.values, schema.value_titles,
         "elicitation titled enum oneOf");
     if (!parsed_choices) {
-      return std::unexpected(parsed_choices.error());
+      return mcp::core::unexpected(parsed_choices.error());
     }
     if (json.contains("default")) {
       if (!json.at("default").is_string()) {
-        return std::unexpected(elicitation_json_error(
+        return mcp::core::unexpected(elicitation_json_error(
             "elicitation titled enum default must be a string"));
       }
       schema.default_value = json.at("default").get<std::string>();
       if (std::find(schema.values.begin(), schema.values.end(),
                     *schema.default_value) == schema.values.end()) {
-        return std::unexpected(elicitation_json_error(
+        return mcp::core::unexpected(elicitation_json_error(
             "elicitation titled enum default must match an enum value"));
       }
     }
@@ -1342,61 +1346,61 @@ inline core::Result<PrimitiveSchema> primitive_schema_from_json(
   }
   if (json.contains("enum")) {
     if (type != "string") {
-      return std::unexpected(
+      return mcp::core::unexpected(
           elicitation_json_error("elicitation enum type must be string"));
     }
     if (!json.at("enum").is_array()) {
-      return std::unexpected(
+      return mcp::core::unexpected(
           elicitation_json_error("elicitation enum must be an array"));
     }
     EnumSchema schema;
     if (json.contains("title")) {
       if (!json.at("title").is_string()) {
-        return std::unexpected(
+        return mcp::core::unexpected(
             elicitation_json_error("elicitation enum title must be a string"));
       }
       schema.title = json.at("title").get<std::string>();
     }
     if (json.contains("description")) {
       if (!json.at("description").is_string()) {
-        return std::unexpected(elicitation_json_error(
+        return mcp::core::unexpected(elicitation_json_error(
             "elicitation enum description must be a string"));
       }
       schema.description = json.at("description").get<std::string>();
     }
     for (const auto& item : json.at("enum")) {
       if (!item.is_string()) {
-        return std::unexpected(
+        return mcp::core::unexpected(
             elicitation_json_error("elicitation enum values must be strings"));
       }
       schema.values.push_back(item.get<std::string>());
     }
     if (json.contains("enumNames")) {
       if (!json.at("enumNames").is_array()) {
-        return std::unexpected(
+        return mcp::core::unexpected(
             elicitation_json_error("elicitation enumNames must be an array"));
       }
       for (const auto& item : json.at("enumNames")) {
         if (!item.is_string()) {
-          return std::unexpected(elicitation_json_error(
+          return mcp::core::unexpected(elicitation_json_error(
               "elicitation enumNames entries must be strings"));
         }
         schema.enum_names.push_back(item.get<std::string>());
       }
       if (schema.enum_names.size() != schema.values.size()) {
-        return std::unexpected(elicitation_json_error(
+        return mcp::core::unexpected(elicitation_json_error(
             "elicitation enumNames size must match enum values"));
       }
     }
     if (json.contains("default")) {
       if (!json.at("default").is_string()) {
-        return std::unexpected(elicitation_json_error(
+        return mcp::core::unexpected(elicitation_json_error(
             "elicitation enum default must be a string"));
       }
       schema.default_value = json.at("default").get<std::string>();
       if (std::find(schema.values.begin(), schema.values.end(),
                     *schema.default_value) == schema.values.end()) {
-        return std::unexpected(elicitation_json_error(
+        return mcp::core::unexpected(elicitation_json_error(
             "elicitation enum default must match an enum value"));
       }
     }
@@ -1409,59 +1413,59 @@ inline core::Result<PrimitiveSchema> primitive_schema_from_json(
     StringSchema schema;
     if (json.contains("title")) {
       if (!json.at("title").is_string()) {
-        return std::unexpected(elicitation_json_error(
+        return mcp::core::unexpected(elicitation_json_error(
             "elicitation string title must be a string"));
       }
       schema.title = json.at("title").get<std::string>();
     }
     if (json.contains("description")) {
       if (!json.at("description").is_string()) {
-        return std::unexpected(elicitation_json_error(
+        return mcp::core::unexpected(elicitation_json_error(
             "elicitation string description must be a string"));
       }
       schema.description = json.at("description").get<std::string>();
     }
     if (json.contains("format")) {
       if (!json.at("format").is_string()) {
-        return std::unexpected(elicitation_json_error(
+        return mcp::core::unexpected(elicitation_json_error(
             "elicitation string format must be a string"));
       }
       schema.format = json.at("format").get<std::string>();
       if (!elicitation_string_format_is_supported(*schema.format)) {
-        return std::unexpected(elicitation_json_error(
+        return mcp::core::unexpected(elicitation_json_error(
             "elicitation string format is not supported"));
       }
     }
     if (json.contains("minLength")) {
       if (!json.at("minLength").is_number_integer()) {
-        return std::unexpected(elicitation_json_error(
+        return mcp::core::unexpected(elicitation_json_error(
             "elicitation string minLength must be an integer"));
       }
       schema.min_length = json.at("minLength").get<std::int64_t>();
       if (*schema.min_length < 0) {
-        return std::unexpected(elicitation_json_error(
+        return mcp::core::unexpected(elicitation_json_error(
             "elicitation string minLength must be non-negative"));
       }
     }
     if (json.contains("maxLength")) {
       if (!json.at("maxLength").is_number_integer()) {
-        return std::unexpected(elicitation_json_error(
+        return mcp::core::unexpected(elicitation_json_error(
             "elicitation string maxLength must be an integer"));
       }
       schema.max_length = json.at("maxLength").get<std::int64_t>();
       if (*schema.max_length < 0) {
-        return std::unexpected(elicitation_json_error(
+        return mcp::core::unexpected(elicitation_json_error(
             "elicitation string maxLength must be non-negative"));
       }
     }
     if (schema.min_length.has_value() && schema.max_length.has_value() &&
         *schema.min_length > *schema.max_length) {
-      return std::unexpected(elicitation_json_error(
+      return mcp::core::unexpected(elicitation_json_error(
           "elicitation string minLength must be <= maxLength"));
     }
     if (json.contains("default")) {
       if (!json.at("default").is_string()) {
-        return std::unexpected(elicitation_json_error(
+        return mcp::core::unexpected(elicitation_json_error(
             "elicitation string default must be a string"));
       }
       schema.default_value = json.at("default").get<std::string>();
@@ -1475,38 +1479,53 @@ inline core::Result<PrimitiveSchema> primitive_schema_from_json(
     NumberSchema schema;
     if (json.contains("title")) {
       if (!json.at("title").is_string()) {
-        return std::unexpected(elicitation_json_error(
+        return mcp::core::unexpected(elicitation_json_error(
             "elicitation number title must be a string"));
       }
       schema.title = json.at("title").get<std::string>();
     }
     if (json.contains("description")) {
       if (!json.at("description").is_string()) {
-        return std::unexpected(elicitation_json_error(
+        return mcp::core::unexpected(elicitation_json_error(
             "elicitation number description must be a string"));
       }
       schema.description = json.at("description").get<std::string>();
     }
     if (json.contains("minimum")) {
       if (!json.at("minimum").is_number()) {
-        return std::unexpected(elicitation_json_error(
+        return mcp::core::unexpected(elicitation_json_error(
             "elicitation number minimum must be numeric"));
       }
-      schema.minimum = json.at("minimum").get<double>();
+      const auto value = json.at("minimum").get<double>();
+      if (!protocol_number_is_finite(value)) {
+        return mcp::core::unexpected(elicitation_json_error(
+            "elicitation number minimum must be finite"));
+      }
+      schema.minimum = value;
     }
     if (json.contains("maximum")) {
       if (!json.at("maximum").is_number()) {
-        return std::unexpected(elicitation_json_error(
+        return mcp::core::unexpected(elicitation_json_error(
             "elicitation number maximum must be numeric"));
       }
-      schema.maximum = json.at("maximum").get<double>();
+      const auto value = json.at("maximum").get<double>();
+      if (!protocol_number_is_finite(value)) {
+        return mcp::core::unexpected(elicitation_json_error(
+            "elicitation number maximum must be finite"));
+      }
+      schema.maximum = value;
     }
     if (json.contains("default")) {
       if (!json.at("default").is_number()) {
-        return std::unexpected(elicitation_json_error(
+        return mcp::core::unexpected(elicitation_json_error(
             "elicitation number default must be numeric"));
       }
-      schema.default_value = json.at("default").get<double>();
+      const auto value = json.at("default").get<double>();
+      if (!protocol_number_is_finite(value)) {
+        return mcp::core::unexpected(elicitation_json_error(
+            "elicitation number default must be finite"));
+      }
+      schema.default_value = value;
     }
     schema.extensions = collect_json_extensions(
         json,
@@ -1517,35 +1536,35 @@ inline core::Result<PrimitiveSchema> primitive_schema_from_json(
     IntegerSchema schema;
     if (json.contains("title")) {
       if (!json.at("title").is_string()) {
-        return std::unexpected(elicitation_json_error(
+        return mcp::core::unexpected(elicitation_json_error(
             "elicitation integer title must be a string"));
       }
       schema.title = json.at("title").get<std::string>();
     }
     if (json.contains("description")) {
       if (!json.at("description").is_string()) {
-        return std::unexpected(elicitation_json_error(
+        return mcp::core::unexpected(elicitation_json_error(
             "elicitation integer description must be a string"));
       }
       schema.description = json.at("description").get<std::string>();
     }
     if (json.contains("minimum")) {
       if (!json.at("minimum").is_number_integer()) {
-        return std::unexpected(elicitation_json_error(
+        return mcp::core::unexpected(elicitation_json_error(
             "elicitation integer minimum must be an integer"));
       }
       schema.minimum = json.at("minimum").get<std::int64_t>();
     }
     if (json.contains("maximum")) {
       if (!json.at("maximum").is_number_integer()) {
-        return std::unexpected(elicitation_json_error(
+        return mcp::core::unexpected(elicitation_json_error(
             "elicitation integer maximum must be an integer"));
       }
       schema.maximum = json.at("maximum").get<std::int64_t>();
     }
     if (json.contains("default")) {
       if (!json.at("default").is_number_integer()) {
-        return std::unexpected(elicitation_json_error(
+        return mcp::core::unexpected(elicitation_json_error(
             "elicitation integer default must be an integer"));
       }
       schema.default_value = json.at("default").get<std::int64_t>();
@@ -1559,21 +1578,21 @@ inline core::Result<PrimitiveSchema> primitive_schema_from_json(
     BooleanSchema schema;
     if (json.contains("title")) {
       if (!json.at("title").is_string()) {
-        return std::unexpected(elicitation_json_error(
+        return mcp::core::unexpected(elicitation_json_error(
             "elicitation boolean title must be a string"));
       }
       schema.title = json.at("title").get<std::string>();
     }
     if (json.contains("description")) {
       if (!json.at("description").is_string()) {
-        return std::unexpected(elicitation_json_error(
+        return mcp::core::unexpected(elicitation_json_error(
             "elicitation boolean description must be a string"));
       }
       schema.description = json.at("description").get<std::string>();
     }
     if (json.contains("default")) {
       if (!json.at("default").is_boolean()) {
-        return std::unexpected(elicitation_json_error(
+        return mcp::core::unexpected(elicitation_json_error(
             "elicitation boolean default must be a boolean"));
       }
       schema.default_value = json.at("default").get<bool>();
@@ -1583,7 +1602,7 @@ inline core::Result<PrimitiveSchema> primitive_schema_from_json(
     return schema;
   }
 
-  return std::unexpected(
+  return mcp::core::unexpected(
       elicitation_json_error("elicitation property type is not supported"));
 }
 

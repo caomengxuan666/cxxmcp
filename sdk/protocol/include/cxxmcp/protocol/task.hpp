@@ -214,20 +214,21 @@ inline Json task_request_parameters_to_json(
 inline core::Result<TaskRequestParameters> task_request_parameters_from_json(
     const Json& json) {
   if (!json.is_object()) {
-    return std::unexpected(
+    return mcp::core::unexpected(
         task_json_error("task parameters must be an object"));
   }
 
   TaskRequestParameters parameters;
   if (json.contains("ttl")) {
     if (!json.at("ttl").is_number_integer()) {
-      return std::unexpected(task_json_error("task ttl must be an integer"));
+      return mcp::core::unexpected(
+          task_json_error("task ttl must be an integer"));
     }
     parameters.ttl = json.at("ttl").get<std::int64_t>();
   }
   if (json.contains("_meta")) {
     if (!json.at("_meta").is_object()) {
-      return std::unexpected(
+      return mcp::core::unexpected(
           task_json_error("task parameters _meta must be an object"));
     }
     parameters.meta = json.at("_meta");
@@ -266,26 +267,29 @@ inline Json task_to_json(const Task& task) {
 /// @return Parsed task or validation error.
 inline core::Result<Task> task_from_json(const Json& json) {
   if (!json.is_object()) {
-    return std::unexpected(task_json_error("task must be an object"));
+    return mcp::core::unexpected(task_json_error("task must be an object"));
   }
   if (!json.contains("taskId") || !json.at("taskId").is_string()) {
-    return std::unexpected(task_json_error("task requires a string taskId"));
+    return mcp::core::unexpected(
+        task_json_error("task requires a string taskId"));
   }
   if (!json.contains("status") || !json.at("status").is_string()) {
-    return std::unexpected(task_json_error("task requires a string status"));
+    return mcp::core::unexpected(
+        task_json_error("task requires a string status"));
   }
   if (!json.contains("createdAt") || !json.at("createdAt").is_string()) {
-    return std::unexpected(task_json_error("task requires createdAt"));
+    return mcp::core::unexpected(task_json_error("task requires createdAt"));
   }
   if (!json.contains("lastUpdatedAt") ||
       !json.at("lastUpdatedAt").is_string()) {
-    return std::unexpected(task_json_error("task requires lastUpdatedAt"));
+    return mcp::core::unexpected(
+        task_json_error("task requires lastUpdatedAt"));
   }
 
   const auto status =
       task_status_from_string(json.at("status").get<std::string>());
   if (!status.has_value()) {
-    return std::unexpected(task_json_error("task status is invalid"));
+    return mcp::core::unexpected(task_json_error("task status is invalid"));
   }
 
   Task task;
@@ -295,7 +299,7 @@ inline core::Result<Task> task_from_json(const Json& json) {
   task.last_updated_at = json.at("lastUpdatedAt").get<std::string>();
   if (json.contains("statusMessage")) {
     if (!json.at("statusMessage").is_string()) {
-      return std::unexpected(
+      return mcp::core::unexpected(
           task_json_error("task statusMessage must be a string"));
     }
     task.status_message = json.at("statusMessage").get<std::string>();
@@ -304,13 +308,13 @@ inline core::Result<Task> task_from_json(const Json& json) {
     if (json.at("ttl").is_number_integer()) {
       task.ttl = json.at("ttl").get<std::int64_t>();
     } else if (!json.at("ttl").is_null()) {
-      return std::unexpected(
+      return mcp::core::unexpected(
           task_json_error("task ttl must be an integer or null"));
     }
   }
   if (json.contains("pollInterval")) {
     if (!json.at("pollInterval").is_number_integer()) {
-      return std::unexpected(
+      return mcp::core::unexpected(
           task_json_error("task pollInterval must be an integer"));
     }
     task.poll_interval = json.at("pollInterval").get<std::int64_t>();
@@ -337,12 +341,12 @@ inline Json task_operation_result_to_json(const Task& task,
 inline core::Result<TaskGetResult> task_operation_result_from_json(
     const Json& json, std::string_view context) {
   if (!json.is_object()) {
-    return std::unexpected(
+    return mcp::core::unexpected(
         task_json_error(std::string(context) + " result must be an object"));
   }
   auto task = task_from_json(json);
   if (!task) {
-    return std::unexpected(task.error());
+    return mcp::core::unexpected(task.error());
   }
   task->extensions.erase("_meta");
 
@@ -350,7 +354,7 @@ inline core::Result<TaskGetResult> task_operation_result_from_json(
   result.task = *task;
   if (json.contains("_meta")) {
     if (!json.at("_meta").is_object()) {
-      return std::unexpected(task_json_error(
+      return mcp::core::unexpected(task_json_error(
           std::string(context) + " result _meta must be an object"));
     }
     result.meta = json.at("_meta");
@@ -379,20 +383,20 @@ inline Json task_list_params_to_json(const TaskListParams& params) {
 inline core::Result<TaskListParams> task_list_params_from_json(
     const Json& json) {
   if (!json.is_object()) {
-    return std::unexpected(
+    return mcp::core::unexpected(
         task_json_error("tasks/list params must be an object"));
   }
   TaskListParams params;
   if (json.contains("cursor")) {
     if (!json.at("cursor").is_string()) {
-      return std::unexpected(
+      return mcp::core::unexpected(
           task_json_error("tasks/list cursor must be a string"));
     }
     params.cursor = json.at("cursor").get<std::string>();
   }
   if (json.contains("_meta")) {
     if (!json.at("_meta").is_object()) {
-      return std::unexpected(
+      return mcp::core::unexpected(
           task_json_error("tasks/list _meta must be an object"));
     }
     params.meta = json.at("_meta");
@@ -415,17 +419,18 @@ inline Json task_get_params_to_json(const TaskGetParams& params) {
 /// @return Parsed params or validation error.
 inline core::Result<TaskGetParams> task_get_params_from_json(const Json& json) {
   if (!json.is_object()) {
-    return std::unexpected(
+    return mcp::core::unexpected(
         task_json_error("tasks/get params must be an object"));
   }
   if (!json.contains("taskId") || !json.at("taskId").is_string()) {
-    return std::unexpected(task_json_error("tasks/get params require taskId"));
+    return mcp::core::unexpected(
+        task_json_error("tasks/get params require taskId"));
   }
   TaskGetParams params;
   params.task_id = json.at("taskId").get<std::string>();
   if (json.contains("_meta")) {
     if (!json.at("_meta").is_object()) {
-      return std::unexpected(
+      return mcp::core::unexpected(
           task_json_error("tasks/get _meta must be an object"));
     }
     params.meta = json.at("_meta");
@@ -449,18 +454,18 @@ inline Json task_cancel_params_to_json(const TaskCancelParams& params) {
 inline core::Result<TaskCancelParams> task_cancel_params_from_json(
     const Json& json) {
   if (!json.is_object()) {
-    return std::unexpected(
+    return mcp::core::unexpected(
         task_json_error("tasks/cancel params must be an object"));
   }
   if (!json.contains("taskId") || !json.at("taskId").is_string()) {
-    return std::unexpected(
+    return mcp::core::unexpected(
         task_json_error("tasks/cancel params require taskId"));
   }
   TaskCancelParams params;
   params.task_id = json.at("taskId").get<std::string>();
   if (json.contains("_meta")) {
     if (!json.at("_meta").is_object()) {
-      return std::unexpected(
+      return mcp::core::unexpected(
           task_json_error("tasks/cancel _meta must be an object"));
     }
     params.meta = json.at("_meta");
@@ -506,11 +511,11 @@ inline Json task_list_result_to_json(const TaskListResult& result) {
 inline core::Result<TaskListResult> task_list_result_from_json(
     const Json& json) {
   if (!json.is_object()) {
-    return std::unexpected(
+    return mcp::core::unexpected(
         task_json_error("tasks/list result must be an object"));
   }
   if (!json.contains("tasks") || !json.at("tasks").is_array()) {
-    return std::unexpected(
+    return mcp::core::unexpected(
         task_json_error("tasks/list result requires a tasks array"));
   }
 
@@ -518,32 +523,32 @@ inline core::Result<TaskListResult> task_list_result_from_json(
   for (const auto& item : json.at("tasks")) {
     const auto task = task_from_json(item);
     if (!task) {
-      return std::unexpected(task.error());
+      return mcp::core::unexpected(task.error());
     }
     result.tasks.push_back(*task);
   }
   if (json.contains("nextCursor")) {
     if (!json.at("nextCursor").is_string()) {
-      return std::unexpected(
+      return mcp::core::unexpected(
           task_json_error("tasks/list nextCursor must be a string"));
     }
     result.next_cursor = json.at("nextCursor").get<std::string>();
   }
   if (json.contains("total")) {
     if (!json.at("total").is_number_integer()) {
-      return std::unexpected(
+      return mcp::core::unexpected(
           task_json_error("tasks/list total must be an integer"));
     }
     const auto total = json.at("total").get<std::int64_t>();
     if (total < 0) {
-      return std::unexpected(
+      return mcp::core::unexpected(
           task_json_error("tasks/list total must be non-negative"));
     }
     result.total = total;
   }
   if (json.contains("_meta")) {
     if (!json.at("_meta").is_object()) {
-      return std::unexpected(
+      return mcp::core::unexpected(
           task_json_error("tasks/list result _meta must be an object"));
     }
     result.meta = json.at("_meta");
@@ -575,7 +580,7 @@ inline core::Result<TaskCancelResult> task_cancel_result_from_json(
     const Json& json) {
   const auto parsed = task_operation_result_from_json(json, "tasks/cancel");
   if (!parsed) {
-    return std::unexpected(parsed.error());
+    return mcp::core::unexpected(parsed.error());
   }
   TaskCancelResult result;
   result.task = parsed->task;
@@ -600,23 +605,24 @@ inline Json create_task_result_to_json(const CreateTaskResult& result) {
 inline core::Result<CreateTaskResult> create_task_result_from_json(
     const Json& json) {
   if (!json.is_object()) {
-    return std::unexpected(
+    return mcp::core::unexpected(
         task_json_error("createTask result must be an object"));
   }
   if (!json.contains("task")) {
-    return std::unexpected(task_json_error("createTask result requires task"));
+    return mcp::core::unexpected(
+        task_json_error("createTask result requires task"));
   }
 
   const auto task = task_from_json(json.at("task"));
   if (!task) {
-    return std::unexpected(task.error());
+    return mcp::core::unexpected(task.error());
   }
 
   CreateTaskResult result;
   result.task = *task;
   if (json.contains("_meta")) {
     if (!json.at("_meta").is_object()) {
-      return std::unexpected(
+      return mcp::core::unexpected(
           task_json_error("createTask result _meta must be an object"));
     }
     result.meta = json.at("_meta");

@@ -2,16 +2,23 @@
 
 #include "cxxmcp/protocol/serialization.hpp"
 
+#include <cstddef>
 #include <memory>
 #include <string>
 #include <type_traits>
 #include <utility>
+#include <vector>
 
 #include "jsonrpcpp.hpp"
 
 namespace mcp::protocol {
 
 namespace {
+
+constexpr std::size_t MaxJsonDepth = 128;
+constexpr std::size_t MaxJsonAggregateStringBytes = 16 * 1024 * 1024;
+constexpr std::size_t MaxJsonAggregateCollectionEntries = 100000;
+constexpr std::size_t MaxJsonNodeCount = 200000;
 
 core::Error make_protocol_error(int code, std::string message,
                                 std::string detail = {}) {
@@ -34,20 +41,118 @@ core::Error translate_exception(
   return translate_rpc_error(exception.error());
 }
 
+core::Result<core::Unit> validate_json_document_limits(const Json& document) {
+  struct Frame {
+    const Json* value;
+    std::size_t depth;
+  };
+
+  std::vector<Frame> stack;
+  stack.push_back(Frame{&document, 1});
+  std::size_t nodes = 0;
+  std::size_t aggregate_string_bytes = 0;
+  std::size_t aggregate_collection_entries = 0;
+
+  while (!stack.empty()) {
+    const auto frame = stack.back();
+    stack.pop_back();
+    if (frame.depth > MaxJsonDepth) {
+      return mcp::core::unexpected(
+          make_protocol_error(static_cast<int>(ErrorCode::InvalidRequest),
+                              "JSON-RPC message exceeds maximum JSON depth"));
+    }
+    if (++nodes > MaxJsonNodeCount) {
+      return mcp::core::unexpected(
+          make_protocol_error(static_cast<int>(ErrorCode::InvalidRequest),
+                              "JSON-RPC message exceeds maximum JSON nodes"));
+    }
+
+    if (frame.value->is_string()) {
+      aggregate_string_bytes +=
+          frame.value->get_ref<const std::string&>().size();
+      if (aggregate_string_bytes > MaxJsonAggregateStringBytes) {
+        return mcp::core::unexpected(make_protocol_error(
+            static_cast<int>(ErrorCode::InvalidRequest),
+            "JSON-RPC message exceeds maximum aggregate string size"));
+      }
+      continue;
+    }
+
+    if (frame.value->is_array()) {
+      aggregate_collection_entries += frame.value->size();
+      if (aggregate_collection_entries > MaxJsonAggregateCollectionEntries) {
+        return mcp::core::unexpected(make_protocol_error(
+            static_cast<int>(ErrorCode::InvalidRequest),
+            "JSON-RPC message exceeds maximum aggregate collection entries"));
+      }
+      for (const auto& item : *frame.value) {
+        stack.push_back(Frame{&item, frame.depth + 1});
+      }
+      continue;
+    }
+
+    if (frame.value->is_object()) {
+      aggregate_collection_entries += frame.value->size();
+      if (aggregate_collection_entries > MaxJsonAggregateCollectionEntries) {
+        return mcp::core::unexpected(make_protocol_error(
+            static_cast<int>(ErrorCode::InvalidRequest),
+            "JSON-RPC message exceeds maximum aggregate collection entries"));
+      }
+      for (auto it = frame.value->begin(); it != frame.value->end(); ++it) {
+        aggregate_string_bytes += it.key().size();
+        if (aggregate_string_bytes > MaxJsonAggregateStringBytes) {
+          return mcp::core::unexpected(make_protocol_error(
+              static_cast<int>(ErrorCode::InvalidRequest),
+              "JSON-RPC message exceeds maximum aggregate string size"));
+        }
+        stack.push_back(Frame{&it.value(), frame.depth + 1});
+      }
+    }
+  }
+
+  return core::Unit{};
+}
+
 core::Result<Json> parse_json_document(std::string_view text) {
   const auto document = Json::parse(text.begin(), text.end(), nullptr, false);
   if (document.is_discarded()) {
-    return std::unexpected(make_protocol_error(
+    return mcp::core::unexpected(make_protocol_error(
         static_cast<int>(ErrorCode::ParseError), "Invalid JSON"));
   }
 
+  if (document.is_array()) {
+    return mcp::core::unexpected(
+        make_protocol_error(static_cast<int>(ErrorCode::InvalidRequest),
+                            "Batch messages are not supported"));
+  }
+
   if (!document.is_object()) {
-    return std::unexpected(
+    return mcp::core::unexpected(
         make_protocol_error(static_cast<int>(ErrorCode::InvalidRequest),
                             "JSON-RPC message must be an object"));
   }
 
+  const auto limits = validate_json_document_limits(document);
+  if (!limits) {
+    return mcp::core::unexpected(limits.error());
+  }
+
   return document;
+}
+
+core::Result<core::Unit> validate_jsonrpc_version(const Json& document) {
+  if (!document.contains("jsonrpc")) {
+    return mcp::core::unexpected(
+        make_protocol_error(static_cast<int>(ErrorCode::InvalidRequest),
+                            "JSON-RPC version must be 2.0"));
+  }
+  if (!document.at("jsonrpc").is_string() ||
+      document.at("jsonrpc").get<std::string>() != JsonRpcVersion) {
+    return mcp::core::unexpected(
+        make_protocol_error(static_cast<int>(ErrorCode::InvalidRequest),
+                            "JSON-RPC version must be 2.0"));
+  }
+  return core::Unit{};
 }
 
 jsonrpcpp::Id to_rpc_id(const RequestId& id) {
@@ -66,7 +171,7 @@ core::Result<std::optional<Json>> meta_from_document(const Json& document) {
     return std::optional<Json>{};
   }
   if (!document.at("_meta").is_object()) {
-    return std::unexpected(
+    return mcp::core::unexpected(
         make_protocol_error(static_cast<int>(ErrorCode::InvalidRequest),
                             "_meta must be an object"));
   }
@@ -85,7 +190,7 @@ core::Result<std::optional<Json>> meta_from_params(const Json& params) {
     return std::optional<Json>{};
   }
   if (!params.at("_meta").is_object()) {
-    return std::unexpected(
+    return mcp::core::unexpected(
         make_protocol_error(static_cast<int>(ErrorCode::InvalidRequest),
                             "params _meta must be an object"));
   }
@@ -99,7 +204,7 @@ core::Result<Json> params_with_meta(Json params,
     return params;
   }
   if (!params.is_object()) {
-    return std::unexpected(
+    return mcp::core::unexpected(
         make_protocol_error(static_cast<int>(ErrorCode::InvalidRequest),
                             "params must be an object when _meta is present"));
   }
@@ -109,6 +214,155 @@ core::Result<Json> params_with_meta(Json params,
 
 bool should_serialize_params(const Json& params) {
   return !params.is_object() || !params.empty();
+}
+
+const Json& empty_object_json() {
+  static const Json value = Json::object();
+  return value;
+}
+
+const Json& normalized_params_ref(const Json& params) {
+  if (params.is_null()) {
+    return empty_object_json();
+  }
+  return params;
+}
+
+void append_separator(std::string& output, bool& first) {
+  if (!first) {
+    output.push_back(',');
+  }
+  first = false;
+}
+
+void append_json_property(std::string& output, bool& first,
+                          std::string_view name, const Json& value) {
+  append_separator(output, first);
+  output += Json(std::string(name)).dump();
+  output.push_back(':');
+  output += value.dump();
+}
+
+void append_string_property(std::string& output, bool& first,
+                            std::string_view name, std::string_view value) {
+  append_separator(output, first);
+  output += Json(std::string(name)).dump();
+  output.push_back(':');
+  output += Json(std::string(value)).dump();
+}
+
+void append_int_property(std::string& output, bool& first,
+                         std::string_view name, int value) {
+  append_separator(output, first);
+  output += Json(std::string(name)).dump();
+  output.push_back(':');
+  output += std::to_string(value);
+}
+
+core::Result<core::Unit> append_params_property(
+    std::string& output, bool& first, const Json& params,
+    const std::optional<Json>& meta) {
+  if (!meta.has_value()) {
+    const Json& normalized = normalized_params_ref(params);
+    if (should_serialize_params(normalized)) {
+      append_json_property(output, first, "params", normalized);
+    }
+    return core::Unit{};
+  }
+
+  Json merged = normalized_params(params);
+  if (!merged.is_object()) {
+    return mcp::core::unexpected(
+        make_protocol_error(static_cast<int>(ErrorCode::InvalidRequest),
+                            "params must be an object when _meta is present"));
+  }
+  merged["_meta"] = *meta;
+  append_json_property(output, first, "params", merged);
+  return core::Unit{};
+}
+
+std::string serialize_error_object(const ErrorObject& error) {
+  std::string output;
+  output.reserve(64 + error.message.size());
+  output.push_back('{');
+  bool first = true;
+  append_int_property(output, first, "code", error.code);
+  append_string_property(output, first, "message", error.message);
+  if (error.data.has_value()) {
+    append_json_property(output, first, "data", *error.data);
+  }
+  output.push_back('}');
+  return output;
+}
+
+core::Result<std::string> serialize_request_direct(
+    const JsonRpcRequest& request) {
+  std::string output;
+  output.reserve(64 + request.method.size());
+  output.push_back('{');
+  bool first = true;
+  append_json_property(output, first, "id", request_id_to_json(request.id));
+  append_string_property(output, first, "jsonrpc", JsonRpcVersion);
+  append_string_property(output, first, "method", request.method);
+  const auto params =
+      append_params_property(output, first, request.params, request.meta);
+  if (!params.has_value()) {
+    return mcp::core::unexpected(params.error());
+  }
+  output.push_back('}');
+  return output;
+}
+
+core::Result<std::string> serialize_response_direct(
+    const JsonRpcResponse& response) {
+  std::string output;
+  output.reserve(96);
+  output.push_back('{');
+  bool first = true;
+  if (response.id.has_value()) {
+    append_json_property(output, first, "id", request_id_to_json(*response.id));
+  } else {
+    append_json_property(output, first, "id", nullptr);
+  }
+  append_string_property(output, first, "jsonrpc", JsonRpcVersion);
+  if (response.meta.has_value()) {
+    append_json_property(output, first, "_meta", *response.meta);
+  }
+  if (response.error.has_value()) {
+    append_separator(output, first);
+    output += Json("error").dump();
+    output.push_back(':');
+    output += serialize_error_object(*response.error);
+    output.push_back('}');
+    return output;
+  }
+
+  if (!response.result.has_value()) {
+    return mcp::core::unexpected(make_protocol_error(
+        static_cast<int>(ErrorCode::InvalidRequest),
+        "Response must contain exactly one of result or error"));
+  }
+
+  append_json_property(output, first, "result", *response.result);
+  output.push_back('}');
+  return output;
+}
+
+core::Result<std::string> serialize_notification_direct(
+    const JsonRpcNotification& notification) {
+  std::string output;
+  output.reserve(48 + notification.method.size());
+  output.push_back('{');
+  bool first = true;
+  append_string_property(output, first, "jsonrpc", JsonRpcVersion);
+  append_string_property(output, first, "method", notification.method);
+  const auto params = append_params_property(output, first, notification.params,
+                                             notification.meta);
+  if (!params.has_value()) {
+    return mcp::core::unexpected(params.error());
+  }
+  output.push_back('}');
+  return output;
 }
 
 std::optional<RequestId> from_rpc_id(const jsonrpcpp::Id& id) {
@@ -133,12 +387,12 @@ core::Result<JsonRpcRequest> from_request(const jsonrpcpp::Request& request,
   message.params = normalized_params(request.params().to_json());
   const auto meta = meta_from_params(message.params);
   if (!meta) {
-    return std::unexpected(meta.error());
+    return mcp::core::unexpected(meta.error());
   }
   message.meta = *meta;
   const auto id = from_rpc_id(request.id());
   if (!id.has_value()) {
-    return std::unexpected(
+    return mcp::core::unexpected(
         make_protocol_error(static_cast<int>(ErrorCode::InvalidRequest),
                             "Request id must not be null"));
   }
@@ -154,7 +408,7 @@ core::Result<JsonRpcNotification> from_notification(
   message.params = normalized_params(notification.params().to_json());
   const auto meta = meta_from_params(message.params);
   if (!meta) {
-    return std::unexpected(meta.error());
+    return mcp::core::unexpected(meta.error());
   }
   message.meta = *meta;
   return message;
@@ -166,7 +420,7 @@ core::Result<JsonRpcResponse> from_response(const jsonrpcpp::Response& response,
   message.id = from_rpc_id(response.id());
   const auto meta = meta_from_document(document);
   if (!meta) {
-    return std::unexpected(meta.error());
+    return mcp::core::unexpected(meta.error());
   }
   message.meta = *meta;
   if (response.error()) {
@@ -248,18 +502,23 @@ core::Result<JsonRpcMessage> parse_message(std::string_view text) {
   try {
     const auto document = parse_json_document(text);
     if (!document) {
-      return std::unexpected(document.error());
+      return mcp::core::unexpected(document.error());
+    }
+
+    const auto version = validate_jsonrpc_version(*document);
+    if (!version) {
+      return mcp::core::unexpected(version.error());
     }
 
     if (document->contains("result") && document->contains("error")) {
-      return std::unexpected(make_protocol_error(
+      return mcp::core::unexpected(make_protocol_error(
           static_cast<int>(ErrorCode::InvalidRequest),
           "Response must contain exactly one of result or error"));
     }
 
     const auto entity = jsonrpcpp::Parser::do_parse_json(*document);
     if (!entity) {
-      return std::unexpected(
+      return mcp::core::unexpected(
           make_protocol_error(static_cast<int>(ErrorCode::InvalidRequest),
                               "JSON-RPC parser returned no entity"));
     }
@@ -268,13 +527,13 @@ core::Result<JsonRpcMessage> parse_message(std::string_view text) {
       const auto request =
           std::dynamic_pointer_cast<jsonrpcpp::Request>(entity);
       if (!request) {
-        return std::unexpected(
+        return mcp::core::unexpected(
             make_protocol_error(static_cast<int>(ErrorCode::InvalidRequest),
                                 "JSON-RPC request could not be decoded"));
       }
       const auto converted = from_request(*request, *document);
       if (!converted) {
-        return std::unexpected(converted.error());
+        return mcp::core::unexpected(converted.error());
       }
       return JsonRpcMessage{*converted};
     }
@@ -283,13 +542,13 @@ core::Result<JsonRpcMessage> parse_message(std::string_view text) {
       const auto notification =
           std::dynamic_pointer_cast<jsonrpcpp::Notification>(entity);
       if (!notification) {
-        return std::unexpected(
+        return mcp::core::unexpected(
             make_protocol_error(static_cast<int>(ErrorCode::InvalidRequest),
                                 "JSON-RPC notification could not be decoded"));
       }
       const auto converted = from_notification(*notification, *document);
       if (!converted) {
-        return std::unexpected(converted.error());
+        return mcp::core::unexpected(converted.error());
       }
       return JsonRpcMessage{*converted};
     }
@@ -298,34 +557,34 @@ core::Result<JsonRpcMessage> parse_message(std::string_view text) {
       const auto response =
           std::dynamic_pointer_cast<jsonrpcpp::Response>(entity);
       if (!response) {
-        return std::unexpected(
+        return mcp::core::unexpected(
             make_protocol_error(static_cast<int>(ErrorCode::InvalidRequest),
                                 "JSON-RPC response could not be decoded"));
       }
       const auto converted = from_response(*response, *document);
       if (!converted) {
-        return std::unexpected(converted.error());
+        return mcp::core::unexpected(converted.error());
       }
       return JsonRpcMessage{*converted};
     }
 
     if (entity->is_batch()) {
-      return std::unexpected(
+      return mcp::core::unexpected(
           make_protocol_error(static_cast<int>(ErrorCode::InvalidRequest),
                               "Batch messages are not supported"));
     }
 
-    return std::unexpected(
+    return mcp::core::unexpected(
         make_protocol_error(static_cast<int>(ErrorCode::InvalidRequest),
                             "Unsupported JSON-RPC entity"));
   } catch (const jsonrpcpp::ParseErrorException& exception) {
-    return std::unexpected(translate_exception(exception));
+    return mcp::core::unexpected(translate_exception(exception));
   } catch (const jsonrpcpp::InvalidRequestException& exception) {
-    return std::unexpected(translate_exception(exception));
+    return mcp::core::unexpected(translate_exception(exception));
   } catch (const jsonrpcpp::RpcEntityException& exception) {
-    return std::unexpected(translate_exception(exception));
+    return mcp::core::unexpected(translate_exception(exception));
   } catch (const std::exception& exception) {
-    return std::unexpected(make_protocol_error(
+    return mcp::core::unexpected(make_protocol_error(
         static_cast<int>(ErrorCode::InternalError), exception.what()));
   }
 }
@@ -335,59 +594,11 @@ core::Result<std::string> serialize_message(const JsonRpcMessage& message) {
       [](const auto& value) -> core::Result<std::string> {
         using T = std::decay_t<decltype(value)>;
         if constexpr (std::is_same_v<T, JsonRpcRequest>) {
-          Json json = Json::object();
-          json["jsonrpc"] = std::string(JsonRpcVersion);
-          json["id"] = request_id_to_json(value.id);
-          json["method"] = value.method;
-          const auto params = params_with_meta(value.params, value.meta);
-          if (!params) {
-            return std::unexpected(params.error());
-          }
-          if (should_serialize_params(*params)) {
-            json["params"] = *params;
-          }
-          return json.dump();
+          return serialize_request_direct(value);
         } else if constexpr (std::is_same_v<T, JsonRpcResponse>) {
-          Json json = Json::object();
-          json["jsonrpc"] = std::string(JsonRpcVersion);
-          if (value.id.has_value()) {
-            json["id"] = request_id_to_json(*value.id);
-          } else {
-            json["id"] = nullptr;
-          }
-          if (value.meta.has_value()) {
-            json["_meta"] = *value.meta;
-          }
-          if (value.error.has_value()) {
-            json["error"] = Json::object();
-            json["error"]["code"] = value.error->code;
-            json["error"]["message"] = value.error->message;
-            if (value.error->data.has_value()) {
-              json["error"]["data"] = *value.error->data;
-            }
-            return json.dump();
-          }
-
-          if (!value.result.has_value()) {
-            return std::unexpected(make_protocol_error(
-                static_cast<int>(ErrorCode::InvalidRequest),
-                "Response must contain exactly one of result or error"));
-          }
-
-          json["result"] = *value.result;
-          return json.dump();
+          return serialize_response_direct(value);
         } else {
-          Json json = Json::object();
-          json["jsonrpc"] = std::string(JsonRpcVersion);
-          json["method"] = value.method;
-          const auto params = params_with_meta(value.params, value.meta);
-          if (!params) {
-            return std::unexpected(params.error());
-          }
-          if (should_serialize_params(*params)) {
-            json["params"] = *params;
-          }
-          return json.dump();
+          return serialize_notification_direct(value);
         }
       },
       message);
@@ -396,14 +607,14 @@ core::Result<std::string> serialize_message(const JsonRpcMessage& message) {
 core::Result<JsonRpcRequest> parse_request(std::string_view text) {
   const auto message = parse_message(text);
   if (!message) {
-    return std::unexpected(message.error());
+    return mcp::core::unexpected(message.error());
   }
 
   if (const auto* request = std::get_if<JsonRpcRequest>(&*message)) {
     return *request;
   }
 
-  return std::unexpected(
+  return mcp::core::unexpected(
       make_protocol_error(static_cast<int>(ErrorCode::InvalidRequest),
                           "JSON-RPC message is not a request"));
 }
@@ -411,14 +622,14 @@ core::Result<JsonRpcRequest> parse_request(std::string_view text) {
 core::Result<JsonRpcResponse> parse_response(std::string_view text) {
   const auto message = parse_message(text);
   if (!message) {
-    return std::unexpected(message.error());
+    return mcp::core::unexpected(message.error());
   }
 
   if (const auto* response = std::get_if<JsonRpcResponse>(&*message)) {
     return *response;
   }
 
-  return std::unexpected(
+  return mcp::core::unexpected(
       make_protocol_error(static_cast<int>(ErrorCode::InvalidRequest),
                           "JSON-RPC message is not a response"));
 }
@@ -426,29 +637,29 @@ core::Result<JsonRpcResponse> parse_response(std::string_view text) {
 core::Result<JsonRpcNotification> parse_notification(std::string_view text) {
   const auto message = parse_message(text);
   if (!message) {
-    return std::unexpected(message.error());
+    return mcp::core::unexpected(message.error());
   }
 
   if (const auto* notification = std::get_if<JsonRpcNotification>(&*message)) {
     return *notification;
   }
 
-  return std::unexpected(
+  return mcp::core::unexpected(
       make_protocol_error(static_cast<int>(ErrorCode::InvalidRequest),
                           "JSON-RPC message is not a notification"));
 }
 
 core::Result<std::string> serialize_request(const JsonRpcRequest& request) {
-  return serialize_message(JsonRpcMessage{request});
+  return serialize_request_direct(request);
 }
 
 core::Result<std::string> serialize_response(const JsonRpcResponse& response) {
-  return serialize_message(JsonRpcMessage{response});
+  return serialize_response_direct(response);
 }
 
 core::Result<std::string> serialize_notification(
     const JsonRpcNotification& notification) {
-  return serialize_message(JsonRpcMessage{notification});
+  return serialize_notification_direct(notification);
 }
 
 core::Result<std::string> serialize_error(const ErrorObject& error,
