@@ -26,6 +26,7 @@ RELEASE_EVIDENCE_REQUIRED_FILES = [
     "docs/auth_user_guide.md",
     "docs/compatibility_policy.md",
     "docs/dependency_policy.md",
+    "docs/capability_lifecycles.md",
     "docs/ecosystem_maturity_evidence.md",
     "docs/examples.md",
     "docs/official_sdk_candidate_process.md",
