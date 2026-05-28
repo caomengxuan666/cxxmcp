@@ -168,6 +168,51 @@ struct ServerHandlerInterface {
     (void)cancellation;
     return on_sampling(params, context);
   }
+  virtual std::optional<core::Result<protocol::Json>> on_set_level(
+      const protocol::Json&) const {
+    return std::nullopt;
+  }
+  virtual std::optional<core::Result<protocol::Json>> on_set_level(
+      const protocol::Json& params, const SessionContext& context) const {
+    (void)context;
+    return on_set_level(params);
+  }
+  virtual std::optional<core::Result<protocol::Json>> on_set_level(
+      const protocol::Json& params, const SessionContext& context,
+      CancellationToken cancellation) const {
+    (void)cancellation;
+    return on_set_level(params, context);
+  }
+  virtual std::optional<core::Result<protocol::Json>> on_subscribe(
+      const protocol::Json&) const {
+    return std::nullopt;
+  }
+  virtual std::optional<core::Result<protocol::Json>> on_subscribe(
+      const protocol::Json& params, const SessionContext& context) const {
+    (void)context;
+    return on_subscribe(params);
+  }
+  virtual std::optional<core::Result<protocol::Json>> on_subscribe(
+      const protocol::Json& params, const SessionContext& context,
+      CancellationToken cancellation) const {
+    (void)cancellation;
+    return on_subscribe(params, context);
+  }
+  virtual std::optional<core::Result<protocol::Json>> on_unsubscribe(
+      const protocol::Json&) const {
+    return std::nullopt;
+  }
+  virtual std::optional<core::Result<protocol::Json>> on_unsubscribe(
+      const protocol::Json& params, const SessionContext& context) const {
+    (void)context;
+    return on_unsubscribe(params);
+  }
+  virtual std::optional<core::Result<protocol::Json>> on_unsubscribe(
+      const protocol::Json& params, const SessionContext& context,
+      CancellationToken cancellation) const {
+    (void)cancellation;
+    return on_unsubscribe(params, context);
+  }
   virtual void on_logging(std::string_view, std::string_view) const {}
   virtual std::optional<protocol::JsonRpcResponse> on_raw_request(
       const protocol::JsonRpcRequest&, const SessionContext&) const {
@@ -474,6 +519,36 @@ inline std::optional<protocol::JsonRpcResponse> dispatch_server_handler_request(
           request, *result, [](const protocol::ResourcesReadResult& value) {
             return protocol::resources_read_result_to_json(value);
           });
+    }
+    return std::nullopt;
+  }
+
+  if (request.method == protocol::LoggingSetLevelMethod) {
+    const auto result =
+        handler.on_set_level(request.params, context, cancellation);
+    if (result.has_value()) {
+      return server_handler_result_response(
+          request, *result, [](const protocol::Json& value) { return value; });
+    }
+    return std::nullopt;
+  }
+
+  if (request.method == protocol::ResourcesSubscribeMethod) {
+    const auto result =
+        handler.on_subscribe(request.params, context, cancellation);
+    if (result.has_value()) {
+      return server_handler_result_response(
+          request, *result, [](const protocol::Json& value) { return value; });
+    }
+    return std::nullopt;
+  }
+
+  if (request.method == protocol::ResourcesUnsubscribeMethod) {
+    const auto result =
+        handler.on_unsubscribe(request.params, context, cancellation);
+    if (result.has_value()) {
+      return server_handler_result_response(
+          request, *result, [](const protocol::Json& value) { return value; });
     }
     return std::nullopt;
   }
