@@ -293,6 +293,34 @@ cmake --build build-auth</code></pre>
       </section>
 
       <section class="section">
+        <h2>Server-Side OAuth Endpoints</h2>
+        <p>
+          When <code>MCP_ENABLE_AUTH=ON</code>, <code>HttpTransport</code>
+          can serve RFC 8414 authorization server metadata and wire
+          application-provided callbacks to standard OAuth HTTP routes.
+        </p>
+        <ul>
+          <li><code>/.well-known/oauth-authorization-server</code> &mdash; RFC 8414 metadata discovery.</li>
+          <li><code>/authorize</code> &mdash; Authorization endpoint (GET). Redirects with authorization code.</li>
+          <li><code>/token</code> &mdash; Token endpoint (POST). Exchanges code for access token.</li>
+          <li><code>/register</code> &mdash; Dynamic client registration (POST, RFC 7591).</li>
+          <li><code>/revoke</code> &mdash; Token revocation (POST, RFC 7009).</li>
+        </ul>
+        <p>
+          The transport owns the HTTP routing; the application owns the
+          authorization logic through <code>std::function</code> callbacks
+          configured in <code>AuthorizationServerConfig</code>.
+        </p>
+        <pre><code>mcp::auth::AuthorizationServerConfig as_config;
+as_config.issuer = "https://auth.example.com";
+as_config.authorization_handler = [](const auto&amp; params) { /* ... */ };
+as_config.token_handler = [](const auto&amp; params) { /* ... */ };
+
+mcp::server::HttpTransportOptions options;
+options.authorization_server = std::move(as_config);</code></pre>
+      </section>
+
+      <section class="section">
         <h2>Client Bearer Token Helper</h2>
         <p>
           <code>mcp::client::HttpTransportOptions::auth_header</code> and
@@ -323,9 +351,9 @@ cmake --build build-auth</code></pre>
         <h2>Explicit Non-Goals</h2>
         <p>
           The SDK still does not provide a built-in HTTP JWKS client,
-          browser-opening or localhost loopback UX, persistent credential
-          storage, or an OAuth authorization server. Those remain application
-          responsibilities or future integration points.
+          browser-opening or localhost loopback UX, or persistent credential
+          storage. Those remain application responsibilities or future
+          integration points.
         </p>
       </section>
     </main>
