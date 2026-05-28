@@ -873,6 +873,9 @@ true:
   `docs/examples.md`.
 - [x] Track the external `cxxmcp-examples` repository as downstream validation
   in `docs/examples.md` without making it part of the in-tree examples contract.
+- [x] Track `ServerHandlerInterface` overload collapse as next-major design
+  debt in `docs/project_assessment.md`; do not keep it as an open P2 source
+  item because it is a breaking API refactor.
 
 ## P2: Runtime, Gateway, CLI Separation
 
