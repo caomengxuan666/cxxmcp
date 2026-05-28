@@ -128,7 +128,7 @@ workflow run URL, and release URL fields before publishing.
 - [ ] Source archive checksum was recorded in release notes.
 - [ ] Source archive content verification passed: SDK sources, verifier
       scripts, docs, package-smoke tests, and external consumer templates are
-      present; generated Doxygen, runtime, and CLI sources are absent.
+      present; generated Doxygen and external gateway/CLI sources are absent.
 - [ ] Dependency review followed `docs/dependency_policy.md`: time-sensitive
       upstream-status claims such as vendored `tl::expected`, private
       `jsonrpcpp`, and hidden `cpp-httplib` usage were rechecked for this exact
@@ -172,14 +172,15 @@ workflow run URL, and release URL fields before publishing.
 - [ ] README and README_zh present `Peer` / `Service` before concrete
       `Client` / `Server` APIs.
 - [ ] Examples listed as first-choice SDK examples use `Peer` / `Service`.
-- [ ] Examples listed as compatibility, low-level, or runtime tooling examples
-      are labeled that way in their source comments or surrounding docs.
+- [ ] Examples listed as compatibility or low-level examples are labeled that
+      way in their source comments or surrounding docs.
 - [ ] Changelog entries describe the same canonical Peer/Service path.
 - [ ] Compatibility policy, release gates, release evidence artifact, and
       package targets agree on the supported compiler/generator/runtime matrix.
 - [ ] Generated API docs and release evidence present `Peer` / `Service` as the
       canonical SDK path.
-- [ ] Optional runtime, gateway, CLI, app, adapters, and plugin SDK remain
+- [ ] External gateway/runtime/CLI/app tooling remains outside this SDK
+      repository and package contract; optional adapters and plugin SDK remain
       outside the core SDK contract.
 
 ## Ecosystem And Registry Review

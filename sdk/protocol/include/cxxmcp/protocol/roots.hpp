@@ -25,7 +25,7 @@ struct Root {
   /// Root URI. The interpretation is transport/client specific.
   std::string uri;
   /// Optional human-readable name for display.
-  std::string name;
+  std::optional<std::string> name;
   /// Optional `_meta` extension object preserved on the wire.
   std::optional<Json> meta;
   /// Unknown JSON members preserved for forward-compatible round trips.

@@ -1,7 +1,7 @@
 # Examples
 
 The in-tree examples are intentionally compact SDK flows. They are not a
-sample application suite and should not introduce package, runtime, or gateway
+sample application suite and should not introduce package or external tooling
 requirements into the default SDK path.
 
 ## First-Choice SDK Examples
@@ -31,8 +31,9 @@ requirements into the default SDK path.
 
 ## Runtime Tooling Example
 
-- `gateway_runtime.cpp`: optional runtime/gateway composition. This is useful
-  for tooling development but is not the canonical SDK entry path.
+Runtime/gateway examples have moved to the external gateway repository. This SDK
+repository does not ship `gateway_runtime.cpp` or present gateway tooling as a
+canonical SDK example path.
 
 `ctest --preset examples` runs self-contained smoke examples. Long-running
 server samples and externally hosted HTTP samples are build-checked but are not
@@ -72,6 +73,3 @@ For release/vcpkg evidence, keep at least these downstream scenarios green:
   transports, and transport adapters. See
   [Transport Adapter Ergonomics](transport_adapters.md) for the stable helper
   layer used by custom source/sink and queue integrations.
-- Optional runtime/gateway examples when the consumed package exposes those
-  targets; installed SDK-only package checks may skip them without weakening
-  the core SDK evidence.

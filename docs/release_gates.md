@@ -22,7 +22,7 @@ registered through `cxxmcp_mark_release_blocking()`.
 - `public_header_*`: each canonical public header compiles independently under
   the SDK C++ standard.
 - `public_targets`: narrow SDK package targets remain consumable without
-  linking runtime or gateway layers.
+  linking external tooling layers.
 - `package_smoke`: installed package output is consumed from a clean external
   CMake project with `find_package(cxxmcp CONFIG REQUIRED)`. The external
   consumer configure must use the same release-matrix generator and compiler
@@ -69,7 +69,7 @@ registered through `cxxmcp_mark_release_blocking()`.
 
 - `build-config-smoke`: the release-gates workflow builds the SDK, client,
   server, and examples in both Debug and Release modes on Linux/Ninja with
-  runtime, gateway, CLI, tests, and docs disabled. This keeps release-mode
+  tests and docs disabled. This keeps release-mode
   compile coverage in CI without doubling the full cross-SDK conformance
   matrix.
 - `performance-evidence-linux-gcc-ninja`: the release-gates workflow builds
@@ -123,7 +123,7 @@ registered through `cxxmcp_mark_release_blocking()`.
   `transport_adapters`: concrete and compatibility transport behavior,
   including failure-path coverage plus short HTTP concurrent-session and
   many-in-flight request smoke coverage. The current HTTP backend decision is
-  recorded in [HTTP transport backend evidence](http_transport_backend_evidence.md);
+  recorded in `docs/http_transport_backend_evidence.md`;
   another HTTP stack requires measured load, lifecycle, sanitizer, or
   downstream workload evidence.
 - `client_server`, `sdk`: canonical Peer/Service, request lifecycle,
@@ -173,7 +173,7 @@ public-header, auth, OpenSSL auth, package-smoke, and interop testcase names to
 be present in the corresponding artifacts. It also opens the final SDK source
 archive and verifies that SDK sources, release verifier scripts, docs, package
 smoke tests, and external consumer templates are present while generated
-Doxygen output, runtime sources, and CLI sources stay out of the SDK source
+Doxygen output and external gateway/CLI sources stay out of the SDK source
 package. The same verifier opens the final release tarballs produced by
 `release-sdk.yml` and checks that release-gates, Doxygen, source, and release
 evidence archives contain their expected top-level artifacts.
@@ -194,9 +194,9 @@ interop matrix:
 
 The `scripts/check_release_evidence.py` verifier runs before the release
 evidence artifact is uploaded. It fails the workflow if the release evidence is
-missing required documents, if SDK API docs accidentally include runtime or
-tooling headers, if pinned interop versions are absent, or if compatibility and
-runtime examples are not labelled as non-canonical SDK paths.
+missing required documents, if SDK API docs accidentally include external
+tooling headers, if pinned interop versions are absent, or if compatibility
+examples are not labelled as non-canonical SDK paths.
 
 `docs/technical_audit.md` travels in the release evidence bundle to preserve
 the code-defect audit trail. It is not a substitute for release-gates artifacts:

@@ -25,7 +25,6 @@ INPUT                  = README.md \
                          docs/release_candidate_checklist.md \
                          docs/release_notes_template.md \
                          docs/request_lifecycle.md \
-                         docs/sdk_peer_service_migration.md \
                          docs/task_lifecycle.md \
                          todo.md \
                          sdk/include \

@@ -250,6 +250,79 @@ struct JsonFieldTraits<Json> {
   }
 };
 
+template <>
+struct JsonFieldTraits<IconTheme> {
+  static void serialize(Json& json, const char* key, IconTheme value) {
+    json[key] = std::string(icon_theme_to_string(value));
+  }
+
+  static bool deserialize(const Json& json, const char* key,
+                          IconTheme& target) {
+    if (!json.contains(key) || !json.at(key).is_string()) {
+      return false;
+    }
+    auto value = icon_theme_from_string(json.at(key).get<std::string>());
+    if (!value.has_value()) {
+      return false;
+    }
+    target = *value;
+    return true;
+  }
+};
+
+template <>
+struct JsonFieldTraits<Icon> {
+  static void serialize(Json& json, const char* key, const Icon& value) {
+    json[key] = icon_to_json(value);
+  }
+
+  static bool deserialize(const Json& json, const char* key, Icon& target) {
+    if (!json.contains(key)) {
+      return false;
+    }
+    auto value = icon_from_json(json.at(key));
+    if (!value.has_value()) {
+      return false;
+    }
+    target = std::move(*value);
+    return true;
+  }
+};
+
+template <>
+struct JsonFieldTraits<std::vector<Icon>> {
+  static void serialize(Json& json, const char* key,
+                        const std::vector<Icon>& value) {
+    if (value.empty()) {
+      return;
+    }
+    json[key] = Json::array();
+    for (const auto& icon : value) {
+      json[key].push_back(icon_to_json(icon));
+    }
+  }
+
+  static bool deserialize(const Json& json, const char* key,
+                          std::vector<Icon>& target) {
+    if (!json.contains(key)) {
+      return true;
+    }
+    if (!json.at(key).is_array()) {
+      return false;
+    }
+    target.clear();
+    target.reserve(json.at(key).size());
+    for (const auto& item : json.at(key)) {
+      auto icon = icon_from_json(item);
+      if (!icon.has_value()) {
+        return false;
+      }
+      target.push_back(std::move(*icon));
+    }
+    return true;
+  }
+};
+
 // ---------------------------------------------------------------------------
 // Traits for std::optional<T>
 // ---------------------------------------------------------------------------

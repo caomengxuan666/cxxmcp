@@ -1,14 +1,13 @@
-# Runtime And Gateway Tools
+# External Gateway Boundary
 
-`cxxmcp` is presented first as a C++ MCP SDK. Runtime, gateway, CLI, app,
-adapter, and plugin tooling are optional layers built on top of the SDK and are
-not part of the core public SDK contract.
+`cxxmcp` is presented first as a C++ MCP SDK. Gateway, runtime, CLI, app,
+profile, policy, discovery, import/export, and hosted-tool management now live
+outside this SDK repository and are not part of the core public SDK contract or
+the SDK package contract.
 
-## Scope
+## SDK Boundary
 
-Runtime and gateway code may compose SDK targets to manage local MCP servers,
-profiles, policies, imports, exports, and hosted tool exposure. These concepts
-must stay outside canonical public SDK headers under:
+The canonical SDK include roots must stay focused on:
 
 - `cxxmcp/protocol`
 - `cxxmcp/transport`
@@ -18,46 +17,44 @@ must stay outside canonical public SDK headers under:
 - `cxxmcp/client`
 - `cxxmcp/server`
 
-The SDK boundary gate checks for runtime, gateway, profile, policy, discovery,
+The SDK boundary gate checks for gateway, runtime, profile, policy, discovery,
 import/export, CLI, and observability leaks in canonical SDK headers.
 
 ## Package Boundary
 
-SDK package-manager paths keep runtime and gateway disabled by default. Package
-consumers should be able to install and link `cxxmcp::protocol`,
-`cxxmcp::client`, `cxxmcp::server`, or `cxxmcp::sdk` without pulling runtime
-tooling dependencies such as spdlog or CLI11.
+SDK package-manager paths install and expose `cxxmcp::protocol`,
+`cxxmcp::client`, `cxxmcp::server`, `cxxmcp::transport`, `cxxmcp::handler`,
+`cxxmcp::peer`, `cxxmcp::service`, and `cxxmcp::sdk`. Optional
+`cxxmcp::plugin_sdk`, `cxxmcp::adapters`, and `cxxmcp::auth` targets are
+SDK-adjacent extension surfaces when explicitly enabled.
 
-Runtime and gateway targets can remain in this repository while they are useful
-for local development and examples, but they are documented as tools, not as the
-SDK's primary product surface. In the SDK package-manager routes, runtime,
-gateway, and CLI targets are not part of the default installed SDK contract.
-They are build-tree and source-checkout tooling targets until a separate tools
-package/export set is created. Release notes must not imply that
-`cxxmcp::runtime`, `cxxmcp::gateway`, or `cxxmcp::cli` are guaranteed by the
-SDK-only vcpkg, Conan, or xmake package routes.
+Gateway and CLI packages must be documented, versioned, and released by their
+own repository. Release notes for this SDK must not imply that gateway/runtime
+or CLI targets are exported by SDK-only vcpkg, Conan, xmake, FetchContent, or
+CPM routes.
 
-## Extension Surfaces
+## Extension Boundary
 
 `cxxmcp::plugin_sdk` is a stable optional SDK-adjacent package surface for
-declaring lightweight tool extensions over the protocol types. It is installed
-only when `CXXMCP_ENABLE_PLUGIN_SDK=ON`, covered by package smoke, and may
-evolve only under the public API compatibility rules.
+minimal plugin declarations. It depends only on `cxxmcp::protocol` and
+`cxxmcp::core` implementation support, and must not grow gateway policy,
+discovery, profile, or CLI concepts.
 
 `cxxmcp::adapters` is a stable optional adapter-helper surface for connecting
 plugin-style declarations to the server SDK. It is installed only when
 `CXXMCP_ENABLE_ADAPTERS=ON`, depends on `cxxmcp::server` and
 `cxxmcp::plugin_sdk`, remains outside the core SDK narrative, and must not pull
-runtime, gateway, profile, policy, discovery, or CLI concepts into canonical
-SDK headers.
+gateway/runtime state into canonical SDK headers.
 
-Experimental adapter ideas that need runtime policy, discovery, registry, or
-managed gateway state must live outside these stable optional targets until a
-design note promotes them.
+Experimental adapter ideas that need external gateway policy, discovery,
+registry, or managed hosting state belong in the gateway repository until a
+design note promotes a narrow SDK extension.
 
 ## Example Boundary
 
-`examples/gateway_runtime.cpp` is a non-canonical tooling example. It should not
-be used as the first-choice SDK path in README, release notes, or package
-documentation. First-choice examples should use `Peer`, `Service`, `client`,
-`server`, and transport contracts directly.
+In-tree examples should stay focused on SDK use: `Peer`, `Service`, client,
+server, protocol, transport, auth, plugin, and adapter flows. Gateway examples
+belong in the external gateway/examples repository and should not be presented
+as the first-choice SDK path in this README, release notes, or package
+documentation. The former `gateway_runtime.cpp` example is intentionally not
+part of this SDK repository.

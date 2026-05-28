@@ -421,6 +421,25 @@ inline std::optional<ElicitationAction> elicitation_action_from_string(
   return std::nullopt;
 }
 
+template <>
+struct JsonFieldTraits<ElicitationAction> {
+  static void serialize(Json& json, const char* key, ElicitationAction value) {
+    json[key] = elicitation_action_to_string(value);
+  }
+  static bool deserialize(const Json& json, const char* key,
+                          ElicitationAction& target) {
+    if (!json.contains(key) || !json.at(key).is_string()) {
+      return false;
+    }
+    auto val = elicitation_action_from_string(json.at(key).get<std::string>());
+    if (!val.has_value()) {
+      return false;
+    }
+    target = *val;
+    return true;
+  }
+};
+
 /// @brief Converts an elicitation mode to its MCP string value.
 inline std::string elicitation_mode_to_string(ElicitationMode mode) {
   switch (mode) {

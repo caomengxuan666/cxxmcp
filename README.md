@@ -6,30 +6,42 @@
 [![Pages](https://github.com/caomengxuan666/cxxmcp/actions/workflows/pages.yml/badge.svg)](https://caomengxuan666.github.io/cxxmcp/)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![MCP](https://img.shields.io/badge/protocol-Model%20Context%20Protocol-111827.svg)](https://modelcontextprotocol.io/)
-[![SDK](https://img.shields.io/badge/package-C%2B%2B%20SDK-0F766E.svg)](#using-as-a-library)
-
-> Status: `cxxmcp` is a community C++ MCP SDK preparing official SDK candidate
-> evidence. It is not an official MCP SDK unless accepted or listed by the MCP
-> maintainers.
+[![SDK](https://img.shields.io/badge/package-C%2B%2B%20SDK-0F766E.svg)](#quick-install)
 
 `cxxmcp` is a modern C++17 SDK for building
-[Model Context Protocol](https://modelcontextprotocol.io/) clients and servers.
+[Model Context Protocol](https://modelcontextprotocol.io/) clients and servers
+in native C++ applications.
+
+Use it to expose local tools over MCP, connect to existing MCP servers, or embed
+typed MCP protocol support into your own client/server process without adopting
+an additional hosting layer.
+
+Read this in [Chinese](README_zh.md).
+
+## Start Here
+
+| I want to... | Use |
+|---|---|
+| Build an MCP server with typed tools | `cxxmcp::server` and `mcp::ServerPeer` |
+| Connect to an MCP server | `cxxmcp::client` and `mcp::ClientPeer` |
+| Share protocol DTOs or JSON-RPC helpers | `cxxmcp::protocol` |
+| Use the complete SDK surface | `cxxmcp::sdk` |
 
 The public SDK surface is intentionally narrow and package-friendly:
 `protocol`, `transport`, `handler`, `peer`, `service`, `client`, and `server`
-are the core library layers.
-
-Read this in [Chinese](README_zh.md).
+are the core library layers. Tooling and application hosting stay outside the
+core SDK contract.
 
 ## Contents
 
 - [Why cxxmcp](#why-cxxmcp)
 - [Quick Install](#quick-install)
-- [Quality Signals](#quality-signals)
+- [Quick Start](#quick-start)
 - [Capability Snapshot](#capability-snapshot)
+- [SDK Map](#sdk-map)
+- [Quality Signals](#quality-signals)
 - [Using As A Library](#using-as-a-library)
 - [Build From Source](#build-from-source)
-- [Quick Start](#quick-start)
 - [Package Targets](#package-targets)
 - [Protocol Boundary](#protocol-boundary)
 - [Capability Classification](#capability-classification)
@@ -42,36 +54,42 @@ Read this in [Chinese](README_zh.md).
 
 ## Why cxxmcp
 
-- C++17 SDK with CMake package targets and install smoke coverage
-- Typed MCP protocol models with raw JSON-RPC escape hatches
-- Client and server libraries for embedded C++ applications
+- Normal CMake consumption with `find_package(cxxmcp CONFIG REQUIRED)`
+- C++17 public SDK targets with typed MCP protocol models
+- Embeddable client and server libraries for real C++ applications
 - RMCP-style `Peer`, `Service`, and handler boundaries for SDK-first authoring
 - stdio, process stdio, Streamable HTTP, and legacy SSE-compatible transport
   paths
 - Typed tool, prompt, resource, completion, elicitation, sampling, task,
   progress, and cancellation surfaces
-- Local RMCP interoperability and package-smoke tests used as release gates
+- Raw JSON-RPC escape hatches for vendor-specific or future MCP behavior
+- Package-smoke and cross-SDK interoperability tests used as release gates
 
 ## Quick Install
 
-Install a local SDK package:
+If cxxmcp is installed into a CMake prefix, downstream use is the usual SDK
+flow:
+
+```cmake
+find_package(cxxmcp CONFIG REQUIRED)
+
+add_executable(my_server server.cpp)
+target_link_libraries(my_server PRIVATE cxxmcp::server)
+
+add_executable(my_client client.cpp)
+target_link_libraries(my_client PRIVATE cxxmcp::client)
+```
+
+Build and install a local SDK package from this checkout:
 
 ```powershell
-cmake -S . -B build -DCXXMCP_BUILD_SDK=ON -DCXXMCP_BUILD_CLIENT=ON -DCXXMCP_BUILD_SERVER=ON
+cmake -S . -B build -DCXXMCP_BUILD_CLIENT=ON -DCXXMCP_BUILD_SERVER=ON
 cmake --build build --config Release
 cmake --install build --config Release --prefix out/install/cxxmcp
 ```
 
-Consume it from a downstream CMake project:
-
-```cmake
-find_package(cxxmcp CONFIG REQUIRED)
-target_link_libraries(my_server PRIVATE cxxmcp::server)
-target_link_libraries(my_client PRIVATE cxxmcp::client)
-```
-
-Public SDK headers and package targets are C++17. Optional non-SDK targets,
-examples, and tests require C++20.
+Public SDK headers and package targets are C++17. Repository-local examples,
+tests, and documentation checks may require C++20.
 
 Package-manager work starts from the SDK-only contract:
 
@@ -82,7 +100,7 @@ Package-manager work starts from the SDK-only contract:
   [Package consumption](docs/package_consumption.md). CPM users provide or
   bootstrap their own `CPM.cmake`; cxxmcp does not install that helper.
 
-These paths build the C++17 SDK targets and leave optional tooling disabled.
+These paths build only the C++17 SDK targets from this repository.
 The vcpkg port is an overlay port for this checkout:
 
 ```powershell
@@ -96,6 +114,76 @@ registry today; a future registry port will need a release tag, SHA512 source
 archive hash, triplet-controlled linkage, and the same SDK-only dependency
 contract.
 
+## Quick Start
+
+Start with the normal CMake target for the side you are building:
+
+```cmake
+find_package(cxxmcp CONFIG REQUIRED)
+
+add_executable(my_mcp_server server.cpp)
+target_link_libraries(my_mcp_server PRIVATE cxxmcp::server)
+```
+
+Then create a peer, register typed handlers, and serve it over a transport:
+
+```cpp
+#include <utility>
+
+#include <cxxmcp/peer.hpp>
+#include <cxxmcp/server.hpp>
+#include <cxxmcp/service.hpp>
+
+int main() {
+    auto peer = mcp::ServerPeer::builder()
+        .name("demo-server")
+        .version("1.0.0")
+        .stdio()
+        .tool(mcp::server::tool<mcp::protocol::Json, mcp::protocol::Json>("echo")
+            .description("Echo the incoming payload")
+            .handler([](const mcp::protocol::Json& input) {
+                return mcp::protocol::Json{{"echo", input}};
+            }))
+        .build();
+
+    if (!peer) {
+        return 1;
+    }
+
+    auto running = mcp::serve(std::move(*peer));
+    return running ? (running->wait().has_value() ? 0 : 1) : 1;
+}
+```
+
+For client code and lower-level transport examples, see
+[Complete Peer/Service Examples](#complete-peerservice-examples).
+
+## Capability Snapshot
+
+| Area | Status |
+|---|---|
+| Protocol and JSON-RPC | Typed models, serialization helpers, initialize version validation, raw request/notification escape hatches |
+| Client SDK | HTTP, stdio, process-stdio, request handles, typed async helpers, roots, sampling, elicitation, tasks |
+| Server SDK | Registries, typed tool helpers, prompt/resource handlers, task-aware tool calls, notifications |
+| Peer/service boundary | RMCP-like role-aware `Peer<Role>` and `Service<Role>` public shape |
+| Transports | stdio, process stdio, Streamable HTTP, legacy SSE compatibility paths |
+| Packaging | Exported CMake targets, install tree support, package-smoke fixture |
+
+## SDK Map
+
+```mermaid
+flowchart TD
+    app[Application code]
+    peer[Peer / Service]
+    sdk[Client SDK / Server SDK]
+    core[Protocol / Transport / Handler]
+    io[stdio / process stdio / Streamable HTTP / SSE compatibility]
+    app --> peer
+    peer --> sdk
+    sdk --> core
+    core --> io
+```
+
 ## Quality Signals
 
 - Release gates cover public headers, package-smoke consumption, transports,
@@ -108,35 +196,9 @@ contract.
 - The official SDK candidate path is tracked in
   [Official SDK candidate process](docs/official_sdk_candidate_process.md).
 
-## Capability Snapshot
-
-| Area | Status |
-|---|---|
-| Protocol and JSON-RPC | Typed models, serialization helpers, initialize version validation, raw request/notification escape hatches |
-| Client SDK | HTTP, stdio, process-stdio, request handles, typed async helpers, roots, sampling, elicitation, tasks |
-| Server SDK | Registries, typed tool helpers, prompt/resource handlers, task-aware tool calls, notifications |
-| Peer/service boundary | RMCP-like role-aware `Peer<Role>` and `Service<Role>` public shape |
-| Transports | stdio, process stdio, Streamable HTTP, legacy SSE compatibility paths |
-| Packaging | Exported CMake targets, install tree support, package-smoke fixture |
-| Runtime tools | Optional app, gateway, and CLI layers above the SDK |
-
-## SDK Map
-
-```mermaid
-flowchart TD
-    app[Application code]
-    peer[Peer / Service]
-    sdk[Client SDK / Server SDK]
-    core[Protocol / Transport / Handler]
-    io[stdio / process stdio / Streamable HTTP / SSE compatibility]
-    tools[Optional runtime / gateway / CLI]
-
-    app --> peer
-    peer --> sdk
-    sdk --> core
-    core --> io
-    tools -. builds on .-> sdk
-```
+Project status: `cxxmcp` is a community C++ MCP SDK preparing official SDK
+candidate evidence. It is not an official MCP SDK unless accepted or listed by
+the MCP maintainers.
 
 ## Using As A Library
 
@@ -183,7 +245,7 @@ Requirements:
 
 - CMake 3.23+
 - A C++17 compiler for SDK targets
-- A C++20 compiler when building optional runtime, CLI, examples, or tests
+- A C++20 compiler when building examples or tests
 
 Default SDK build:
 
@@ -210,7 +272,7 @@ ctest --preset examples
 Build and run the full smoke test set:
 
 ```powershell
-cmake -S . -B build-smoke -DCXXMCP_BUILD_SDK=ON -DCXXMCP_BUILD_CLIENT=ON -DCXXMCP_BUILD_SERVER=ON -DCXXMCP_BUILD_RUNTIME=ON -DCXXMCP_BUILD_TESTS=ON
+cmake -S . -B build-smoke -DCXXMCP_BUILD_SDK=ON -DCXXMCP_BUILD_CLIENT=ON -DCXXMCP_BUILD_SERVER=ON -DCXXMCP_BUILD_TESTS=ON
 cmake --build build-smoke --config Debug
 ctest --test-dir build-smoke -C Debug --output-on-failure
 ```
@@ -221,7 +283,7 @@ Install to a local prefix:
 cmake --install build-smoke --config Debug --prefix out/install/cxxmcp
 ```
 
-## Quick Start
+## Complete Peer/Service Examples
 
 ### Canonical Server Peer/Service
 
@@ -325,14 +387,12 @@ int main() {
 | `cxxmcp::server` | Embeddable MCP server SDK |
 | `cxxmcp::auth` | Optional OAuth 2.1 / DPoP contract scaffold when `CXXMCP_ENABLE_AUTH=ON` |
 | `cxxmcp::sdk` | Aggregate public SDK target |
-| `cxxmcp::runtime` | Optional runtime application layer |
-| `cxxmcp::gateway` | Optional local gateway layer |
-| `cxxmcp::cli` | Optional command-line tool |
 | `cxxmcp::plugin_sdk` | Optional plugin authoring surface |
 | `cxxmcp::adapters` | Optional adapter helpers |
 
-Runtime state, gateway profiles, policy, and CLI defaults are not part of the
-core SDK contract.
+Gateway/runtime/CLI tooling lives outside this SDK repository. The in-tree
+`plugin_sdk` and `adapters` targets are optional SDK-adjacent surfaces, not
+first-choice SDK entry points.
 
 ## Protocol Boundary
 
@@ -341,7 +401,7 @@ dialect or alternate wire format. Normal application code should use typed
 helpers for tools, prompts, resources, completion, roots, sampling,
 elicitation, tasks, progress, and cancellation. Raw JSON-RPC request and
 notification APIs remain available for vendor-specific methods, forward
-compatibility, and conformance tests. Unusual runtime integrations should be
+compatibility, and conformance tests. Unusual host integrations should be
 implemented through compatibility adapters over the public transport contracts,
 not by extending the protocol.
 
@@ -427,7 +487,7 @@ Streamable HTTP POST/GET/DELETE behavior and treat raw SSE endpoints as an
 adapter concern, not a separate SDK protocol.
 
 The current `cpp-httplib` backend decision and replacement trigger are tracked
-in [HTTP transport backend evidence](docs/http_transport_backend_evidence.md).
+in `docs/http_transport_backend_evidence.md`.
 
 ## CMake Options
 
@@ -437,18 +497,12 @@ in [HTTP transport backend evidence](docs/http_transport_backend_evidence.md).
 | `CXXMCP_BUILD_PROTOCOL` | `ON` | Build the MCP protocol library |
 | `CXXMCP_BUILD_CLIENT` | `OFF` | Build the MCP client library |
 | `CXXMCP_BUILD_SERVER` | `OFF` | Build the MCP server library |
-| `CXXMCP_BUILD_RUNTIME` | `OFF` | Build the runtime application layer |
-| `CXXMCP_BUILD_APP` | `OFF` | Build the application service library |
-| `CXXMCP_BUILD_GATEWAY` | `OFF` | Build the gateway service library |
-| `CXXMCP_BUILD_CLI` | `OFF` | Build the command-line application |
 | `CXXMCP_BUILD_EXAMPLES` | `OFF` | Build example executables |
 | `CXXMCP_BUILD_TESTS` | `BUILD_TESTING` | Build tests for enabled layers |
 | `CXXMCP_BUILD_DOCS` | `OFF` | Build Doxygen API documentation |
 | `CXXMCP_ENABLE_AUTH` | `OFF` | Build the optional OAuth 2.1 / DPoP auth contract target |
 
 `CXXMCP_BUILD_SDK` enables the protocol, client, and server layers.
-`CXXMCP_BUILD_CLI` enables the gateway, runtime, server, client, and protocol
-layers it needs.
 
 ## Async Request Executor
 
@@ -505,15 +559,11 @@ The in-tree examples preset builds compact SDK entry points:
 - Focused capability examples: `auth_dpop_openssl`, `handler_contracts`,
   `task_async_client_server`, `typed_stdio_server`, `streamable_http_client`
 - Compatibility and low-level examples: `stdio_server`, `client_loopback`
-- Optional runtime tooling example: `gateway_runtime`
-
 `ctest --preset examples` runs only self-contained smoke examples. Long-running
 stdio servers and external Streamable HTTP samples are build-checked but not run
 as standalone CTest cases.
 
-The example taxonomy is maintained in [Examples](docs/examples.md). Runtime and
-gateway tooling is documented separately in
-[Runtime and gateway tools](docs/runtime_gateway.md).
+The example taxonomy is maintained in `docs/examples.md`.
 
 The separate
 [cxxmcp-examples](https://github.com/caomengxuan666/cxxmcp-examples)
@@ -522,8 +572,8 @@ the SDK through a normal external CMake project and covers advanced surfaces
 that are intentionally broader than the compact in-tree samples: direct
 Streamable HTTP and legacy SSE, process stdio, custom transports, transport
 adapters, async request handles, cursor pagination, subscriptions,
-server-to-client callbacks, HTTP auth-lite, tasks and cancellation,
-plugin/adapters, gateway runtime, and app service management.
+server-to-client callbacks, HTTP auth-lite, tasks and cancellation, and
+plugin/adapters.
 
 ## Quality Bar
 
@@ -560,6 +610,7 @@ fixtures for RMCP, TypeScript SDK, and Python SDK clients.
 - [Security policy](SECURITY.md)
 - [Compatibility policy](docs/compatibility_policy.md)
 - [Dependency and reference policy](docs/dependency_policy.md)
+- External gateway boundary: `docs/runtime_gateway.md`
 - [Protocol model audit](docs/protocol_model_audit.md)
 - [External consumer template](templates/external_consumer)
 - [Release process](docs/release_process.md)
@@ -568,7 +619,6 @@ fixtures for RMCP, TypeScript SDK, and Python SDK clients.
 - [Release notes template](docs/release_notes_template.md)
 - [Official SDK candidate process](docs/official_sdk_candidate_process.md)
 - [Request lifecycle](docs/request_lifecycle.md)
-- [Peer/Service migration guide](docs/sdk_peer_service_migration.md)
 - [Changelog](CHANGELOG.md)
 
 ## Project Status

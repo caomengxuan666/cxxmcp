@@ -426,6 +426,25 @@ inline std::optional<ToolChoiceMode> tool_choice_mode_from_string(
   return std::nullopt;
 }
 
+template <>
+struct JsonFieldTraits<ToolChoiceMode> {
+  static void serialize(Json& json, const char* key, ToolChoiceMode value) {
+    json[key] = tool_choice_mode_to_string(value);
+  }
+  static bool deserialize(const Json& json, const char* key,
+                          ToolChoiceMode& target) {
+    if (!json.contains(key) || !json.at(key).is_string()) {
+      return false;
+    }
+    auto val = tool_choice_mode_from_string(json.at(key).get<std::string>());
+    if (!val.has_value()) {
+      return false;
+    }
+    target = *val;
+    return true;
+  }
+};
+
 /// @brief Serializes tool-choice behavior.
 inline Json tool_choice_to_json(const ToolChoice& choice) {
   Json json = Json::object();

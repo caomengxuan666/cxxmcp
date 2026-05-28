@@ -1,8 +1,8 @@
 # Package Consumption
 
 This document covers lightweight consumption paths that are useful before or
-outside central package registries. They are SDK-only paths: runtime, gateway,
-CLI, GUI, and their dependencies are not part of the SDK package contract.
+outside central package registries. They are SDK-only paths: gateway and other
+tooling live outside this package contract.
 
 ## Dependency Policy
 
@@ -28,10 +28,9 @@ installed as a public SDK header. Downstream code should use
 `cxxmcp/transport/http_transport.hpp`, `cxxmcp/client/http_transport.hpp`, or
 `cxxmcp/server/http_transport.hpp` instead of including `httplib.h`.
 
-Runtime/tooling dependencies such as spdlog and CLI11 are outside the SDK
-package contract. vcpkg/Conan package submissions for the SDK should keep
-runtime, gateway, CLI, examples, tests, and docs disabled unless a separate
-tools package is created.
+Tooling dependencies such as spdlog and CLI11 are outside the SDK package
+contract. vcpkg/Conan package submissions for the SDK should keep examples,
+tests, and docs disabled by default.
 
 ## vcpkg Overlay Port
 
@@ -73,13 +72,13 @@ Copy it next to your downstream `vcpkg.json` and replace the
 `vcpkg-configuration.json`; adjust it if your checkout lives elsewhere.
 
 The overlay port builds only the C++17 SDK package targets. It sets
-`CXXMCP_USE_SYSTEM_DEPS=ON`, disables runtime, gateway, CLI, examples, tests,
-and docs, and depends on vcpkg packages for `tl-expected`, `nlohmann-json`, and
+`CXXMCP_USE_SYSTEM_DEPS=ON`, disables examples, tests, and docs, and depends on
+vcpkg packages for `tl-expected`, `nlohmann-json`, and
 `cpp-httplib`. Until `jsonrpcpp` is accepted into vcpkg, the overlay port keeps
 using the bundled private jsonrpcpp implementation header for the protocol
 library build only. It intentionally does not depend on `jsonrpcpp` or pass
-`CXXMCP_USE_SYSTEM_JSONRPCPP=ON`. It does not make spdlog, CLI11, runtime,
-gateway, or CLI targets part of SDK package consumption.
+`CXXMCP_USE_SYSTEM_JSONRPCPP=ON`. It does not make spdlog, CLI11, or external
+gateway tooling part of SDK package consumption.
 
 The optional auth scaffold is exposed as an opt-in feature and is not part of
 the default vcpkg package path:
@@ -112,8 +111,8 @@ the repository URL and both baseline placeholders with real registry commits
 before using it.
 
 Curated-registry resubmission is gated by
-[Ecosystem maturity evidence](ecosystem_maturity_evidence.md), not by the
-presence of the overlay port alone.
+`docs/ecosystem_maturity_evidence.md`, not by the presence of the overlay port
+alone.
 
 A future vcpkg curated-registry pull request should differ from the local
 overlay port in these ways:
@@ -124,8 +123,7 @@ overlay port in these ways:
 - keep `vcpkg_check_linkage(ONLY_STATIC_LIBRARY)` while the SDK libraries are
   explicitly built as static libraries and shared-library ABI support is not
   claimed; do not force `-DBUILD_SHARED_LIBS=OFF` in the portfile;
-- keep SDK-only build options enabled and runtime, gateway, CLI, examples,
-  tests, and docs disabled;
+- keep SDK-only build options enabled and examples, tests, and docs disabled;
 - after `microsoft/vcpkg#52045` or an equivalent jsonrpcpp port is accepted,
   add `jsonrpcpp` as a normal vcpkg dependency and pass
   `CXXMCP_USE_SYSTEM_JSONRPCPP=ON`; keep it private and do not export a
@@ -164,10 +162,6 @@ FetchContent_Declare(
 )
 
 set(CXXMCP_BUILD_SDK ON CACHE BOOL "" FORCE)
-set(CXXMCP_BUILD_RUNTIME OFF CACHE BOOL "" FORCE)
-set(CXXMCP_BUILD_APP OFF CACHE BOOL "" FORCE)
-set(CXXMCP_BUILD_GATEWAY OFF CACHE BOOL "" FORCE)
-set(CXXMCP_BUILD_CLI OFF CACHE BOOL "" FORCE)
 set(CXXMCP_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
 set(CXXMCP_BUILD_TESTS OFF CACHE BOOL "" FORCE)
 set(CXXMCP_BUILD_DOCS OFF CACHE BOOL "" FORCE)
@@ -181,7 +175,8 @@ target_link_libraries(my_server PRIVATE cxxmcp::server)
 ## CPM.cmake
 
 `CPM.cmake` can consume the same SDK source archive. Keep the SDK options
-explicit so downstream builds do not accidentally pull runtime or tools.
+explicit so downstream builds do not accidentally enable examples, tests, or
+docs.
 
 Use the URL and hash from the release you intentionally pin. For release
 candidate validation, use the exact source artifact produced by that candidate
@@ -196,10 +191,6 @@ consumer-owned file path, not a file supplied by cxxmcp.
 include(cmake/CPM.cmake)
 
 set(CXXMCP_BUILD_SDK ON CACHE BOOL "" FORCE)
-set(CXXMCP_BUILD_RUNTIME OFF CACHE BOOL "" FORCE)
-set(CXXMCP_BUILD_APP OFF CACHE BOOL "" FORCE)
-set(CXXMCP_BUILD_GATEWAY OFF CACHE BOOL "" FORCE)
-set(CXXMCP_BUILD_CLI OFF CACHE BOOL "" FORCE)
 set(CXXMCP_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
 set(CXXMCP_BUILD_TESTS OFF CACHE BOOL "" FORCE)
 set(CXXMCP_BUILD_DOCS OFF CACHE BOOL "" FORCE)
@@ -285,7 +276,7 @@ The xmake-repo recipe draft lives at:
 packaging/xmake/packages/c/cxxmcp/xmake.lua
 ```
 
-It builds the same SDK source archive and disables runtime, gateway, CLI,
-examples, tests, and docs. Submit it to xmake-repo after the package interface
-is stable enough for registry review. The recipe has an opt-in `auth` config
+It builds the same SDK source archive and disables examples, tests, and docs.
+Submit it to xmake-repo after the package interface is stable enough for
+registry review. The recipe has an opt-in `auth` config
 that maps to `CXXMCP_ENABLE_AUTH=ON`; the default remains auth-off.

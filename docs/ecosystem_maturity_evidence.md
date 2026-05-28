@@ -119,7 +119,3 @@ Minimum green downstream scenarios:
   `cxxmcp_transport_adapter_matrix` for authoring ergonomics, handler
   contracts, server-to-client callbacks, custom role-generic transports, rich
   content, and adapter compatibility.
-- `cxxmcp_http_gateway_runtime_matrix` and
-  `cxxmcp_runtime_services_matrix` when the consumed build exposes gateway and
-  runtime targets. A curated SDK-only vcpkg package may skip these optional
-  targets, but the skip must be explicit in the evidence note.

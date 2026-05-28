@@ -26,6 +26,7 @@ turning the SDK surface into a gateway/runtime product.
 - [x] P0 request lifecycle has focused regression entries for peer
   cancel/timeout races, HTTP cancellation over SSE, stdio cancellation
   notifications, and process-stdio cancellation while a request is pending.
+
 Status notes that must stay true until exact release evidence says otherwise:
 
 - Do not claim fact-standard status yet. Current readiness is a strong

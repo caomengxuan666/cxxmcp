@@ -27,6 +27,7 @@
 #include "cxxmcp/protocol/serialization.hpp"
 #include "cxxmcp/transport/http_transport.hpp"
 #include "httplib.h"
+#include "nlohmann/json.hpp"
 
 namespace mcp::server {
 namespace {
@@ -466,6 +467,61 @@ void set_auth_failure_status(httplib::Response& http_response,
   }
 }
 
+std::string build_www_authenticate_header(const AuthChallengeConfig& config,
+                                          std::string_view fallback_scheme) {
+  const auto& scheme =
+      config.scheme.empty() ? std::string(fallback_scheme) : config.scheme;
+  std::string header = scheme;
+  if (config.resource_metadata_url.has_value() &&
+      !config.resource_metadata_url->empty()) {
+    header.append(" resource_metadata=\"");
+    header.append(*config.resource_metadata_url);
+    header.push_back('"');
+  }
+  if (config.scope.has_value() && !config.scope->empty()) {
+    if (config.resource_metadata_url.has_value()) {
+      header.push_back(',');
+    }
+    header.append(" scope=\"");
+    header.append(*config.scope);
+    header.push_back('"');
+  }
+  return header;
+}
+
+void set_auth_failure_status(httplib::Response& http_response,
+                             const AuthChallengeConfig& config,
+                             std::string_view fallback_scheme) {
+  http_response.status = 401;
+  if (config.resource_metadata_url.has_value() || config.scope.has_value()) {
+    const auto header = build_www_authenticate_header(config, fallback_scheme);
+    if (!header.empty()) {
+      http_response.set_header("WWW-Authenticate", header);
+    }
+  } else if (!fallback_scheme.empty()) {
+    http_response.set_header("WWW-Authenticate", std::string(fallback_scheme));
+  }
+}
+
+std::string serialize_protected_resource_metadata(
+    const ProtectedResourceMetadataConfig& config) {
+  nlohmann::json doc;
+  doc["resource"] = config.resource;
+  if (!config.authorization_servers.empty()) {
+    doc["authorization_servers"] = config.authorization_servers;
+  }
+  if (!config.scopes_supported.empty()) {
+    doc["scopes_supported"] = config.scopes_supported;
+  }
+  if (config.resource_name.has_value()) {
+    doc["resource_name"] = *config.resource_name;
+  }
+  if (config.resource_documentation.has_value()) {
+    doc["resource_documentation"] = *config.resource_documentation;
+  }
+  return doc.dump(2);
+}
+
 bool is_auth_error(const core::Error& error) {
   return error.code ==
              static_cast<int>(protocol::ErrorCode::PermissionDenied) &&
@@ -563,6 +619,16 @@ core::Result<core::Unit> HttpTransport::start(
   http_server->set_payload_max_length(options_.max_request_body_bytes);
   http_server->set_read_timeout(options_.read_timeout);
   http_server->set_write_timeout(options_.write_timeout);
+
+  if (!options_.protected_resource_metadata.resource.empty()) {
+    const auto metadata_json = serialize_protected_resource_metadata(
+        options_.protected_resource_metadata);
+    http_server->Get(
+        "/.well-known/oauth-protected-resource",
+        [&metadata_json](const httplib::Request&, httplib::Response& response) {
+          response.set_content(metadata_json, "application/json");
+        });
+  }
 
   http_server->Post(options_.path, [this, handler = std::move(handler),
                                     notification_handler =
@@ -691,7 +757,8 @@ core::Result<core::Unit> HttpTransport::start(
         }
         if (!handled) {
           if (is_auth_error(handled.error())) {
-            set_auth_failure_status(response, options_.auth_challenge);
+            set_auth_failure_status(response, options_.auth_challenge_config,
+                                    options_.auth_challenge);
             write_response(response, make_auth_error_response(handled.error(),
                                                               std::nullopt));
             return;
@@ -844,7 +911,8 @@ core::Result<core::Unit> HttpTransport::start(
     }
     if (!rpc_response) {
       if (is_auth_error(rpc_response.error())) {
-        set_auth_failure_status(response, options_.auth_challenge);
+        set_auth_failure_status(response, options_.auth_challenge_config,
+                                options_.auth_challenge);
         write_response(response, make_auth_error_response(rpc_response.error(),
                                                           rpc_request->id));
         return;
@@ -884,7 +952,8 @@ core::Result<core::Unit> HttpTransport::start(
     }
 
     if (is_auth_error_response(*rpc_response)) {
-      set_auth_failure_status(response, options_.auth_challenge);
+      set_auth_failure_status(response, options_.auth_challenge_config,
+                              options_.auth_challenge);
     }
     write_response(response, *rpc_response);
   });

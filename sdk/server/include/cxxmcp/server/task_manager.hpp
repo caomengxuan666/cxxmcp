@@ -142,7 +142,7 @@ class TaskOperationProcessor {
   void emit_updates(const std::vector<TaskUpdate>& updates) const;
 
   TaskOperationProcessorOptions options_;
-  core::BoundedExecutor executor_;
+  core::Executor executor_;
   mutable std::mutex mutex_;
   std::unordered_map<std::string, TaskRecord> tasks_;
   std::vector<std::string> order_;

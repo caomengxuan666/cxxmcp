@@ -36,10 +36,10 @@ Stable public SDK targets are:
 The aggregate `cxxmcp::sdk` target is only a convenience target. Consumers that
 need a narrow dependency should link the narrow target directly.
 
-Runtime, gateway, CLI, app, adapter, and plugin SDK targets are optional tools
-above the SDK. They are not allowed to define the core SDK contract, and their
-types must not enter public SDK headers without a design note and release
-review.
+Gateway/runtime/CLI tooling lives outside this SDK repository. Optional
+`adapter` and `plugin_sdk` targets remain SDK-adjacent extension surfaces, not
+core SDK targets. External tooling and optional extension types must not enter
+public SDK headers without a design note and release review.
 
 ## Source Compatibility And API Classes
 

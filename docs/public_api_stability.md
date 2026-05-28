@@ -28,14 +28,14 @@ be source-breaking and must not be presented as a cleanup task inside the same
 major release line. If an alias is ever added, it must follow the public rename
 rules below and keep `mcp` available until the next major release at minimum.
 
-Runtime, gateway, CLI, app, adapter, plugin, policy, discovery, and profile
-types are outside the core SDK contract unless they are explicitly promoted by
-a design note, compatibility review, release notes, and package evidence.
+Gateway/runtime/CLI tooling lives outside this SDK repository. Tooling,
+adapter, plugin, policy, discovery, and profile types are outside the core SDK
+contract unless they are explicitly promoted by a design note, compatibility
+review, release notes, and package evidence.
 The current promoted optional extension surfaces are `cxxmcp::plugin_sdk` and
 `cxxmcp::adapters`; they are stable optional package targets, not first-choice
-core SDK targets. Runtime, gateway, app, and CLI targets remain tooling targets
-outside the SDK-only package contract unless a future tools package/export set
-defines a separate compatibility promise.
+core SDK targets. External gateway/tooling repositories must define their own
+compatibility promise instead of relying on the SDK package contract.
 
 Technical-audit closure is part of the public API evidence chain only when it
 is tied to the exact release commit. A fixed audit finding can justify a bug,

@@ -22,6 +22,37 @@
 
 namespace mcp::server {
 
+/// @brief RFC 9728 Protected Resource Metadata configuration for the server.
+///
+/// When non-empty, the transport serves the metadata document at
+/// /.well-known/oauth-protected-resource and at
+/// `/.well-known/oauth-protected-resource/<path>` so that OAuth clients can
+/// discover the authorization server and required scopes.
+struct ProtectedResourceMetadataConfig {
+  /// Resource identifier URL (e.g. "https://example.com/mcp").
+  std::string resource;
+  /// Authorization server issuers that can issue tokens for this resource.
+  std::vector<std::string> authorization_servers;
+  /// Scopes that may be requested to access this resource.
+  std::vector<std::string> scopes_supported;
+  /// Human-readable name of the resource.
+  std::optional<std::string> resource_name;
+  /// URL of human-readable documentation for the resource.
+  std::optional<std::string> resource_documentation;
+};
+
+/// @brief Configuration for the HTTP WWW-Authenticate challenge header.
+struct AuthChallengeConfig {
+  /// Authentication scheme (default: "Bearer").
+  std::string scheme = "Bearer";
+  /// URL of the RFC 9728 Protected Resource Metadata document.
+  /// When set, the WWW-Authenticate header includes resource_metadata="<url>".
+  std::optional<std::string> resource_metadata_url;
+  /// Scopes required to access the resource.
+  /// When set, the WWW-Authenticate header includes scope="<scopes>".
+  std::optional<std::string> scope;
+};
+
 /// @brief Configuration for HttpTransport.
 struct HttpTransportOptions {
   /// Interface address passed to the underlying HTTP server.
@@ -58,8 +89,16 @@ struct HttpTransportOptions {
   std::size_t max_sessions = 1024;
   /// HTTP WWW-Authenticate challenge emitted when authentication fails.
   /// Empty disables the header for custom deployments that emit challenges
-  /// through another layer.
+  /// through another layer. This is a legacy field; prefer
+  /// auth_challenge_config for resource_metadata and scope support.
   std::string auth_challenge = std::string(DefaultAuthChallenge);
+  /// Structured auth challenge configuration. When resource_metadata_url or
+  /// scope is set, the WWW-Authenticate header includes those parameters.
+  /// If auth_challenge_config.scheme is non-empty, it overrides auth_challenge.
+  AuthChallengeConfig auth_challenge_config;
+  /// RFC 9728 Protected Resource Metadata. When resource is non-empty, the
+  /// transport serves the metadata at /.well-known/oauth-protected-resource.
+  ProtectedResourceMetadataConfig protected_resource_metadata;
 };
 
 /// @brief MCP streamable HTTP transport with session-aware SSE delivery.

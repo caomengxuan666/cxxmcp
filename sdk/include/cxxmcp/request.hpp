@@ -5,12 +5,10 @@
 /// @file
 /// @brief Request lifecycle helpers for cancellable SDK calls.
 
-#include <algorithm>
 #include <chrono>
 #include <cstddef>
 #include <exception>
 #include <functional>
-#include <future>
 #include <memory>
 #include <mutex>
 #include <optional>
@@ -18,6 +16,7 @@
 #include <utility>
 
 #include "cxxmcp/cancellation.hpp"
+#include "cxxmcp/core/async_result.hpp"
 #include "cxxmcp/core/executor.hpp"
 #include "cxxmcp/core/result.hpp"
 #include "cxxmcp/error.hpp"
@@ -25,14 +24,14 @@
 
 namespace mcp {
 
-/// @brief Configuration for the bounded background request executor.
+/// @brief Configuration for the background request executor.
 ///
 /// The executor is used by RequestHandle::spawn() and by async request helpers
 /// that wrap blocking request paths in a background task. Defaults are tuned
 /// for local stdio/process-stdio MCP workloads.
 struct RequestExecutorOptions {
   std::size_t worker_count = 4;
-  std::size_t max_queue_size = 64;
+  std::size_t max_queue_size = 256;
 };
 
 namespace detail {
@@ -40,7 +39,7 @@ namespace detail {
 struct RequestExecutorState {
   std::mutex mutex;
   RequestExecutorOptions options;
-  std::unique_ptr<core::BoundedExecutor> executor;
+  std::unique_ptr<core::Executor> executor;
 };
 
 inline RequestExecutorState& request_executor_state() {
@@ -54,12 +53,12 @@ inline core::Error request_executor_error(std::string message,
                      std::move(message), std::move(detail), "request"};
 }
 
-inline core::BoundedExecutor& request_executor() {
+inline core::Executor& request_executor() {
   auto& state = request_executor_state();
   std::lock_guard lock(state.mutex);
   if (!state.executor) {
-    state.executor = std::make_unique<core::BoundedExecutor>(
-        state.options.worker_count, state.options.max_queue_size);
+    state.executor = std::make_unique<core::Executor>(core::Executor::Options{
+        state.options.worker_count, state.options.max_queue_size});
   }
   return *state.executor;
 }
@@ -123,11 +122,10 @@ class RequestHandle {
   /// @brief Creates a handle whose result is already available.
   static RequestHandle ready(protocol::RequestId request_id,
                              ResultType result) {
-    auto promise = std::make_shared<std::promise<ResultType>>();
-    auto future = promise->get_future().share();
-    promise->set_value(std::move(result));
+    auto async_result = std::make_shared<core::AsyncResult<ResultType>>();
+    async_result->set_value(std::move(result));
     return RequestHandle(std::move(request_id), std::nullopt, std::nullopt, {},
-                         std::move(future));
+                         std::move(async_result));
   }
 
   static RequestHandle spawn(protocol::RequestId request_id,
@@ -135,33 +133,40 @@ class RequestHandle {
                              std::optional<CancellationToken> cancellation,
                              CancelCallback cancel,
                              std::function<ResultType()> task) {
-    auto promise = std::make_shared<std::promise<ResultType>>();
-    auto future = promise->get_future().share();
+    auto async_result = std::make_shared<core::AsyncResult<ResultType>>();
     if (!task) {
-      promise->set_value(mcp::core::unexpected(errors::request_task_missing()));
+      async_result->set_value(
+          mcp::core::unexpected(errors::request_task_missing()));
       return RequestHandle(std::move(request_id), std::move(timeout),
                            std::move(cancellation), std::move(cancel),
-                           std::move(future));
+                           std::move(async_result));
     }
 
-    const auto queued = detail::request_executor().enqueue(
-        [promise, task = std::move(task)]() mutable {
+    const auto queued = detail::request_executor().post(
+        [async_result, task = std::move(task)]() mutable {
           try {
-            promise->set_value(task());
+            async_result->set_value(task());
           } catch (const std::exception& ex) {
-            promise->set_value(mcp::core::unexpected(
+            async_result->set_value(mcp::core::unexpected(
                 errors::request_worker_exception(ex.what())));
           } catch (...) {
-            promise->set_value(mcp::core::unexpected(
+            async_result->set_value(mcp::core::unexpected(
                 errors::request_worker_unknown_exception()));
           }
-        });
+        },
+        core::TaskPriority::IO_BOUND);
     if (!queued) {
-      promise->set_value(mcp::core::unexpected(queued.error()));
+      async_result->set_value(mcp::core::unexpected(queued.error()));
     }
-    return RequestHandle(std::move(request_id), std::move(timeout),
-                         std::move(cancellation), std::move(cancel),
-                         std::move(future));
+
+    auto handle = RequestHandle(std::move(request_id), std::move(timeout),
+                                std::move(cancellation), std::move(cancel),
+                                std::move(async_result));
+    // Start cancellation watcher if a token is configured
+    if (handle.cancellation_.has_value()) {
+      handle.start_cancellation_watcher();
+    }
+    return handle;
   }
 
   const protocol::RequestId& request_id() const noexcept { return request_id_; }
@@ -174,26 +179,15 @@ class RequestHandle {
     return cancellation_;
   }
 
-  /// @brief Waits for the request result and returns a copy of the shared
-  /// result state.
+  /// @brief Waits for the request result. CV-based, no polling.
   ///
-  /// RequestHandle is multi-await: await_response() may be called more than
-  /// once on the same handle or on handle copies. If neither timeout nor
-  /// cancellation was configured, await_response() blocks until the background
-  /// task finishes and returns its result.
-  ///
-  /// A configured cancellation token or timeout is observed by all copies of
-  /// the handle. If the token is already cancelled before await_response(), or
-  /// becomes cancelled while waiting, the handle sends the cancel callback with
-  /// "request cancelled" and stores a terminal cancellation error. If the
-  /// timeout expires while waiting, it sends "request timeout" and stores a
-  /// terminal timeout error. The cancel callback is sent at most once per
-  /// request handle state. These operations are cooperative: they notify the
-  /// peer but do not forcibly stop a request task that is already running.
-  /// Late task results are ignored by future await_response() calls after a
-  /// terminal timeout or cancellation has been observed.
+  /// If neither timeout nor cancellation was configured, blocks until the
+  /// background task finishes. A configured cancellation token or timeout is
+  /// observed: cancellation wakes the waiter immediately via a background
+  /// watcher task that calls async_result_->cancel(). Timeout uses
+  /// AsyncResult::wait_for() which is CV-based.
   core::Result<T> await_response() const {
-    if (!response_.valid()) {
+    if (!async_result_) {
       return mcp::core::unexpected(errors::request_state_missing());
     }
 
@@ -201,49 +195,49 @@ class RequestHandle {
       return mcp::core::unexpected(*terminal);
     }
 
+    // Fast path: no timeout, no cancellation
     if (!timeout_.has_value() && !cancellation_.has_value()) {
-      return read_response_result();
+      return read_from_async_result(async_result_->wait());
     }
 
-    const auto started_at = std::chrono::steady_clock::now();
+    // Timeout-only path
     if (timeout_.has_value() && !cancellation_.has_value()) {
-      const auto deadline = started_at + *timeout_;
-      if (response_.wait_until(deadline) == std::future_status::ready) {
-        if (const auto terminal = terminal_error(); terminal.has_value()) {
-          return mcp::core::unexpected(*terminal);
-        }
-        return read_response_result();
+      auto result = async_result_->wait_for(*timeout_);
+      if (const auto terminal = terminal_error(); terminal.has_value()) {
+        return mcp::core::unexpected(*terminal);
+      }
+      if (result) {
+        return read_from_async_result(*result);
       }
       return fail_terminal("request timeout",
                            errors::request_timed_out(*timeout_));
     }
 
-    while (true) {
+    // Cancellation path (with optional timeout)
+    // The cancellation watcher is already running and will set a terminal
+    // error and cancel the async_result_ when the token fires.
+    if (timeout_.has_value()) {
+      auto result = async_result_->wait_for(*timeout_);
       if (const auto terminal = terminal_error(); terminal.has_value()) {
         return mcp::core::unexpected(*terminal);
       }
-
+      if (result) {
+        return read_from_async_result(*result);
+      }
+      // Check if cancellation fired
       if (cancellation_.has_value() && cancellation_->cancelled()) {
         return fail_terminal("request cancelled", errors::request_cancelled());
       }
-
-      if (timeout_.has_value() &&
-          std::chrono::steady_clock::now() - started_at >= *timeout_) {
-        return fail_terminal("request timeout",
-                             errors::request_timed_out(*timeout_));
-      }
-
-      const auto wait_slice =
-          timeout_.has_value()
-              ? std::min(std::chrono::milliseconds(10), *timeout_)
-              : std::chrono::milliseconds(10);
-      if (response_.wait_for(wait_slice) == std::future_status::ready) {
-        if (const auto terminal = terminal_error(); terminal.has_value()) {
-          return mcp::core::unexpected(*terminal);
-        }
-        return read_response_result();
-      }
+      return fail_terminal("request timeout",
+                           errors::request_timed_out(*timeout_));
     }
+
+    // No timeout, just cancellation -- watcher delivers via async_result_
+    auto result = async_result_->wait();
+    if (const auto terminal = terminal_error(); terminal.has_value()) {
+      return mcp::core::unexpected(*terminal);
+    }
+    return read_from_async_result(result);
   }
 
   core::Result<core::Unit> cancel(std::string reason = {}) const {
@@ -257,13 +251,48 @@ class RequestHandle {
   RequestHandle(protocol::RequestId request_id,
                 std::optional<std::chrono::milliseconds> timeout,
                 std::optional<CancellationToken> cancellation,
-                CancelCallback cancel, std::shared_future<ResultType> response)
+                CancelCallback cancel,
+                std::shared_ptr<core::AsyncResult<ResultType>> async_result)
       : request_id_(std::move(request_id)),
         timeout_(std::move(timeout)),
         cancellation_(std::move(cancellation)),
         cancel_(std::move(cancel)),
-        response_(std::move(response)),
+        async_result_(std::move(async_result)),
         control_(std::make_shared<detail::RequestHandleControl>()) {}
+
+  /// @brief Start a background watcher that blocks on the cancellation
+  /// token's CV and cancels the async_result when the token fires.
+  void start_cancellation_watcher() const {
+    if (!cancellation_.has_value() || !async_result_) return;
+
+    auto control = control_;
+    auto async_result = async_result_;
+    auto cancel_token = *cancellation_;
+    auto cancel_cb = cancel_;
+
+    (void)detail::request_executor().post(
+        [control, async_result, cancel_token, cancel_cb]() {
+          // Block until cancelled (CV-based, zero CPU)
+          cancel_token.wait_for_cancel();
+          // Set terminal error
+          bool send_cancel = false;
+          {
+            std::lock_guard lock(control->mutex);
+            if (!control->terminal_error.has_value()) {
+              control->terminal_error = errors::request_cancelled();
+              control->cancel_sent = true;
+              send_cancel = true;
+            }
+          }
+          // Cancel the async result to wake up await_response() waiters
+          async_result->cancel("request cancelled");
+          // Send cancel callback to peer
+          if (send_cancel && cancel_cb) {
+            (void)cancel_cb("request cancelled");
+          }
+        },
+        core::TaskPriority::BACKGROUND);
+  }
 
   std::optional<core::Error> terminal_error() const {
     if (!control_) {
@@ -273,14 +302,17 @@ class RequestHandle {
     return control_->terminal_error;
   }
 
-  core::Result<T> read_response_result() const noexcept {
-    try {
-      return response_.get();
-    } catch (const std::exception& ex) {
-      return mcp::core::unexpected(errors::request_worker_exception(ex.what()));
-    } catch (...) {
-      return mcp::core::unexpected(errors::request_worker_unknown_exception());
+  core::Result<T> read_from_async_result(
+      const core::Result<ResultType>& outer) const noexcept {
+    if (!outer) {
+      return mcp::core::unexpected(outer.error());
     }
+    return *outer;
+  }
+
+  core::Result<T> read_from_async_result(
+      const ResultType& inner) const noexcept {
+    return inner;
   }
 
   core::Result<T> fail_terminal(std::string reason, core::Error error) const {
@@ -310,7 +342,7 @@ class RequestHandle {
   std::optional<std::chrono::milliseconds> timeout_;
   std::optional<CancellationToken> cancellation_;
   CancelCallback cancel_;
-  std::shared_future<ResultType> response_;
+  std::shared_ptr<core::AsyncResult<ResultType>> async_result_;
   std::shared_ptr<detail::RequestHandleControl> control_;
 };
 

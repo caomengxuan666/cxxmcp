@@ -44,7 +44,6 @@ RELEASE_EVIDENCE_REQUIRED_FILES = [
     "docs/request_lifecycle.md",
     "docs/rmcp_source_mapping.json",
     "docs/runtime_gateway.md",
-    "docs/sdk_peer_service_migration.md",
     "docs/task_lifecycle.md",
     "docs/technical_audit.md",
     "docs/transport_adapters.md",

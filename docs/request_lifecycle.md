@@ -109,8 +109,8 @@ attached transports are closed and pending receive loops observe the same
 service cancellation.
 
 Process-level `SIGINT` / `SIGTERM` or console-control handling remains an
-application responsibility. See [Graceful Shutdown](graceful_shutdown.md) for
-the recommended atomic-flag pattern and transport-specific shutdown notes.
+application responsibility. See `docs/graceful_shutdown.md` for the recommended
+atomic-flag pattern and transport-specific shutdown notes.
 
 ## Transport Notes
 

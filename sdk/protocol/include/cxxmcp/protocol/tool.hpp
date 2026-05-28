@@ -390,6 +390,26 @@ inline std::optional<TaskSupport> task_support_from_string(
   return std::nullopt;
 }
 
+template <>
+struct JsonFieldTraits<TaskSupport> {
+  static void serialize(Json& json, const char* key, TaskSupport value) {
+    json[key] = std::string(task_support_to_string(value));
+  }
+  static bool deserialize(const Json& json, const char* key,
+                          TaskSupport& target) {
+    if (!json.contains(key) || !json.at(key).is_string()) {
+      return false;
+    }
+    auto val =
+        task_support_from_string(json.at(key).get_ref<const std::string&>());
+    if (!val.has_value()) {
+      return false;
+    }
+    target = *val;
+    return true;
+  }
+};
+
 /// @brief Returns true when value is canonical RFC 4648 base64 with padding.
 inline bool is_valid_base64(std::string_view value) noexcept {
   if (value.empty()) {
