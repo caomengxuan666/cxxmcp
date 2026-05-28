@@ -766,6 +766,27 @@ inline ScopeList select_authorization_scopes(
   return context.default_scopes;
 }
 
+/// @brief SEP-2207: auto-append `offline_access` when the authorization
+/// server advertises it in `scopes_supported` and it is not already present.
+inline void add_offline_access_if_supported(
+    ScopeList& scopes, const AuthorizationServerMetadata& metadata) {
+  if (scopes.empty()) {
+    return;
+  }
+  const auto has_offline =
+      std::find(scopes.begin(), scopes.end(), "offline_access") != scopes.end();
+  if (has_offline) {
+    return;
+  }
+  const auto supports_offline =
+      std::find(metadata.scopes_supported.begin(),
+                metadata.scopes_supported.end(),
+                "offline_access") != metadata.scopes_supported.end();
+  if (supports_offline) {
+    scopes.push_back("offline_access");
+  }
+}
+
 /// @brief User-facing authorization session for an active code flow.
 struct OAuthSession {
   AuthorizationUrlResult authorization;
@@ -1092,6 +1113,7 @@ class AuthorizationManager {
   core::Result<AuthorizationUrlResult> start_authorization(
       ScopeList scopes, PkceChallenge pkce, std::string state,
       MetadataMap additional_parameters = {}) {
+    add_offline_access_if_supported(scopes, metadata_);
     AuthorizationUrlRequest request;
     request.client = client_;
     request.authorization_server = metadata_;

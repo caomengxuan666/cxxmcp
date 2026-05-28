@@ -617,9 +617,9 @@ void test_authorization_manager_builds_url_and_stores_state() {
   require(auth->url.find("resource=https%3A%2F%2Fresource.example%2Fmcp") !=
               std::string::npos,
           "authorization URL should include resource");
-  require(
-      auth->url.find("scope=tools%3Aread%20tools%3Acall") != std::string::npos,
-      "authorization URL should encode scopes");
+  require(auth->url.find("scope=tools%3Aread%20tools%3Acall%20"
+                         "offline_access") != std::string::npos,
+          "authorization URL should encode scopes with offline_access");
   require(manager.lifecycle_state() ==
               mcp::auth::OAuthLifecycleState::kAuthorizationPending,
           "manager should enter authorization pending state");
@@ -629,6 +629,10 @@ void test_authorization_manager_builds_url_and_stores_state() {
           "authorization state should be stored");
   require((*stored)->pkce.code_verifier == "verifier-123",
           "stored state should retain PKCE verifier");
+  require(
+      (*stored)->requested_scopes ==
+          mcp::auth::ScopeList{"tools:read", "tools:call", "offline_access"},
+      "stored state should retain requested scopes with offline_access");
 }
 
 void test_authorization_url_requires_secure_endpoints_and_redirects() {
@@ -1136,6 +1140,30 @@ void test_scope_selection_uses_rmcp_priority_order() {
           "default scopes should be fallback");
 }
 
+void test_offline_access_scope_append_is_advertisement_gated() {
+  auto metadata = test_authorization_metadata();
+  mcp::auth::ScopeList scopes = {"tools:read"};
+
+  mcp::auth::add_offline_access_if_supported(scopes, metadata);
+  require(scopes == mcp::auth::ScopeList{"tools:read", "offline_access"},
+          "offline_access should be appended when advertised");
+
+  mcp::auth::add_offline_access_if_supported(scopes, metadata);
+  require(scopes == mcp::auth::ScopeList{"tools:read", "offline_access"},
+          "offline_access should not be duplicated");
+
+  metadata.scopes_supported = {"tools:read"};
+  scopes = {"tools:read"};
+  mcp::auth::add_offline_access_if_supported(scopes, metadata);
+  require(scopes == mcp::auth::ScopeList{"tools:read"},
+          "offline_access should not be appended when unsupported");
+
+  scopes.clear();
+  metadata.scopes_supported = {"offline_access"};
+  mcp::auth::add_offline_access_if_supported(scopes, metadata);
+  require(scopes.empty(), "empty scope requests should remain empty");
+}
+
 void test_metadata_discovery_executor_uses_rmcp_order() {
   RecordingMetadataEndpoint endpoint;
   mcp::auth::ProtectedResourceMetadata resource;
@@ -1638,6 +1666,7 @@ int main() {
       test_metadata_discovery_url_candidates_reject_ssrf_prone_inputs,
       test_authorization_server_metadata_url_candidates,
       test_scope_selection_uses_rmcp_priority_order,
+      test_offline_access_scope_append_is_advertisement_gated,
       test_metadata_discovery_executor_uses_rmcp_order,
       test_metadata_discovery_executor_reports_failures,
       test_http_metadata_endpoint_parses_oauth_metadata,
