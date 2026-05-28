@@ -1,6 +1,6 @@
 {
   "name": "cxxmcp",
-  "version-semver": "2.0.2",
+  "version-semver": "1.0.0",
   "port-version": 1,
   "description": "C++ MCP SDK for protocol, client, server, transport, peer, and handler APIs.",
   "homepage": "https://github.com/caomengxuan666/cxxmcp",

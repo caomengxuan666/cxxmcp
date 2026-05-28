@@ -1,6 +1,6 @@
 # Changelog
 
-## 2.0.2
+## 1.0.0
 
 - Added explicit protocol-version coverage for the `2025-11-25` MCP snapshot
   and closed the P1 protocol model evidence gaps for required-field,
@@ -15,7 +15,7 @@
 - Documented the external `cxxmcp-examples` auth-lite coverage and kept the
   examples path aligned with `Peer` / `Service` as the canonical SDK entry.
 
-## 2.0.0
+## 1.0.0 (pre-release)
 
 - Reframed the public SDK around `Peer` / `Service` entry points.
 - Kept `client` / `server` as compatibility and convenience wrappers.

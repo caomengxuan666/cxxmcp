@@ -146,7 +146,7 @@ The SDK archive includes the header-only SDK dependencies needed by the default
 bundled build, while GitHub generated archives do not include submodule
 contents.
 
-The concrete `v2.0.2` URL below is the latest published SDK source archive
+The concrete `v1.0.0` URL below is the latest published SDK source archive
 known to these docs. It is valid for consumers that want the published default
 SDK surface. Do not use it as evidence for the current worktree's optional auth
 header surface; current-source or release-candidate validation must use the
@@ -157,7 +157,7 @@ include(FetchContent)
 
 FetchContent_Declare(
     cxxmcp
-    URL https://github.com/caomengxuan666/cxxmcp/releases/download/v2.0.2/cxxmcp-sdk-source-v2.0.2.tar.gz
+    URL https://github.com/caomengxuan666/cxxmcp/releases/download/v1.0.0/cxxmcp-sdk-source-v1.0.0.tar.gz
     URL_HASH SHA256=3c4ad678a8612183a4f2539973328b6a85dab360991a86e6328ca032cc5e2ba8
 )
 
@@ -180,7 +180,7 @@ docs.
 
 Use the URL and hash from the release you intentionally pin. For release
 candidate validation, use the exact source artifact produced by that candidate
-run rather than copying the published `v2.0.2` example unchanged.
+run rather than copying the published `v1.0.0` example unchanged.
 
 cxxmcp does not install or export a `CPM.cmake` helper. The consuming project
 must provide it, for example by vendoring `cmake/CPM.cmake` in its own source
@@ -197,7 +197,7 @@ set(CXXMCP_BUILD_DOCS OFF CACHE BOOL "" FORCE)
 
 CPMAddPackage(
     NAME cxxmcp
-    URL https://github.com/caomengxuan666/cxxmcp/releases/download/v2.0.2/cxxmcp-sdk-source-v2.0.2.tar.gz
+    URL https://github.com/caomengxuan666/cxxmcp/releases/download/v1.0.0/cxxmcp-sdk-source-v1.0.0.tar.gz
     URL_HASH SHA256=3c4ad678a8612183a4f2539973328b6a85dab360991a86e6328ca032cc5e2ba8
 )
 
