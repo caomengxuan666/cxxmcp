@@ -21,7 +21,20 @@ using StringList = std::vector<std::string>;
 using SystemClock = std::chrono::system_clock;
 using TimePoint = SystemClock::time_point;
 
-inline const std::string AuthErrorCategory = "auth";
+namespace detail {
+
+template <typename Tag>
+inline const std::string& static_string_constant(const char* value) {
+  static const std::string constant(value);
+  return constant;
+}
+
+struct AuthErrorCategoryTag {};
+
+}  // namespace detail
+
+inline const std::string& AuthErrorCategory =
+    detail::static_string_constant<detail::AuthErrorCategoryTag>("auth");
 
 /// @brief Transport-neutral HTTP request descriptor used by auth helpers.
 struct HttpRequestTarget {

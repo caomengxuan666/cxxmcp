@@ -21,22 +21,39 @@
 
 namespace mcp::protocol {
 
+namespace detail {
+
+template <typename Tag>
+inline const std::string& static_string_constant(const char* value) {
+  static const std::string constant(value);
+  return constant;
+}
+
+}  // namespace detail
+
+#define CXXMCP_PROTOCOL_STRING_CONSTANT(name, value) \
+  namespace detail {                                 \
+  struct name##Tag {};                               \
+  }                                                  \
+  inline const std::string& name =                   \
+      detail::static_string_constant<detail::name##Tag>(value)
+
 /// @brief JSON-RPC protocol version string placed in message envelopes.
-inline const std::string JsonRpcVersion = "2.0";
-inline const std::string McpProtocolVersion2025_11_25 = "2025-11-25";
-inline const std::string McpProtocolVersion2025_06_18 = "2025-06-18";
-inline const std::string McpProtocolVersion2025_03_26 = "2025-03-26";
-inline const std::string McpProtocolVersion2024_11_05 = "2024-11-05";
+CXXMCP_PROTOCOL_STRING_CONSTANT(JsonRpcVersion, "2.0");
+CXXMCP_PROTOCOL_STRING_CONSTANT(McpProtocolVersion2025_11_25, "2025-11-25");
+CXXMCP_PROTOCOL_STRING_CONSTANT(McpProtocolVersion2025_06_18, "2025-06-18");
+CXXMCP_PROTOCOL_STRING_CONSTANT(McpProtocolVersion2025_03_26, "2025-03-26");
+CXXMCP_PROTOCOL_STRING_CONSTANT(McpProtocolVersion2024_11_05, "2024-11-05");
 /// @brief Latest MCP protocol version advertised during initialization.
-inline const std::string McpProtocolVersion = "2025-11-25";
+inline const std::string& McpProtocolVersion = McpProtocolVersion2025_11_25;
 /// @brief Protocol versions accepted by this SDK during initialization.
-inline const std::array<std::string, 4> McpSupportedProtocolVersions{
+inline constexpr std::array<const char*, 4> McpSupportedProtocolVersions{
     "2024-11-05", "2025-03-26", "2025-06-18", "2025-11-25"};
 
 /// @brief Returns true when a peer protocol version is supported.
 inline bool is_supported_protocol_version(std::string_view version) noexcept {
-  for (const auto& supported : McpSupportedProtocolVersions) {
-    if (version == supported) {
+  for (const auto* supported : McpSupportedProtocolVersions) {
+    if (version == std::string_view(supported)) {
       return true;
     }
   }
@@ -46,8 +63,8 @@ inline bool is_supported_protocol_version(std::string_view version) noexcept {
 /// @brief Returns the peer-requested version when known.
 inline std::optional<std::string_view> negotiate_protocol_version(
     std::string_view requested) noexcept {
-  for (const auto& supported : McpSupportedProtocolVersions) {
-    if (requested == supported) {
+  for (const auto* supported : McpSupportedProtocolVersions) {
+    if (requested == std::string_view(supported)) {
       return std::string_view(supported);
     }
   }
@@ -55,81 +72,88 @@ inline std::optional<std::string_view> negotiate_protocol_version(
 }
 
 /// @brief `initialize` request method for lifecycle negotiation.
-inline const std::string InitializeMethod = "initialize";
+CXXMCP_PROTOCOL_STRING_CONSTANT(InitializeMethod, "initialize");
 /// @brief Notification sent after a successful initialize response.
-inline const std::string InitializedMethod = "notifications/initialized";
+CXXMCP_PROTOCOL_STRING_CONSTANT(InitializedMethod, "notifications/initialized");
 /// @brief Lightweight liveness request.
-inline const std::string PingMethod = "ping";
+CXXMCP_PROTOCOL_STRING_CONSTANT(PingMethod, "ping");
 /// @brief Lists available prompts.
-inline const std::string PromptsListMethod = "prompts/list";
+CXXMCP_PROTOCOL_STRING_CONSTANT(PromptsListMethod, "prompts/list");
 /// @brief Retrieves a prompt by name and arguments.
-inline const std::string PromptsGetMethod = "prompts/get";
+CXXMCP_PROTOCOL_STRING_CONSTANT(PromptsGetMethod, "prompts/get");
 /// @brief Lists concrete resources.
-inline const std::string ResourcesListMethod = "resources/list";
+CXXMCP_PROTOCOL_STRING_CONSTANT(ResourcesListMethod, "resources/list");
 /// @brief Reads resource contents by URI.
-inline const std::string ResourcesReadMethod = "resources/read";
+CXXMCP_PROTOCOL_STRING_CONSTANT(ResourcesReadMethod, "resources/read");
 /// @brief Lists URI templates that can produce resources.
-inline const std::string ResourcesTemplatesListMethod =
-    "resources/templates/list";
+CXXMCP_PROTOCOL_STRING_CONSTANT(ResourcesTemplatesListMethod,
+                                "resources/templates/list");
 /// @brief Subscribes to updates for a resource URI.
-inline const std::string ResourcesSubscribeMethod = "resources/subscribe";
+CXXMCP_PROTOCOL_STRING_CONSTANT(ResourcesSubscribeMethod,
+                                "resources/subscribe");
 /// @brief Removes a resource subscription.
-inline const std::string ResourcesUnsubscribeMethod = "resources/unsubscribe";
+CXXMCP_PROTOCOL_STRING_CONSTANT(ResourcesUnsubscribeMethod,
+                                "resources/unsubscribe");
 /// @brief Lists callable tools.
-inline const std::string ToolsListMethod = "tools/list";
+CXXMCP_PROTOCOL_STRING_CONSTANT(ToolsListMethod, "tools/list");
 /// @brief Retrieves a tool definition.
-inline const std::string ToolsGetMethod = "tools/get";
+CXXMCP_PROTOCOL_STRING_CONSTANT(ToolsGetMethod, "tools/get");
 /// @brief Calls a named tool with JSON arguments.
-inline const std::string ToolsCallMethod = "tools/call";
+CXXMCP_PROTOCOL_STRING_CONSTANT(ToolsCallMethod, "tools/call");
 /// @brief Completes a prompt or resource-template argument value.
-inline const std::string CompletionCompleteMethod = "completion/complete";
+CXXMCP_PROTOCOL_STRING_CONSTANT(CompletionCompleteMethod,
+                                "completion/complete");
 /// @brief Updates the minimum logging level the peer should emit.
-inline const std::string LoggingSetLevelMethod = "logging/setLevel";
+CXXMCP_PROTOCOL_STRING_CONSTANT(LoggingSetLevelMethod, "logging/setLevel");
 /// @brief Requests client-side model sampling.
-inline const std::string SamplingCreateMessageMethod = "sampling/createMessage";
+CXXMCP_PROTOCOL_STRING_CONSTANT(SamplingCreateMessageMethod,
+                                "sampling/createMessage");
 /// @brief Requests user input through MCP elicitation.
-inline const std::string ElicitationCreateMethod = "elicitation/create";
+CXXMCP_PROTOCOL_STRING_CONSTANT(ElicitationCreateMethod, "elicitation/create");
 /// @brief Notification that a URL-based elicitation interaction completed.
-inline const std::string ElicitationCompleteNotificationMethod =
-    "notifications/elicitation/complete";
+CXXMCP_PROTOCOL_STRING_CONSTANT(ElicitationCompleteNotificationMethod,
+                                "notifications/elicitation/complete");
 /// @brief Lists asynchronous tasks known to the peer.
-inline const std::string TasksListMethod = "tasks/list";
+CXXMCP_PROTOCOL_STRING_CONSTANT(TasksListMethod, "tasks/list");
 /// @brief Retrieves a task by id.
-inline const std::string TasksGetMethod = "tasks/get";
+CXXMCP_PROTOCOL_STRING_CONSTANT(TasksGetMethod, "tasks/get");
 /// @brief Requests cancellation of a task.
-inline const std::string TasksCancelMethod = "tasks/cancel";
+CXXMCP_PROTOCOL_STRING_CONSTANT(TasksCancelMethod, "tasks/cancel");
 /// @brief Retrieves the result associated with a completed task.
-inline const std::string TasksResultMethod = "tasks/result";
+CXXMCP_PROTOCOL_STRING_CONSTANT(TasksResultMethod, "tasks/result");
 /// @brief Server-to-client request to create a new task.
-inline const std::string TasksCreateMethod = "tasks/create";
+CXXMCP_PROTOCOL_STRING_CONSTANT(TasksCreateMethod, "tasks/create");
 /// @brief Notification carrying task status updates.
-inline const std::string TasksStatusNotificationMethod =
-    "notifications/tasks/status";
+CXXMCP_PROTOCOL_STRING_CONSTANT(TasksStatusNotificationMethod,
+                                "notifications/tasks/status");
 /// @brief Lists client roots available to the server.
-inline const std::string RootsListMethod = "roots/list";
+CXXMCP_PROTOCOL_STRING_CONSTANT(RootsListMethod, "roots/list");
 /// @brief JSON-RPC cancellation notification.
-inline const std::string CancelledNotificationMethod =
-    "notifications/cancelled";
+CXXMCP_PROTOCOL_STRING_CONSTANT(CancelledNotificationMethod,
+                                "notifications/cancelled");
 /// @brief JSON-RPC progress notification.
-inline const std::string ProgressNotificationMethod = "notifications/progress";
+CXXMCP_PROTOCOL_STRING_CONSTANT(ProgressNotificationMethod,
+                                "notifications/progress");
 /// @brief Notification that the client root list changed.
-inline const std::string RootsListChangedNotificationMethod =
-    "notifications/roots/list_changed";
+CXXMCP_PROTOCOL_STRING_CONSTANT(RootsListChangedNotificationMethod,
+                                "notifications/roots/list_changed");
 /// @brief Notification that the server resource list changed.
-inline const std::string ResourcesListChangedNotificationMethod =
-    "notifications/resources/list_changed";
+CXXMCP_PROTOCOL_STRING_CONSTANT(ResourcesListChangedNotificationMethod,
+                                "notifications/resources/list_changed");
 /// @brief Notification that one subscribed resource was updated.
-inline const std::string ResourcesUpdatedNotificationMethod =
-    "notifications/resources/updated";
+CXXMCP_PROTOCOL_STRING_CONSTANT(ResourcesUpdatedNotificationMethod,
+                                "notifications/resources/updated");
 /// @brief Notification that the server tool list changed.
-inline const std::string ToolsListChangedNotificationMethod =
-    "notifications/tools/list_changed";
+CXXMCP_PROTOCOL_STRING_CONSTANT(ToolsListChangedNotificationMethod,
+                                "notifications/tools/list_changed");
 /// @brief Notification that the server prompt list changed.
-inline const std::string PromptsListChangedNotificationMethod =
-    "notifications/prompts/list_changed";
+CXXMCP_PROTOCOL_STRING_CONSTANT(PromptsListChangedNotificationMethod,
+                                "notifications/prompts/list_changed");
 /// @brief Notification carrying a logging message.
-inline const std::string LoggingMessageNotificationMethod =
-    "notifications/message";
+CXXMCP_PROTOCOL_STRING_CONSTANT(LoggingMessageNotificationMethod,
+                                "notifications/message");
+
+#undef CXXMCP_PROTOCOL_STRING_CONSTANT
 
 /// @brief Builds a JSON-RPC error object.
 /// @param code Numeric JSON-RPC or MCP error code.
