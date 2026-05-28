@@ -48,6 +48,27 @@ class TransportContractAdapter final : public transport::ServerTransport {
       std::unique_ptr<mcp::server::Transport> transport)
       : owned_(std::move(transport)), transport_(owned_.get()) {}
 
+  TransportContractAdapter(const TransportContractAdapter&) = delete;
+  TransportContractAdapter& operator=(const TransportContractAdapter&) = delete;
+
+  TransportContractAdapter(TransportContractAdapter&& other) noexcept
+      : owned_(std::move(other.owned_)),
+        transport_(owned_ ? owned_.get() : other.transport_),
+        received_(std::move(other.received_)) {
+    other.transport_ = nullptr;
+  }
+
+  TransportContractAdapter& operator=(
+      TransportContractAdapter&& other) noexcept {
+    if (this != &other) {
+      owned_ = std::move(other.owned_);
+      transport_ = owned_ ? owned_.get() : other.transport_;
+      received_ = std::move(other.received_);
+      other.transport_ = nullptr;
+    }
+    return *this;
+  }
+
   std::string_view name() const noexcept override {
     return transport_ == nullptr ? "server-transport-adapter"
                                  : transport_->name();
@@ -55,13 +76,14 @@ class TransportContractAdapter final : public transport::ServerTransport {
 
   core::Result<core::Unit> send(TxMessage message) override {
     if (transport_ == nullptr) {
-      return std::unexpected(detail::adapter_error("server transport is null"));
+      return mcp::core::unexpected(
+          detail::adapter_error("server transport is null"));
     }
 
     if (const auto* request = std::get_if<protocol::JsonRpcRequest>(&message)) {
       auto response = transport_->send_request(*request);
       if (!response) {
-        return std::unexpected(response.error());
+        return mcp::core::unexpected(response.error());
       }
       received_.push_back(std::move(*response));
       return core::Unit{};
@@ -72,7 +94,7 @@ class TransportContractAdapter final : public transport::ServerTransport {
       return transport_->send_notification(*notification);
     }
 
-    return std::unexpected(detail::adapter_error(
+    return mcp::core::unexpected(detail::adapter_error(
         "server transport adapter cannot send responses"));
   }
 
@@ -115,13 +137,42 @@ class ContractTransportAdapter final : public mcp::server::Transport {
       std::unique_ptr<transport::ServerTransport> transport)
       : owned_(std::move(transport)), transport_(owned_.get()) {}
 
+  ContractTransportAdapter(const ContractTransportAdapter&) = delete;
+  ContractTransportAdapter& operator=(const ContractTransportAdapter&) = delete;
+
+  ContractTransportAdapter(ContractTransportAdapter&& other) noexcept
+      : owned_(std::move(other.owned_)),
+        transport_(owned_ ? owned_.get() : other.transport_),
+        request_handler_(std::move(other.request_handler_)),
+        notification_handler_(std::move(other.notification_handler_)),
+        client_capabilities_(std::move(other.client_capabilities_)),
+        stopped_(other.stopped_) {
+    other.transport_ = nullptr;
+    other.stopped_ = true;
+  }
+
+  ContractTransportAdapter& operator=(
+      ContractTransportAdapter&& other) noexcept {
+    if (this != &other) {
+      owned_ = std::move(other.owned_);
+      transport_ = owned_ ? owned_.get() : other.transport_;
+      request_handler_ = std::move(other.request_handler_);
+      notification_handler_ = std::move(other.notification_handler_);
+      client_capabilities_ = std::move(other.client_capabilities_);
+      stopped_ = other.stopped_;
+      other.transport_ = nullptr;
+      other.stopped_ = true;
+    }
+    return *this;
+  }
+
   core::Result<core::Unit> start(
       RequestHandler handler,
       NotificationHandler notification_handler = {}) override {
     request_handler_ = std::move(handler);
     notification_handler_ = std::move(notification_handler);
     if (transport_ == nullptr) {
-      return std::unexpected(
+      return mcp::core::unexpected(
           detail::adapter_error("server contract transport is null"));
     }
 
@@ -129,7 +180,7 @@ class ContractTransportAdapter final : public mcp::server::Transport {
     while (!stopped_) {
       auto received = transport_->receive();
       if (!received) {
-        return std::unexpected(received.error());
+        return mcp::core::unexpected(received.error());
       }
       if (!received->has_value()) {
         return core::Unit{};
@@ -137,7 +188,7 @@ class ContractTransportAdapter final : public mcp::server::Transport {
 
       const auto handled = handle_inbound(received->value());
       if (!handled) {
-        return std::unexpected(handled.error());
+        return mcp::core::unexpected(handled.error());
       }
     }
     return core::Unit{};
@@ -146,22 +197,22 @@ class ContractTransportAdapter final : public mcp::server::Transport {
   core::Result<protocol::JsonRpcResponse> send_request(
       const protocol::JsonRpcRequest& request) override {
     if (transport_ == nullptr) {
-      return std::unexpected(
+      return mcp::core::unexpected(
           detail::adapter_error("server contract transport is null"));
     }
 
     const auto sent = transport_->send(protocol::JsonRpcMessage{request});
     if (!sent) {
-      return std::unexpected(sent.error());
+      return mcp::core::unexpected(sent.error());
     }
 
     while (true) {
       auto received = transport_->receive();
       if (!received) {
-        return std::unexpected(received.error());
+        return mcp::core::unexpected(received.error());
       }
       if (!received->has_value()) {
-        return std::unexpected(detail::adapter_error(
+        return mcp::core::unexpected(detail::adapter_error(
             "server contract transport closed before response"));
       }
 
@@ -170,13 +221,13 @@ class ContractTransportAdapter final : public mcp::server::Transport {
         if (response->id.has_value() && *response->id == request.id) {
           return *response;
         }
-        return std::unexpected(detail::adapter_error(
+        return mcp::core::unexpected(detail::adapter_error(
             "server contract transport received unexpected response id"));
       }
 
       const auto handled = handle_inbound(received->value());
       if (!handled) {
-        return std::unexpected(handled.error());
+        return mcp::core::unexpected(handled.error());
       }
     }
   }
@@ -184,7 +235,7 @@ class ContractTransportAdapter final : public mcp::server::Transport {
   core::Result<core::Unit> send_notification(
       const protocol::JsonRpcNotification& notification) override {
     if (transport_ == nullptr) {
-      return std::unexpected(
+      return mcp::core::unexpected(
           detail::adapter_error("server contract transport is null"));
     }
     return transport_->send(protocol::JsonRpcMessage{notification});
@@ -260,7 +311,7 @@ class ContractTransportAdapter final : public mcp::server::Transport {
 
     auto sent = transport_->send(protocol::JsonRpcMessage{std::move(response)});
     if (!sent) {
-      return std::unexpected(sent.error());
+      return mcp::core::unexpected(sent.error());
     }
     return core::Unit{};
   }
@@ -273,9 +324,9 @@ class ContractTransportAdapter final : public mcp::server::Transport {
     try {
       return notification_handler_(notification, session_context());
     } catch (const std::exception& ex) {
-      return std::unexpected(errors::handler_failed(ex.what()));
+      return mcp::core::unexpected(errors::handler_failed(ex.what()));
     } catch (...) {
-      return std::unexpected(errors::handler_unknown_exception());
+      return mcp::core::unexpected(errors::handler_unknown_exception());
     }
   }
 
@@ -283,6 +334,7 @@ class ContractTransportAdapter final : public mcp::server::Transport {
     SessionContext context;
     context.remote_address = std::string(name());
     context.transport = this;
+    context.transport_lifetime = lifetime_token();
     return context;
   }
 

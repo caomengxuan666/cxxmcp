@@ -7,6 +7,7 @@
 #include <ctime>
 #include <exception>
 #include <iomanip>
+#include <limits>
 #include <sstream>
 #include <utility>
 
@@ -18,6 +19,29 @@ core::Error make_task_error(protocol::ErrorCode code, std::string message,
                             std::string detail = {}) {
   return core::Error{static_cast<int>(code), std::move(message),
                      std::move(detail)};
+}
+
+core::Result<std::size_t> parse_task_list_cursor(
+    const std::optional<std::string>& cursor) {
+  if (!cursor.has_value() || cursor->empty()) {
+    return std::size_t{0};
+  }
+  std::size_t value = 0;
+  for (const char character : *cursor) {
+    if (character < '0' || character > '9') {
+      return mcp::core::unexpected(make_task_error(
+          protocol::ErrorCode::InvalidParams,
+          "tasks/list cursor must be a decimal offset", *cursor));
+    }
+    const auto digit = static_cast<std::size_t>(character - '0');
+    if (value > (std::numeric_limits<std::size_t>::max() - digit) / 10) {
+      return mcp::core::unexpected(
+          make_task_error(protocol::ErrorCode::InvalidParams,
+                          "tasks/list cursor offset is too large", *cursor));
+    }
+    value = value * 10 + digit;
+  }
+  return value;
 }
 
 }  // namespace
@@ -77,7 +101,47 @@ TaskOperationProcessor::find_task_locked(std::string_view task_id) const {
   return &it->second;
 }
 
-void TaskOperationProcessor::refresh_locked() {
+void TaskOperationProcessor::append_update_locked(
+    std::vector<TaskUpdate>* updates, const TaskRecord& record) const {
+  if (updates == nullptr) {
+    return;
+  }
+  TaskUpdate update;
+  update.task = record.task;
+  update.progress_token = record.progress_token;
+  updates->push_back(std::move(update));
+}
+
+void TaskOperationProcessor::emit_updates(
+    const std::vector<TaskUpdate>& updates) const {
+  for (const auto& update : updates) {
+    if (options_.task_status_hook) {
+      try {
+        options_.task_status_hook(update.task);
+      } catch (...) {
+        // Hooks are observational and must not break task lifecycle progress.
+      }
+    }
+    if (!options_.emit_progress_for_task_state_changes ||
+        !options_.task_progress_hook || !update.progress_token.has_value()) {
+      continue;
+    }
+
+    protocol::ProgressNotificationParams progress;
+    progress.progress_token = *update.progress_token;
+    progress.total = 1.0;
+    progress.progress = is_terminal(update.task.status) ? 1.0 : 0.0;
+    progress.message = update.task.status_message.value_or(
+        protocol::task_status_to_string(update.task.status));
+    try {
+      options_.task_progress_hook(progress);
+    } catch (...) {
+      // Hooks are observational and must not break task lifecycle progress.
+    }
+  }
+}
+
+void TaskOperationProcessor::refresh_locked(std::vector<TaskUpdate>* updates) {
   const auto now = std::chrono::steady_clock::now();
   const auto timestamp = now_timestamp();
   for (auto& [task_id, record] : tasks_) {
@@ -96,6 +160,7 @@ void TaskOperationProcessor::refresh_locked() {
           make_task_error(protocol::ErrorCode::InternalError,
                           "Operation timed out", record.task.task_id);
       record.result.reset();
+      append_update_locked(updates, record);
     }
   }
   trim_completed_locked();
@@ -144,35 +209,40 @@ void TaskOperationProcessor::trim_completed_locked() {
 
 void TaskOperationProcessor::finish_task(std::string task_id,
                                          core::Result<protocol::Json> result) {
-  std::lock_guard<std::mutex> lock(mutex_);
-  auto* record = find_task_locked(task_id);
-  if (record == nullptr ||
-      record->task.status != protocol::TaskStatus::Working) {
-    return;
-  }
+  std::vector<TaskUpdate> updates;
+  {
+    std::lock_guard<std::mutex> lock(mutex_);
+    auto* record = find_task_locked(task_id);
+    if (record == nullptr ||
+        record->task.status != protocol::TaskStatus::Working) {
+      return;
+    }
 
-  const auto now = std::chrono::steady_clock::now();
-  record->task.last_updated_at = now_timestamp();
-  record->terminal_at = now;
-  if (result) {
-    record->task.status = protocol::TaskStatus::Completed;
-    record->task.status_message.reset();
-    record->result = *result;
-    record->failure.reset();
-  } else {
-    record->task.status = protocol::TaskStatus::Failed;
-    record->task.status_message = result.error().message;
-    record->failure = result.error();
-    record->result.reset();
+    const auto now = std::chrono::steady_clock::now();
+    record->task.last_updated_at = now_timestamp();
+    record->terminal_at = now;
+    if (result) {
+      record->task.status = protocol::TaskStatus::Completed;
+      record->task.status_message.reset();
+      record->result = *result;
+      record->failure.reset();
+    } else {
+      record->task.status = protocol::TaskStatus::Failed;
+      record->task.status_message = result.error().message;
+      record->failure = result.error();
+      record->result.reset();
+    }
+    append_update_locked(&updates, *record);
+    trim_completed_locked();
   }
-  trim_completed_locked();
+  emit_updates(updates);
 }
 
 core::Result<protocol::CreateTaskResult>
 TaskOperationProcessor::submit_operation(TaskOperationDescriptor descriptor,
                                          TaskOperationHandler operation) {
   if (!operation) {
-    return std::unexpected(make_task_error(
+    return mcp::core::unexpected(make_task_error(
         protocol::ErrorCode::InvalidRequest,
         "task operation handler must be callable", descriptor.name));
   }
@@ -185,7 +255,7 @@ TaskOperationProcessor::submit_operation(TaskOperationDescriptor descriptor,
   std::optional<std::chrono::seconds> timeout = options_.default_timeout;
   if (descriptor.task.has_value() && descriptor.task->ttl.has_value()) {
     if (*descriptor.task->ttl < 0) {
-      return std::unexpected(
+      return mcp::core::unexpected(
           make_task_error(protocol::ErrorCode::InvalidRequest,
                           "task ttl must be non-negative", descriptor.name));
     }
@@ -201,6 +271,7 @@ TaskOperationProcessor::submit_operation(TaskOperationDescriptor descriptor,
     CancellationSource cancellation;
     TaskRecord record;
     record.task = task;
+    record.progress_token = descriptor.progress_token;
     record.started_at = std::chrono::steady_clock::now();
     record.terminal_at = std::nullopt;
     record.timeout = timeout;
@@ -223,11 +294,11 @@ TaskOperationProcessor::submit_operation(TaskOperationDescriptor descriptor,
       finish_task(task_id, std::move(outcome));
     } catch (const std::exception& exception) {
       finish_task(task_id,
-                  std::unexpected(make_task_error(
+                  mcp::core::unexpected(make_task_error(
                       protocol::ErrorCode::InternalError,
                       "task operation threw an exception", exception.what())));
     } catch (...) {
-      finish_task(task_id, std::unexpected(make_task_error(
+      finish_task(task_id, mcp::core::unexpected(make_task_error(
                                protocol::ErrorCode::InternalError,
                                "task operation threw an unknown exception")));
     }
@@ -237,8 +308,13 @@ TaskOperationProcessor::submit_operation(TaskOperationDescriptor descriptor,
     tasks_.erase(task.task_id);
     order_.erase(std::remove(order_.begin(), order_.end(), task.task_id),
                  order_.end());
-    return std::unexpected(queued.error());
+    return mcp::core::unexpected(queued.error());
   }
+
+  TaskUpdate update;
+  update.task = task;
+  update.progress_token = descriptor.progress_token;
+  emit_updates(std::vector<TaskUpdate>{std::move(update)});
 
   protocol::CreateTaskResult result;
   result.task = std::move(task);
@@ -253,6 +329,9 @@ TaskOperationProcessor::submit_tool_call(
   TaskOperationDescriptor descriptor;
   descriptor.name = call.name;
   descriptor.task = call.task;
+  if (call.meta.has_value()) {
+    descriptor.progress_token = protocol::meta_progress_token(*call.meta);
+  }
   return submit_operation(
       std::move(descriptor),
       [&tools, call = std::move(call), schema_validator,
@@ -261,7 +340,7 @@ TaskOperationProcessor::submit_tool_call(
         auto result = tools.call(std::move(call), context, cancellation,
                                  schema_validator);
         if (!result) {
-          return std::unexpected(result.error());
+          return mcp::core::unexpected(result.error());
         }
         return protocol::tool_result_to_json(*result);
       });
@@ -269,73 +348,126 @@ TaskOperationProcessor::submit_tool_call(
 
 core::Result<protocol::TaskListResult> TaskOperationProcessor::list_tasks(
     const protocol::TaskListParams& params) {
-  (void)params;
-  std::lock_guard<std::mutex> lock(mutex_);
-  refresh_locked();
+  const auto cursor = parse_task_list_cursor(params.cursor);
+  if (!cursor) {
+    return mcp::core::unexpected(cursor.error());
+  }
 
   protocol::TaskListResult result;
-  result.tasks.reserve(order_.size());
-  for (const auto& task_id : order_) {
-    const auto* record = find_task_locked(task_id);
-    if (record != nullptr) {
-      result.tasks.push_back(record->task);
+  std::vector<TaskUpdate> updates;
+  {
+    std::lock_guard<std::mutex> lock(mutex_);
+    refresh_locked(&updates);
+
+    const std::size_t total = order_.size();
+    const std::size_t start = std::min(*cursor, total);
+    const std::size_t page_size =
+        options_.list_page_size == 0 ? total : options_.list_page_size;
+    const std::size_t end = std::min(start + page_size, total);
+
+    result.tasks.reserve(end - start);
+    for (std::size_t index = start; index < end; ++index) {
+      const auto& task_id = order_.at(index);
+      const auto* record = find_task_locked(task_id);
+      if (record != nullptr) {
+        result.tasks.push_back(record->task);
+      }
     }
+    if (end < total) {
+      result.next_cursor = std::to_string(end);
+    }
+    result.total = static_cast<std::int64_t>(total);
   }
-  result.total = static_cast<std::int64_t>(result.tasks.size());
+  emit_updates(updates);
   return result;
 }
 
 core::Result<protocol::Task> TaskOperationProcessor::get_task(
     const protocol::TaskGetParams& params) {
-  std::lock_guard<std::mutex> lock(mutex_);
-  refresh_locked();
-  const auto* record = find_task_locked(params.task_id);
-  if (record == nullptr) {
-    return std::unexpected(task_not_found_error(params.task_id));
+  protocol::Task task;
+  std::optional<core::Error> error;
+  std::vector<TaskUpdate> updates;
+  {
+    std::lock_guard<std::mutex> lock(mutex_);
+    refresh_locked(&updates);
+    const auto* record = find_task_locked(params.task_id);
+    if (record == nullptr) {
+      error = task_not_found_error(params.task_id);
+    } else {
+      task = record->task;
+    }
   }
-  return record->task;
+  emit_updates(updates);
+  if (error.has_value()) {
+    return mcp::core::unexpected(*error);
+  }
+  return task;
 }
 
 core::Result<protocol::Task> TaskOperationProcessor::cancel_task(
     const protocol::TaskCancelParams& params) {
-  std::lock_guard<std::mutex> lock(mutex_);
-  refresh_locked();
-  auto* record = find_task_locked(params.task_id);
-  if (record == nullptr) {
-    return std::unexpected(task_not_found_error(params.task_id));
+  protocol::Task task;
+  std::optional<core::Error> error;
+  std::vector<TaskUpdate> updates;
+  {
+    std::lock_guard<std::mutex> lock(mutex_);
+    refresh_locked(&updates);
+    auto* record = find_task_locked(params.task_id);
+    if (record == nullptr) {
+      error = task_not_found_error(params.task_id);
+    } else if (!is_terminal(record->task.status)) {
+      record->cancellation.cancel();
+      record->task.status = protocol::TaskStatus::Cancelled;
+      record->task.status_message = "Operation cancelled";
+      record->task.last_updated_at = now_timestamp();
+      record->terminal_at = std::chrono::steady_clock::now();
+      record->failure = make_task_error(protocol::ErrorCode::InternalError,
+                                        "Operation cancelled", params.task_id);
+      record->result.reset();
+      append_update_locked(&updates, *record);
+      trim_completed_locked();
+    }
+    if (record != nullptr) {
+      task = record->task;
+    }
   }
-  if (is_terminal(record->task.status)) {
-    return record->task;
+  emit_updates(updates);
+  if (error.has_value()) {
+    return mcp::core::unexpected(*error);
   }
-  record->cancellation.cancel();
-  record->task.status = protocol::TaskStatus::Cancelled;
-  record->task.status_message = "Operation cancelled";
-  record->task.last_updated_at = now_timestamp();
-  record->terminal_at = std::chrono::steady_clock::now();
-  record->failure = make_task_error(protocol::ErrorCode::InternalError,
-                                    "Operation cancelled", params.task_id);
-  record->result.reset();
-  trim_completed_locked();
-  return record->task;
+  return task;
 }
 
 core::Result<protocol::Json> TaskOperationProcessor::task_result(
     const protocol::TaskResultParams& params) {
-  std::lock_guard<std::mutex> lock(mutex_);
-  refresh_locked();
-  const auto* record = find_task_locked(params.task_id);
-  if (record == nullptr) {
-    return std::unexpected(task_not_found_error(params.task_id));
+  std::vector<TaskUpdate> updates;
+  std::optional<protocol::Json> result;
+  std::optional<core::Error> failure;
+  std::optional<core::Error> missing;
+  {
+    std::lock_guard<std::mutex> lock(mutex_);
+    refresh_locked(&updates);
+    const auto* record = find_task_locked(params.task_id);
+    if (record == nullptr) {
+      missing = task_not_found_error(params.task_id);
+    } else {
+      result = record->result;
+      failure = record->failure;
+    }
   }
-  if (record->result.has_value()) {
-    return *record->result;
+  emit_updates(updates);
+  if (missing.has_value()) {
+    return mcp::core::unexpected(*missing);
   }
-  if (record->failure.has_value()) {
-    return std::unexpected(*record->failure);
+  if (result.has_value()) {
+    return *result;
   }
-  return std::unexpected(make_task_error(protocol::ErrorCode::InvalidRequest,
-                                         "task result is not available",
-                                         params.task_id));
+  if (failure.has_value()) {
+    return mcp::core::unexpected(*failure);
+  }
+  return mcp::core::unexpected(
+      make_task_error(protocol::ErrorCode::InvalidRequest,
+                      "task result is not available", params.task_id));
 }
 
 }  // namespace mcp::server

@@ -12,10 +12,15 @@
 /// Server types remain lower-level convenience APIs.
 
 #include <atomic>
+#include <chrono>
+#include <condition_variable>
 #include <cstdint>
+#include <exception>
+#include <iostream>
 #include <memory>
 #include <mutex>
 #include <optional>
+#include <string>
 #include <string_view>
 #include <thread>
 #include <unordered_map>
@@ -30,10 +35,13 @@
 #include "cxxmcp/config.hpp"
 #include "cxxmcp/error.hpp"
 #include "cxxmcp/handler.hpp"
+#include "cxxmcp/protocol/initialize.hpp"
 #include "cxxmcp/roles.hpp"
+#include "cxxmcp/server/authoring.hpp"
 #include "cxxmcp/server/peer.hpp"
-#include "cxxmcp/server/server.hpp"
 #include "cxxmcp/server/transport_adapter_fwd.hpp"
+#include "cxxmcp/transport/http_transport.hpp"
+#include "cxxmcp/transport/stdio_transport.hpp"
 #include "cxxmcp/transport/transport.hpp"
 
 namespace mcp {
@@ -96,7 +104,7 @@ inline std::string peer_request_cancellation_key(
 inline core::Result<protocol::Json> peer_require_result_payload(
     const protocol::JsonRpcResponse& response) {
   if (response.error.has_value()) {
-    return std::unexpected(core::Error{
+    return mcp::core::unexpected(core::Error{
         response.error->code,
         response.error->message,
         response.error->data.has_value() ? response.error->data->dump()
@@ -105,9 +113,9 @@ inline core::Result<protocol::Json> peer_require_result_payload(
     });
   }
   if (!response.result.has_value()) {
-    return std::unexpected(errors::make(protocol::ErrorCode::InvalidRequest,
-                                        "response did not contain a result", {},
-                                        "protocol"));
+    return mcp::core::unexpected(
+        errors::make(protocol::ErrorCode::InvalidRequest,
+                     "response did not contain a result", {}, "protocol"));
   }
   return *response.result;
 }
@@ -118,7 +126,7 @@ inline core::Result<core::Unit> serve_transport_loop(
   while (!cancellation.cancelled()) {
     auto received = transport.receive();
     if (!received) {
-      return std::unexpected(received.error());
+      return mcp::core::unexpected(received.error());
     }
     if (!received->has_value()) {
       return core::Unit{};
@@ -126,12 +134,12 @@ inline core::Result<core::Unit> serve_transport_loop(
 
     auto dispatched = dispatch(received->value());
     if (!dispatched) {
-      return std::unexpected(dispatched.error());
+      return mcp::core::unexpected(dispatched.error());
     }
     if (dispatched->has_value()) {
       auto sent = transport.send(std::move(dispatched->value()));
       if (!sent) {
-        return std::unexpected(sent.error());
+        return mcp::core::unexpected(sent.error());
       }
     }
   }
@@ -146,6 +154,15 @@ inline void keep_first_service_error(std::optional<core::Error>& first_error,
     first_error = std::move(error);
   }
 }
+
+struct ClientNativeReceiveState {
+  std::mutex mutex;
+  std::condition_variable cv;
+  std::unordered_map<std::string, protocol::JsonRpcResponse> responses;
+  std::optional<core::Error> failure;
+  bool loop_active = false;
+  bool closed = false;
+};
 
 inline std::unique_ptr<client::Transport> make_peer_client_transport_adapter(
     std::unique_ptr<transport::ClientTransport>& transport) {
@@ -190,16 +207,17 @@ inline protocol::Json make_peer_initialize_params(
 
 inline core::Result<protocol::Json> require_peer_initialize_payload(
     const protocol::Json& payload) {
-  if (!payload.is_object()) {
-    return std::unexpected(errors::make(protocol::ErrorCode::InvalidRequest,
-                                        "initialize response must be an object",
-                                        {}, "protocol"));
+  const auto parsed = protocol::initialize_result_from_json(payload);
+  if (!parsed) {
+    return mcp::core::unexpected(errors::make(
+        protocol::ErrorCode::InvalidRequest, parsed.error().message,
+        parsed.error().detail, "protocol"));
   }
-  if (!payload.contains("protocolVersion") ||
-      !payload.at("protocolVersion").is_string()) {
-    return std::unexpected(
+  if (!protocol::is_supported_protocol_version(parsed->protocol_version)) {
+    return mcp::core::unexpected(
         errors::make(protocol::ErrorCode::InvalidRequest,
-                     "initialize response requires a string protocolVersion",
+                     "unsupported MCP protocol version(\"" +
+                         parsed->protocol_version + "\")",
                      {}, "protocol"));
   }
   return payload;
@@ -208,14 +226,22 @@ inline core::Result<protocol::Json> require_peer_initialize_payload(
 inline core::Result<core::Unit> validate_peer_server_initialize_params(
     const protocol::Json& params) {
   if (!params.is_object()) {
-    return std::unexpected(errors::make(protocol::ErrorCode::InvalidParams,
-                                        "initialize params must be an object"));
+    return mcp::core::unexpected(
+        errors::make(protocol::ErrorCode::InvalidParams,
+                     "initialize params must be an object"));
   }
   if (!params.contains("protocolVersion") ||
       !params.at("protocolVersion").is_string()) {
-    return std::unexpected(
+    return mcp::core::unexpected(
         errors::make(protocol::ErrorCode::InvalidParams,
                      "initialize requires a string protocolVersion"));
+  }
+  const auto requested_version =
+      params.at("protocolVersion").get<std::string>();
+  if (!protocol::is_supported_protocol_version(requested_version)) {
+    return mcp::core::unexpected(errors::make(
+        protocol::ErrorCode::InvalidParams,
+        "unsupported MCP protocol version(\"" + requested_version + "\")"));
   }
 
   return core::Unit{};
@@ -245,9 +271,141 @@ template <class Role>
 class Peer;
 
 /// @brief Client-side peer boundary for talking to an MCP server.
+///
+/// When constructed with a role-generic ClientTransport, request/response
+/// helpers serialize native transport access. This preserves the transport
+/// contract that receive() is single-consumer and avoids competing receive
+/// loops until a dedicated client receive pump is introduced.
 template <>
 class Peer<RoleClient> {
  public:
+  class Builder;
+  class TaskHandle {
+   public:
+    TaskHandle() = default;
+
+    TaskHandle(Peer& peer, protocol::Task task)
+        : peer_(&peer), task_(std::move(task)) {}
+
+    const std::string& id() const noexcept { return task_.task_id; }
+
+    protocol::TaskStatus status() const noexcept { return task_.status; }
+
+    const protocol::Task& snapshot() const noexcept { return task_; }
+
+    core::Result<protocol::Task> poll() {
+      if (peer_ == nullptr) {
+        return mcp::core::unexpected(detached_error());
+      }
+      auto task = peer_->get_task(task_.task_id);
+      if (!task) {
+        return mcp::core::unexpected(task.error());
+      }
+      task_ = *task;
+      return task_;
+    }
+
+    core::Result<protocol::Task> cancel() {
+      if (peer_ == nullptr) {
+        return mcp::core::unexpected(detached_error());
+      }
+      auto task = peer_->cancel_task(task_.task_id);
+      if (!task) {
+        return mcp::core::unexpected(task.error());
+      }
+      task_ = *task;
+      return task_;
+    }
+
+    core::Result<protocol::Json> result() {
+      if (peer_ == nullptr) {
+        return mcp::core::unexpected(detached_error());
+      }
+      return peer_->task_result(task_.task_id);
+    }
+
+    template <class T>
+    core::Result<T> result_as() {
+      auto payload = result();
+      if (!payload) {
+        return mcp::core::unexpected(payload.error());
+      }
+      try {
+        if (payload->is_object() && payload->contains("value")) {
+          return payload->at("value").template get<T>();
+        }
+        return payload->template get<T>();
+      } catch (const std::exception& exception) {
+        return mcp::core::unexpected(errors::make(
+            protocol::ErrorCode::InvalidRequest, "failed to decode task result",
+            exception.what(), "protocol"));
+      } catch (...) {
+        return mcp::core::unexpected(
+            errors::make(protocol::ErrorCode::InvalidRequest,
+                         "failed to decode task result", {}, "protocol"));
+      }
+    }
+
+    core::Result<protocol::Task> wait(std::chrono::milliseconds timeout,
+                                      std::chrono::milliseconds poll_interval =
+                                          std::chrono::milliseconds(100)) {
+      if (peer_ == nullptr) {
+        return mcp::core::unexpected(detached_error());
+      }
+      if (poll_interval <= std::chrono::milliseconds::zero()) {
+        poll_interval = std::chrono::milliseconds(1);
+      }
+
+      const auto started_at = std::chrono::steady_clock::now();
+      while (true) {
+        if (is_terminal(task_.status)) {
+          return task_;
+        }
+        if (std::chrono::steady_clock::now() - started_at >= timeout) {
+          return mcp::core::unexpected(errors::request_timed_out(timeout));
+        }
+
+        auto task = poll();
+        if (!task) {
+          return mcp::core::unexpected(task.error());
+        }
+        if (is_terminal(task->status)) {
+          return *task;
+        }
+
+        const auto elapsed = std::chrono::steady_clock::now() - started_at;
+        if (elapsed >= timeout) {
+          return mcp::core::unexpected(errors::request_timed_out(timeout));
+        }
+        auto sleep_for = poll_interval;
+        const auto remaining =
+            std::chrono::duration_cast<std::chrono::milliseconds>(timeout -
+                                                                  elapsed);
+        if (remaining > std::chrono::milliseconds::zero() &&
+            remaining < sleep_for) {
+          sleep_for = remaining;
+        }
+        std::this_thread::sleep_for(sleep_for);
+      }
+    }
+
+   private:
+    static bool is_terminal(protocol::TaskStatus status) noexcept {
+      return status == protocol::TaskStatus::Completed ||
+             status == protocol::TaskStatus::Failed ||
+             status == protocol::TaskStatus::Cancelled;
+    }
+
+    static core::Error detached_error() {
+      return errors::make(protocol::ErrorCode::InvalidRequest,
+                          "task handle is not attached to a client peer", {},
+                          "request");
+    }
+
+    Peer* peer_ = nullptr;
+    protocol::Task task_;
+  };
+
   /// @brief Creates a client peer from an owned transport.
   explicit Peer(std::unique_ptr<client::Transport> transport)
       : client_(std::move(transport)) {}
@@ -275,6 +433,9 @@ class Peer<RoleClient> {
     return Peer(client::Client::connect_stdio(std::move(endpoint)));
   }
 
+  /// @brief Starts a fluent builder for common client peer construction.
+  static Builder builder();
+
   CXXMCP_DEPRECATED(
       "client() is a compatibility escape hatch; prefer ClientPeer methods")
   client::Client& client() noexcept { return client_; }
@@ -282,6 +443,17 @@ class Peer<RoleClient> {
   CXXMCP_DEPRECATED(
       "client() is a compatibility escape hatch; prefer ClientPeer methods")
   const client::Client& client() const noexcept { return client_; }
+
+  bool uses_native_transport() const noexcept {
+    return native_transport_ != nullptr;
+  }
+
+  core::Result<core::Unit> start(CancellationToken cancellation = {}) {
+    if (native_transport_) {
+      return start_native_receive_loop(cancellation);
+    }
+    return client_.start();
+  }
 
   void stop() noexcept {
     if (native_transport_) {
@@ -300,15 +472,15 @@ class Peer<RoleClient> {
                            std::move(client_name), std::move(client_version),
                            client_capabilities_));
       if (!payload) {
-        return std::unexpected(payload.error());
+        return mcp::core::unexpected(payload.error());
       }
       auto checked = detail::require_peer_initialize_payload(*payload);
       if (!checked) {
-        return std::unexpected(checked.error());
+        return mcp::core::unexpected(checked.error());
       }
       auto recorded = record_server_capabilities(*checked);
       if (!recorded) {
-        return std::unexpected(recorded.error());
+        return mcp::core::unexpected(recorded.error());
       }
       return *checked;
     }
@@ -316,8 +488,7 @@ class Peer<RoleClient> {
                               std::move(client_version));
   }
 
-  const std::optional<protocol::ServerCapabilities>& server_capabilities()
-      const noexcept {
+  std::optional<protocol::ServerCapabilities> server_capabilities() const {
     return native_transport_ ? server_capabilities_
                              : client_.server_capabilities();
   }
@@ -632,7 +803,7 @@ class Peer<RoleClient> {
       if (response.has_value()) {
         return std::move(*response);
       }
-      return std::unexpected(client::handler_method_not_found(
+      return mcp::core::unexpected(client::handler_method_not_found(
           "client handler does not handle list_roots"));
     });
     on_create_message_request(
@@ -644,7 +815,7 @@ class Peer<RoleClient> {
           if (response.has_value()) {
             return std::move(*response);
           }
-          return std::unexpected(client::handler_method_not_found(
+          return mcp::core::unexpected(client::handler_method_not_found(
               "client handler does not handle create_message"));
         });
     on_create_elicitation_request(
@@ -656,7 +827,7 @@ class Peer<RoleClient> {
           if (response.has_value()) {
             return std::move(*response);
           }
-          return std::unexpected(client::handler_method_not_found(
+          return mcp::core::unexpected(client::handler_method_not_found(
               "client handler does not handle elicitation"));
         });
     on_custom_request([&handler](const protocol::JsonRpcRequest& request,
@@ -666,7 +837,7 @@ class Peer<RoleClient> {
       if (response.has_value()) {
         return std::move(*response);
       }
-      return std::unexpected(client::handler_method_not_found(
+      return mcp::core::unexpected(client::handler_method_not_found(
           "client handler does not handle custom request"));
     });
     on_raw_notification(
@@ -677,16 +848,29 @@ class Peer<RoleClient> {
   }
 
   core::Result<std::vector<protocol::ToolDefinition>> list_tools() {
-    auto payload = request_json(std::string(protocol::ToolsListMethod),
-                                protocol::Json::object());
+    const auto page = list_tools_page();
+    if (!page) {
+      return mcp::core::unexpected(page.error());
+    }
+    return page->tools;
+  }
+
+  core::Result<protocol::ToolsListResult> list_tools_page(
+      const protocol::PaginatedRequestParams& params = {}) {
+    if (!native_transport_) {
+      return client_.list_tools_page(params);
+    }
+    auto payload =
+        request_json(std::string(protocol::ToolsListMethod),
+                     protocol::paginated_request_params_to_json(params));
     if (!payload) {
-      return std::unexpected(payload.error());
+      return mcp::core::unexpected(payload.error());
     }
     const auto result = protocol::tools_list_result_from_json(*payload);
     if (!result) {
-      return std::unexpected(result.error());
+      return mcp::core::unexpected(result.error());
     }
-    return result->tools;
+    return *result;
   }
 
   core::Result<std::vector<protocol::ToolDefinition>> list_all_tools() {
@@ -705,7 +889,7 @@ class Peer<RoleClient> {
     auto payload = request_json(std::string(protocol::ToolsCallMethod),
                                 protocol::tool_call_to_json(call));
     if (!payload) {
-      return std::unexpected(payload.error());
+      return mcp::core::unexpected(payload.error());
     }
     return protocol::tool_result_from_json(*payload);
   }
@@ -713,20 +897,29 @@ class Peer<RoleClient> {
   core::Result<protocol::CreateTaskResult> call_tool_task(
       const protocol::ToolCall& call) {
     if (!call.task.has_value()) {
-      return std::unexpected(errors::make(
+      return mcp::core::unexpected(errors::make(
           protocol::ErrorCode::InvalidRequest,
           "task-aware tool call requires task parameters", {}, "protocol"));
     }
     if (!supports_server_task_tool_call()) {
-      return std::unexpected(unsupported_server_capability(
+      return mcp::core::unexpected(unsupported_server_capability(
           "server does not support task-aware tool calls"));
     }
     auto payload = request_json(std::string(protocol::ToolsCallMethod),
                                 protocol::tool_call_to_json(call));
     if (!payload) {
-      return std::unexpected(payload.error());
+      return mcp::core::unexpected(payload.error());
     }
     return protocol::create_task_result_from_json(*payload);
+  }
+
+  core::Result<TaskHandle> call_tool_task_handle(
+      const protocol::ToolCall& call) {
+    auto task = call_tool_task(call);
+    if (!task) {
+      return mcp::core::unexpected(task.error());
+    }
+    return TaskHandle(*this, task->task);
   }
 
   core::Result<protocol::ToolResult> call_tool(
@@ -739,16 +932,29 @@ class Peer<RoleClient> {
   }
 
   core::Result<std::vector<protocol::Prompt>> list_prompts() {
-    auto payload = request_json(std::string(protocol::PromptsListMethod),
-                                protocol::Json::object());
+    const auto page = list_prompts_page();
+    if (!page) {
+      return mcp::core::unexpected(page.error());
+    }
+    return page->prompts;
+  }
+
+  core::Result<protocol::PromptsListResult> list_prompts_page(
+      const protocol::PaginatedRequestParams& params = {}) {
+    if (!native_transport_) {
+      return client_.list_prompts_page(params);
+    }
+    auto payload =
+        request_json(std::string(protocol::PromptsListMethod),
+                     protocol::paginated_request_params_to_json(params));
     if (!payload) {
-      return std::unexpected(payload.error());
+      return mcp::core::unexpected(payload.error());
     }
     const auto result = protocol::prompts_list_result_from_json(*payload);
     if (!result) {
-      return std::unexpected(result.error());
+      return mcp::core::unexpected(result.error());
     }
-    return result->prompts;
+    return *result;
   }
 
   core::Result<std::vector<protocol::Prompt>> list_all_prompts() {
@@ -768,7 +974,7 @@ class Peer<RoleClient> {
     auto payload = request_json(std::string(protocol::PromptsGetMethod),
                                 protocol::prompts_get_params_to_json(params));
     if (!payload) {
-      return std::unexpected(payload.error());
+      return mcp::core::unexpected(payload.error());
     }
     return protocol::prompts_get_result_from_json(*payload);
   }
@@ -783,16 +989,29 @@ class Peer<RoleClient> {
   }
 
   core::Result<std::vector<protocol::Resource>> list_resources() {
-    auto payload = request_json(std::string(protocol::ResourcesListMethod),
-                                protocol::Json::object());
+    const auto page = list_resources_page();
+    if (!page) {
+      return mcp::core::unexpected(page.error());
+    }
+    return page->resources;
+  }
+
+  core::Result<protocol::ResourcesListResult> list_resources_page(
+      const protocol::PaginatedRequestParams& params = {}) {
+    if (!native_transport_) {
+      return client_.list_resources_page(params);
+    }
+    auto payload =
+        request_json(std::string(protocol::ResourcesListMethod),
+                     protocol::paginated_request_params_to_json(params));
     if (!payload) {
-      return std::unexpected(payload.error());
+      return mcp::core::unexpected(payload.error());
     }
     const auto result = protocol::resources_list_result_from_json(*payload);
     if (!result) {
-      return std::unexpected(result.error());
+      return mcp::core::unexpected(result.error());
     }
-    return result->resources;
+    return *result;
   }
 
   core::Result<std::vector<protocol::Resource>> list_all_resources() {
@@ -809,18 +1028,31 @@ class Peer<RoleClient> {
 
   core::Result<std::vector<protocol::ResourceTemplate>>
   list_resource_templates() {
+    const auto page = list_resource_templates_page();
+    if (!page) {
+      return mcp::core::unexpected(page.error());
+    }
+    return page->resource_templates;
+  }
+
+  core::Result<protocol::ResourceTemplatesListResult>
+  list_resource_templates_page(
+      const protocol::PaginatedRequestParams& params = {}) {
+    if (!native_transport_) {
+      return client_.list_resource_templates_page(params);
+    }
     auto payload =
         request_json(std::string(protocol::ResourcesTemplatesListMethod),
-                     protocol::Json::object());
+                     protocol::paginated_request_params_to_json(params));
     if (!payload) {
-      return std::unexpected(payload.error());
+      return mcp::core::unexpected(payload.error());
     }
     const auto result =
         protocol::resource_templates_list_result_from_json(*payload);
     if (!result) {
-      return std::unexpected(result.error());
+      return mcp::core::unexpected(result.error());
     }
-    return result->resource_templates;
+    return *result;
   }
 
   core::Result<std::vector<protocol::ResourceTemplate>>
@@ -843,7 +1075,7 @@ class Peer<RoleClient> {
         request_json(std::string(protocol::ResourcesReadMethod),
                      protocol::resources_read_params_to_json(params));
     if (!payload) {
-      return std::unexpected(payload.error());
+      return mcp::core::unexpected(payload.error());
     }
     return protocol::resources_read_result_from_json(*payload);
   }
@@ -856,20 +1088,20 @@ class Peer<RoleClient> {
   core::Result<protocol::CompleteResult> complete(
       const protocol::CompleteParams& request) {
     if (!supports_server_completion()) {
-      return std::unexpected(
+      return mcp::core::unexpected(
           unsupported_server_capability("server does not support completion"));
     }
     auto payload = request_json(std::string(protocol::CompletionCompleteMethod),
                                 protocol::complete_params_to_json(request));
     if (!payload) {
-      return std::unexpected(payload.error());
+      return mcp::core::unexpected(payload.error());
     }
     return protocol::complete_result_from_json(*payload);
   }
 
   core::Result<protocol::Json> complete(const protocol::Json& request) {
     if (!supports_server_completion()) {
-      return std::unexpected(
+      return mcp::core::unexpected(
           unsupported_server_capability("server does not support completion"));
     }
     return request_json(std::string(protocol::CompletionCompleteMethod),
@@ -890,7 +1122,7 @@ class Peer<RoleClient> {
     params.context = std::move(context);
     const auto result = complete(params);
     if (!result) {
-      return std::unexpected(result.error());
+      return mcp::core::unexpected(result.error());
     }
     return result->completion;
   }
@@ -909,7 +1141,7 @@ class Peer<RoleClient> {
     params.context = std::move(context);
     const auto result = complete(params);
     if (!result) {
-      return std::unexpected(result.error());
+      return mcp::core::unexpected(result.error());
     }
     return result->completion;
   }
@@ -922,7 +1154,7 @@ class Peer<RoleClient> {
         complete_prompt_argument(prompt_name, argument_name,
                                  std::move(current_value), std::move(context));
     if (!completion) {
-      return std::unexpected(completion.error());
+      return mcp::core::unexpected(completion.error());
     }
     return completion->values;
   }
@@ -935,7 +1167,7 @@ class Peer<RoleClient> {
         uri_template, argument_name, std::move(current_value),
         std::move(context));
     if (!completion) {
-      return std::unexpected(completion.error());
+      return mcp::core::unexpected(completion.error());
     }
     return completion->values;
   }
@@ -946,7 +1178,7 @@ class Peer<RoleClient> {
         request_json(std::string(protocol::SamplingCreateMessageMethod),
                      protocol::create_message_params_to_json(request));
     if (!payload) {
-      return std::unexpected(payload.error());
+      return mcp::core::unexpected(payload.error());
     }
     return protocol::create_message_result_from_json(*payload);
   }
@@ -962,7 +1194,7 @@ class Peer<RoleClient> {
         std::string(protocol::ElicitationCreateMethod),
         protocol::create_elicitation_request_param_to_json(request));
     if (!payload) {
-      return std::unexpected(payload.error());
+      return mcp::core::unexpected(payload.error());
     }
     return protocol::create_elicitation_result_from_json(*payload);
   }
@@ -974,25 +1206,37 @@ class Peer<RoleClient> {
   }
 
   core::Result<std::vector<protocol::Task>> list_tasks() {
+    const auto page = list_tasks_page();
+    if (!page) {
+      return mcp::core::unexpected(page.error());
+    }
+    return page->tasks;
+  }
+
+  core::Result<protocol::TaskListResult> list_tasks_page(
+      const protocol::TaskListParams& params = {}) {
     if (!supports_server_task_list()) {
-      return std::unexpected(unsupported_server_capability(
+      return mcp::core::unexpected(unsupported_server_capability(
           "server does not support task listing"));
     }
+    if (!native_transport_) {
+      return client_.list_tasks_page(params);
+    }
     auto payload = request_json(std::string(protocol::TasksListMethod),
-                                protocol::Json::object());
+                                protocol::task_list_params_to_json(params));
     if (!payload) {
-      return std::unexpected(payload.error());
+      return mcp::core::unexpected(payload.error());
     }
     const auto result = protocol::task_list_result_from_json(*payload);
     if (!result) {
-      return std::unexpected(result.error());
+      return mcp::core::unexpected(result.error());
     }
-    return result->tasks;
+    return *result;
   }
 
   core::Result<std::vector<protocol::Task>> list_all_tasks() {
     if (!supports_server_task_list()) {
-      return std::unexpected(unsupported_server_capability(
+      return mcp::core::unexpected(unsupported_server_capability(
           "server does not support task listing"));
     }
     return list_all_pages<protocol::Task>(
@@ -1008,7 +1252,7 @@ class Peer<RoleClient> {
 
   core::Result<protocol::Task> get_task(std::string_view task_id) {
     if (!supports_server_tasks()) {
-      return std::unexpected(
+      return mcp::core::unexpected(
           unsupported_server_capability("server does not support tasks"));
     }
     protocol::TaskGetParams params;
@@ -1016,14 +1260,14 @@ class Peer<RoleClient> {
     auto payload = request_json(std::string(protocol::TasksGetMethod),
                                 protocol::task_get_params_to_json(params));
     if (!payload) {
-      return std::unexpected(payload.error());
+      return mcp::core::unexpected(payload.error());
     }
     return protocol::task_from_json(*payload);
   }
 
   core::Result<protocol::Task> cancel_task(std::string_view task_id) {
     if (!supports_server_task_cancel()) {
-      return std::unexpected(unsupported_server_capability(
+      return mcp::core::unexpected(unsupported_server_capability(
           "server does not support task cancellation"));
     }
     protocol::TaskCancelParams params;
@@ -1031,14 +1275,14 @@ class Peer<RoleClient> {
     auto payload = request_json(std::string(protocol::TasksCancelMethod),
                                 protocol::task_cancel_params_to_json(params));
     if (!payload) {
-      return std::unexpected(payload.error());
+      return mcp::core::unexpected(payload.error());
     }
     return protocol::task_from_json(*payload);
   }
 
   core::Result<protocol::Json> task_result(std::string_view task_id) {
     if (!supports_server_tasks()) {
-      return std::unexpected(
+      return mcp::core::unexpected(
           unsupported_server_capability("server does not support tasks"));
     }
     protocol::TaskResultParams params;
@@ -1050,12 +1294,12 @@ class Peer<RoleClient> {
   core::Result<core::Unit> set_level(std::string_view level) {
     const auto parsed = protocol::logging_level_from_string(std::string(level));
     if (!parsed.has_value()) {
-      return std::unexpected(errors::make(protocol::ErrorCode::InvalidRequest,
-                                          "logging/setLevel level is invalid",
-                                          {}, "protocol"));
+      return mcp::core::unexpected(
+          errors::make(protocol::ErrorCode::InvalidRequest,
+                       "logging/setLevel level is invalid", {}, "protocol"));
     }
     if (!supports_server_logging()) {
-      return std::unexpected(
+      return mcp::core::unexpected(
           unsupported_server_capability("server does not support logging"));
     }
     protocol::LoggingSetLevelParams params;
@@ -1066,7 +1310,7 @@ class Peer<RoleClient> {
 
   core::Result<core::Unit> subscribe(std::string_view uri) {
     if (!supports_server_resource_subscribe()) {
-      return std::unexpected(unsupported_server_capability(
+      return mcp::core::unexpected(unsupported_server_capability(
           "server does not support resource subscriptions"));
     }
     protocol::ResourcesSubscribeParams params;
@@ -1077,7 +1321,7 @@ class Peer<RoleClient> {
 
   core::Result<core::Unit> unsubscribe(std::string_view uri) {
     if (!supports_server_resource_subscribe()) {
-      return std::unexpected(unsupported_server_capability(
+      return mcp::core::unexpected(unsupported_server_capability(
           "server does not support resource subscriptions"));
     }
     protocol::ResourcesUnsubscribeParams params;
@@ -1091,7 +1335,7 @@ class Peer<RoleClient> {
     if (native_transport_) {
       const auto response = send_native_request(request);
       if (!response) {
-        return std::unexpected(response.error());
+        return mcp::core::unexpected(response.error());
       }
       return detail::peer_require_result_payload(*response);
     }
@@ -1142,7 +1386,7 @@ class Peer<RoleClient> {
            parser = std::move(parser)]() mutable -> core::Result<T> {
             auto payload = raw_request(request);
             if (!payload) {
-              return std::unexpected(payload.error());
+              return mcp::core::unexpected(payload.error());
             }
             return parser(*payload);
           });
@@ -1159,7 +1403,7 @@ class Peer<RoleClient> {
             -> core::Result<std::vector<protocol::ToolDefinition>> {
           const auto result = protocol::tools_list_result_from_json(payload);
           if (!result) {
-            return std::unexpected(result.error());
+            return mcp::core::unexpected(result.error());
           }
           return result->tools;
         },
@@ -1174,7 +1418,7 @@ class Peer<RoleClient> {
             -> core::Result<std::vector<protocol::Prompt>> {
           const auto result = protocol::prompts_list_result_from_json(payload);
           if (!result) {
-            return std::unexpected(result.error());
+            return mcp::core::unexpected(result.error());
           }
           return result->prompts;
         },
@@ -1190,7 +1434,7 @@ class Peer<RoleClient> {
           const auto result =
               protocol::resources_list_result_from_json(payload);
           if (!result) {
-            return std::unexpected(result.error());
+            return mcp::core::unexpected(result.error());
           }
           return result->resources;
         },
@@ -1207,7 +1451,7 @@ class Peer<RoleClient> {
           const auto result =
               protocol::resource_templates_list_result_from_json(payload);
           if (!result) {
-            return std::unexpected(result.error());
+            return mcp::core::unexpected(result.error());
           }
           return result->resource_templates;
         },
@@ -1240,7 +1484,7 @@ class Peer<RoleClient> {
     if (!call.task.has_value()) {
       return RequestHandle<protocol::CreateTaskResult>::ready(
           next_peer_request_id(),
-          std::unexpected(
+          mcp::core::unexpected(
               errors::make(protocol::ErrorCode::InvalidRequest,
                            "task-aware tool call requires task parameters", {},
                            "protocol")));
@@ -1248,7 +1492,7 @@ class Peer<RoleClient> {
     if (!supports_server_task_tool_call()) {
       return RequestHandle<protocol::CreateTaskResult>::ready(
           next_peer_request_id(),
-          std::unexpected(unsupported_server_capability(
+          mcp::core::unexpected(unsupported_server_capability(
               "server does not support task-aware tool calls")));
     }
 
@@ -1304,8 +1548,9 @@ class Peer<RoleClient> {
       const protocol::CompleteParams& request, RequestOptions options = {}) {
     if (!supports_server_completion()) {
       return RequestHandle<protocol::CompleteResult>::ready(
-          next_peer_request_id(), std::unexpected(unsupported_server_capability(
-                                      "server does not support completion")));
+          next_peer_request_id(),
+          mcp::core::unexpected(unsupported_server_capability(
+              "server does not support completion")));
     }
     return request_async<protocol::CompleteResult>(
         std::string(protocol::CompletionCompleteMethod),
@@ -1320,8 +1565,9 @@ class Peer<RoleClient> {
                                                RequestOptions options = {}) {
     if (!supports_server_completion()) {
       return RequestHandle<protocol::Json>::ready(
-          next_peer_request_id(), std::unexpected(unsupported_server_capability(
-                                      "server does not support completion")));
+          next_peer_request_id(),
+          mcp::core::unexpected(unsupported_server_capability(
+              "server does not support completion")));
     }
     return request_async(std::string(protocol::CompletionCompleteMethod),
                          request, std::move(options));
@@ -1367,8 +1613,9 @@ class Peer<RoleClient> {
       RequestOptions options = {}) {
     if (!supports_server_task_list()) {
       return RequestHandle<std::vector<protocol::Task>>::ready(
-          next_peer_request_id(), std::unexpected(unsupported_server_capability(
-                                      "server does not support task listing")));
+          next_peer_request_id(),
+          mcp::core::unexpected(unsupported_server_capability(
+              "server does not support task listing")));
     }
     return request_async<std::vector<protocol::Task>>(
         std::string(protocol::TasksListMethod), protocol::Json::object(),
@@ -1376,7 +1623,7 @@ class Peer<RoleClient> {
             -> core::Result<std::vector<protocol::Task>> {
           const auto result = protocol::task_list_result_from_json(payload);
           if (!result) {
-            return std::unexpected(result.error());
+            return mcp::core::unexpected(result.error());
           }
           return result->tasks;
         },
@@ -1387,8 +1634,9 @@ class Peer<RoleClient> {
       const protocol::TaskGetParams& request, RequestOptions options = {}) {
     if (!supports_server_tasks()) {
       return RequestHandle<protocol::Task>::ready(
-          next_peer_request_id(), std::unexpected(unsupported_server_capability(
-                                      "server does not support tasks")));
+          next_peer_request_id(),
+          mcp::core::unexpected(
+              unsupported_server_capability("server does not support tasks")));
     }
     return request_async<protocol::Task>(
         std::string(protocol::TasksGetMethod),
@@ -1411,7 +1659,7 @@ class Peer<RoleClient> {
     if (!supports_server_task_cancel()) {
       return RequestHandle<protocol::Task>::ready(
           next_peer_request_id(),
-          std::unexpected(unsupported_server_capability(
+          mcp::core::unexpected(unsupported_server_capability(
               "server does not support task cancellation")));
     }
     return request_async<protocol::Task>(
@@ -1434,8 +1682,9 @@ class Peer<RoleClient> {
       const protocol::TaskResultParams& request, RequestOptions options = {}) {
     if (!supports_server_tasks()) {
       return RequestHandle<protocol::Json>::ready(
-          next_peer_request_id(), std::unexpected(unsupported_server_capability(
-                                      "server does not support tasks")));
+          next_peer_request_id(),
+          mcp::core::unexpected(
+              unsupported_server_capability("server does not support tasks")));
     }
     return request_async(std::string(protocol::TasksResultMethod),
                          protocol::task_result_params_to_json(request),
@@ -1481,12 +1730,23 @@ class Peer<RoleClient> {
                                ? handle_native_notification(*notification)
                                : client_.handle_notification(*notification);
       if (!handled) {
-        return std::unexpected(handled.error());
+        return mcp::core::unexpected(handled.error());
       }
       return std::nullopt;
     }
 
-    return std::unexpected(detail::peer_dispatch_error(
+    if (const auto* response =
+            std::get_if<protocol::JsonRpcResponse>(&message)) {
+      if (native_transport_) {
+        auto stored = store_native_response(*response);
+        if (!stored) {
+          return mcp::core::unexpected(stored.error());
+        }
+        return std::nullopt;
+      }
+    }
+
+    return mcp::core::unexpected(detail::peer_dispatch_error(
         "client peer cannot dispatch an uncorrelated response"));
   }
 
@@ -1505,6 +1765,94 @@ class Peer<RoleClient> {
  private:
   std::int64_t next_peer_request_id() noexcept {
     return next_request_id_->fetch_add(1, std::memory_order_relaxed);
+  }
+
+  bool native_receive_loop_active() const {
+    std::lock_guard<std::mutex> lock(native_receive_state_->mutex);
+    return native_receive_state_->loop_active;
+  }
+
+  core::Result<core::Unit> start_native_receive_loop(
+      CancellationToken cancellation) {
+    {
+      std::lock_guard<std::mutex> lock(native_receive_state_->mutex);
+      if (native_receive_state_->loop_active) {
+        return mcp::core::unexpected(detail::peer_transport_error(
+            "client peer receive loop is already running"));
+      }
+      native_receive_state_->loop_active = true;
+      native_receive_state_->closed = false;
+      native_receive_state_->failure.reset();
+      native_receive_state_->responses.clear();
+    }
+
+    auto finished = detail::serve_transport_loop(
+        *native_transport_, cancellation,
+        [this](const protocol::JsonRpcMessage& message) {
+          return dispatch_message(message);
+        });
+
+    {
+      std::lock_guard<std::mutex> lock(native_receive_state_->mutex);
+      native_receive_state_->loop_active = false;
+      native_receive_state_->closed = true;
+      if (!finished) {
+        native_receive_state_->failure = finished.error();
+      }
+    }
+    native_receive_state_->cv.notify_all();
+    return finished;
+  }
+
+  core::Result<core::Unit> store_native_response(
+      const protocol::JsonRpcResponse& response) {
+    if (!response.id.has_value()) {
+      return mcp::core::unexpected(detail::peer_transport_error(
+          "client peer received a response without an id"));
+    }
+    std::lock_guard<std::mutex> lock(native_receive_state_->mutex);
+    native_receive_state_
+        ->responses[detail::peer_request_cancellation_key(*response.id)] =
+        response;
+    native_receive_state_->cv.notify_all();
+    return core::Unit{};
+  }
+
+  core::Result<protocol::JsonRpcResponse> wait_native_response(
+      const protocol::RequestId& request_id) {
+    const auto key = detail::peer_request_cancellation_key(request_id);
+    std::unique_lock<std::mutex> lock(native_receive_state_->mutex);
+    native_receive_state_->cv.wait(lock, [&] {
+      return native_receive_state_->responses.find(key) !=
+                 native_receive_state_->responses.end() ||
+             native_receive_state_->failure.has_value() ||
+             native_receive_state_->closed;
+    });
+
+    const auto found = native_receive_state_->responses.find(key);
+    if (found != native_receive_state_->responses.end()) {
+      auto response = std::move(found->second);
+      native_receive_state_->responses.erase(found);
+      return response;
+    }
+    if (native_receive_state_->failure.has_value()) {
+      return mcp::core::unexpected(*native_receive_state_->failure);
+    }
+    return mcp::core::unexpected(detail::peer_transport_error(
+        "client peer transport closed before response"));
+  }
+
+  std::optional<protocol::JsonRpcResponse> take_native_response(
+      const protocol::RequestId& request_id) {
+    const auto key = detail::peer_request_cancellation_key(request_id);
+    std::lock_guard<std::mutex> lock(native_receive_state_->mutex);
+    const auto found = native_receive_state_->responses.find(key);
+    if (found == native_receive_state_->responses.end()) {
+      return std::nullopt;
+    }
+    auto response = std::move(found->second);
+    native_receive_state_->responses.erase(found);
+    return response;
   }
 
   static protocol::JsonRpcResponse native_error_response(
@@ -1565,7 +1913,7 @@ class Peer<RoleClient> {
       const auto params = protocol::cancelled_notification_params_from_json(
           notification.params);
       if (!params) {
-        return std::unexpected(
+        return mcp::core::unexpected(
             errors::make(protocol::ErrorCode::InvalidParams,
                          "cancelled notification requires a requestId"));
       }
@@ -1613,7 +1961,7 @@ class Peer<RoleClient> {
       if (!notification.params.is_object() ||
           !notification.params.contains("uri") ||
           !notification.params.at("uri").is_string()) {
-        return std::unexpected(errors::make(
+        return mcp::core::unexpected(errors::make(
             protocol::ErrorCode::InvalidParams,
             "resource updated notification requires a string uri"));
       }
@@ -1625,7 +1973,7 @@ class Peer<RoleClient> {
       const auto params =
           protocol::progress_notification_params_from_json(notification.params);
       if (!params) {
-        return std::unexpected(
+        return mcp::core::unexpected(
             errors::make(protocol::ErrorCode::InvalidParams,
                          "progress notification requires valid params"));
       }
@@ -1638,7 +1986,7 @@ class Peer<RoleClient> {
           protocol::elicitation_complete_notification_params_from_json(
               notification.params);
       if (!params) {
-        return std::unexpected(errors::make(
+        return mcp::core::unexpected(errors::make(
             protocol::ErrorCode::InvalidParams,
             "elicitation completion notification requires valid params"));
       }
@@ -1648,7 +1996,7 @@ class Peer<RoleClient> {
                task_status_handler_) {
       const auto task = protocol::task_from_json(notification.params);
       if (!task) {
-        return std::unexpected(
+        return mcp::core::unexpected(
             errors::make(protocol::ErrorCode::InvalidParams,
                          "task status notification requires valid task data"));
       }
@@ -1664,9 +2012,9 @@ class Peer<RoleClient> {
     }
     return core::Unit{};
   } catch (const std::exception& ex) {
-    return std::unexpected(errors::handler_failed(ex.what()));
+    return mcp::core::unexpected(errors::handler_failed(ex.what()));
   } catch (...) {
-    return std::unexpected(errors::handler_unknown_exception());
+    return mcp::core::unexpected(errors::handler_unknown_exception());
   }
 
   core::Result<protocol::JsonRpcResponse> handle_native_request(
@@ -1795,24 +2143,14 @@ class Peer<RoleClient> {
 
   core::Result<core::Unit> record_server_capabilities(
       const protocol::Json& initialize_payload) {
-    if (!initialize_payload.is_object()) {
-      return std::unexpected(errors::make(
-          protocol::ErrorCode::InvalidRequest,
-          "initialize response must be an object", {}, "protocol"));
-    }
-    if (!initialize_payload.contains("capabilities")) {
-      server_capabilities_ = protocol::ServerCapabilities{};
-      return core::Unit{};
-    }
-    const auto parsed = protocol::server_capabilities_from_json(
-        initialize_payload.at("capabilities"));
+    const auto parsed =
+        protocol::initialize_result_from_json(initialize_payload);
     if (!parsed.has_value()) {
-      return std::unexpected(errors::make(
-          protocol::ErrorCode::InvalidRequest,
-          "initialize response contains invalid server capabilities", {},
-          "protocol"));
+      return mcp::core::unexpected(errors::make(
+          protocol::ErrorCode::InvalidRequest, parsed.error().message,
+          parsed.error().detail, "protocol"));
     }
-    server_capabilities_ = *parsed;
+    server_capabilities_ = parsed->capabilities;
     return core::Unit{};
   }
 
@@ -1864,7 +2202,7 @@ class Peer<RoleClient> {
                                         protocol::Json params) {
     auto payload = request_json(std::move(method), std::move(params));
     if (!payload) {
-      return std::unexpected(payload.error());
+      return mcp::core::unexpected(payload.error());
     }
     return core::Unit{};
   }
@@ -1886,11 +2224,11 @@ class Peer<RoleClient> {
     do {
       auto payload = request_json(method, cursor_params(cursor));
       if (!payload) {
-        return std::unexpected(payload.error());
+        return mcp::core::unexpected(payload.error());
       }
       auto page = parser(*payload);
       if (!page) {
-        return std::unexpected(page.error());
+        return mcp::core::unexpected(page.error());
       }
       append(*page, all);
       cursor = page->next_cursor;
@@ -1900,18 +2238,28 @@ class Peer<RoleClient> {
 
   core::Result<protocol::JsonRpcResponse> send_native_request(
       const protocol::JsonRpcRequest& request) {
+    std::lock_guard<std::mutex> request_lock(*native_request_mutex_);
+
     auto sent = native_transport_->send(protocol::JsonRpcMessage{request});
     if (!sent) {
-      return std::unexpected(sent.error());
+      return mcp::core::unexpected(sent.error());
+    }
+
+    if (native_receive_loop_active()) {
+      return wait_native_response(request.id);
+    }
+
+    if (auto buffered = take_native_response(request.id)) {
+      return *buffered;
     }
 
     while (true) {
       auto received = native_transport_->receive();
       if (!received) {
-        return std::unexpected(received.error());
+        return mcp::core::unexpected(received.error());
       }
       if (!received->has_value()) {
-        return std::unexpected(detail::peer_transport_error(
+        return mcp::core::unexpected(detail::peer_transport_error(
             "client peer transport closed before response"));
       }
 
@@ -1920,24 +2268,31 @@ class Peer<RoleClient> {
         if (response->id.has_value() && *response->id == request.id) {
           return *response;
         }
-        return std::unexpected(detail::peer_transport_error(
-            "client peer transport received unexpected response id"));
+        auto stored = store_native_response(*response);
+        if (!stored) {
+          return mcp::core::unexpected(stored.error());
+        }
+        continue;
       }
 
       auto dispatched = dispatch_message(received->value());
       if (!dispatched) {
-        return std::unexpected(dispatched.error());
+        return mcp::core::unexpected(dispatched.error());
       }
       if (dispatched->has_value()) {
         sent = native_transport_->send(std::move(dispatched->value()));
         if (!sent) {
-          return std::unexpected(sent.error());
+          return mcp::core::unexpected(sent.error());
         }
       }
     }
   }
 
   std::unique_ptr<transport::ClientTransport> native_transport_;
+  std::shared_ptr<std::mutex> native_request_mutex_ =
+      std::make_shared<std::mutex>();
+  std::shared_ptr<detail::ClientNativeReceiveState> native_receive_state_ =
+      std::make_shared<detail::ClientNativeReceiveState>();
   std::shared_ptr<std::atomic<std::int64_t>> next_request_id_ =
       std::make_shared<std::atomic<std::int64_t>>(1);
   std::optional<protocol::ClientCapabilities> client_capabilities_;
@@ -1975,10 +2330,402 @@ class Peer<RoleClient> {
   client::Client client_;
 };
 
+/// @brief Fluent builder for common client peer construction.
+class Peer<RoleClient>::Builder {
+ public:
+  Builder() = default;
+  Builder(const Builder&) = delete;
+  Builder& operator=(const Builder&) = delete;
+  Builder(Builder&&) noexcept = default;
+  Builder& operator=(Builder&&) noexcept = default;
+
+  Builder& transport(std::unique_ptr<client::Transport> value) {
+    reset_transport();
+    concrete_transport_ = std::move(value);
+    transport_kind_ = TransportKind::Concrete;
+    return *this;
+  }
+
+  Builder& transport(std::unique_ptr<transport::ClientTransport> value) {
+    reset_transport();
+    native_transport_ = std::move(value);
+    transport_kind_ = TransportKind::Native;
+    return *this;
+  }
+
+  Builder& streamable_http(client::Client::StreamableHttpEndpoint endpoint) {
+    reset_transport();
+    http_endpoint_ = std::move(endpoint);
+    transport_kind_ = TransportKind::StreamableHttp;
+    return *this;
+  }
+
+  Builder& streamable_http(std::string uri) {
+    client::Client::StreamableHttpEndpoint endpoint;
+    endpoint.uri = std::move(uri);
+    return streamable_http(std::move(endpoint));
+  }
+
+  Builder& legacy_sse(client::Client::StreamableHttpEndpoint endpoint) {
+    reset_transport();
+    http_endpoint_ = std::move(endpoint);
+    transport_kind_ = TransportKind::LegacySse;
+    return *this;
+  }
+
+  Builder& legacy_sse(std::string uri) {
+    client::Client::StreamableHttpEndpoint endpoint;
+    endpoint.uri = std::move(uri);
+    return legacy_sse(std::move(endpoint));
+  }
+
+  Builder& stdio(client::Client::StdioEndpoint endpoint) {
+    reset_transport();
+    stdio_endpoint_ = std::move(endpoint);
+    transport_kind_ = TransportKind::Stdio;
+    return *this;
+  }
+
+  Builder& process_stdio(client::Client::StdioEndpoint endpoint) {
+    return stdio(std::move(endpoint));
+  }
+
+  Builder& header(std::string name, std::string value) {
+    http_headers_[std::move(name)] = std::move(value);
+    return *this;
+  }
+
+  Builder& bearer_token(std::string token) {
+    auth_header_ = std::move(token);
+    return *this;
+  }
+
+  Builder& timeout(std::chrono::milliseconds value) {
+    timeout_ = value;
+    return *this;
+  }
+
+  Builder& capabilities(protocol::ClientCapabilities value) {
+    capabilities_ = std::move(value);
+    return *this;
+  }
+
+  Builder& roots(std::vector<protocol::Root> value) {
+    roots_ = std::move(value);
+    return *this;
+  }
+
+  Builder& on_initialized(client::Client::InitializedHandler handler) {
+    initialized_handler_ = std::move(handler);
+    return *this;
+  }
+
+  Builder& on_cancelled(client::Client::CancelledHandler handler) {
+    cancelled_handler_ = std::move(handler);
+    return *this;
+  }
+
+  Builder& on_logging_message(client::Client::LoggingMessageHandler handler) {
+    logging_message_handler_ = std::move(handler);
+    return *this;
+  }
+
+  Builder& on_tool_list_changed(client::Client::ListChangedHandler handler) {
+    tool_list_changed_handler_ = std::move(handler);
+    return *this;
+  }
+
+  Builder& on_prompt_list_changed(client::Client::ListChangedHandler handler) {
+    prompt_list_changed_handler_ = std::move(handler);
+    return *this;
+  }
+
+  Builder& on_resource_list_changed(
+      client::Client::ListChangedHandler handler) {
+    resource_list_changed_handler_ = std::move(handler);
+    return *this;
+  }
+
+  Builder& on_resource_updated(client::Client::ResourceUpdatedHandler handler) {
+    resource_updated_handler_ = std::move(handler);
+    return *this;
+  }
+
+  Builder& on_progress(client::Client::ProgressHandler handler) {
+    progress_handler_ = std::move(handler);
+    return *this;
+  }
+
+  Builder& on_elicitation_complete(
+      client::Client::ElicitationCompleteHandler handler) {
+    elicitation_complete_handler_ = std::move(handler);
+    return *this;
+  }
+
+  Builder& on_task_status(client::Client::TaskStatusHandler handler) {
+    task_status_handler_ = std::move(handler);
+    return *this;
+  }
+
+  Builder& on_roots_list_changed(client::Client::ListChangedHandler handler) {
+    roots_list_changed_handler_ = std::move(handler);
+    return *this;
+  }
+
+  Builder& on_list_roots_request(
+      client::Client::ListRootsRequestHandler handler) {
+    roots_list_request_handler_ = std::move(handler);
+    return *this;
+  }
+
+  Builder& on_list_roots_request(
+      client::Client::RootsListRequestCancellationHandler handler) {
+    roots_list_request_cancellation_handler_ = std::move(handler);
+    return *this;
+  }
+
+  Builder& on_create_message_request(
+      client::Client::CreateMessageRequestHandler handler) {
+    sampling_request_handler_ = std::move(handler);
+    return *this;
+  }
+
+  Builder& on_create_message_request(
+      client::Client::SamplingRequestCancellationHandler handler) {
+    sampling_request_cancellation_handler_ = std::move(handler);
+    return *this;
+  }
+
+  Builder& on_create_elicitation_request(
+      client::Client::CreateElicitationRequestHandler handler) {
+    elicitation_request_handler_ = std::move(handler);
+    return *this;
+  }
+
+  Builder& on_create_elicitation_request(
+      client::Client::ElicitationRequestCancellationHandler handler) {
+    elicitation_request_cancellation_handler_ = std::move(handler);
+    return *this;
+  }
+
+  Builder& on_custom_request(client::Client::CustomRequestHandler handler) {
+    custom_request_handler_ = std::move(handler);
+    return *this;
+  }
+
+  Builder& on_custom_request(
+      client::Client::CustomRequestCancellationHandler handler) {
+    custom_request_cancellation_handler_ = std::move(handler);
+    return *this;
+  }
+
+  Builder& on_raw_notification(client::Client::RawNotificationHandler handler) {
+    raw_notification_handler_ = std::move(handler);
+    return *this;
+  }
+
+  Builder& handler(const client::ClientHandler& handler) {
+    handler_ = handler;
+    return *this;
+  }
+
+  core::Result<Peer> build() {
+    auto peer = make_peer();
+    if (!peer) {
+      return mcp::core::unexpected(peer.error());
+    }
+    apply_to(*peer);
+    return std::move(*peer);
+  }
+
+ private:
+  enum class TransportKind {
+    None,
+    Concrete,
+    Native,
+    StreamableHttp,
+    LegacySse,
+    Stdio,
+  };
+
+  void reset_transport() {
+    concrete_transport_.reset();
+    native_transport_.reset();
+    http_endpoint_ = client::Client::StreamableHttpEndpoint{};
+    stdio_endpoint_ = client::Client::StdioEndpoint{};
+    transport_kind_ = TransportKind::None;
+  }
+
+  client::Client::StreamableHttpEndpoint configured_http_endpoint() {
+    auto endpoint = std::move(http_endpoint_);
+    for (auto& header : http_headers_) {
+      endpoint.headers[std::move(header.first)] = std::move(header.second);
+    }
+    if (auth_header_.has_value()) {
+      endpoint.auth_header = std::move(auth_header_);
+    }
+    if (timeout_.has_value()) {
+      endpoint.timeout = *timeout_;
+    }
+    return endpoint;
+  }
+
+  core::Result<Peer> make_peer() {
+    switch (transport_kind_) {
+      case TransportKind::Concrete:
+        if (!concrete_transport_) {
+          return missing_transport("client transport is null");
+        }
+        return Peer(std::move(concrete_transport_));
+      case TransportKind::Native:
+        if (!native_transport_) {
+          return missing_transport("client transport is null");
+        }
+        return Peer(std::move(native_transport_));
+      case TransportKind::StreamableHttp:
+        return Peer::connect_streamable_http(configured_http_endpoint());
+      case TransportKind::LegacySse:
+        return Peer::connect_legacy_sse(configured_http_endpoint());
+      case TransportKind::Stdio:
+        return Peer::connect_stdio(std::move(stdio_endpoint_));
+      case TransportKind::None:
+        return missing_transport("client peer transport is not configured");
+    }
+    return missing_transport("client peer transport is not configured");
+  }
+
+  static core::Result<Peer> missing_transport(std::string message) {
+    return mcp::core::unexpected(core::Error{
+        static_cast<int>(protocol::ErrorCode::InvalidParams),
+        std::move(message),
+        {},
+        "configuration",
+    });
+  }
+
+  void apply_to(Peer& peer) {
+    if (capabilities_.has_value()) {
+      peer.set_capabilities(std::move(*capabilities_));
+    }
+    if (roots_.has_value()) {
+      peer.set_roots(std::move(*roots_));
+    }
+    if (handler_.has_value()) {
+      peer.set_handler(*handler_);
+    }
+    if (initialized_handler_) {
+      peer.on_initialized(std::move(initialized_handler_));
+    }
+    if (cancelled_handler_) {
+      peer.on_cancelled(std::move(cancelled_handler_));
+    }
+    if (logging_message_handler_) {
+      peer.on_logging_message(std::move(logging_message_handler_));
+    }
+    if (tool_list_changed_handler_) {
+      peer.on_tool_list_changed(std::move(tool_list_changed_handler_));
+    }
+    if (prompt_list_changed_handler_) {
+      peer.on_prompt_list_changed(std::move(prompt_list_changed_handler_));
+    }
+    if (resource_list_changed_handler_) {
+      peer.on_resource_list_changed(std::move(resource_list_changed_handler_));
+    }
+    if (resource_updated_handler_) {
+      peer.on_resource_updated(std::move(resource_updated_handler_));
+    }
+    if (progress_handler_) {
+      peer.on_progress(std::move(progress_handler_));
+    }
+    if (elicitation_complete_handler_) {
+      peer.on_elicitation_complete(std::move(elicitation_complete_handler_));
+    }
+    if (task_status_handler_) {
+      peer.on_task_status(std::move(task_status_handler_));
+    }
+    if (roots_list_changed_handler_) {
+      peer.on_roots_list_changed(std::move(roots_list_changed_handler_));
+    }
+    if (roots_list_request_handler_) {
+      peer.on_list_roots_request(std::move(roots_list_request_handler_));
+    }
+    if (roots_list_request_cancellation_handler_) {
+      peer.on_list_roots_request(
+          std::move(roots_list_request_cancellation_handler_));
+    }
+    if (sampling_request_handler_) {
+      peer.on_create_message_request(std::move(sampling_request_handler_));
+    }
+    if (sampling_request_cancellation_handler_) {
+      peer.on_create_message_request(
+          std::move(sampling_request_cancellation_handler_));
+    }
+    if (elicitation_request_handler_) {
+      peer.on_create_elicitation_request(
+          std::move(elicitation_request_handler_));
+    }
+    if (elicitation_request_cancellation_handler_) {
+      peer.on_create_elicitation_request(
+          std::move(elicitation_request_cancellation_handler_));
+    }
+    if (custom_request_handler_) {
+      peer.on_custom_request(std::move(custom_request_handler_));
+    }
+    if (custom_request_cancellation_handler_) {
+      peer.on_custom_request(std::move(custom_request_cancellation_handler_));
+    }
+    if (raw_notification_handler_) {
+      peer.on_raw_notification(std::move(raw_notification_handler_));
+    }
+  }
+
+  TransportKind transport_kind_ = TransportKind::None;
+  std::unique_ptr<client::Transport> concrete_transport_;
+  std::unique_ptr<transport::ClientTransport> native_transport_;
+  client::Client::StreamableHttpEndpoint http_endpoint_;
+  client::Client::StdioEndpoint stdio_endpoint_;
+  std::unordered_map<std::string, std::string> http_headers_;
+  std::optional<std::string> auth_header_;
+  std::optional<std::chrono::milliseconds> timeout_;
+  std::optional<protocol::ClientCapabilities> capabilities_;
+  std::optional<std::vector<protocol::Root>> roots_;
+  std::optional<client::ClientHandler> handler_;
+  client::Client::InitializedHandler initialized_handler_;
+  client::Client::CancelledHandler cancelled_handler_;
+  client::Client::LoggingMessageHandler logging_message_handler_;
+  client::Client::ListChangedHandler tool_list_changed_handler_;
+  client::Client::ListChangedHandler prompt_list_changed_handler_;
+  client::Client::ListChangedHandler resource_list_changed_handler_;
+  client::Client::ResourceUpdatedHandler resource_updated_handler_;
+  client::Client::ProgressHandler progress_handler_;
+  client::Client::ElicitationCompleteHandler elicitation_complete_handler_;
+  client::Client::TaskStatusHandler task_status_handler_;
+  client::Client::ListChangedHandler roots_list_changed_handler_;
+  client::Client::RootsListRequestHandler roots_list_request_handler_;
+  client::Client::RootsListRequestCancellationHandler
+      roots_list_request_cancellation_handler_;
+  client::Client::SamplingRequestHandler sampling_request_handler_;
+  client::Client::SamplingRequestCancellationHandler
+      sampling_request_cancellation_handler_;
+  client::Client::ElicitationRequestHandler elicitation_request_handler_;
+  client::Client::ElicitationRequestCancellationHandler
+      elicitation_request_cancellation_handler_;
+  client::Client::CustomRequestHandler custom_request_handler_;
+  client::Client::CustomRequestCancellationHandler
+      custom_request_cancellation_handler_;
+  client::Client::RawNotificationHandler raw_notification_handler_;
+};
+
+inline Peer<RoleClient>::Builder Peer<RoleClient>::builder() {
+  return Builder{};
+}
+
 /// @brief Server-side peer boundary for exposing MCP capabilities.
 template <>
 class Peer<RoleServer> {
  public:
+  class Builder;
+
   /// @brief Creates a server peer from options.
   explicit Peer(server::ServerOptions options = {})
       : server_(std::make_unique<server::Server>(std::move(options))) {}
@@ -1990,10 +2737,13 @@ class Peer<RoleServer> {
   static core::Result<Peer> build(server::ServerBuilder builder) {
     auto built = builder.build();
     if (!built) {
-      return std::unexpected(built.error());
+      return mcp::core::unexpected(built.error());
     }
     return Peer(std::move(*built));
   }
+
+  /// @brief Starts a fluent builder for common server peer construction.
+  static Builder builder();
 
   CXXMCP_DEPRECATED(
       "server() is a compatibility escape hatch; prefer ServerPeer methods")
@@ -2095,6 +2845,28 @@ class Peer<RoleServer> {
     return *this;
   }
 
+  Peer& set_tools_list_handler(server::Server::ToolsListHandler handler) {
+    server_->set_tools_list_handler(std::move(handler));
+    return *this;
+  }
+
+  Peer& set_prompts_list_handler(server::Server::PromptsListHandler handler) {
+    server_->set_prompts_list_handler(std::move(handler));
+    return *this;
+  }
+
+  Peer& set_resources_list_handler(
+      server::Server::ResourcesListHandler handler) {
+    server_->set_resources_list_handler(std::move(handler));
+    return *this;
+  }
+
+  Peer& set_resource_templates_list_handler(
+      server::Server::ResourceTemplatesListHandler handler) {
+    server_->set_resource_templates_list_handler(std::move(handler));
+    return *this;
+  }
+
   Peer& set_task_list_handler(server::Server::TaskListHandler handler) {
     task_list_handler_ = handler;
     server_->set_task_list_handler(std::move(handler));
@@ -2187,6 +2959,18 @@ class Peer<RoleServer> {
     }
     if (handler.on_custom_notification) {
       set_custom_notification_handler(handler.on_custom_notification);
+    }
+    if (handler.on_tools_list) {
+      set_tools_list_handler(handler.on_tools_list);
+    }
+    if (handler.on_prompts_list) {
+      set_prompts_list_handler(handler.on_prompts_list);
+    }
+    if (handler.on_resources_list) {
+      set_resources_list_handler(handler.on_resources_list);
+    }
+    if (handler.on_resource_templates_list) {
+      set_resource_templates_list_handler(handler.on_resource_templates_list);
     }
     if (handler.on_task_list) {
       set_task_list_handler(handler.on_task_list);
@@ -2333,11 +3117,21 @@ class Peer<RoleServer> {
       }
       const auto requested_version =
           request.params.at("protocolVersion").get<std::string>();
+      const auto negotiated_version =
+          protocol::negotiate_protocol_version(requested_version);
+      if (!negotiated_version.has_value()) {
+        return detail::peer_error_response(
+            request, core::Error{
+                         static_cast<int>(protocol::ErrorCode::InvalidParams),
+                         "unsupported MCP protocol version(\"" +
+                             requested_version + "\")",
+                         requested_version,
+                         "protocol",
+                     });
+      }
       return protocol::make_response(
-          request.id,
-          detail::make_peer_server_initialize_result(
-              get_info(), capabilities(),
-              protocol::negotiate_protocol_version(requested_version)));
+          request.id, detail::make_peer_server_initialize_result(
+                          get_info(), capabilities(), *negotiated_version));
     }
     if (request.method == protocol::PingMethod) {
       return protocol::make_response(request.id, protocol::Json::object());
@@ -2365,12 +3159,20 @@ class Peer<RoleServer> {
     }
 
     if (request.method == protocol::ToolsListMethod) {
-      protocol::Json result = protocol::Json::object();
-      result["tools"] = protocol::Json::array();
-      for (const auto& tool : list_tools()) {
-        result["tools"].push_back(protocol::tool_definition_to_json(tool));
+      const auto params =
+          protocol::paginated_request_params_from_json(request.params);
+      if (!params) {
+        return detail::peer_error_response(
+            request, errors::make(protocol::ErrorCode::InvalidParams,
+                                  "tools/list params must be an object with an "
+                                  "optional string cursor"));
       }
-      return protocol::make_response(request.id, std::move(result));
+      const auto result = server_->list_tools(*params, context);
+      if (!result) {
+        return detail::peer_error_response(request, result.error());
+      }
+      return protocol::make_response(
+          request.id, protocol::tools_list_result_to_json(*result));
     }
 
     if (request.method == protocol::ToolsGetMethod) {
@@ -2433,10 +3235,21 @@ class Peer<RoleServer> {
     }
 
     if (request.method == protocol::PromptsListMethod) {
-      protocol::PromptsListResult result;
-      result.prompts = list_prompts();
+      const auto params =
+          protocol::paginated_request_params_from_json(request.params);
+      if (!params) {
+        return detail::peer_error_response(
+            request,
+            errors::make(protocol::ErrorCode::InvalidParams,
+                         "prompts/list params must be an object with an "
+                         "optional string cursor"));
+      }
+      const auto result = server_->list_prompts(*params, context);
+      if (!result) {
+        return detail::peer_error_response(request, result.error());
+      }
       return protocol::make_response(
-          request.id, protocol::prompts_list_result_to_json(result));
+          request.id, protocol::prompts_list_result_to_json(*result));
     }
 
     if (request.method == protocol::PromptsGetMethod) {
@@ -2463,10 +3276,21 @@ class Peer<RoleServer> {
     }
 
     if (request.method == protocol::ResourcesListMethod) {
-      protocol::ResourcesListResult result;
-      result.resources = list_resources();
+      const auto params =
+          protocol::paginated_request_params_from_json(request.params);
+      if (!params) {
+        return detail::peer_error_response(
+            request,
+            errors::make(protocol::ErrorCode::InvalidParams,
+                         "resources/list params must be an object with an "
+                         "optional string cursor"));
+      }
+      const auto result = server_->list_resources(*params, context);
+      if (!result) {
+        return detail::peer_error_response(request, result.error());
+      }
       return protocol::make_response(
-          request.id, protocol::resources_list_result_to_json(result));
+          request.id, protocol::resources_list_result_to_json(*result));
     }
 
     if (request.method == protocol::ResourcesReadMethod) {
@@ -2493,10 +3317,22 @@ class Peer<RoleServer> {
     }
 
     if (request.method == protocol::ResourcesTemplatesListMethod) {
-      protocol::ResourceTemplatesListResult result;
-      result.resource_templates = list_resource_templates();
+      const auto params =
+          protocol::paginated_request_params_from_json(request.params);
+      if (!params) {
+        return detail::peer_error_response(
+            request,
+            errors::make(protocol::ErrorCode::InvalidParams,
+                         "resources/templates/list params must be an object "
+                         "with an optional string cursor"));
+      }
+      const auto result = server_->list_resource_templates(*params, context);
+      if (!result) {
+        return detail::peer_error_response(request, result.error());
+      }
       return protocol::make_response(
-          request.id, protocol::resource_templates_list_result_to_json(result));
+          request.id,
+          protocol::resource_templates_list_result_to_json(*result));
     }
 
     if (request.method == protocol::ResourcesSubscribeMethod ||
@@ -2638,7 +3474,7 @@ class Peer<RoleServer> {
   core::Result<core::Unit> add_transport(
       std::unique_ptr<transport::ServerTransport> transport) {
     if (!transport) {
-      return std::unexpected(detail::peer_dispatch_error(
+      return mcp::core::unexpected(detail::peer_dispatch_error(
           "server peer transport must not be null"));
     }
     native_transports_.push_back(std::move(transport));
@@ -2649,7 +3485,7 @@ class Peer<RoleServer> {
     if (!attached) {
       native_context_transports_.pop_back();
       native_transports_.pop_back();
-      return std::unexpected(attached.error());
+      return mcp::core::unexpected(attached.error());
     }
     return core::Unit{};
   }
@@ -2673,6 +3509,9 @@ class Peer<RoleServer> {
         server::SessionContext context;
         context.remote_address = std::string(transport_ptr->name());
         context.transport = context_transport_ptr;
+        if (context_transport_ptr != nullptr) {
+          context.transport_lifetime = context_transport_ptr->lifetime_token();
+        }
         const auto served =
             serve_transport(*transport_ptr, context, cancellation);
         if (!served) {
@@ -2689,7 +3528,7 @@ class Peer<RoleServer> {
     }
 
     if (first_error.has_value()) {
-      return std::unexpected(*first_error);
+      return mcp::core::unexpected(*first_error);
     }
     return core::Unit{};
   }
@@ -2765,12 +3604,12 @@ class Peer<RoleServer> {
             std::get_if<protocol::JsonRpcNotification>(&message)) {
       const auto handled = handle_notification(*notification, context);
       if (!handled) {
-        return std::unexpected(handled.error());
+        return mcp::core::unexpected(handled.error());
       }
       return std::nullopt;
     }
 
-    return std::unexpected(detail::peer_dispatch_error(
+    return mcp::core::unexpected(detail::peer_dispatch_error(
         "server peer cannot dispatch an uncorrelated response"));
   }
 
@@ -2780,9 +3619,42 @@ class Peer<RoleServer> {
       transport::ServerTransport& transport,
       const server::SessionContext& context = {},
       CancellationToken cancellation = {}) {
+    bool initialized = false;
     return detail::serve_transport_loop(
         transport, cancellation,
-        [this, &context, &transport](const protocol::JsonRpcMessage& message) {
+        [this, &context, &transport,
+         initialized](const protocol::JsonRpcMessage& message) mutable
+            -> core::Result<std::optional<protocol::JsonRpcMessage>> {
+          if (const auto* request =
+                  std::get_if<protocol::JsonRpcRequest>(&message)) {
+            const bool allowed_before_initialized =
+                request->method == protocol::InitializeMethod ||
+                request->method == protocol::PingMethod;
+            if (!initialized && !allowed_before_initialized) {
+              return core::Result<std::optional<protocol::JsonRpcMessage>>{
+                  protocol::JsonRpcMessage{protocol::make_error_response(
+                      request->id,
+                      protocol::make_error(protocol::ErrorCode::InvalidRequest,
+                                           "server peer transport session is "
+                                           "not initialized"))}};
+            }
+          }
+          if (const auto* notification =
+                  std::get_if<protocol::JsonRpcNotification>(&message)) {
+            if (!initialized &&
+                notification->method != protocol::InitializedMethod) {
+              return mcp::core::unexpected(detail::peer_dispatch_error(
+                  "server peer transport session is not initialized"));
+            }
+            auto dispatched = dispatch_message(message, context, &transport);
+            if (!dispatched) {
+              return dispatched;
+            }
+            if (notification->method == protocol::InitializedMethod) {
+              initialized = true;
+            }
+            return dispatched;
+          }
           return dispatch_message(message, context, &transport);
         });
   }
@@ -2801,6 +3673,8 @@ class Peer<RoleServer> {
           index < native_context_transports_.size()) {
         subscription_context.transport =
             native_context_transports_[index].get();
+        subscription_context.transport_lifetime =
+            native_context_transports_[index]->lifetime_token();
         break;
       }
     }
@@ -2840,7 +3714,7 @@ class Peer<RoleServer> {
       const auto cancelled = protocol::cancelled_notification_params_from_json(
           notification.params);
       if (!cancelled) {
-        return std::unexpected(
+        return mcp::core::unexpected(
             errors::make(protocol::ErrorCode::InvalidParams,
                          "cancelled notification requires valid params"));
       }
@@ -2851,7 +3725,7 @@ class Peer<RoleServer> {
     if (raw_notification_handler_) {
       const auto raw_result = raw_notification_handler_(notification, context);
       if (!raw_result) {
-        return std::unexpected(raw_result.error());
+        return mcp::core::unexpected(raw_result.error());
       }
     }
 
@@ -2859,41 +3733,41 @@ class Peer<RoleServer> {
         roots_list_changed_handler_) {
       const auto result = roots_list_changed_handler_(context);
       if (!result) {
-        return std::unexpected(result.error());
+        return mcp::core::unexpected(result.error());
       }
     } else if (notification.method == protocol::ProgressNotificationMethod &&
                progress_handler_) {
       const auto params =
           protocol::progress_notification_params_from_json(notification.params);
       if (!params) {
-        return std::unexpected(
+        return mcp::core::unexpected(
             errors::make(protocol::ErrorCode::InvalidParams,
                          "progress notification requires valid params"));
       }
       const auto result = progress_handler_(*params, context);
       if (!result) {
-        return std::unexpected(result.error());
+        return mcp::core::unexpected(result.error());
       }
     } else if (notification.method ==
                    protocol::ToolsListChangedNotificationMethod &&
                tool_list_changed_handler_) {
       const auto result = tool_list_changed_handler_(context);
       if (!result) {
-        return std::unexpected(result.error());
+        return mcp::core::unexpected(result.error());
       }
     } else if (notification.method ==
                    protocol::PromptsListChangedNotificationMethod &&
                prompt_list_changed_handler_) {
       const auto result = prompt_list_changed_handler_(context);
       if (!result) {
-        return std::unexpected(result.error());
+        return mcp::core::unexpected(result.error());
       }
     } else if (notification.method ==
                    protocol::ResourcesListChangedNotificationMethod &&
                resource_list_changed_handler_) {
       const auto result = resource_list_changed_handler_(context);
       if (!result) {
-        return std::unexpected(result.error());
+        return mcp::core::unexpected(result.error());
       }
     } else if (notification.method ==
                    protocol::ResourcesUpdatedNotificationMethod &&
@@ -2901,22 +3775,22 @@ class Peer<RoleServer> {
       if (!notification.params.is_object() ||
           !notification.params.contains("uri") ||
           !notification.params.at("uri").is_string()) {
-        return std::unexpected(errors::make(
+        return mcp::core::unexpected(errors::make(
             protocol::ErrorCode::InvalidParams,
             "resource updated notification requires a string uri"));
       }
       const auto result = resource_updated_handler_(
           notification.params.at("uri").get<std::string>(), context);
       if (!result) {
-        return std::unexpected(result.error());
+        return mcp::core::unexpected(result.error());
       }
     }
 
     return core::Unit{};
   } catch (const std::exception& ex) {
-    return std::unexpected(errors::handler_failed(ex.what()));
+    return mcp::core::unexpected(errors::handler_failed(ex.what()));
   } catch (...) {
-    return std::unexpected(errors::handler_unknown_exception());
+    return mcp::core::unexpected(errors::handler_unknown_exception());
   }
 
   std::unique_ptr<server::Server> server_;
@@ -2945,6 +3819,392 @@ class Peer<RoleServer> {
   server::Server::ListChangedHandler resource_list_changed_handler_;
   server::Server::ResourceUpdatedHandler resource_updated_handler_;
 };
+
+/// @brief Fluent builder for common server peer construction.
+class Peer<RoleServer>::Builder {
+ public:
+  Builder() = default;
+  Builder(const Builder&) = delete;
+  Builder& operator=(const Builder&) = delete;
+  Builder(Builder&&) noexcept = default;
+  Builder& operator=(Builder&&) noexcept = default;
+
+  Builder& name(std::string value) {
+    builder_.name(std::move(value));
+    return *this;
+  }
+
+  Builder& version(std::string value) {
+    builder_.version(std::move(value));
+    return *this;
+  }
+
+  Builder& instructions(std::string value) {
+    builder_.instructions(std::move(value));
+    return *this;
+  }
+
+  Builder& capabilities(protocol::ServerCapabilities value) {
+    builder_.with_capabilities(std::move(value));
+    return *this;
+  }
+
+  Builder& transport(std::unique_ptr<server::Transport> value) {
+    builder_.with_transport(std::move(value));
+    return *this;
+  }
+
+  Builder& transport(std::unique_ptr<transport::ServerTransport> value) {
+    native_transports_.push_back(std::move(value));
+    return *this;
+  }
+
+  Builder& stdio(std::istream& input, std::ostream& output) {
+    return transport(
+        std::make_unique<transport::ServerStdioTransport>(input, output));
+  }
+
+  Builder& stdio() { return stdio(std::cin, std::cout); }
+
+  Builder& streamable_http(
+      transport::StreamableHttpServerTransportOptions options) {
+    return transport(std::make_unique<transport::StreamableHttpServerTransport>(
+        std::move(options)));
+  }
+
+  Builder& streamable_http(int listen_port) {
+    transport::StreamableHttpServerTransportOptions options;
+    options.listen_port = listen_port;
+    return streamable_http(std::move(options));
+  }
+
+  Builder& streamable_http(std::string listen_host, int listen_port,
+                           std::string path = "/mcp") {
+    transport::StreamableHttpServerTransportOptions options;
+    options.listen_host = std::move(listen_host);
+    options.listen_port = listen_port;
+    options.path = std::move(path);
+    return streamable_http(std::move(options));
+  }
+
+  Builder& auth_provider(std::unique_ptr<server::AuthProvider> value) {
+    builder_.with_auth_provider(std::move(value));
+    return *this;
+  }
+
+  Builder& rate_limiter(std::unique_ptr<server::RateLimiter> value) {
+    builder_.with_rate_limiter(std::move(value));
+    return *this;
+  }
+
+  Builder& schema_validator(
+      std::shared_ptr<const server::JsonSchemaValidator> value) {
+    builder_.with_schema_validator(std::move(value));
+    return *this;
+  }
+
+  Builder& task_manager(server::TaskOperationProcessorOptions options = {}) {
+    builder_.with_task_manager(std::move(options));
+    return *this;
+  }
+
+  Builder& task_manager(
+      std::shared_ptr<server::TaskOperationProcessor> processor) {
+    builder_.with_task_manager(std::move(processor));
+    return *this;
+  }
+
+  Builder& add_tool(protocol::ToolDefinition definition,
+                    server::ToolHandler handler) {
+    builder_.add_tool(std::move(definition), std::move(handler));
+    return *this;
+  }
+
+  Builder& tool(protocol::ToolDefinition definition,
+                server::ToolHandler handler) {
+    return add_tool(std::move(definition), std::move(handler));
+  }
+
+  Builder& add_prompt(protocol::Prompt prompt, server::PromptHandler handler) {
+    builder_.add_prompt(std::move(prompt), std::move(handler));
+    return *this;
+  }
+
+  Builder& prompt(protocol::Prompt prompt, server::PromptHandler handler) {
+    return add_prompt(std::move(prompt), std::move(handler));
+  }
+
+  template <class Args, class Handler>
+  Builder& prompt(server::TypedPromptRegistration<Args, Handler> registration) {
+    return add_prompt(
+        std::move(registration.prompt),
+        [handler = std::move(registration.handler)](
+            const server::PromptContext& context)
+            -> core::Result<protocol::PromptsGetResult> {
+          try {
+            auto args = context.arguments.get<Args>();
+            auto handled = server::detail::invoke_typed_context_handler(
+                handler, std::move(args), context);
+            if constexpr (server::detail::is_result<decltype(handled)>::value) {
+              if (!handled) {
+                return mcp::core::unexpected(handled.error());
+              }
+              return server::detail::value_to_prompt_result(*handled);
+            } else {
+              return server::detail::value_to_prompt_result(std::move(handled));
+            }
+          } catch (const std::exception& exception) {
+            return mcp::core::unexpected(core::Error{
+                static_cast<int>(protocol::ErrorCode::InvalidParams),
+                "failed to decode prompt arguments",
+                exception.what(),
+            });
+          }
+        });
+  }
+
+  Builder& add_resource(protocol::Resource resource,
+                        server::ResourceReadHandler handler) {
+    builder_.add_resource(std::move(resource), std::move(handler));
+    return *this;
+  }
+
+  Builder& resource(protocol::Resource resource,
+                    server::ResourceReadHandler handler) {
+    return add_resource(std::move(resource), std::move(handler));
+  }
+
+  template <class Args, class Handler>
+  Builder& resource(
+      server::TypedResourceRegistration<Args, Handler> registration) {
+    return add_resource(
+        std::move(registration.resource),
+        [handler = std::move(registration.handler)](
+            const server::ResourceContext& context)
+            -> core::Result<protocol::ResourcesReadResult> {
+          try {
+            auto args = context.params.get<Args>();
+            auto handled = server::detail::invoke_typed_context_handler(
+                handler, std::move(args), context);
+            if constexpr (server::detail::is_result<decltype(handled)>::value) {
+              if (!handled) {
+                return mcp::core::unexpected(handled.error());
+              }
+              return server::detail::value_to_resource_read_result(*handled,
+                                                                   context.uri);
+            } else {
+              return server::detail::value_to_resource_read_result(
+                  std::move(handled), context.uri);
+            }
+          } catch (const std::exception& exception) {
+            return mcp::core::unexpected(core::Error{
+                static_cast<int>(protocol::ErrorCode::InvalidParams),
+                "failed to decode resource parameters",
+                exception.what(),
+            });
+          }
+        });
+  }
+
+  Builder& add_resource_template(protocol::ResourceTemplate resource_template) {
+    builder_.add_resource_template(std::move(resource_template));
+    return *this;
+  }
+
+  Builder& resource_template(protocol::ResourceTemplate resource_template) {
+    return add_resource_template(std::move(resource_template));
+  }
+
+  template <class Router>
+  Builder& router(const Router& router) {
+    router.apply_to(builder_);
+    return *this;
+  }
+
+  template <class Args, class Result, class Handler>
+  Builder& tool(
+      server::TypedToolRegistration<Args, Result, Handler> registration) {
+    return add_tool(
+        std::move(registration.definition),
+        [handler = std::move(registration.handler)](
+            const server::ToolContext& context)
+            -> core::Result<protocol::ToolResult> {
+          try {
+            auto args =
+                server::detail::argument_from_json<Args>(context.arguments);
+            auto handled = server::detail::invoke_tool_handler(
+                handler, std::move(args), context);
+            if constexpr (server::detail::is_result<decltype(handled)>::value) {
+              if (!handled) {
+                return mcp::core::unexpected(handled.error());
+              }
+              return server::detail::value_to_tool_result(*handled);
+            } else {
+              return server::detail::value_to_tool_result(std::move(handled));
+            }
+          } catch (const std::exception& exception) {
+            return mcp::core::unexpected(core::Error{
+                static_cast<int>(protocol::ErrorCode::InvalidParams),
+                "failed to decode tool arguments",
+                exception.what(),
+            });
+          }
+        });
+  }
+
+  Builder& on_completion(server::Server::JsonHandler handler) {
+    builder_.on_completion(std::move(handler));
+    return *this;
+  }
+
+  Builder& on_completion(server::Server::JsonContextHandler handler) {
+    builder_.on_completion(std::move(handler));
+    return *this;
+  }
+
+  Builder& on_completion(server::Server::JsonRequestContextHandler handler) {
+    builder_.on_completion(std::move(handler));
+    return *this;
+  }
+
+  Builder& on_sampling(server::Server::JsonHandler handler) {
+    builder_.on_sampling(std::move(handler));
+    return *this;
+  }
+
+  Builder& on_sampling(server::Server::JsonContextHandler handler) {
+    builder_.on_sampling(std::move(handler));
+    return *this;
+  }
+
+  Builder& on_sampling(server::Server::JsonRequestContextHandler handler) {
+    builder_.on_sampling(std::move(handler));
+    return *this;
+  }
+
+  Builder& on_logging(server::Server::LoggingHandler handler) {
+    builder_.on_logging(std::move(handler));
+    return *this;
+  }
+
+  Builder& on_raw_request(server::Server::RawRequestHandler handler) {
+    builder_.on_raw_request(std::move(handler));
+    return *this;
+  }
+
+  Builder& on_raw_notification(server::Server::RawNotificationHandler handler) {
+    builder_.on_raw_notification(std::move(handler));
+    return *this;
+  }
+
+  Builder& on_task_list(server::Server::TaskListHandler handler) {
+    builder_.on_task_list(std::move(handler));
+    return *this;
+  }
+
+  Builder& on_tools_list(server::Server::ToolsListHandler handler) {
+    builder_.on_tools_list(std::move(handler));
+    return *this;
+  }
+
+  Builder& on_prompts_list(server::Server::PromptsListHandler handler) {
+    builder_.on_prompts_list(std::move(handler));
+    return *this;
+  }
+
+  Builder& on_resources_list(server::Server::ResourcesListHandler handler) {
+    builder_.on_resources_list(std::move(handler));
+    return *this;
+  }
+
+  Builder& on_resource_templates_list(
+      server::Server::ResourceTemplatesListHandler handler) {
+    builder_.on_resource_templates_list(std::move(handler));
+    return *this;
+  }
+
+  Builder& on_task_get(server::Server::TaskGetHandler handler) {
+    builder_.on_task_get(std::move(handler));
+    return *this;
+  }
+
+  Builder& on_task_cancel(server::Server::TaskCancelHandler handler) {
+    builder_.on_task_cancel(std::move(handler));
+    return *this;
+  }
+
+  Builder& on_task_result(server::Server::TaskResultHandler handler) {
+    builder_.on_task_result(std::move(handler));
+    return *this;
+  }
+
+  Builder& on_progress(server::Server::ProgressHandler handler) {
+    builder_.on_progress(std::move(handler));
+    return *this;
+  }
+
+  Builder& on_roots_list_changed(
+      server::Server::RootsListChangedHandler handler) {
+    builder_.on_roots_list_changed(std::move(handler));
+    return *this;
+  }
+
+  Builder& on_tool_list_changed(server::Server::ListChangedHandler handler) {
+    builder_.on_tool_list_changed(std::move(handler));
+    return *this;
+  }
+
+  Builder& on_prompt_list_changed(server::Server::ListChangedHandler handler) {
+    builder_.on_prompt_list_changed(std::move(handler));
+    return *this;
+  }
+
+  Builder& on_resource_list_changed(
+      server::Server::ListChangedHandler handler) {
+    builder_.on_resource_list_changed(std::move(handler));
+    return *this;
+  }
+
+  Builder& on_resource_updated(server::Server::ResourceUpdatedHandler handler) {
+    builder_.on_resource_updated(std::move(handler));
+    return *this;
+  }
+
+  Builder& handler(server::ServerHandler handler) {
+    builder_.with_handler(std::move(handler));
+    return *this;
+  }
+
+  Builder& handler(const server::ServerHandlerInterface& handler) {
+    builder_.with_handler(handler);
+    return *this;
+  }
+
+  core::Result<Peer> build() {
+    auto server = builder_.build();
+    if (!server) {
+      return mcp::core::unexpected(server.error());
+    }
+
+    Peer peer(std::move(*server));
+    for (auto& transport : native_transports_) {
+      auto added = peer.add_transport(std::move(transport));
+      if (!added) {
+        return mcp::core::unexpected(added.error());
+      }
+    }
+    native_transports_.clear();
+    return peer;
+  }
+
+ private:
+  server::ServerBuilder builder_;
+  std::vector<std::unique_ptr<transport::ServerTransport>> native_transports_;
+};
+
+inline Peer<RoleServer>::Builder Peer<RoleServer>::builder() {
+  return Builder{};
+}
 
 using ClientPeer = Peer<RoleClient>;
 using ServerPeer = Peer<RoleServer>;

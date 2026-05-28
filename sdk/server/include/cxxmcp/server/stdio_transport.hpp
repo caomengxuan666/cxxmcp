@@ -2,6 +2,7 @@
 
 #pragma once
 
+#include <atomic>
 #include <iosfwd>
 #include <mutex>
 #include <optional>
@@ -25,6 +26,14 @@ namespace mcp::server {
 /// must keep them alive for the whole transport lifetime. Outbound notification
 /// writes are mutex-protected so a handler can call SessionContext::client()
 /// while the read loop is active.
+///
+/// This concrete transport is a compatibility convenience for simple local
+/// servers. Because it is built on caller-owned std::istream/std::ostream
+/// objects, stop() only prevents the next loop iteration; it cannot portably
+/// interrupt a thread already blocked inside std::getline(). Applications that
+/// need a cancellable service loop should prefer the role-generic
+/// mcp::transport::ServerStdioTransport with ServerPeer/Service, or a
+/// platform-owned process/pipe transport.
 ///
 /// The server stdio loop handles one inbound line at a time and writes the
 /// corresponding response before reading the next request. It therefore has no
@@ -67,6 +76,8 @@ class StdioTransport final : public Transport {
       const protocol::JsonRpcNotification& notification) override;
 
   /// @brief Stop the read loop after the current blocking read completes.
+  /// @note This does not interrupt a std::getline() call already blocked on a
+  /// caller-owned stream.
   void stop() noexcept override;
 
   /// @brief Return the diagnostic transport name "stdio".
@@ -76,7 +87,9 @@ class StdioTransport final : public Transport {
   std::istream* input_;
   std::ostream* output_;
   std::mutex output_mutex_;
-  bool running_ = false;
+  mutable std::mutex client_capabilities_mutex_;
+  std::atomic_bool running_{false};
+  bool initialized_ = false;
   std::optional<protocol::ClientCapabilities> client_capabilities_;
 };
 

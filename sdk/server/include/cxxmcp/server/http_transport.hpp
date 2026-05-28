@@ -34,6 +34,9 @@ struct HttpTransportOptions {
   std::optional<std::chrono::milliseconds> sse_retry;
   /// Optional Origin allow-list. Empty means Origin is not restricted.
   std::vector<std::string> allowed_origins;
+  /// Host allow-list used to reject DNS-rebinding attempts. Empty disables Host
+  /// validation. Entries may be hostnames/IP literals or host:port authorities.
+  std::vector<std::string> allowed_hosts = {"localhost", "127.0.0.1", "::1"};
   /// Maximum server-to-client events waiting for an SSE stream.
   std::size_t max_pending_sse_events = 1024;
   /// Maximum serialized bytes waiting for an SSE stream.
@@ -43,6 +46,16 @@ struct HttpTransportOptions {
   /// Maximum time to wait for a client response to a server-to-client request.
   /// Set to zero or a negative duration to wait indefinitely.
   std::chrono::milliseconds request_timeout{30000};
+  /// Maximum HTTP request body size accepted by the underlying server.
+  /// Set to zero to disable the limit.
+  std::size_t max_request_body_bytes = 10 * 1024 * 1024;
+  /// Socket read timeout for HTTP request handling.
+  std::chrono::milliseconds read_timeout{30000};
+  /// Socket write timeout for HTTP response handling.
+  std::chrono::milliseconds write_timeout{30000};
+  /// Maximum active HTTP sessions accepted by this transport. Set to zero to
+  /// disable the limit.
+  std::size_t max_sessions = 1024;
   /// HTTP WWW-Authenticate challenge emitted when authentication fails.
   /// Empty disables the header for custom deployments that emit challenges
   /// through another layer.
@@ -144,9 +157,7 @@ class HttpTransport final : public Transport {
   std::string_view name() const noexcept override;
 
  private:
-  struct HttpServerDeleter {
-    void operator()(void* server) const noexcept;
-  };
+  struct HttpServerHolder;
 
   struct PendingRequest {
     std::mutex mutex;
@@ -163,6 +174,7 @@ class HttpTransport final : public Transport {
 
   struct SessionState {
     std::string session_id;
+    bool initialized = false;
     std::optional<protocol::ClientCapabilities> client_capabilities;
     std::deque<QueuedEvent> pending_notifications;
     std::size_t pending_notification_bytes = 0;
@@ -186,7 +198,7 @@ class HttpTransport final : public Transport {
   void close_sse_stream(std::string_view session_id) noexcept;
 
   HttpTransportOptions options_;
-  std::unique_ptr<void, HttpServerDeleter> server_;
+  std::unique_ptr<HttpServerHolder> server_;
   mutable std::mutex mutex_;
   std::condition_variable notification_cv_;
   std::unordered_map<std::string, SessionState> sessions_;

@@ -285,8 +285,7 @@ class Client {
                                           std::string client_version = "0");
 
   /// @brief Returns server capabilities learned from initialize(), if known.
-  const std::optional<protocol::ServerCapabilities>& server_capabilities()
-      const noexcept;
+  std::optional<protocol::ServerCapabilities> server_capabilities() const;
 
   /// @brief Sends the initialized notification after a successful initialize
   /// exchange.
@@ -316,6 +315,10 @@ class Client {
   /// @brief Lists one page of prompts advertised by the server.
   core::Result<std::vector<protocol::Prompt>> list_prompts();
 
+  /// @brief Lists one typed page of prompts, preserving pagination metadata.
+  core::Result<protocol::PromptsListResult> list_prompts_page(
+      const protocol::PaginatedRequestParams& params = {});
+
   /// @brief Lists all prompts, following pagination cursors until exhausted.
   core::Result<std::vector<protocol::Prompt>> list_all_prompts();
 
@@ -330,6 +333,10 @@ class Client {
 
   /// @brief Lists one page of resources advertised by the server.
   core::Result<std::vector<protocol::Resource>> list_resources();
+
+  /// @brief Lists one typed page of resources, preserving pagination metadata.
+  core::Result<protocol::ResourcesListResult> list_resources_page(
+      const protocol::PaginatedRequestParams& params = {});
 
   /// @brief Lists all resources, following pagination cursors until exhausted.
   core::Result<std::vector<protocol::Resource>> list_all_resources();
@@ -346,6 +353,11 @@ class Client {
   core::Result<std::vector<protocol::ResourceTemplate>>
   list_resource_templates();
 
+  /// @brief Lists one typed page of resource templates.
+  core::Result<protocol::ResourceTemplatesListResult>
+  list_resource_templates_page(
+      const protocol::PaginatedRequestParams& params = {});
+
   /// @brief Lists all resource templates, following pagination cursors until
   /// exhausted.
   core::Result<std::vector<protocol::ResourceTemplate>>
@@ -353,6 +365,10 @@ class Client {
 
   /// @brief Lists one page of tool definitions advertised by the server.
   core::Result<std::vector<protocol::ToolDefinition>> list_tools();
+
+  /// @brief Lists one typed page of tool definitions.
+  core::Result<protocol::ToolsListResult> list_tools_page(
+      const protocol::PaginatedRequestParams& params = {});
 
   /// @brief Lists all tool definitions, following pagination cursors until
   /// exhausted.
@@ -420,6 +436,10 @@ class Client {
 
   /// @brief Lists one page of tasks advertised by the server.
   core::Result<std::vector<protocol::Task>> list_tasks();
+
+  /// @brief Lists one typed task page, preserving pagination metadata.
+  core::Result<protocol::TaskListResult> list_tasks_page(
+      const protocol::TaskListParams& request = {});
 
   /// @brief Lists all tasks, following pagination cursors until exhausted.
   core::Result<std::vector<protocol::Task>> list_all_tasks();
@@ -489,7 +509,7 @@ class Client {
          parser = std::move(parser)]() mutable -> core::Result<T> {
           auto payload = raw_request(request);
           if (!payload) {
-            return std::unexpected(payload.error());
+            return mcp::core::unexpected(payload.error());
           }
           return parser(*payload);
         });
@@ -698,6 +718,10 @@ class Client {
   /// to method-not-found errors and notification methods default to no-op.
   Client& set_handler(const ClientHandlerInterface& handler);
 
+  /// @brief Starts the underlying transport receive side if the transport needs
+  /// explicit startup.
+  core::Result<core::Unit> start();
+
   /// @brief Dispatches an inbound notification through built-in and registered
   /// handlers.
   core::Result<core::Unit> handle_notification(
@@ -720,6 +744,18 @@ class Client {
   void stop() noexcept;
 
  private:
+  template <typename Handler>
+  Handler copy_handler(Handler Client::* slot) const {
+    std::lock_guard<std::mutex> lock(*handlers_mutex_);
+    return this->*slot;
+  }
+
+  template <typename Handler>
+  void store_handler(Handler Client::* slot, Handler handler) {
+    std::lock_guard<std::mutex> lock(*handlers_mutex_);
+    this->*slot = std::move(handler);
+  }
+
   core::Result<protocol::Json> send_request(std::string method,
                                             protocol::Json params);
   core::Result<protocol::JsonRpcResponse> send_rpc_request(
@@ -735,6 +771,9 @@ class Client {
   bool supports_server_task_cancel() const noexcept;
   bool supports_server_tasks() const noexcept;
   bool supports_server_task_tool_call() const noexcept;
+  std::optional<protocol::ClientCapabilities> capabilities_snapshot() const;
+  std::optional<protocol::ServerCapabilities> server_capabilities_snapshot()
+      const;
   CancellationToken begin_request_cancellation(
       const protocol::RequestId& request_id);
   void end_request_cancellation(const protocol::RequestId& request_id) noexcept;
@@ -771,6 +810,10 @@ class Client {
   CustomRequestHandler custom_request_handler_;
   CustomRequestCancellationHandler custom_request_cancellation_handler_;
   RawNotificationHandler raw_notification_handler_;
+  mutable std::shared_ptr<std::mutex> state_mutex_ =
+      std::make_shared<std::mutex>();
+  mutable std::shared_ptr<std::mutex> handlers_mutex_ =
+      std::make_shared<std::mutex>();
   std::shared_ptr<std::mutex> active_request_cancellations_mutex_ =
       std::make_shared<std::mutex>();
   std::shared_ptr<std::unordered_map<std::string, CancellationSource>>

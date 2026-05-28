@@ -3,6 +3,7 @@
 #pragma once
 
 #include <functional>
+#include <memory>
 #include <optional>
 #include <string>
 #include <string_view>
@@ -39,10 +40,18 @@ struct SessionContext {
   std::string remote_address;
   /// Transport-supplied request headers or metadata for this message.
   std::unordered_map<std::string, std::string> headers;
+  /// HTTP request method for HTTP-based transports.
+  std::optional<std::string> http_method;
+  /// Absolute HTTP request URL for HTTP-based transports.
+  std::optional<std::string> http_url;
   /// Authenticated principal produced by the configured AuthProvider.
   std::optional<AuthIdentity> auth_identity;
   /// Borrowed transport used to create a ClientPeer for outbound messages.
   Transport* transport = nullptr;
+  /// Weak lifetime token supplied by the transport. ClientPeer checks this
+  /// before using the borrowed transport pointer so stored contexts fail closed
+  /// after the transport has been destroyed.
+  std::weak_ptr<void> transport_lifetime;
 
   /// @brief Return a non-owning peer handle for the client on this session.
   /// @return A ClientPeer bound to transport, or an unavailable peer when no
@@ -85,6 +94,11 @@ class Transport {
  public:
   virtual ~Transport() = default;
 
+  /// @brief Weak lifetime token for SessionContext and ClientPeer guards.
+  std::weak_ptr<void> lifetime_token() const noexcept {
+    return lifetime_token_;
+  }
+
   /// @brief Start accepting inbound messages and dispatch them to handlers.
   /// @param handler Required request handler.
   /// @param notification_handler Optional notification handler.
@@ -104,7 +118,7 @@ class Transport {
   virtual core::Result<protocol::JsonRpcResponse> send_request(
       const protocol::JsonRpcRequest& request) {
     (void)request;
-    return std::unexpected(core::Error{
+    return mcp::core::unexpected(core::Error{
         static_cast<int>(protocol::ErrorCode::MethodNotFound),
         "transport does not support outbound requests",
         {},
@@ -170,6 +184,9 @@ class Transport {
   /// @brief Human-readable transport name for diagnostics.
   /// @return A static string view owned by the transport implementation.
   virtual std::string_view name() const noexcept = 0;
+
+ private:
+  std::shared_ptr<void> lifetime_token_ = std::make_shared<int>(0);
 };
 
 }  // namespace mcp::server

@@ -80,18 +80,18 @@ struct RequestHandleControl {
 inline core::Result<core::Unit> configure_request_executor(
     RequestExecutorOptions options) {
   if (options.worker_count == 0) {
-    return std::unexpected(detail::request_executor_error(
+    return mcp::core::unexpected(detail::request_executor_error(
         "request executor worker_count must be greater than zero"));
   }
   if (options.max_queue_size == 0) {
-    return std::unexpected(detail::request_executor_error(
+    return mcp::core::unexpected(detail::request_executor_error(
         "request executor max_queue_size must be greater than zero"));
   }
 
   auto& state = detail::request_executor_state();
   std::lock_guard lock(state.mutex);
   if (state.executor) {
-    return std::unexpected(detail::request_executor_error(
+    return mcp::core::unexpected(detail::request_executor_error(
         "request executor is already initialized"));
   }
   state.options = options;
@@ -138,7 +138,7 @@ class RequestHandle {
     auto promise = std::make_shared<std::promise<ResultType>>();
     auto future = promise->get_future().share();
     if (!task) {
-      promise->set_value(std::unexpected(errors::request_task_missing()));
+      promise->set_value(mcp::core::unexpected(errors::request_task_missing()));
       return RequestHandle(std::move(request_id), std::move(timeout),
                            std::move(cancellation), std::move(cancel),
                            std::move(future));
@@ -149,15 +149,15 @@ class RequestHandle {
           try {
             promise->set_value(task());
           } catch (const std::exception& ex) {
-            promise->set_value(
-                std::unexpected(errors::request_worker_exception(ex.what())));
+            promise->set_value(mcp::core::unexpected(
+                errors::request_worker_exception(ex.what())));
           } catch (...) {
-            promise->set_value(
-                std::unexpected(errors::request_worker_unknown_exception()));
+            promise->set_value(mcp::core::unexpected(
+                errors::request_worker_unknown_exception()));
           }
         });
     if (!queued) {
-      promise->set_value(std::unexpected(queued.error()));
+      promise->set_value(mcp::core::unexpected(queued.error()));
     }
     return RequestHandle(std::move(request_id), std::move(timeout),
                          std::move(cancellation), std::move(cancel),
@@ -194,11 +194,11 @@ class RequestHandle {
   /// terminal timeout or cancellation has been observed.
   core::Result<T> await_response() const {
     if (!response_.valid()) {
-      return std::unexpected(errors::request_state_missing());
+      return mcp::core::unexpected(errors::request_state_missing());
     }
 
     if (const auto terminal = terminal_error(); terminal.has_value()) {
-      return std::unexpected(*terminal);
+      return mcp::core::unexpected(*terminal);
     }
 
     if (!timeout_.has_value() && !cancellation_.has_value()) {
@@ -206,9 +206,21 @@ class RequestHandle {
     }
 
     const auto started_at = std::chrono::steady_clock::now();
+    if (timeout_.has_value() && !cancellation_.has_value()) {
+      const auto deadline = started_at + *timeout_;
+      if (response_.wait_until(deadline) == std::future_status::ready) {
+        if (const auto terminal = terminal_error(); terminal.has_value()) {
+          return mcp::core::unexpected(*terminal);
+        }
+        return read_response_result();
+      }
+      return fail_terminal("request timeout",
+                           errors::request_timed_out(*timeout_));
+    }
+
     while (true) {
       if (const auto terminal = terminal_error(); terminal.has_value()) {
-        return std::unexpected(*terminal);
+        return mcp::core::unexpected(*terminal);
       }
 
       if (cancellation_.has_value() && cancellation_->cancelled()) {
@@ -226,6 +238,9 @@ class RequestHandle {
               ? std::min(std::chrono::milliseconds(10), *timeout_)
               : std::chrono::milliseconds(10);
       if (response_.wait_for(wait_slice) == std::future_status::ready) {
+        if (const auto terminal = terminal_error(); terminal.has_value()) {
+          return mcp::core::unexpected(*terminal);
+        }
         return read_response_result();
       }
     }
@@ -262,9 +277,9 @@ class RequestHandle {
     try {
       return response_.get();
     } catch (const std::exception& ex) {
-      return std::unexpected(errors::request_worker_exception(ex.what()));
+      return mcp::core::unexpected(errors::request_worker_exception(ex.what()));
     } catch (...) {
-      return std::unexpected(errors::request_worker_unknown_exception());
+      return mcp::core::unexpected(errors::request_worker_unknown_exception());
     }
   }
 
@@ -288,7 +303,7 @@ class RequestHandle {
     if (send_cancel) {
       (void)cancel(std::move(reason));
     }
-    return std::unexpected(std::move(terminal));
+    return mcp::core::unexpected(std::move(terminal));
   }
 
   protocol::RequestId request_id_;

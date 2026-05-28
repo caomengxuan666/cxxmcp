@@ -1,17 +1,24 @@
 // Copyright (c) 2025 [caomengxuan666]
 
-#include "cxxmcp/server/server.hpp"
-
 #include <algorithm>
+#include <charconv>
+#include <cmath>
+#include <cstddef>
+#include <cstdio>
 #include <exception>
+#include <iterator>
+#include <limits>
 #include <memory>
 #include <optional>
 #include <string_view>
+#include <system_error>
 #include <utility>
+#include <variant>
 
 #include "cxxmcp/error.hpp"
 #include "cxxmcp/protocol/logging.hpp"
 #include "cxxmcp/protocol/serialization.hpp"
+#include "cxxmcp/server/authoring.hpp"
 #include "cxxmcp/server/handler.hpp"
 #include "cxxmcp/server/http_transport.hpp"
 #include "cxxmcp/server/stdio_transport.hpp"
@@ -53,7 +60,7 @@ protocol::Json initialize_result_to_json(
 core::Result<core::Unit> validate_initialize_params(
     const protocol::Json& params) {
   if (!params.is_object()) {
-    return std::unexpected(core::Error{
+    return mcp::core::unexpected(core::Error{
         static_cast<int>(protocol::ErrorCode::InvalidParams),
         "initialize params must be an object",
         {},
@@ -61,9 +68,18 @@ core::Result<core::Unit> validate_initialize_params(
   }
   if (!params.contains("protocolVersion") ||
       !params.at("protocolVersion").is_string()) {
-    return std::unexpected(core::Error{
+    return mcp::core::unexpected(core::Error{
         static_cast<int>(protocol::ErrorCode::InvalidParams),
         "initialize requires a string protocolVersion",
+        {},
+    });
+  }
+  const auto requested_version =
+      params.at("protocolVersion").get<std::string>();
+  if (!protocol::is_supported_protocol_version(requested_version)) {
+    return mcp::core::unexpected(core::Error{
+        static_cast<int>(protocol::ErrorCode::InvalidParams),
+        "unsupported MCP protocol version(\"" + requested_version + "\")",
         {},
     });
   }
@@ -109,7 +125,130 @@ core::Result<protocol::JsonRpcResponse> make_params_error_response(
 }
 
 std::string request_cancellation_key(const protocol::RequestId& request_id) {
-  return protocol::request_id_to_json(request_id).dump();
+  if (const auto* integer_id = std::get_if<std::int64_t>(&request_id)) {
+    return "i:" + std::to_string(*integer_id);
+  }
+  const auto& string_id = std::get<std::string>(request_id);
+  std::string key;
+  key.reserve(string_id.size() + 2);
+  key.append("s:");
+  key.append(string_id);
+  return key;
+}
+
+void add_saturated(std::size_t& total, std::size_t value) noexcept {
+  const auto remaining = std::numeric_limits<std::size_t>::max() - total;
+  total = value > remaining ? std::numeric_limits<std::size_t>::max()
+                            : total + value;
+}
+
+std::size_t escaped_json_string_size(std::string_view value) noexcept {
+  std::size_t size = 2;
+  for (const unsigned char ch : value) {
+    switch (ch) {
+      case '"':
+      case '\\':
+      case '\b':
+      case '\f':
+      case '\n':
+      case '\r':
+      case '\t':
+        add_saturated(size, 2);
+        break;
+      default:
+        add_saturated(size, ch <= 0x1F ? 6 : 1);
+        break;
+    }
+  }
+  return size;
+}
+
+template <class Number>
+std::size_t integer_json_size(Number value) {
+  char buffer[std::numeric_limits<Number>::digits10 + 3] = {};
+  const auto result =
+      std::to_chars(std::begin(buffer), std::end(buffer), value);
+  return result.ec == std::errc{}
+             ? static_cast<std::size_t>(result.ptr - std::begin(buffer))
+             : 0;
+}
+
+std::size_t floating_json_size(double value) {
+  if (!std::isfinite(value)) {
+    return 4;
+  }
+  char buffer[64] = {};
+  const auto written = std::snprintf(buffer, sizeof(buffer), "%.17g", value);
+  if (written <= 0) {
+    return 0;
+  }
+  return static_cast<std::size_t>(written);
+}
+
+std::size_t serialized_json_size(const protocol::Json& value) {
+  if (value.is_null()) {
+    return 4;
+  }
+  if (value.is_boolean()) {
+    return value.get<bool>() ? 4 : 5;
+  }
+  if (value.is_string()) {
+    return escaped_json_string_size(value.get_ref<const std::string&>());
+  }
+  if (value.is_number_integer()) {
+    return integer_json_size(value.get<protocol::Json::number_integer_t>());
+  }
+  if (value.is_number_unsigned()) {
+    return integer_json_size(value.get<protocol::Json::number_unsigned_t>());
+  }
+  if (value.is_number_float()) {
+    return floating_json_size(value.get<protocol::Json::number_float_t>());
+  }
+  if (value.is_binary()) {
+    const auto& binary = value.get_binary();
+    std::size_t size = 10;
+    bool first = true;
+    for (const auto byte : binary) {
+      if (!first) {
+        add_saturated(size, 1);
+      }
+      first = false;
+      add_saturated(size, integer_json_size(static_cast<unsigned int>(byte)));
+    }
+    add_saturated(size, 12);
+    add_saturated(size, binary.has_subtype()
+                            ? integer_json_size(binary.subtype()) + 1
+                            : 5);
+    return size;
+  }
+  if (value.is_array()) {
+    std::size_t size = 2;
+    bool first = true;
+    for (const auto& item : value) {
+      if (!first) {
+        add_saturated(size, 1);
+      }
+      first = false;
+      add_saturated(size, serialized_json_size(item));
+    }
+    return size;
+  }
+  if (value.is_object()) {
+    std::size_t size = 2;
+    bool first = true;
+    for (auto it = value.begin(); it != value.end(); ++it) {
+      if (!first) {
+        add_saturated(size, 1);
+      }
+      first = false;
+      add_saturated(size, escaped_json_string_size(it.key()));
+      add_saturated(size, 1);
+      add_saturated(size, serialized_json_size(it.value()));
+    }
+    return size;
+  }
+
+  return value.is_discarded() ? 11 : 0;
 }
 
 core::Result<core::Unit> update_resource_subscription(
@@ -117,7 +256,7 @@ core::Result<core::Unit> update_resource_subscription(
         subscriptions,
     const SessionContext& context, std::string_view uri, bool subscribed) {
   if (!context.transport) {
-    return std::unexpected(core::Error{
+    return mcp::core::unexpected(core::Error{
         static_cast<int>(protocol::ErrorCode::InternalError),
         "resource subscription requires an active transport",
         {},
@@ -165,6 +304,18 @@ const ToolRegistry& Server::tools() const noexcept { return tools_; }
 
 std::vector<protocol::ToolDefinition> Server::list_tools() const {
   return tools_.list();
+}
+
+core::Result<protocol::ToolsListResult> Server::list_tools(
+    const protocol::PaginatedRequestParams& params,
+    const SessionContext& context) const {
+  const auto handler = copy_handler(&Server::tools_list_handler_);
+  if (handler) {
+    return handler(params, context);
+  }
+  protocol::ToolsListResult result;
+  result.tools = tools_.list();
+  return result;
 }
 
 core::Result<protocol::ToolDefinition> Server::get_tool(
@@ -225,6 +376,18 @@ std::vector<protocol::Prompt> Server::list_prompts() const {
   return prompts_.list();
 }
 
+core::Result<protocol::PromptsListResult> Server::list_prompts(
+    const protocol::PaginatedRequestParams& params,
+    const SessionContext& context) const {
+  const auto handler = copy_handler(&Server::prompts_list_handler_);
+  if (handler) {
+    return handler(params, context);
+  }
+  protocol::PromptsListResult result;
+  result.prompts = prompts_.list();
+  return result;
+}
+
 core::Result<protocol::PromptsGetResult> Server::get_prompt(
     std::string_view name, protocol::Json arguments,
     const std::string& session_id) const {
@@ -245,6 +408,18 @@ const ResourceRegistry& Server::resources() const noexcept {
 
 std::vector<protocol::Resource> Server::list_resources() const {
   return resources_.list();
+}
+
+core::Result<protocol::ResourcesListResult> Server::list_resources(
+    const protocol::PaginatedRequestParams& params,
+    const SessionContext& context) const {
+  const auto handler = copy_handler(&Server::resources_list_handler_);
+  if (handler) {
+    return handler(params, context);
+  }
+  protocol::ResourcesListResult result;
+  result.resources = resources_.list();
+  return result;
 }
 
 core::Result<protocol::ResourcesReadResult> Server::read_resource(
@@ -272,6 +447,18 @@ std::vector<protocol::ResourceTemplate> Server::list_resource_templates()
   return resource_templates_.list();
 }
 
+core::Result<protocol::ResourceTemplatesListResult>
+Server::list_resource_templates(const protocol::PaginatedRequestParams& params,
+                                const SessionContext& context) const {
+  const auto handler = copy_handler(&Server::resource_templates_list_handler_);
+  if (handler) {
+    return handler(params, context);
+  }
+  protocol::ResourceTemplatesListResult result;
+  result.resource_templates = resource_templates_.list();
+  return result;
+}
+
 core::Result<protocol::Json> Server::initialize() {
   return initialize_result_to_json(options_);
 }
@@ -282,10 +469,10 @@ core::Result<protocol::Json> Server::ping(const SessionContext& context) {
                              protocol::Json::object()),
       context);
   if (!response) {
-    return std::unexpected(response.error());
+    return mcp::core::unexpected(response.error());
   }
   if (!response->result.has_value()) {
-    return std::unexpected(core::Error{
+    return mcp::core::unexpected(core::Error{
         static_cast<int>(protocol::ErrorCode::InternalError),
         "ping response did not contain a result",
         {},
@@ -338,7 +525,7 @@ core::Result<protocol::JsonRpcResponse> Server::handle_request(
     RateLimitRequest rate_limit_request;
     rate_limit_request.subject = context.session_id;
     rate_limit_request.method = request.method;
-    rate_limit_request.request_bytes = request.params.dump().size();
+    rate_limit_request.request_bytes = serialized_json_size(request.params);
     const auto decision = rate_limiter_->check(rate_limit_request);
     if (!decision) {
       return make_error_response(
@@ -353,6 +540,17 @@ core::Result<protocol::JsonRpcResponse> Server::handle_request(
     }
   }
 
+  const auto raw_request_context_handler =
+      copy_handler(&Server::raw_request_context_handler_);
+  const auto raw_request_handler = copy_handler(&Server::raw_request_handler_);
+  const auto task_list_handler = copy_handler(&Server::task_list_handler_);
+  const auto task_get_handler = copy_handler(&Server::task_get_handler_);
+  const auto task_cancel_handler = copy_handler(&Server::task_cancel_handler_);
+  const auto task_result_handler = copy_handler(&Server::task_result_handler_);
+  const auto completion_handler = copy_handler(&Server::completion_handler_);
+  const auto sampling_handler = copy_handler(&Server::sampling_handler_);
+  const auto logging_handler = copy_handler(&Server::logging_handler_);
+
   if (request.method == protocol::InitializeMethod) {
     const auto valid = validate_initialize_params(request.params);
     if (!valid) {
@@ -361,33 +559,39 @@ core::Result<protocol::JsonRpcResponse> Server::handle_request(
     }
     const auto requested_version =
         request.params.at("protocolVersion").get<std::string>();
+    const auto negotiated_version =
+        protocol::negotiate_protocol_version(requested_version);
+    if (!negotiated_version.has_value()) {
+      return make_error_response(
+          request, static_cast<int>(protocol::ErrorCode::InvalidParams),
+          "unsupported MCP protocol version(\"" + requested_version + "\")",
+          requested_version);
+    }
     return protocol::make_response(
-        request.id,
-        initialize_result_to_json(
-            options_, protocol::negotiate_protocol_version(requested_version)));
+        request.id, initialize_result_to_json(options_, *negotiated_version));
   }
 
   if (request.method == protocol::PingMethod) {
     return protocol::make_response(request.id, protocol::Json::object());
   }
 
-  if (raw_request_context_handler_) {
+  if (raw_request_context_handler) {
     const auto raw_response =
-        raw_request_context_handler_(request, context, request_cancellation);
+        raw_request_context_handler(request, context, request_cancellation);
     if (raw_response.has_value()) {
       return *raw_response;
     }
   }
 
-  if (raw_request_handler_) {
-    const auto raw_response = raw_request_handler_(request, context);
+  if (raw_request_handler) {
+    const auto raw_response = raw_request_handler(request, context);
     if (raw_response.has_value()) {
       return *raw_response;
     }
   }
 
   if (request.method == protocol::TasksListMethod) {
-    if (!task_list_handler_ && !task_processor_) {
+    if (!task_list_handler && !task_processor_) {
       return make_error_response(
           request, static_cast<int>(protocol::ErrorCode::MethodNotFound),
           "task list handler is not configured");
@@ -398,8 +602,8 @@ core::Result<protocol::JsonRpcResponse> Server::handle_request(
       return make_params_error_response(request, params.error());
     }
 
-    const auto result = task_list_handler_
-                            ? task_list_handler_(*params, context)
+    const auto result = task_list_handler
+                            ? task_list_handler(*params, context)
                             : task_processor_->list_tasks(*params);
     if (!result) {
       return make_error_response(request, result.error().code,
@@ -411,7 +615,7 @@ core::Result<protocol::JsonRpcResponse> Server::handle_request(
   }
 
   if (request.method == protocol::TasksGetMethod) {
-    if (!task_get_handler_ && !task_processor_) {
+    if (!task_get_handler && !task_processor_) {
       return make_error_response(
           request, static_cast<int>(protocol::ErrorCode::MethodNotFound),
           "task get handler is not configured");
@@ -422,8 +626,8 @@ core::Result<protocol::JsonRpcResponse> Server::handle_request(
       return make_params_error_response(request, params.error());
     }
 
-    const auto result = task_get_handler_ ? task_get_handler_(*params, context)
-                                          : task_processor_->get_task(*params);
+    const auto result = task_get_handler ? task_get_handler(*params, context)
+                                         : task_processor_->get_task(*params);
     if (!result) {
       return make_error_response(request, result.error().code,
                                  result.error().message, result.error().detail);
@@ -436,7 +640,7 @@ core::Result<protocol::JsonRpcResponse> Server::handle_request(
   }
 
   if (request.method == protocol::TasksCancelMethod) {
-    if (!task_cancel_handler_ && !task_processor_) {
+    if (!task_cancel_handler && !task_processor_) {
       return make_error_response(
           request, static_cast<int>(protocol::ErrorCode::MethodNotFound),
           "task cancel handler is not configured");
@@ -447,8 +651,8 @@ core::Result<protocol::JsonRpcResponse> Server::handle_request(
       return make_params_error_response(request, params.error());
     }
 
-    const auto result = task_cancel_handler_
-                            ? task_cancel_handler_(*params, context)
+    const auto result = task_cancel_handler
+                            ? task_cancel_handler(*params, context)
                             : task_processor_->cancel_task(*params);
     if (!result) {
       return make_error_response(request, result.error().code,
@@ -462,7 +666,7 @@ core::Result<protocol::JsonRpcResponse> Server::handle_request(
   }
 
   if (request.method == protocol::TasksResultMethod) {
-    if (!task_result_handler_ && !task_processor_) {
+    if (!task_result_handler && !task_processor_) {
       return make_error_response(
           request, static_cast<int>(protocol::ErrorCode::MethodNotFound),
           "task result handler is not configured");
@@ -473,8 +677,8 @@ core::Result<protocol::JsonRpcResponse> Server::handle_request(
       return make_params_error_response(request, params.error());
     }
 
-    const auto result = task_result_handler_
-                            ? task_result_handler_(*params, context)
+    const auto result = task_result_handler
+                            ? task_result_handler(*params, context)
                             : task_processor_->task_result(*params);
     if (!result) {
       return make_error_response(request, result.error().code,
@@ -485,12 +689,20 @@ core::Result<protocol::JsonRpcResponse> Server::handle_request(
   }
 
   if (request.method == "tools/list") {
-    protocol::Json result = protocol::Json::object();
-    result["tools"] = protocol::Json::array();
-    for (const auto& tool : tools_.list()) {
-      result["tools"].push_back(protocol::tool_definition_to_json(tool));
+    const auto params =
+        protocol::paginated_request_params_from_json(request.params);
+    if (!params) {
+      return make_error_response(
+          request, static_cast<int>(protocol::ErrorCode::InvalidParams),
+          "tools/list params must be an object with an optional string cursor");
     }
-    return protocol::make_response(request.id, std::move(result));
+    const auto result = list_tools(*params, context);
+    if (!result) {
+      return make_error_response(request, result.error().code,
+                                 result.error().message, result.error().detail);
+    }
+    return protocol::make_response(
+        request.id, protocol::tools_list_result_to_json(*result));
   }
 
   if (request.method == protocol::ToolsGetMethod) {
@@ -558,10 +770,21 @@ core::Result<protocol::JsonRpcResponse> Server::handle_request(
   }
 
   if (request.method == "prompts/list") {
-    protocol::PromptsListResult result;
-    result.prompts = prompts_.list();
+    const auto params =
+        protocol::paginated_request_params_from_json(request.params);
+    if (!params) {
+      return make_error_response(
+          request, static_cast<int>(protocol::ErrorCode::InvalidParams),
+          "prompts/list params must be an object with an optional string "
+          "cursor");
+    }
+    const auto result = list_prompts(*params, context);
+    if (!result) {
+      return make_error_response(request, result.error().code,
+                                 result.error().message, result.error().detail);
+    }
     return protocol::make_response(
-        request.id, protocol::prompts_list_result_to_json(result));
+        request.id, protocol::prompts_list_result_to_json(*result));
   }
 
   if (request.method == "prompts/get") {
@@ -587,10 +810,21 @@ core::Result<protocol::JsonRpcResponse> Server::handle_request(
   }
 
   if (request.method == "resources/list") {
-    protocol::ResourcesListResult result;
-    result.resources = resources_.list();
+    const auto params =
+        protocol::paginated_request_params_from_json(request.params);
+    if (!params) {
+      return make_error_response(
+          request, static_cast<int>(protocol::ErrorCode::InvalidParams),
+          "resources/list params must be an object with an optional string "
+          "cursor");
+    }
+    const auto result = list_resources(*params, context);
+    if (!result) {
+      return make_error_response(request, result.error().code,
+                                 result.error().message, result.error().detail);
+    }
     return protocol::make_response(
-        request.id, protocol::resources_list_result_to_json(result));
+        request.id, protocol::resources_list_result_to_json(*result));
   }
 
   if (request.method == "resources/read") {
@@ -617,10 +851,21 @@ core::Result<protocol::JsonRpcResponse> Server::handle_request(
   }
 
   if (request.method == "resources/templates/list") {
-    protocol::ResourceTemplatesListResult result;
-    result.resource_templates = resource_templates_.list();
+    const auto params =
+        protocol::paginated_request_params_from_json(request.params);
+    if (!params) {
+      return make_error_response(
+          request, static_cast<int>(protocol::ErrorCode::InvalidParams),
+          "resources/templates/list params must be an object with an optional "
+          "string cursor");
+    }
+    const auto result = list_resource_templates(*params, context);
+    if (!result) {
+      return make_error_response(request, result.error().code,
+                                 result.error().message, result.error().detail);
+    }
     return protocol::make_response(
-        request.id, protocol::resource_templates_list_result_to_json(result));
+        request.id, protocol::resource_templates_list_result_to_json(*result));
   }
 
   if (request.method == "resources/subscribe" ||
@@ -648,13 +893,13 @@ core::Result<protocol::JsonRpcResponse> Server::handle_request(
   }
 
   if (request.method == "completion/complete") {
-    if (!completion_handler_) {
+    if (!completion_handler) {
       return make_error_response(
           request, static_cast<int>(protocol::ErrorCode::MethodNotFound),
           "completion handler is not configured");
     }
     const auto result =
-        completion_handler_(request.params, context, request_cancellation);
+        completion_handler(request.params, context, request_cancellation);
     if (!result) {
       return make_error_response(request, result.error().code,
                                  result.error().message, result.error().detail);
@@ -663,13 +908,13 @@ core::Result<protocol::JsonRpcResponse> Server::handle_request(
   }
 
   if (request.method == "sampling/createMessage") {
-    if (!sampling_handler_) {
+    if (!sampling_handler) {
       return make_error_response(
           request, static_cast<int>(protocol::ErrorCode::MethodNotFound),
           "sampling handler is not configured");
     }
     const auto result =
-        sampling_handler_(request.params, context, request_cancellation);
+        sampling_handler(request.params, context, request_cancellation);
     if (!result) {
       return make_error_response(request, result.error().code,
                                  result.error().message, result.error().detail);
@@ -684,9 +929,9 @@ core::Result<protocol::JsonRpcResponse> Server::handle_request(
           request, static_cast<int>(protocol::ErrorCode::InvalidParams),
           "logging/setLevel requires a string level");
     }
-    if (logging_handler_) {
-      logging_handler_(request.params.at("level").get<std::string>(),
-                       "logging level changed");
+    if (logging_handler) {
+      logging_handler(request.params.at("level").get<std::string>(),
+                      "logging level changed");
     }
     return protocol::make_response(request.id, protocol::Json::object());
   }
@@ -712,9 +957,11 @@ core::Result<SessionContext> Server::authenticate_context(
   AuthRequest auth_request;
   auth_request.headers = context.headers;
   auth_request.remote_address = context.remote_address;
+  auth_request.http_method = context.http_method;
+  auth_request.http_url = context.http_url;
   const auto identity = auth_provider_->authenticate(auth_request);
   if (!identity) {
-    return std::unexpected(
+    return mcp::core::unexpected(
         make_auth_error(identity.error().message, identity.error().detail));
   }
   context.auth_identity = *identity;
@@ -724,24 +971,38 @@ core::Result<SessionContext> Server::authenticate_context(
 core::Result<core::Unit> Server::handle_notification(
     const protocol::JsonRpcNotification& notification,
     const SessionContext& context) try {
-  if (raw_notification_handler_) {
-    const auto raw_result = raw_notification_handler_(notification, context);
+  const auto raw_notification_handler =
+      copy_handler(&Server::raw_notification_handler_);
+  const auto roots_list_changed_handler =
+      copy_handler(&Server::roots_list_changed_handler_);
+  const auto progress_handler = copy_handler(&Server::progress_handler_);
+  const auto tool_list_changed_handler =
+      copy_handler(&Server::tool_list_changed_handler_);
+  const auto prompt_list_changed_handler =
+      copy_handler(&Server::prompt_list_changed_handler_);
+  const auto resource_list_changed_handler =
+      copy_handler(&Server::resource_list_changed_handler_);
+  const auto resource_updated_handler =
+      copy_handler(&Server::resource_updated_handler_);
+
+  if (raw_notification_handler) {
+    const auto raw_result = raw_notification_handler(notification, context);
     if (!raw_result) {
-      return std::unexpected(raw_result.error());
+      return mcp::core::unexpected(raw_result.error());
     }
   }
 
   if (notification.method == protocol::RootsListChangedNotificationMethod &&
-      roots_list_changed_handler_) {
-    const auto result = roots_list_changed_handler_(context);
+      roots_list_changed_handler) {
+    const auto result = roots_list_changed_handler(context);
     if (!result) {
-      return std::unexpected(result.error());
+      return mcp::core::unexpected(result.error());
     }
   } else if (notification.method == protocol::CancelledNotificationMethod) {
     const auto cancelled =
         protocol::cancelled_notification_params_from_json(notification.params);
     if (!cancelled) {
-      return std::unexpected(core::Error{
+      return mcp::core::unexpected(core::Error{
           static_cast<int>(protocol::ErrorCode::InvalidParams),
           "cancelled notification requires valid params",
           {},
@@ -749,65 +1010,65 @@ core::Result<core::Unit> Server::handle_notification(
     }
     cancel_request(cancelled->request_id);
   } else if (notification.method == protocol::ProgressNotificationMethod &&
-             progress_handler_) {
+             progress_handler) {
     const auto params =
         protocol::progress_notification_params_from_json(notification.params);
     if (!params) {
-      return std::unexpected(core::Error{
+      return mcp::core::unexpected(core::Error{
           static_cast<int>(protocol::ErrorCode::InvalidParams),
           "progress notification requires valid params",
           {},
       });
     }
-    const auto result = progress_handler_(*params, context);
+    const auto result = progress_handler(*params, context);
     if (!result) {
-      return std::unexpected(result.error());
+      return mcp::core::unexpected(result.error());
     }
   } else if (notification.method ==
                  protocol::ToolsListChangedNotificationMethod &&
-             tool_list_changed_handler_) {
-    const auto result = tool_list_changed_handler_(context);
+             tool_list_changed_handler) {
+    const auto result = tool_list_changed_handler(context);
     if (!result) {
-      return std::unexpected(result.error());
+      return mcp::core::unexpected(result.error());
     }
   } else if (notification.method ==
                  protocol::PromptsListChangedNotificationMethod &&
-             prompt_list_changed_handler_) {
-    const auto result = prompt_list_changed_handler_(context);
+             prompt_list_changed_handler) {
+    const auto result = prompt_list_changed_handler(context);
     if (!result) {
-      return std::unexpected(result.error());
+      return mcp::core::unexpected(result.error());
     }
   } else if (notification.method ==
                  protocol::ResourcesListChangedNotificationMethod &&
-             resource_list_changed_handler_) {
-    const auto result = resource_list_changed_handler_(context);
+             resource_list_changed_handler) {
+    const auto result = resource_list_changed_handler(context);
     if (!result) {
-      return std::unexpected(result.error());
+      return mcp::core::unexpected(result.error());
     }
   } else if (notification.method ==
                  protocol::ResourcesUpdatedNotificationMethod &&
-             resource_updated_handler_) {
+             resource_updated_handler) {
     if (!notification.params.is_object() ||
         !notification.params.contains("uri") ||
         !notification.params.at("uri").is_string()) {
-      return std::unexpected(core::Error{
+      return mcp::core::unexpected(core::Error{
           static_cast<int>(protocol::ErrorCode::InvalidParams),
           "resource updated notification requires a string uri",
           {},
       });
     }
-    const auto result = resource_updated_handler_(
+    const auto result = resource_updated_handler(
         notification.params.at("uri").get<std::string>(), context);
     if (!result) {
-      return std::unexpected(result.error());
+      return mcp::core::unexpected(result.error());
     }
   }
 
   return core::Unit{};
 } catch (const std::exception& ex) {
-  return std::unexpected(errors::handler_failed(ex.what()));
+  return mcp::core::unexpected(errors::handler_failed(ex.what()));
 } catch (...) {
-  return std::unexpected(errors::handler_unknown_exception());
+  return mcp::core::unexpected(errors::handler_unknown_exception());
 }
 
 core::Result<core::Unit> Server::broadcast_notification(
@@ -815,7 +1076,7 @@ core::Result<core::Unit> Server::broadcast_notification(
   for (auto& transport : transports_) {
     const auto sent = transport->send_notification(notification);
     if (!sent) {
-      return std::unexpected(sent.error());
+      return mcp::core::unexpected(sent.error());
     }
   }
   for (auto* transport : session_transports_) {
@@ -824,7 +1085,7 @@ core::Result<core::Unit> Server::broadcast_notification(
     }
     const auto sent = transport->send_notification(notification);
     if (!sent) {
-      return std::unexpected(sent.error());
+      return mcp::core::unexpected(sent.error());
     }
   }
   return core::Unit{};
@@ -919,7 +1180,7 @@ core::Result<core::Unit> Server::notify_resource_subscribers(
   for (auto* transport : recipients) {
     const auto sent = transport->send_notification(notification);
     if (!sent) {
-      return std::unexpected(sent.error());
+      return mcp::core::unexpected(sent.error());
     }
   }
   return core::Unit{};
@@ -928,7 +1189,7 @@ core::Result<core::Unit> Server::notify_resource_subscribers(
 core::Result<core::Unit> Server::set_resource_subscription(
     const SessionContext& context, std::string_view uri, bool subscribed) {
   if (!context.transport) {
-    return std::unexpected(core::Error{
+    return mcp::core::unexpected(core::Error{
         static_cast<int>(protocol::ErrorCode::InvalidRequest),
         "resource subscription requires a transport context",
         {},
@@ -952,7 +1213,7 @@ core::Result<core::Unit> Server::set_resource_subscription(
 core::Result<core::Unit> Server::add_transport(
     std::unique_ptr<Transport> transport) {
   if (!transport) {
-    return std::unexpected(core::Error{
+    return mcp::core::unexpected(core::Error{
         static_cast<int>(protocol::ErrorCode::InvalidRequest),
         "transport must not be null",
         {},
@@ -964,8 +1225,8 @@ core::Result<core::Unit> Server::add_transport(
 }
 
 core::Result<core::Unit> Server::add_session_transport(Transport& transport) {
-  if (std::find(session_transports_.begin(), session_transports_.end(),
-                &transport) == session_transports_.end()) {
+  const auto [_, inserted] = session_transport_set_.insert(&transport);
+  if (inserted) {
     session_transports_.push_back(&transport);
   }
   return core::Unit{};
@@ -996,7 +1257,7 @@ core::Result<core::Unit> Server::start() {
           return this->handle_notification(notification, context);
         });
     if (!started) {
-      return std::unexpected(started.error());
+      return mcp::core::unexpected(started.error());
     }
   }
 
@@ -1011,7 +1272,7 @@ void Server::stop() noexcept {
 
 void Server::set_completion_handler(JsonHandler handler) {
   if (!handler) {
-    completion_handler_ = {};
+    store_handler(&Server::completion_handler_, JsonRequestContextHandler{});
     return;
   }
   set_completion_handler(
@@ -1022,7 +1283,7 @@ void Server::set_completion_handler(JsonHandler handler) {
 
 void Server::set_completion_handler(JsonContextHandler handler) {
   if (!handler) {
-    completion_handler_ = {};
+    store_handler(&Server::completion_handler_, JsonRequestContextHandler{});
     return;
   }
   set_completion_handler(
@@ -1035,12 +1296,12 @@ void Server::set_completion_handler(JsonRequestContextHandler handler) {
   if (handler) {
     options_.capabilities.completions.enabled = true;
   }
-  completion_handler_ = std::move(handler);
+  store_handler(&Server::completion_handler_, std::move(handler));
 }
 
 void Server::set_sampling_handler(JsonHandler handler) {
   if (!handler) {
-    sampling_handler_ = {};
+    store_handler(&Server::sampling_handler_, JsonRequestContextHandler{});
     return;
   }
   set_sampling_handler(
@@ -1051,7 +1312,7 @@ void Server::set_sampling_handler(JsonHandler handler) {
 
 void Server::set_sampling_handler(JsonContextHandler handler) {
   if (!handler) {
-    sampling_handler_ = {};
+    store_handler(&Server::sampling_handler_, JsonRequestContextHandler{});
     return;
   }
   set_sampling_handler(
@@ -1061,26 +1322,26 @@ void Server::set_sampling_handler(JsonContextHandler handler) {
 }
 
 void Server::set_sampling_handler(JsonRequestContextHandler handler) {
-  sampling_handler_ = std::move(handler);
+  store_handler(&Server::sampling_handler_, std::move(handler));
 }
 
 void Server::set_logging_handler(LoggingHandler handler) {
   if (handler) {
     options_.capabilities.logging.enabled = true;
   }
-  logging_handler_ = std::move(handler);
+  store_handler(&Server::logging_handler_, std::move(handler));
 }
 
 void Server::set_raw_request_handler(RawRequestHandler handler) {
-  raw_request_handler_ = std::move(handler);
+  store_handler(&Server::raw_request_handler_, std::move(handler));
 }
 
 void Server::set_raw_request_handler(RawRequestContextHandler handler) {
-  raw_request_context_handler_ = std::move(handler);
+  store_handler(&Server::raw_request_context_handler_, std::move(handler));
 }
 
 void Server::set_raw_notification_handler(RawNotificationHandler handler) {
-  raw_notification_handler_ = std::move(handler);
+  store_handler(&Server::raw_notification_handler_, std::move(handler));
 }
 
 void Server::set_custom_request_handler(RawRequestHandler handler) {
@@ -1096,43 +1357,60 @@ void Server::set_custom_notification_handler(RawNotificationHandler handler) {
 }
 
 void Server::set_task_list_handler(TaskListHandler handler) {
-  task_list_handler_ = std::move(handler);
+  store_handler(&Server::task_list_handler_, std::move(handler));
+}
+
+void Server::set_tools_list_handler(ToolsListHandler handler) {
+  store_handler(&Server::tools_list_handler_, std::move(handler));
+}
+
+void Server::set_prompts_list_handler(PromptsListHandler handler) {
+  store_handler(&Server::prompts_list_handler_, std::move(handler));
+}
+
+void Server::set_resources_list_handler(ResourcesListHandler handler) {
+  store_handler(&Server::resources_list_handler_, std::move(handler));
+}
+
+void Server::set_resource_templates_list_handler(
+    ResourceTemplatesListHandler handler) {
+  store_handler(&Server::resource_templates_list_handler_, std::move(handler));
 }
 
 void Server::set_task_get_handler(TaskGetHandler handler) {
-  task_get_handler_ = std::move(handler);
+  store_handler(&Server::task_get_handler_, std::move(handler));
 }
 
 void Server::set_task_cancel_handler(TaskCancelHandler handler) {
-  task_cancel_handler_ = std::move(handler);
+  store_handler(&Server::task_cancel_handler_, std::move(handler));
 }
 
 void Server::set_task_result_handler(TaskResultHandler handler) {
-  task_result_handler_ = std::move(handler);
+  store_handler(&Server::task_result_handler_, std::move(handler));
 }
 
 void Server::set_progress_handler(ProgressHandler handler) {
-  progress_handler_ = std::move(handler);
+  store_handler(&Server::progress_handler_, std::move(handler));
 }
 
 void Server::set_roots_list_changed_handler(RootsListChangedHandler handler) {
-  roots_list_changed_handler_ = std::move(handler);
+  store_handler(&Server::roots_list_changed_handler_, std::move(handler));
 }
 
 void Server::set_tool_list_changed_handler(ListChangedHandler handler) {
-  tool_list_changed_handler_ = std::move(handler);
+  store_handler(&Server::tool_list_changed_handler_, std::move(handler));
 }
 
 void Server::set_prompt_list_changed_handler(ListChangedHandler handler) {
-  prompt_list_changed_handler_ = std::move(handler);
+  store_handler(&Server::prompt_list_changed_handler_, std::move(handler));
 }
 
 void Server::set_resource_list_changed_handler(ListChangedHandler handler) {
-  resource_list_changed_handler_ = std::move(handler);
+  store_handler(&Server::resource_list_changed_handler_, std::move(handler));
 }
 
 void Server::set_resource_updated_handler(ResourceUpdatedHandler handler) {
-  resource_updated_handler_ = std::move(handler);
+  store_handler(&Server::resource_updated_handler_, std::move(handler));
 }
 
 ServerBuilder& ServerBuilder::name(std::string value) {
@@ -1337,6 +1615,29 @@ ServerBuilder& ServerBuilder::on_task_list(Server::TaskListHandler handler) {
   return *this;
 }
 
+ServerBuilder& ServerBuilder::on_tools_list(Server::ToolsListHandler handler) {
+  tools_list_handler_ = std::move(handler);
+  return *this;
+}
+
+ServerBuilder& ServerBuilder::on_prompts_list(
+    Server::PromptsListHandler handler) {
+  prompts_list_handler_ = std::move(handler);
+  return *this;
+}
+
+ServerBuilder& ServerBuilder::on_resources_list(
+    Server::ResourcesListHandler handler) {
+  resources_list_handler_ = std::move(handler);
+  return *this;
+}
+
+ServerBuilder& ServerBuilder::on_resource_templates_list(
+    Server::ResourceTemplatesListHandler handler) {
+  resource_templates_list_handler_ = std::move(handler);
+  return *this;
+}
+
 ServerBuilder& ServerBuilder::on_task_get(Server::TaskGetHandler handler) {
   task_get_handler_ = std::move(handler);
   return *this;
@@ -1408,6 +1709,24 @@ ServerBuilder& ServerBuilder::with_handler(
   return *this;
 }
 
+ServerBuilder& ServerBuilder::with_handler(
+    std::shared_ptr<const ServerHandlerInterface> handler) {
+  registrations_.push_back([handler = std::move(handler)](
+                               Server& server) -> core::Result<core::Unit> {
+    if (!handler) {
+      return mcp::core::unexpected(core::Error{
+          static_cast<int>(protocol::ErrorCode::InvalidRequest),
+          "ServerHandlerInterface shared handler must not be null",
+          {},
+          "server",
+      });
+    }
+    server.set_handler(handler);
+    return core::Unit{};
+  });
+  return *this;
+}
+
 core::Result<std::unique_ptr<Server>> ServerBuilder::build() {
   auto server = std::make_unique<Server>(options_);
   server->set_auth_provider(std::move(auth_provider_));
@@ -1419,6 +1738,11 @@ core::Result<std::unique_ptr<Server>> ServerBuilder::build() {
   server->set_logging_handler(std::move(logging_handler_));
   server->set_raw_request_handler(std::move(raw_request_handler_));
   server->set_raw_notification_handler(std::move(raw_notification_handler_));
+  server->set_tools_list_handler(std::move(tools_list_handler_));
+  server->set_prompts_list_handler(std::move(prompts_list_handler_));
+  server->set_resources_list_handler(std::move(resources_list_handler_));
+  server->set_resource_templates_list_handler(
+      std::move(resource_templates_list_handler_));
   server->set_task_list_handler(std::move(task_list_handler_));
   server->set_task_get_handler(std::move(task_get_handler_));
   server->set_task_cancel_handler(std::move(task_cancel_handler_));
@@ -1436,14 +1760,14 @@ core::Result<std::unique_ptr<Server>> ServerBuilder::build() {
   for (auto& registration : registrations_) {
     const auto registered = registration(*server);
     if (!registered) {
-      return std::unexpected(registered.error());
+      return mcp::core::unexpected(registered.error());
     }
   }
 
   for (auto& transport : transports_) {
     const auto added = server->add_transport(std::move(transport));
     if (!added) {
-      return std::unexpected(added.error());
+      return mcp::core::unexpected(added.error());
     }
   }
 

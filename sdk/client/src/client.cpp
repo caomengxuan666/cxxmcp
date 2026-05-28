@@ -8,6 +8,7 @@
 #include <string>
 #include <string_view>
 #include <utility>
+#include <variant>
 
 #include "cxxmcp/client/http_transport.hpp"
 #include "cxxmcp/client/process_stdio_transport.hpp"
@@ -16,6 +17,7 @@
 #include "cxxmcp/error.hpp"
 #include "cxxmcp/protocol/completion.hpp"
 #include "cxxmcp/protocol/elicitation.hpp"
+#include "cxxmcp/protocol/initialize.hpp"
 #include "cxxmcp/protocol/logging.hpp"
 #include "cxxmcp/protocol/prompt.hpp"
 #include "cxxmcp/protocol/resource.hpp"
@@ -34,7 +36,7 @@ core::Error make_client_error(int code, std::string message,
 core::Result<protocol::Json> require_result_payload(
     const protocol::JsonRpcResponse& response) {
   if (response.error.has_value()) {
-    return std::unexpected(core::Error{
+    return mcp::core::unexpected(core::Error{
         response.error->code,
         response.error->message,
         response.error->data.has_value() ? response.error->data->dump()
@@ -44,7 +46,7 @@ core::Result<protocol::Json> require_result_payload(
   }
 
   if (!response.result.has_value()) {
-    return std::unexpected(
+    return mcp::core::unexpected(
         make_client_error(static_cast<int>(protocol::ErrorCode::InvalidRequest),
                           "response did not contain a result"));
   }
@@ -56,18 +58,19 @@ core::Result<protocol::Json> require_initialize_payload(
     const protocol::JsonRpcResponse& response) {
   const auto payload = require_result_payload(response);
   if (!payload) {
-    return std::unexpected(payload.error());
+    return mcp::core::unexpected(payload.error());
   }
-  if (!payload->is_object()) {
-    return std::unexpected(
+
+  const auto parsed = protocol::initialize_result_from_json(*payload);
+  if (!parsed) {
+    return mcp::core::unexpected(make_client_error(
+        parsed.error().code, parsed.error().message, parsed.error().detail));
+  }
+  if (!protocol::is_supported_protocol_version(parsed->protocol_version)) {
+    return mcp::core::unexpected(
         make_client_error(static_cast<int>(protocol::ErrorCode::InvalidRequest),
-                          "initialize response must be an object"));
-  }
-  if (!payload->contains("protocolVersion") ||
-      !payload->at("protocolVersion").is_string()) {
-    return std::unexpected(make_client_error(
-        static_cast<int>(protocol::ErrorCode::InvalidRequest),
-        "initialize response requires a string protocolVersion"));
+                          "unsupported MCP protocol version(\"" +
+                              parsed->protocol_version + "\")"));
   }
 
   return *payload;
@@ -98,7 +101,15 @@ core::Result<protocol::JsonRpcResponse> make_params_error_response(
 }
 
 std::string request_cancellation_key(const protocol::RequestId& request_id) {
-  return protocol::request_id_to_json(request_id).dump();
+  if (const auto* integer_id = std::get_if<std::int64_t>(&request_id)) {
+    return "i:" + std::to_string(*integer_id);
+  }
+  const auto& string_id = std::get<std::string>(request_id);
+  std::string key;
+  key.reserve(string_id.size() + 2);
+  key.append("s:");
+  key.append(string_id);
+  return key;
 }
 
 protocol::Json cursor_params(const std::optional<std::string>& cursor) {
@@ -148,7 +159,7 @@ bool is_session_terminated_error(const core::Error& error) {
 
 core::Result<core::Unit> Transport::send_notification(
     const protocol::JsonRpcNotification&) {
-  return std::unexpected(
+  return mcp::core::unexpected(
       make_client_error(static_cast<int>(protocol::ErrorCode::InternalError),
                         "client transport does not support notifications"));
 }
@@ -262,11 +273,12 @@ Client& Client::operator=(Client&& other) noexcept {
 }
 
 core::Result<core::Unit> Client::ensure_transport_started() {
+  std::lock_guard<std::mutex> lock(*state_mutex_);
   if (transport_started_) {
     return core::Unit{};
   }
   if (!transport_) {
-    return std::unexpected(
+    return mcp::core::unexpected(
         make_client_error(static_cast<int>(protocol::ErrorCode::InternalError),
                           "client transport is not configured"));
   }
@@ -279,82 +291,87 @@ core::Result<core::Unit> Client::ensure_transport_started() {
         return this->handle_notification(notification);
       });
   if (!started) {
-    return std::unexpected(started.error());
+    return mcp::core::unexpected(started.error());
   }
 
   transport_started_ = true;
   return core::Unit{};
 }
 
-const std::optional<protocol::ServerCapabilities>& Client::server_capabilities()
-    const noexcept {
-  return server_capabilities_;
+core::Result<core::Unit> Client::start() { return ensure_transport_started(); }
+
+std::optional<protocol::ServerCapabilities> Client::server_capabilities()
+    const {
+  return server_capabilities_snapshot();
 }
 
 core::Result<core::Unit> Client::record_server_capabilities(
     const protocol::Json& initialize_payload) {
-  if (!initialize_payload.is_object()) {
-    return std::unexpected(
-        make_client_error(static_cast<int>(protocol::ErrorCode::InvalidRequest),
-                          "initialize response must be an object"));
-  }
-
-  if (!initialize_payload.contains("capabilities")) {
-    server_capabilities_ = protocol::ServerCapabilities{};
-    return core::Unit{};
-  }
-
-  const auto parsed = protocol::server_capabilities_from_json(
-      initialize_payload.at("capabilities"));
+  const auto parsed = protocol::initialize_result_from_json(initialize_payload);
   if (!parsed.has_value()) {
-    return std::unexpected(make_client_error(
-        static_cast<int>(protocol::ErrorCode::InvalidRequest),
-        "initialize response contains invalid server capabilities"));
+    return mcp::core::unexpected(make_client_error(
+        parsed.error().code, parsed.error().message, parsed.error().detail));
   }
 
-  server_capabilities_ = *parsed;
+  {
+    std::lock_guard<std::mutex> lock(*state_mutex_);
+    server_capabilities_ = parsed->capabilities;
+  }
   return core::Unit{};
 }
 
 bool Client::server_capabilities_known() const noexcept {
-  return server_capabilities_.has_value();
+  return server_capabilities_snapshot().has_value();
 }
 
 bool Client::supports_server_completion() const noexcept {
-  return !server_capabilities_known() ||
-         server_capabilities_->completions.enabled;
+  const auto capabilities = server_capabilities_snapshot();
+  return !capabilities.has_value() || capabilities->completions.enabled;
 }
 
 bool Client::supports_server_logging() const noexcept {
-  return !server_capabilities_known() || server_capabilities_->logging.enabled;
+  const auto capabilities = server_capabilities_snapshot();
+  return !capabilities.has_value() || capabilities->logging.enabled;
 }
 
 bool Client::supports_server_resource_subscribe() const noexcept {
-  return !server_capabilities_known() ||
-         server_capabilities_->resources.subscribe;
+  const auto capabilities = server_capabilities_snapshot();
+  return !capabilities.has_value() || capabilities->resources.subscribe;
 }
 
 bool Client::supports_server_task_list() const noexcept {
-  return !server_capabilities_known() ||
-         (server_capabilities_->tasks.has_value() &&
-          server_capabilities_->tasks->list);
+  const auto capabilities = server_capabilities_snapshot();
+  return !capabilities.has_value() ||
+         (capabilities->tasks.has_value() && capabilities->tasks->list);
 }
 
 bool Client::supports_server_task_cancel() const noexcept {
-  return !server_capabilities_known() ||
-         (server_capabilities_->tasks.has_value() &&
-          server_capabilities_->tasks->cancel);
+  const auto capabilities = server_capabilities_snapshot();
+  return !capabilities.has_value() ||
+         (capabilities->tasks.has_value() && capabilities->tasks->cancel);
 }
 
 bool Client::supports_server_tasks() const noexcept {
-  return !server_capabilities_known() ||
-         server_capabilities_->tasks.has_value();
+  const auto capabilities = server_capabilities_snapshot();
+  return !capabilities.has_value() || capabilities->tasks.has_value();
 }
 
 bool Client::supports_server_task_tool_call() const noexcept {
-  return !server_capabilities_known() ||
-         (server_capabilities_->tasks.has_value() &&
-          server_capabilities_->tasks->tools_call);
+  const auto capabilities = server_capabilities_snapshot();
+  return !capabilities.has_value() ||
+         (capabilities->tasks.has_value() && capabilities->tasks->tools_call);
+}
+
+std::optional<protocol::ClientCapabilities> Client::capabilities_snapshot()
+    const {
+  std::lock_guard<std::mutex> lock(*state_mutex_);
+  return capabilities_;
+}
+
+std::optional<protocol::ServerCapabilities>
+Client::server_capabilities_snapshot() const {
+  std::lock_guard<std::mutex> lock(*state_mutex_);
+  return server_capabilities_;
 }
 
 Client Client::connect_streamable_http(StreamableHttpEndpoint endpoint) {
@@ -403,7 +420,7 @@ core::Result<protocol::Json> Client::send_request(std::string method,
   const auto response = send_rpc_request(protocol::make_request(
       std::move(method), next_request_id(), std::move(params)));
   if (!response) {
-    return std::unexpected(response.error());
+    return mcp::core::unexpected(response.error());
   }
 
   return require_result_payload(*response);
@@ -413,28 +430,40 @@ core::Result<protocol::JsonRpcResponse> Client::send_rpc_request(
     protocol::JsonRpcRequest request) {
   const auto started = ensure_transport_started();
   if (!started) {
-    return std::unexpected(started.error());
+    return mcp::core::unexpected(started.error());
   }
 
   if (request.method != std::string(protocol::InitializeMethod) &&
-      !last_initialize_params_.has_value() &&
       dynamic_cast<HttpTransport*>(transport_.get()) != nullptr) {
-    last_initialize_params_ = initialize_params("cxxmcp", "0", capabilities_);
-    const auto initialize_response = transport_->send(
-        protocol::make_request(std::string(protocol::InitializeMethod),
-                               next_request_id(), *last_initialize_params_));
-    if (!initialize_response) {
-      return std::unexpected(initialize_response.error());
+    std::optional<protocol::Json> initialize_request;
+    {
+      std::lock_guard<std::mutex> lock(*state_mutex_);
+      if (!last_initialize_params_.has_value()) {
+        last_initialize_params_ =
+            initialize_params("cxxmcp", "0", capabilities_);
+        initialize_request = last_initialize_params_;
+      }
     }
+    if (!initialize_request.has_value()) {
+      initialize_request = std::nullopt;
+    }
+    if (initialize_request.has_value()) {
+      const auto initialize_response = transport_->send(
+          protocol::make_request(std::string(protocol::InitializeMethod),
+                                 next_request_id(), *initialize_request));
+      if (!initialize_response) {
+        return mcp::core::unexpected(initialize_response.error());
+      }
 
-    const auto initialized_payload =
-        require_initialize_payload(*initialize_response);
-    if (!initialized_payload) {
-      return std::unexpected(initialized_payload.error());
-    }
-    const auto recorded = record_server_capabilities(*initialized_payload);
-    if (!recorded) {
-      return std::unexpected(recorded.error());
+      const auto initialized_payload =
+          require_initialize_payload(*initialize_response);
+      if (!initialized_payload) {
+        return mcp::core::unexpected(initialized_payload.error());
+      }
+      const auto recorded = record_server_capabilities(*initialized_payload);
+      if (!recorded) {
+        return mcp::core::unexpected(recorded.error());
+      }
     }
   }
 
@@ -446,33 +475,38 @@ core::Result<protocol::JsonRpcResponse> Client::send_rpc_request(
           is_session_terminated_error(response.error())) {
         retried_after_session_reset = true;
         if (request.method != std::string(protocol::InitializeMethod)) {
-          if (!last_initialize_params_.has_value()) {
-            return std::unexpected(response.error());
+          std::optional<protocol::Json> last_initialize_params;
+          {
+            std::lock_guard<std::mutex> lock(*state_mutex_);
+            last_initialize_params = last_initialize_params_;
+          }
+          if (!last_initialize_params.has_value()) {
+            return mcp::core::unexpected(response.error());
           }
 
           const auto initialize_response =
               transport_->send(protocol::make_request(
                   std::string(protocol::InitializeMethod), next_request_id(),
-                  *last_initialize_params_));
+                  *last_initialize_params));
           if (!initialize_response) {
-            return std::unexpected(initialize_response.error());
+            return mcp::core::unexpected(initialize_response.error());
           }
 
           const auto initialized_payload =
               require_initialize_payload(*initialize_response);
           if (!initialized_payload) {
-            return std::unexpected(initialized_payload.error());
+            return mcp::core::unexpected(initialized_payload.error());
           }
           const auto recorded =
               record_server_capabilities(*initialized_payload);
           if (!recorded) {
-            return std::unexpected(recorded.error());
+            return mcp::core::unexpected(recorded.error());
           }
         }
         continue;
       }
 
-      return std::unexpected(response.error());
+      return mcp::core::unexpected(response.error());
     }
 
     return *response;
@@ -481,22 +515,26 @@ core::Result<protocol::JsonRpcResponse> Client::send_rpc_request(
 
 core::Result<protocol::Json> Client::initialize(std::string client_name,
                                                 std::string client_version) {
-  auto params = initialize_params(std::move(client_name),
-                                  std::move(client_version), capabilities_);
-  last_initialize_params_ = params;
+  auto params =
+      initialize_params(std::move(client_name), std::move(client_version),
+                        capabilities_snapshot());
+  {
+    std::lock_guard<std::mutex> lock(*state_mutex_);
+    last_initialize_params_ = params;
+  }
   const auto response = send_rpc_request(
       protocol::make_request(std::string(protocol::InitializeMethod),
                              next_request_id(), std::move(params)));
   if (!response) {
-    return std::unexpected(response.error());
+    return mcp::core::unexpected(response.error());
   }
   const auto payload = require_initialize_payload(*response);
   if (!payload) {
-    return std::unexpected(payload.error());
+    return mcp::core::unexpected(payload.error());
   }
   const auto recorded = record_server_capabilities(*payload);
   if (!recorded) {
-    return std::unexpected(recorded.error());
+    return mcp::core::unexpected(recorded.error());
   }
   return *payload;
 }
@@ -507,17 +545,17 @@ core::Result<core::Unit> Client::notify_initialized() {
 }
 
 Client& Client::on_progress(ProgressHandler handler) {
-  progress_handler_ = std::move(handler);
+  store_handler(&Client::progress_handler_, std::move(handler));
   return *this;
 }
 
 Client& Client::on_elicitation_complete(ElicitationCompleteHandler handler) {
-  elicitation_complete_handler_ = std::move(handler);
+  store_handler(&Client::elicitation_complete_handler_, std::move(handler));
   return *this;
 }
 
 Client& Client::on_task_status(TaskStatusHandler handler) {
-  task_status_handler_ = std::move(handler);
+  store_handler(&Client::task_status_handler_, std::move(handler));
   return *this;
 }
 
@@ -557,23 +595,33 @@ core::Result<core::Unit> Client::ping() {
   const auto payload =
       send_request(std::string(protocol::PingMethod), protocol::Json::object());
   if (!payload) {
-    return std::unexpected(payload.error());
+    return mcp::core::unexpected(payload.error());
   }
   return core::Unit{};
 }
 
 core::Result<std::vector<protocol::Prompt>> Client::list_prompts() {
-  const auto payload = send_request(std::string(protocol::PromptsListMethod),
-                                    protocol::Json::object());
+  const auto page = list_prompts_page();
+  if (!page) {
+    return mcp::core::unexpected(page.error());
+  }
+  return page->prompts;
+}
+
+core::Result<protocol::PromptsListResult> Client::list_prompts_page(
+    const protocol::PaginatedRequestParams& params) {
+  const auto payload =
+      send_request(std::string(protocol::PromptsListMethod),
+                   protocol::paginated_request_params_to_json(params));
   if (!payload) {
-    return std::unexpected(payload.error());
+    return mcp::core::unexpected(payload.error());
   }
   const auto prompts = protocol::prompts_list_result_from_json(*payload);
   if (!prompts) {
-    return std::unexpected(prompts.error());
+    return mcp::core::unexpected(prompts.error());
   }
 
-  return prompts->prompts;
+  return *prompts;
 }
 
 core::Result<std::vector<protocol::Prompt>> Client::list_all_prompts() {
@@ -583,11 +631,11 @@ core::Result<std::vector<protocol::Prompt>> Client::list_all_prompts() {
     const auto payload = send_request(std::string(protocol::PromptsListMethod),
                                       cursor_params(cursor));
     if (!payload) {
-      return std::unexpected(payload.error());
+      return mcp::core::unexpected(payload.error());
     }
     const auto page = protocol::prompts_list_result_from_json(*payload);
     if (!page) {
-      return std::unexpected(page.error());
+      return mcp::core::unexpected(page.error());
     }
     all.insert(all.end(), page->prompts.begin(), page->prompts.end());
     cursor = page->next_cursor;
@@ -601,17 +649,17 @@ core::Result<protocol::PromptsGetResult> Client::get_prompt(
       std::string(protocol::PromptsGetMethod), next_request_id(),
       protocol::prompts_get_params_to_json(params)));
   if (!response) {
-    return std::unexpected(response.error());
+    return mcp::core::unexpected(response.error());
   }
 
   const auto payload = require_result_payload(*response);
   if (!payload) {
-    return std::unexpected(payload.error());
+    return mcp::core::unexpected(payload.error());
   }
 
   const auto prompt = protocol::prompts_get_result_from_json(*payload);
   if (!prompt) {
-    return std::unexpected(prompt.error());
+    return mcp::core::unexpected(prompt.error());
   }
 
   return *prompt;
@@ -626,24 +674,27 @@ core::Result<protocol::PromptsGetResult> Client::get_prompt(
 }
 
 core::Result<std::vector<protocol::Resource>> Client::list_resources() {
-  const auto response = send_rpc_request(
-      protocol::make_request(std::string(protocol::ResourcesListMethod),
-                             next_request_id(), protocol::Json::object()));
-  if (!response) {
-    return std::unexpected(response.error());
+  const auto page = list_resources_page();
+  if (!page) {
+    return mcp::core::unexpected(page.error());
   }
+  return page->resources;
+}
 
-  const auto payload = require_result_payload(*response);
+core::Result<protocol::ResourcesListResult> Client::list_resources_page(
+    const protocol::PaginatedRequestParams& params) {
+  const auto payload =
+      send_request(std::string(protocol::ResourcesListMethod),
+                   protocol::paginated_request_params_to_json(params));
   if (!payload) {
-    return std::unexpected(payload.error());
+    return mcp::core::unexpected(payload.error());
   }
-
   const auto resources = protocol::resources_list_result_from_json(*payload);
   if (!resources) {
-    return std::unexpected(resources.error());
+    return mcp::core::unexpected(resources.error());
   }
 
-  return resources->resources;
+  return *resources;
 }
 
 core::Result<std::vector<protocol::Resource>> Client::list_all_resources() {
@@ -653,11 +704,11 @@ core::Result<std::vector<protocol::Resource>> Client::list_all_resources() {
     const auto payload = send_request(
         std::string(protocol::ResourcesListMethod), cursor_params(cursor));
     if (!payload) {
-      return std::unexpected(payload.error());
+      return mcp::core::unexpected(payload.error());
     }
     const auto page = protocol::resources_list_result_from_json(*payload);
     if (!page) {
-      return std::unexpected(page.error());
+      return mcp::core::unexpected(page.error());
     }
     all.insert(all.end(), page->resources.begin(), page->resources.end());
     cursor = page->next_cursor;
@@ -671,17 +722,17 @@ core::Result<protocol::ResourcesReadResult> Client::read_resource(
       std::string(protocol::ResourcesReadMethod), next_request_id(),
       protocol::resources_read_params_to_json(params)));
   if (!response) {
-    return std::unexpected(response.error());
+    return mcp::core::unexpected(response.error());
   }
 
   const auto payload = require_result_payload(*response);
   if (!payload) {
-    return std::unexpected(payload.error());
+    return mcp::core::unexpected(payload.error());
   }
 
   const auto resource = protocol::resources_read_result_from_json(*payload);
   if (!resource) {
-    return std::unexpected(resource.error());
+    return mcp::core::unexpected(resource.error());
   }
 
   return *resource;
@@ -694,17 +745,28 @@ core::Result<protocol::ResourcesReadResult> Client::read_resource(
 
 core::Result<std::vector<protocol::ResourceTemplate>>
 Client::list_resource_templates() {
+  const auto page = list_resource_templates_page();
+  if (!page) {
+    return mcp::core::unexpected(page.error());
+  }
+  return page->resource_templates;
+}
+
+core::Result<protocol::ResourceTemplatesListResult>
+Client::list_resource_templates_page(
+    const protocol::PaginatedRequestParams& params) {
   const auto payload =
-      send_request("resources/templates/list", protocol::Json::object());
+      send_request(std::string(protocol::ResourcesTemplatesListMethod),
+                   protocol::paginated_request_params_to_json(params));
   if (!payload) {
-    return std::unexpected(payload.error());
+    return mcp::core::unexpected(payload.error());
   }
   const auto templates =
       protocol::resource_templates_list_result_from_json(*payload);
   if (!templates) {
-    return std::unexpected(templates.error());
+    return mcp::core::unexpected(templates.error());
   }
-  return templates->resource_templates;
+  return *templates;
 }
 
 core::Result<std::vector<protocol::ResourceTemplate>>
@@ -715,12 +777,12 @@ Client::list_all_resource_templates() {
     const auto payload =
         send_request("resources/templates/list", cursor_params(cursor));
     if (!payload) {
-      return std::unexpected(payload.error());
+      return mcp::core::unexpected(payload.error());
     }
     const auto page =
         protocol::resource_templates_list_result_from_json(*payload);
     if (!page) {
-      return std::unexpected(page.error());
+      return mcp::core::unexpected(page.error());
     }
     all.insert(all.end(), page->resource_templates.begin(),
                page->resource_templates.end());
@@ -730,35 +792,26 @@ Client::list_all_resource_templates() {
 }
 
 core::Result<std::vector<protocol::ToolDefinition>> Client::list_tools() {
-  const auto response = send_rpc_request(protocol::make_request(
-      "tools/list", next_request_id(), protocol::Json::object()));
-  if (!response) {
-    return std::unexpected(response.error());
+  const auto page = list_tools_page();
+  if (!page) {
+    return mcp::core::unexpected(page.error());
   }
+  return page->tools;
+}
 
-  const auto payload = require_result_payload(*response);
+core::Result<protocol::ToolsListResult> Client::list_tools_page(
+    const protocol::PaginatedRequestParams& params) {
+  const auto payload =
+      send_request(std::string(protocol::ToolsListMethod),
+                   protocol::paginated_request_params_to_json(params));
   if (!payload) {
-    return std::unexpected(payload.error());
+    return mcp::core::unexpected(payload.error());
   }
-
-  if (!payload->is_object() || !payload->contains("tools") ||
-      !payload->at("tools").is_array()) {
-    return std::unexpected(
-        make_client_error(static_cast<int>(protocol::ErrorCode::InvalidRequest),
-                          "tools/list response must contain a tools array"));
+  const auto tools = protocol::tools_list_result_from_json(*payload);
+  if (!tools) {
+    return mcp::core::unexpected(tools.error());
   }
-
-  std::vector<protocol::ToolDefinition> tools;
-  tools.reserve(payload->at("tools").size());
-  for (const auto& item : payload->at("tools")) {
-    const auto definition = protocol::tool_definition_from_json(item);
-    if (!definition) {
-      return std::unexpected(definition.error());
-    }
-    tools.push_back(*definition);
-  }
-
-  return tools;
+  return *tools;
 }
 
 core::Result<std::vector<protocol::ToolDefinition>> Client::list_all_tools() {
@@ -767,25 +820,25 @@ core::Result<std::vector<protocol::ToolDefinition>> Client::list_all_tools() {
   do {
     const auto payload = send_request("tools/list", cursor_params(cursor));
     if (!payload) {
-      return std::unexpected(payload.error());
+      return mcp::core::unexpected(payload.error());
     }
     if (!payload->is_object() || !payload->contains("tools") ||
         !payload->at("tools").is_array()) {
-      return std::unexpected(make_client_error(
+      return mcp::core::unexpected(make_client_error(
           static_cast<int>(protocol::ErrorCode::InvalidRequest),
           "tools/list response must contain a tools array"));
     }
     for (const auto& item : payload->at("tools")) {
       const auto definition = protocol::tool_definition_from_json(item);
       if (!definition) {
-        return std::unexpected(definition.error());
+        return mcp::core::unexpected(definition.error());
       }
       all.push_back(*definition);
     }
     cursor = std::nullopt;
     if (payload->contains("nextCursor")) {
       if (!payload->at("nextCursor").is_string()) {
-        return std::unexpected(make_client_error(
+        return mcp::core::unexpected(make_client_error(
             static_cast<int>(protocol::ErrorCode::InvalidRequest),
             "tools/list nextCursor must be a string"));
       }
@@ -801,17 +854,17 @@ core::Result<protocol::ToolResult> Client::call_tool(
       std::string(protocol::ToolsCallMethod), next_request_id(),
       protocol::tool_call_to_json(call)));
   if (!response) {
-    return std::unexpected(response.error());
+    return mcp::core::unexpected(response.error());
   }
 
   const auto payload = require_result_payload(*response);
   if (!payload) {
-    return std::unexpected(payload.error());
+    return mcp::core::unexpected(payload.error());
   }
 
   const auto tool_result = protocol::tool_result_from_json(*payload);
   if (!tool_result) {
-    return std::unexpected(tool_result.error());
+    return mcp::core::unexpected(tool_result.error());
   }
 
   return *tool_result;
@@ -820,12 +873,12 @@ core::Result<protocol::ToolResult> Client::call_tool(
 core::Result<protocol::CreateTaskResult> Client::call_tool_task(
     const protocol::ToolCall& call) {
   if (!call.task.has_value()) {
-    return std::unexpected(
+    return mcp::core::unexpected(
         make_client_error(static_cast<int>(protocol::ErrorCode::InvalidRequest),
                           "task-aware tool call requires task parameters"));
   }
   if (!supports_server_task_tool_call()) {
-    return std::unexpected(
+    return mcp::core::unexpected(
         make_client_error(static_cast<int>(protocol::ErrorCode::MethodNotFound),
                           "server does not support task-aware tool calls"));
   }
@@ -834,17 +887,17 @@ core::Result<protocol::CreateTaskResult> Client::call_tool_task(
       std::string(protocol::ToolsCallMethod), next_request_id(),
       protocol::tool_call_to_json(call)));
   if (!response) {
-    return std::unexpected(response.error());
+    return mcp::core::unexpected(response.error());
   }
 
   const auto payload = require_result_payload(*response);
   if (!payload) {
-    return std::unexpected(payload.error());
+    return mcp::core::unexpected(payload.error());
   }
 
   const auto task = protocol::create_task_result_from_json(*payload);
   if (!task) {
-    return std::unexpected(task.error());
+    return mcp::core::unexpected(task.error());
   }
   return *task;
 }
@@ -860,7 +913,7 @@ core::Result<protocol::ToolResult> Client::call_raw(
 core::Result<protocol::CompleteResult> Client::complete(
     const protocol::CompleteParams& request) {
   if (!supports_server_completion()) {
-    return std::unexpected(
+    return mcp::core::unexpected(
         make_client_error(static_cast<int>(protocol::ErrorCode::MethodNotFound),
                           "server does not support completion"));
   }
@@ -868,19 +921,19 @@ core::Result<protocol::CompleteResult> Client::complete(
       send_request(std::string(protocol::CompletionCompleteMethod),
                    protocol::complete_params_to_json(request));
   if (!payload) {
-    return std::unexpected(payload.error());
+    return mcp::core::unexpected(payload.error());
   }
 
   const auto result = protocol::complete_result_from_json(*payload);
   if (!result) {
-    return std::unexpected(result.error());
+    return mcp::core::unexpected(result.error());
   }
   return *result;
 }
 
 core::Result<protocol::Json> Client::complete(const protocol::Json& request) {
   if (!supports_server_completion()) {
-    return std::unexpected(
+    return mcp::core::unexpected(
         make_client_error(static_cast<int>(protocol::ErrorCode::MethodNotFound),
                           "server does not support completion"));
   }
@@ -899,7 +952,7 @@ core::Result<protocol::CompletionResult> Client::complete_prompt_argument(
   params.context = std::move(context);
   const auto result = complete(params);
   if (!result) {
-    return std::unexpected(result.error());
+    return mcp::core::unexpected(result.error());
   }
   return result->completion;
 }
@@ -917,7 +970,7 @@ core::Result<protocol::CompletionResult> Client::complete_resource_argument(
   params.context = std::move(context);
   const auto result = complete(params);
   if (!result) {
-    return std::unexpected(result.error());
+    return mcp::core::unexpected(result.error());
   }
   return result->completion;
 }
@@ -928,7 +981,7 @@ core::Result<std::vector<std::string>> Client::complete_prompt_simple(
   const auto completion = complete_prompt_argument(
       prompt_name, argument_name, std::move(current_value), std::move(context));
   if (!completion) {
-    return std::unexpected(completion.error());
+    return mcp::core::unexpected(completion.error());
   }
   return completion->values;
 }
@@ -940,7 +993,7 @@ core::Result<std::vector<std::string>> Client::complete_resource_simple(
       complete_resource_argument(uri_template, argument_name,
                                  std::move(current_value), std::move(context));
   if (!completion) {
-    return std::unexpected(completion.error());
+    return mcp::core::unexpected(completion.error());
   }
   return completion->values;
 }
@@ -951,12 +1004,12 @@ core::Result<protocol::CreateMessageResult> Client::create_message(
       send_request(std::string(protocol::SamplingCreateMessageMethod),
                    protocol::create_message_params_to_json(request));
   if (!payload) {
-    return std::unexpected(payload.error());
+    return mcp::core::unexpected(payload.error());
   }
 
   const auto result = protocol::create_message_result_from_json(*payload);
   if (!result) {
-    return std::unexpected(result.error());
+    return mcp::core::unexpected(result.error());
   }
   return *result;
 }
@@ -972,12 +1025,12 @@ core::Result<protocol::CreateElicitationResult> Client::create_elicitation(
       send_request(std::string(protocol::ElicitationCreateMethod),
                    protocol::create_elicitation_request_param_to_json(request));
   if (!payload) {
-    return std::unexpected(payload.error());
+    return mcp::core::unexpected(payload.error());
   }
 
   const auto result = protocol::create_elicitation_result_from_json(*payload);
   if (!result) {
-    return std::unexpected(result.error());
+    return mcp::core::unexpected(result.error());
   }
   return *result;
 }
@@ -988,28 +1041,38 @@ core::Result<protocol::Json> Client::create_elicitation(
 }
 
 core::Result<std::vector<protocol::Task>> Client::list_tasks() {
+  const auto page = list_tasks_page();
+  if (!page) {
+    return mcp::core::unexpected(page.error());
+  }
+  return page->tasks;
+}
+
+core::Result<protocol::TaskListResult> Client::list_tasks_page(
+    const protocol::TaskListParams& request) {
   if (!supports_server_task_list()) {
-    return std::unexpected(
+    return mcp::core::unexpected(
         make_client_error(static_cast<int>(protocol::ErrorCode::MethodNotFound),
                           "server does not support task listing"));
   }
-  const auto payload = send_request(std::string(protocol::TasksListMethod),
-                                    protocol::Json::object());
+  const auto payload =
+      send_request(std::string(protocol::TasksListMethod),
+                   protocol::task_list_params_to_json(request));
   if (!payload) {
-    return std::unexpected(payload.error());
+    return mcp::core::unexpected(payload.error());
   }
 
   const auto tasks = protocol::task_list_result_from_json(*payload);
   if (!tasks) {
-    return std::unexpected(tasks.error());
+    return mcp::core::unexpected(tasks.error());
   }
 
-  return tasks->tasks;
+  return *tasks;
 }
 
 core::Result<std::vector<protocol::Task>> Client::list_all_tasks() {
   if (!supports_server_task_list()) {
-    return std::unexpected(
+    return mcp::core::unexpected(
         make_client_error(static_cast<int>(protocol::ErrorCode::MethodNotFound),
                           "server does not support task listing"));
   }
@@ -1019,11 +1082,11 @@ core::Result<std::vector<protocol::Task>> Client::list_all_tasks() {
     const auto payload = send_request(std::string(protocol::TasksListMethod),
                                       cursor_params(cursor));
     if (!payload) {
-      return std::unexpected(payload.error());
+      return mcp::core::unexpected(payload.error());
     }
     const auto page = protocol::task_list_result_from_json(*payload);
     if (!page) {
-      return std::unexpected(page.error());
+      return mcp::core::unexpected(page.error());
     }
     all.insert(all.end(), page->tasks.begin(), page->tasks.end());
     cursor = page->next_cursor;
@@ -1034,19 +1097,19 @@ core::Result<std::vector<protocol::Task>> Client::list_all_tasks() {
 core::Result<protocol::Task> Client::get_task(
     const protocol::TaskGetParams& request) {
   if (!supports_server_tasks()) {
-    return std::unexpected(
+    return mcp::core::unexpected(
         make_client_error(static_cast<int>(protocol::ErrorCode::MethodNotFound),
                           "server does not support tasks"));
   }
   const auto payload = send_request(std::string(protocol::TasksGetMethod),
                                     protocol::task_get_params_to_json(request));
   if (!payload) {
-    return std::unexpected(payload.error());
+    return mcp::core::unexpected(payload.error());
   }
 
   const auto task = protocol::task_from_json(*payload);
   if (!task) {
-    return std::unexpected(task.error());
+    return mcp::core::unexpected(task.error());
   }
 
   return *task;
@@ -1061,7 +1124,7 @@ core::Result<protocol::Task> Client::get_task(std::string_view task_id) {
 core::Result<protocol::Task> Client::cancel_task(
     const protocol::TaskCancelParams& request) {
   if (!supports_server_task_cancel()) {
-    return std::unexpected(
+    return mcp::core::unexpected(
         make_client_error(static_cast<int>(protocol::ErrorCode::MethodNotFound),
                           "server does not support task cancellation"));
   }
@@ -1069,12 +1132,12 @@ core::Result<protocol::Task> Client::cancel_task(
       send_request(std::string(protocol::TasksCancelMethod),
                    protocol::task_cancel_params_to_json(request));
   if (!payload) {
-    return std::unexpected(payload.error());
+    return mcp::core::unexpected(payload.error());
   }
 
   const auto task = protocol::task_from_json(*payload);
   if (!task) {
-    return std::unexpected(task.error());
+    return mcp::core::unexpected(task.error());
   }
 
   return *task;
@@ -1089,7 +1152,7 @@ core::Result<protocol::Task> Client::cancel_task(std::string_view task_id) {
 core::Result<protocol::Json> Client::task_result(
     const protocol::TaskResultParams& request) {
   if (!supports_server_tasks()) {
-    return std::unexpected(
+    return mcp::core::unexpected(
         make_client_error(static_cast<int>(protocol::ErrorCode::MethodNotFound),
                           "server does not support tasks"));
   }
@@ -1106,7 +1169,7 @@ core::Result<protocol::Json> Client::task_result(std::string_view task_id) {
 core::Result<core::Unit> Client::set_level(
     const protocol::LoggingSetLevelParams& params) {
   if (!supports_server_logging()) {
-    return std::unexpected(
+    return mcp::core::unexpected(
         make_client_error(static_cast<int>(protocol::ErrorCode::MethodNotFound),
                           "server does not support logging"));
   }
@@ -1114,7 +1177,7 @@ core::Result<core::Unit> Client::set_level(
       send_request(std::string(protocol::LoggingSetLevelMethod),
                    protocol::logging_set_level_params_to_json(params));
   if (!result) {
-    return std::unexpected(result.error());
+    return mcp::core::unexpected(result.error());
   }
   return core::Unit{};
 }
@@ -1122,7 +1185,7 @@ core::Result<core::Unit> Client::set_level(
 core::Result<core::Unit> Client::set_level(std::string_view level) {
   const auto parsed = protocol::logging_level_from_string(std::string(level));
   if (!parsed.has_value()) {
-    return std::unexpected(
+    return mcp::core::unexpected(
         make_client_error(static_cast<int>(protocol::ErrorCode::InvalidRequest),
                           "logging/setLevel level is invalid"));
   }
@@ -1133,28 +1196,28 @@ core::Result<core::Unit> Client::set_level(std::string_view level) {
 
 core::Result<core::Unit> Client::subscribe(std::string_view uri) {
   if (!supports_server_resource_subscribe()) {
-    return std::unexpected(
+    return mcp::core::unexpected(
         make_client_error(static_cast<int>(protocol::ErrorCode::MethodNotFound),
                           "server does not support resource subscriptions"));
   }
   const auto result = send_request("resources/subscribe",
                                    protocol::Json{{"uri", std::string(uri)}});
   if (!result) {
-    return std::unexpected(result.error());
+    return mcp::core::unexpected(result.error());
   }
   return core::Unit{};
 }
 
 core::Result<core::Unit> Client::unsubscribe(std::string_view uri) {
   if (!supports_server_resource_subscribe()) {
-    return std::unexpected(
+    return mcp::core::unexpected(
         make_client_error(static_cast<int>(protocol::ErrorCode::MethodNotFound),
                           "server does not support resource subscriptions"));
   }
   const auto result = send_request("resources/unsubscribe",
                                    protocol::Json{{"uri", std::string(uri)}});
   if (!result) {
-    return std::unexpected(result.error());
+    return mcp::core::unexpected(result.error());
   }
   return core::Unit{};
 }
@@ -1169,102 +1232,114 @@ core::Result<core::Unit> Client::notify(
   return raw_notification(notification);
 }
 
-std::vector<protocol::Root> Client::list_roots() const { return roots_; }
+std::vector<protocol::Root> Client::list_roots() const {
+  std::lock_guard<std::mutex> lock(*state_mutex_);
+  return roots_;
+}
 
 Client& Client::set_roots(std::vector<protocol::Root> roots) {
-  roots_ = std::move(roots);
-  if (roots_list_changed_handler_) {
-    roots_list_changed_handler_();
+  {
+    std::lock_guard<std::mutex> lock(*state_mutex_);
+    roots_ = std::move(roots);
+  }
+  const auto handler = copy_handler(&Client::roots_list_changed_handler_);
+  if (handler) {
+    handler();
   }
   return *this;
 }
 
 Client& Client::set_capabilities(protocol::ClientCapabilities capabilities) {
+  std::lock_guard<std::mutex> lock(*state_mutex_);
   capabilities_ = std::move(capabilities);
   return *this;
 }
 
 Client& Client::on_initialized(InitializedHandler handler) {
-  initialized_handler_ = std::move(handler);
+  store_handler(&Client::initialized_handler_, std::move(handler));
   return *this;
 }
 
 Client& Client::on_cancelled(CancelledHandler handler) {
-  cancelled_handler_ = std::move(handler);
+  store_handler(&Client::cancelled_handler_, std::move(handler));
   return *this;
 }
 
 Client& Client::on_logging_message(LoggingMessageHandler handler) {
-  logging_message_handler_ = std::move(handler);
+  store_handler(&Client::logging_message_handler_, std::move(handler));
   return *this;
 }
 
 Client& Client::on_tool_list_changed(ListChangedHandler handler) {
-  tool_list_changed_handler_ = std::move(handler);
+  store_handler(&Client::tool_list_changed_handler_, std::move(handler));
   return *this;
 }
 
 Client& Client::on_prompt_list_changed(ListChangedHandler handler) {
-  prompt_list_changed_handler_ = std::move(handler);
+  store_handler(&Client::prompt_list_changed_handler_, std::move(handler));
   return *this;
 }
 
 Client& Client::on_resource_list_changed(ListChangedHandler handler) {
-  resource_list_changed_handler_ = std::move(handler);
+  store_handler(&Client::resource_list_changed_handler_, std::move(handler));
   return *this;
 }
 
 Client& Client::on_resource_updated(ResourceUpdatedHandler handler) {
-  resource_updated_handler_ = std::move(handler);
+  store_handler(&Client::resource_updated_handler_, std::move(handler));
   return *this;
 }
 
 Client& Client::on_roots_list_changed(ListChangedHandler handler) {
-  roots_list_changed_handler_ = std::move(handler);
+  store_handler(&Client::roots_list_changed_handler_, std::move(handler));
   return *this;
 }
 
 Client& Client::on_list_roots_request(ListRootsRequestHandler handler) {
-  roots_list_request_handler_ = std::move(handler);
+  store_handler(&Client::roots_list_request_handler_, std::move(handler));
   return *this;
 }
 
 Client& Client::on_list_roots_request(
     RootsListRequestCancellationHandler handler) {
-  roots_list_request_cancellation_handler_ = std::move(handler);
+  store_handler(&Client::roots_list_request_cancellation_handler_,
+                std::move(handler));
   return *this;
 }
 
 Client& Client::on_create_message_request(CreateMessageRequestHandler handler) {
-  sampling_request_handler_ = std::move(handler);
+  store_handler(&Client::sampling_request_handler_, std::move(handler));
   return *this;
 }
 
 Client& Client::on_create_message_request(
     SamplingRequestCancellationHandler handler) {
-  sampling_request_cancellation_handler_ = std::move(handler);
+  store_handler(&Client::sampling_request_cancellation_handler_,
+                std::move(handler));
   return *this;
 }
 
 Client& Client::on_create_elicitation_request(
     CreateElicitationRequestHandler handler) {
-  elicitation_request_handler_ = std::move(handler);
+  store_handler(&Client::elicitation_request_handler_, std::move(handler));
   return *this;
 }
 
 Client& Client::on_create_elicitation_request(
     ElicitationRequestCancellationHandler handler) {
-  elicitation_request_cancellation_handler_ = std::move(handler);
+  store_handler(&Client::elicitation_request_cancellation_handler_,
+                std::move(handler));
   return *this;
 }
 
 Client& Client::on_custom_request(CustomRequestHandler handler) {
-  custom_request_handler_ = std::move(handler);
+  store_handler(&Client::custom_request_handler_, std::move(handler));
   return *this;
 }
 
 Client& Client::on_custom_request(CustomRequestCancellationHandler handler) {
-  custom_request_cancellation_handler_ = std::move(handler);
+  store_handler(&Client::custom_request_cancellation_handler_,
+                std::move(handler));
   return *this;
 }
 
@@ -1296,7 +1371,7 @@ Client& Client::on_elicitation_request(
 }
 
 Client& Client::on_raw_notification(RawNotificationHandler handler) {
-  raw_notification_handler_ = std::move(handler);
+  store_handler(&Client::raw_notification_handler_, std::move(handler));
   return *this;
 }
 
@@ -1331,25 +1406,46 @@ void Client::cancel_request(const protocol::RequestId& request_id) noexcept {
 
 core::Result<core::Unit> Client::handle_notification(
     const protocol::JsonRpcNotification& notification) try {
+  const auto initialized_handler = copy_handler(&Client::initialized_handler_);
+  const auto cancelled_handler = copy_handler(&Client::cancelled_handler_);
+  const auto logging_message_handler =
+      copy_handler(&Client::logging_message_handler_);
+  const auto tool_list_changed_handler =
+      copy_handler(&Client::tool_list_changed_handler_);
+  const auto prompt_list_changed_handler =
+      copy_handler(&Client::prompt_list_changed_handler_);
+  const auto resource_list_changed_handler =
+      copy_handler(&Client::resource_list_changed_handler_);
+  const auto resource_updated_handler =
+      copy_handler(&Client::resource_updated_handler_);
+  const auto progress_handler = copy_handler(&Client::progress_handler_);
+  const auto elicitation_complete_handler =
+      copy_handler(&Client::elicitation_complete_handler_);
+  const auto task_status_handler = copy_handler(&Client::task_status_handler_);
+  const auto roots_list_changed_handler =
+      copy_handler(&Client::roots_list_changed_handler_);
+  const auto raw_notification_handler =
+      copy_handler(&Client::raw_notification_handler_);
+
   if (notification.method == std::string(protocol::InitializedMethod) &&
-      initialized_handler_) {
-    initialized_handler_();
+      initialized_handler) {
+    initialized_handler();
   } else if (notification.method ==
              std::string(protocol::CancelledNotificationMethod)) {
     const auto params =
         protocol::cancelled_notification_params_from_json(notification.params);
     if (!params) {
-      return std::unexpected(make_client_error(
+      return mcp::core::unexpected(make_client_error(
           static_cast<int>(protocol::ErrorCode::InvalidParams),
           "cancelled notification requires a requestId"));
     }
     cancel_request(params->request_id);
-    if (cancelled_handler_) {
-      cancelled_handler_(params->request_id,
-                         params->reason.value_or(std::string{}));
+    if (cancelled_handler) {
+      cancelled_handler(params->request_id,
+                        params->reason.value_or(std::string{}));
     }
   } else if (notification.method == "notifications/message" &&
-             logging_message_handler_) {
+             logging_message_handler) {
     std::string level;
     std::string message;
     if (notification.params.is_object()) {
@@ -1365,72 +1461,72 @@ core::Result<core::Unit> Client::handle_notification(
         }
       }
     }
-    logging_message_handler_(level, message);
+    logging_message_handler(level, message);
   } else if (notification.method == "notifications/tools/list_changed" &&
-             tool_list_changed_handler_) {
-    tool_list_changed_handler_();
+             tool_list_changed_handler) {
+    tool_list_changed_handler();
   } else if (notification.method == "notifications/prompts/list_changed" &&
-             prompt_list_changed_handler_) {
-    prompt_list_changed_handler_();
+             prompt_list_changed_handler) {
+    prompt_list_changed_handler();
   } else if (notification.method == "notifications/resources/list_changed" &&
-             resource_list_changed_handler_) {
-    resource_list_changed_handler_();
+             resource_list_changed_handler) {
+    resource_list_changed_handler();
   } else if (notification.method == "notifications/resources/updated" &&
-             resource_updated_handler_) {
+             resource_updated_handler) {
     if (!notification.params.is_object() ||
         !notification.params.contains("uri") ||
         !notification.params.at("uri").is_string()) {
-      return std::unexpected(make_client_error(
+      return mcp::core::unexpected(make_client_error(
           static_cast<int>(protocol::ErrorCode::InvalidParams),
           "resource updated notification requires a string uri"));
     }
-    resource_updated_handler_(notification.params.at("uri").get<std::string>());
+    resource_updated_handler(notification.params.at("uri").get<std::string>());
   } else if (notification.method ==
                  std::string(protocol::ProgressNotificationMethod) &&
-             progress_handler_) {
+             progress_handler) {
     const auto params =
         protocol::progress_notification_params_from_json(notification.params);
     if (!params) {
-      return std::unexpected(make_client_error(
+      return mcp::core::unexpected(make_client_error(
           static_cast<int>(protocol::ErrorCode::InvalidParams),
           "progress notification requires valid params"));
     }
-    progress_handler_(*params);
+    progress_handler(*params);
   } else if (notification.method ==
                  std::string(protocol::ElicitationCompleteNotificationMethod) &&
-             elicitation_complete_handler_) {
+             elicitation_complete_handler) {
     const auto params =
         protocol::elicitation_complete_notification_params_from_json(
             notification.params);
     if (!params) {
-      return std::unexpected(make_client_error(
+      return mcp::core::unexpected(make_client_error(
           static_cast<int>(protocol::ErrorCode::InvalidParams),
           "elicitation completion notification requires valid params"));
     }
-    elicitation_complete_handler_(params->elicitation_id);
+    elicitation_complete_handler(params->elicitation_id);
   } else if (notification.method ==
                  std::string(protocol::TasksStatusNotificationMethod) &&
-             task_status_handler_) {
+             task_status_handler) {
     const auto task = protocol::task_from_json(notification.params);
     if (!task) {
-      return std::unexpected(make_client_error(
+      return mcp::core::unexpected(make_client_error(
           static_cast<int>(protocol::ErrorCode::InvalidParams),
           "task status notification requires valid task data"));
     }
-    task_status_handler_(*task);
+    task_status_handler(*task);
   } else if (notification.method == "notifications/roots/list_changed" &&
-             roots_list_changed_handler_) {
-    roots_list_changed_handler_();
+             roots_list_changed_handler) {
+    roots_list_changed_handler();
   }
 
-  if (raw_notification_handler_) {
-    raw_notification_handler_(notification);
+  if (raw_notification_handler) {
+    raw_notification_handler(notification);
   }
   return core::Unit{};
 } catch (const std::exception& ex) {
-  return std::unexpected(errors::handler_failed(ex.what()));
+  return mcp::core::unexpected(errors::handler_failed(ex.what()));
 } catch (...) {
-  return std::unexpected(errors::handler_unknown_exception());
+  return mcp::core::unexpected(errors::handler_unknown_exception());
 }
 
 core::Result<protocol::JsonRpcResponse> Client::handle_request(
@@ -1445,10 +1541,27 @@ core::Result<protocol::JsonRpcResponse> Client::handle_request(
         end_request_cancellation(request_id);
       });
 
+  const auto roots_list_request_cancellation_handler =
+      copy_handler(&Client::roots_list_request_cancellation_handler_);
+  const auto roots_list_request_handler =
+      copy_handler(&Client::roots_list_request_handler_);
+  const auto sampling_request_cancellation_handler =
+      copy_handler(&Client::sampling_request_cancellation_handler_);
+  const auto sampling_request_handler =
+      copy_handler(&Client::sampling_request_handler_);
+  const auto elicitation_request_cancellation_handler =
+      copy_handler(&Client::elicitation_request_cancellation_handler_);
+  const auto elicitation_request_handler =
+      copy_handler(&Client::elicitation_request_handler_);
+  const auto custom_request_cancellation_handler =
+      copy_handler(&Client::custom_request_cancellation_handler_);
+  const auto custom_request_handler =
+      copy_handler(&Client::custom_request_handler_);
+
   if (request.method == std::string(protocol::RootsListMethod)) {
-    if (roots_list_request_cancellation_handler_) {
+    if (roots_list_request_cancellation_handler) {
       const auto roots =
-          roots_list_request_cancellation_handler_(request_cancellation);
+          roots_list_request_cancellation_handler(request_cancellation);
       if (!roots) {
         return make_error_response(request, roots.error().code,
                                    roots.error().message, roots.error().detail);
@@ -1456,8 +1569,8 @@ core::Result<protocol::JsonRpcResponse> Client::handle_request(
       return protocol::make_response(
           request.id, protocol::roots_list_result_to_json(*roots));
     }
-    if (roots_list_request_handler_) {
-      const auto roots = roots_list_request_handler_();
+    if (roots_list_request_handler) {
+      const auto roots = roots_list_request_handler();
       if (!roots) {
         return make_error_response(request, roots.error().code,
                                    roots.error().message, roots.error().detail);
@@ -1467,13 +1580,13 @@ core::Result<protocol::JsonRpcResponse> Client::handle_request(
     }
 
     protocol::RootsListResult result;
-    result.roots = roots_;
+    result.roots = list_roots();
     return protocol::make_response(request.id,
                                    protocol::roots_list_result_to_json(result));
   }
 
   if (request.method == std::string(protocol::SamplingCreateMessageMethod)) {
-    if (!sampling_request_handler_ && !sampling_request_cancellation_handler_) {
+    if (!sampling_request_handler && !sampling_request_cancellation_handler) {
       return make_error_response(
           request, static_cast<int>(protocol::ErrorCode::MethodNotFound),
           "sampling request handler is not configured");
@@ -1485,10 +1598,10 @@ core::Result<protocol::JsonRpcResponse> Client::handle_request(
       return make_params_error_response(request, params.error());
     }
 
-    const auto result = sampling_request_cancellation_handler_
-                            ? sampling_request_cancellation_handler_(
+    const auto result = sampling_request_cancellation_handler
+                            ? sampling_request_cancellation_handler(
                                   *params, request_cancellation)
-                            : sampling_request_handler_(*params);
+                            : sampling_request_handler(*params);
     if (!result) {
       return make_error_response(request, result.error().code,
                                  result.error().message, result.error().detail);
@@ -1505,23 +1618,24 @@ core::Result<protocol::JsonRpcResponse> Client::handle_request(
       return make_params_error_response(request, params.error());
     }
 
-    if (!elicitation_request_handler_ &&
-        !elicitation_request_cancellation_handler_) {
+    if (!elicitation_request_handler &&
+        !elicitation_request_cancellation_handler) {
       protocol::CreateElicitationResult declined;
       declined.action = protocol::ElicitationAction::Decline;
       return protocol::make_response(
           request.id, protocol::create_elicitation_result_to_json(declined));
     }
 
-    const auto result = elicitation_request_cancellation_handler_
-                            ? elicitation_request_cancellation_handler_(
+    const auto result = elicitation_request_cancellation_handler
+                            ? elicitation_request_cancellation_handler(
                                   *params, request_cancellation)
-                            : elicitation_request_handler_(*params);
+                            : elicitation_request_handler(*params);
     if (!result) {
       return make_error_response(request, result.error().code,
                                  result.error().message, result.error().detail);
     }
-    const auto capabilities = default_client_capabilities(capabilities_);
+    const auto capabilities =
+        default_client_capabilities(capabilities_snapshot());
     if (params->mode == protocol::ElicitationMode::Form &&
         capabilities.elicitation.form_schema_validation) {
       const auto valid = protocol::validate_elicitation_result_content(
@@ -1538,11 +1652,11 @@ core::Result<protocol::JsonRpcResponse> Client::handle_request(
         request.id, protocol::create_elicitation_result_to_json(*result));
   }
 
-  if (custom_request_cancellation_handler_ || custom_request_handler_) {
-    const auto result = custom_request_cancellation_handler_
-                            ? custom_request_cancellation_handler_(
-                                  request, request_cancellation)
-                            : custom_request_handler_(request);
+  if (custom_request_cancellation_handler || custom_request_handler) {
+    const auto result =
+        custom_request_cancellation_handler
+            ? custom_request_cancellation_handler(request, request_cancellation)
+            : custom_request_handler(request);
     if (!result) {
       return make_error_response(request, result.error().code,
                                  result.error().message, result.error().detail);
@@ -1565,7 +1679,7 @@ core::Result<protocol::Json> Client::raw_request(
     const protocol::JsonRpcRequest& request) {
   const auto response = send_rpc_request(request);
   if (!response) {
-    return std::unexpected(response.error());
+    return mcp::core::unexpected(response.error());
   }
 
   return require_result_payload(*response);
@@ -1599,7 +1713,7 @@ RequestHandle<std::vector<protocol::ToolDefinition>> Client::list_tools_async(
           -> core::Result<std::vector<protocol::ToolDefinition>> {
         const auto result = protocol::tools_list_result_from_json(payload);
         if (!result) {
-          return std::unexpected(result.error());
+          return mcp::core::unexpected(result.error());
         }
         return result->tools;
       },
@@ -1614,7 +1728,7 @@ RequestHandle<std::vector<protocol::Prompt>> Client::list_prompts_async(
           -> core::Result<std::vector<protocol::Prompt>> {
         const auto result = protocol::prompts_list_result_from_json(payload);
         if (!result) {
-          return std::unexpected(result.error());
+          return mcp::core::unexpected(result.error());
         }
         return result->prompts;
       },
@@ -1629,7 +1743,7 @@ RequestHandle<std::vector<protocol::Resource>> Client::list_resources_async(
           -> core::Result<std::vector<protocol::Resource>> {
         const auto result = protocol::resources_list_result_from_json(payload);
         if (!result) {
-          return std::unexpected(result.error());
+          return mcp::core::unexpected(result.error());
         }
         return result->resources;
       },
@@ -1646,7 +1760,7 @@ Client::list_resource_templates_async(RequestOptions options) {
         const auto result =
             protocol::resource_templates_list_result_from_json(payload);
         if (!result) {
-          return std::unexpected(result.error());
+          return mcp::core::unexpected(result.error());
         }
         return result->resource_templates;
       },
@@ -1714,14 +1828,14 @@ RequestHandle<protocol::CreateTaskResult> Client::call_tool_task_async(
   if (!call.task.has_value()) {
     return RequestHandle<protocol::CreateTaskResult>::ready(
         next_request_id(),
-        std::unexpected(make_client_error(
+        mcp::core::unexpected(make_client_error(
             static_cast<int>(protocol::ErrorCode::InvalidRequest),
             "task-aware tool call requires task parameters")));
   }
   if (!supports_server_task_tool_call()) {
     return RequestHandle<protocol::CreateTaskResult>::ready(
         next_request_id(),
-        std::unexpected(make_client_error(
+        mcp::core::unexpected(make_client_error(
             static_cast<int>(protocol::ErrorCode::MethodNotFound),
             "server does not support task-aware tool calls")));
   }
@@ -1739,7 +1853,7 @@ RequestHandle<protocol::CompleteResult> Client::complete_async(
   if (!supports_server_completion()) {
     return RequestHandle<protocol::CompleteResult>::ready(
         next_request_id(),
-        std::unexpected(make_client_error(
+        mcp::core::unexpected(make_client_error(
             static_cast<int>(protocol::ErrorCode::MethodNotFound),
             "server does not support completion")));
   }
@@ -1757,7 +1871,7 @@ RequestHandle<protocol::Json> Client::complete_async(
   if (!supports_server_completion()) {
     return RequestHandle<protocol::Json>::ready(
         next_request_id(),
-        std::unexpected(make_client_error(
+        mcp::core::unexpected(make_client_error(
             static_cast<int>(protocol::ErrorCode::MethodNotFound),
             "server does not support completion")));
   }
@@ -1806,7 +1920,7 @@ RequestHandle<std::vector<protocol::Task>> Client::list_tasks_async(
   if (!supports_server_task_list()) {
     return RequestHandle<std::vector<protocol::Task>>::ready(
         next_request_id(),
-        std::unexpected(make_client_error(
+        mcp::core::unexpected(make_client_error(
             static_cast<int>(protocol::ErrorCode::MethodNotFound),
             "server does not support task listing")));
   }
@@ -1816,7 +1930,7 @@ RequestHandle<std::vector<protocol::Task>> Client::list_tasks_async(
           -> core::Result<std::vector<protocol::Task>> {
         const auto result = protocol::task_list_result_from_json(payload);
         if (!result) {
-          return std::unexpected(result.error());
+          return mcp::core::unexpected(result.error());
         }
         return result->tasks;
       },
@@ -1828,7 +1942,7 @@ RequestHandle<protocol::Task> Client::get_task_async(
   if (!supports_server_tasks()) {
     return RequestHandle<protocol::Task>::ready(
         next_request_id(),
-        std::unexpected(make_client_error(
+        mcp::core::unexpected(make_client_error(
             static_cast<int>(protocol::ErrorCode::MethodNotFound),
             "server does not support tasks")));
   }
@@ -1853,7 +1967,7 @@ RequestHandle<protocol::Task> Client::cancel_task_async(
   if (!supports_server_task_cancel()) {
     return RequestHandle<protocol::Task>::ready(
         next_request_id(),
-        std::unexpected(make_client_error(
+        mcp::core::unexpected(make_client_error(
             static_cast<int>(protocol::ErrorCode::MethodNotFound),
             "server does not support task cancellation")));
   }
@@ -1878,7 +1992,7 @@ RequestHandle<protocol::Json> Client::task_result_async(
   if (!supports_server_tasks()) {
     return RequestHandle<protocol::Json>::ready(
         next_request_id(),
-        std::unexpected(make_client_error(
+        mcp::core::unexpected(make_client_error(
             static_cast<int>(protocol::ErrorCode::MethodNotFound),
             "server does not support tasks")));
   }
@@ -1898,7 +2012,7 @@ core::Result<core::Unit> Client::raw_notification(
     const protocol::JsonRpcNotification& notification) {
   const auto started = ensure_transport_started();
   if (!started) {
-    return std::unexpected(started.error());
+    return mcp::core::unexpected(started.error());
   }
 
   return transport_->send_notification(notification);
@@ -1908,6 +2022,7 @@ void Client::stop() noexcept {
   if (transport_) {
     transport_->stop();
   }
+  std::lock_guard<std::mutex> lock(*state_mutex_);
   transport_started_ = false;
 }
 

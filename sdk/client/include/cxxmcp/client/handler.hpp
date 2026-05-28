@@ -300,7 +300,7 @@ inline Client& Client::set_handler(const ClientHandlerInterface& handler) {
     if (response.has_value()) {
       return std::move(*response);
     }
-    return std::unexpected(
+    return mcp::core::unexpected(
         handler_method_not_found("client handler does not handle list_roots"));
   });
   on_create_message_request(
@@ -312,7 +312,7 @@ inline Client& Client::set_handler(const ClientHandlerInterface& handler) {
         if (response.has_value()) {
           return std::move(*response);
         }
-        return std::unexpected(handler_method_not_found(
+        return mcp::core::unexpected(handler_method_not_found(
             "client handler does not handle create_message"));
       });
   on_create_elicitation_request(
@@ -324,7 +324,7 @@ inline Client& Client::set_handler(const ClientHandlerInterface& handler) {
         if (response.has_value()) {
           return std::move(*response);
         }
-        return std::unexpected(handler_method_not_found(
+        return mcp::core::unexpected(handler_method_not_found(
             "client handler does not handle elicitation"));
       });
   on_custom_request(
@@ -335,7 +335,7 @@ inline Client& Client::set_handler(const ClientHandlerInterface& handler) {
         if (response.has_value()) {
           return std::move(*response);
         }
-        return std::unexpected(handler_method_not_found(
+        return mcp::core::unexpected(handler_method_not_found(
             "client handler does not handle custom request"));
       });
   on_raw_notification(

@@ -24,6 +24,13 @@
 
 namespace mcp::server {
 
+/// @brief Observer called after a task snapshot changes.
+using TaskStatusNotificationHook = std::function<void(const protocol::Task&)>;
+
+/// @brief Observer called when a task state change can be mapped to progress.
+using TaskProgressNotificationHook =
+    std::function<void(const protocol::ProgressNotificationParams&)>;
+
 /// @brief Options for the SDK server task processor.
 struct TaskOperationProcessorOptions {
   /// Worker threads used to execute background operations.
@@ -38,6 +45,15 @@ struct TaskOperationProcessorOptions {
   std::optional<std::chrono::milliseconds> completed_task_ttl;
   /// Maximum retained terminal task records.
   std::size_t max_completed_tasks = 128;
+  /// Maximum tasks returned by one `tasks/list` page. Zero means unbounded.
+  std::size_t list_page_size = 0;
+  /// Optional hook for automatic `notifications/tasks/status` emission.
+  TaskStatusNotificationHook task_status_hook;
+  /// Optional hook for automatic `notifications/progress` emission.
+  TaskProgressNotificationHook task_progress_hook;
+  /// Emit progress updates from task state changes when a progress token
+  /// exists.
+  bool emit_progress_for_task_state_changes = true;
 };
 
 /// @brief Metadata for a background operation managed as an MCP task.
@@ -46,6 +62,8 @@ struct TaskOperationDescriptor {
   std::string name;
   /// Optional task request metadata supplied by the peer.
   std::optional<protocol::TaskRequestParameters> task;
+  /// Optional progress token from request `_meta.progressToken`.
+  std::optional<protocol::ProgressToken> progress_token;
 };
 
 /// @brief Callable executed by the task processor.
@@ -95,12 +113,18 @@ class TaskOperationProcessor {
  private:
   struct TaskRecord {
     protocol::Task task;
+    std::optional<protocol::ProgressToken> progress_token;
     std::chrono::steady_clock::time_point started_at;
     std::optional<std::chrono::steady_clock::time_point> terminal_at;
     std::optional<std::chrono::seconds> timeout;
     CancellationSource cancellation;
     std::optional<protocol::Json> result;
     std::optional<core::Error> failure;
+  };
+
+  struct TaskUpdate {
+    protocol::Task task;
+    std::optional<protocol::ProgressToken> progress_token;
   };
 
   static std::string now_timestamp();
@@ -111,8 +135,11 @@ class TaskOperationProcessor {
   TaskRecord* find_task_locked(std::string_view task_id);
   const TaskRecord* find_task_locked(std::string_view task_id) const;
   void finish_task(std::string task_id, core::Result<protocol::Json> result);
-  void refresh_locked();
+  void refresh_locked(std::vector<TaskUpdate>* updates = nullptr);
   void trim_completed_locked();
+  void append_update_locked(std::vector<TaskUpdate>* updates,
+                            const TaskRecord& record) const;
+  void emit_updates(const std::vector<TaskUpdate>& updates) const;
 
   TaskOperationProcessorOptions options_;
   core::BoundedExecutor executor_;

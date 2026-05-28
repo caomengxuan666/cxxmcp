@@ -2,19 +2,18 @@
 
 #pragma once
 
-#include <functional>
+#include <mutex>
 #include <optional>
 #include <string>
 #include <string_view>
 #include <unordered_map>
 #include <vector>
 
-#include "cxxmcp/cancellation.hpp"
 #include "cxxmcp/core/result.hpp"
 #include "cxxmcp/protocol/prompt.hpp"
 #include "cxxmcp/protocol/resource.hpp"
 #include "cxxmcp/protocol/tool.hpp"
-#include "cxxmcp/server/peer.hpp"
+#include "cxxmcp/server/handler_types.hpp"
 #include "cxxmcp/server/schema_validator.hpp"
 #include "cxxmcp/server/transport.hpp"
 
@@ -23,90 +22,30 @@
 
 namespace mcp::server {
 
-/// @brief Copyable cooperative cancellation token for server handlers.
-using CancellationToken = mcp::CancellationToken;
-
-/// @brief Invocation context passed to tool handlers.
-///
-/// ToolContext copies the SessionContext metadata for the active request and
-/// adds tool arguments. It does not own the transport; client() returns a
-/// non-owning ClientPeer for optional server-to-client calls during handling.
-struct ToolContext : SessionContext {
-  /// @brief Return a non-owning peer handle for this invocation's client.
-  ClientPeer client() const noexcept { return client_peer(*this); }
-
-  /// JSON arguments supplied with the tool call.
-  protocol::Json arguments = protocol::Json::object();
-  /// Optional task request metadata supplied with the tool call.
-  std::optional<protocol::TaskRequestParameters> task;
-  /// Cooperative cancellation token for task-aware executions.
-  CancellationToken cancellation;
-
-  /// @brief Convenience check for cancellation-aware handlers.
-  bool cancelled() const noexcept { return cancellation.cancelled(); }
-};
-
-/// @brief Invocation context passed to prompt handlers.
-struct PromptContext : SessionContext {
-  /// @brief Return a non-owning peer handle for this invocation's client.
-  ClientPeer client() const noexcept { return client_peer(*this); }
-
-  /// JSON arguments supplied with the prompt request.
-  protocol::Json arguments = protocol::Json::object();
-  /// Cooperative cancellation token for this request.
-  CancellationToken cancellation;
-
-  /// @brief Convenience check for cancellation-aware handlers.
-  bool cancelled() const noexcept { return cancellation.cancelled(); }
-};
-
-/// @brief Invocation context passed to resource read handlers.
-struct ResourceContext : SessionContext {
-  /// @brief Return a non-owning peer handle for this invocation's client.
-  ClientPeer client() const noexcept { return client_peer(*this); }
-
-  /// Requested resource URI.
-  std::string uri;
-  /// Raw resource read parameters supplied by the client.
-  protocol::Json params = protocol::Json::object();
-  /// Cooperative cancellation token for this request.
-  CancellationToken cancellation;
-
-  /// @brief Convenience check for cancellation-aware handlers.
-  bool cancelled() const noexcept { return cancellation.cancelled(); }
-};
-
-/// @brief Application callback that executes a tool.
-/// @return A ToolResult, or a core::Error propagated to the caller.
-using ToolHandler =
-    std::function<core::Result<protocol::ToolResult>(const ToolContext&)>;
-
-/// @brief Application callback that renders a prompt.
-/// @return A prompt result, or a core::Error propagated to the caller.
-using PromptHandler = std::function<core::Result<protocol::PromptsGetResult>(
-    const PromptContext&)>;
-
-/// @brief Application callback that reads a resource.
-/// @return Resource contents, or a core::Error propagated to the caller.
-using ResourceReadHandler =
-    std::function<core::Result<protocol::ResourcesReadResult>(
-        const ResourceContext&)>;
-
 /// @brief Registry of named MCP tools and their handlers.
 ///
 /// The registry owns copies of tool definitions and std::function handlers.
-/// It performs duplicate and empty-name validation on add(). Calls are
-/// synchronous: the selected handler is invoked on the caller's thread, and any
-/// handler error is returned unchanged.
+/// It performs duplicate and bounded-name validation on add(): names must be
+/// non-empty, fit the SDK length limit, and contain no control characters.
+/// Calls are synchronous: the selected handler is copied under the registry
+/// lock, invoked on the caller's thread outside the lock, and any handler error
+/// is returned unchanged.
 ///
-/// The registry has no internal synchronization. Configure it before concurrent
-/// access or protect it externally if registering and calling in parallel.
+/// The registry synchronizes add/get/list/call access internally. Handler
+/// callbacks may reenter the registry without deadlocking.
 class ToolRegistry {
  public:
+  ToolRegistry() = default;
+  ToolRegistry(const ToolRegistry& other);
+  ToolRegistry& operator=(const ToolRegistry& other);
+  ToolRegistry(ToolRegistry&& other) noexcept;
+  ToolRegistry& operator=(ToolRegistry&& other) noexcept;
+
   /// @brief Register a tool definition and handler.
-  /// @param definition Tool metadata. The name must be non-empty and unique.
+  /// @param definition Tool metadata. The name must be non-empty, bounded,
+  /// control-character-free, and unique.
   /// @param handler Callable used to execute the tool.
-  /// @return core::Unit on success, or InvalidRequest for empty name,
+  /// @return core::Unit on success, or InvalidRequest for invalid name,
   /// duplicate name, or empty handler.
   core::Result<core::Unit> add(protocol::ToolDefinition definition,
                                ToolHandler handler);
@@ -178,18 +117,27 @@ class ToolRegistry {
     ToolHandler handler;
   };
 
+  mutable std::mutex mutex_;
   std::unordered_map<std::string, Entry> tools_;
+  mutable std::vector<protocol::ToolDefinition> sorted_tools_cache_;
+  mutable bool sorted_tools_cache_dirty_ = true;
 };
 
 /// @brief Registry of named MCP prompts and their handlers.
 ///
 /// PromptRegistry owns prompt metadata and handler callables. Handler
-/// invocation is synchronous and errors are returned to the caller without
-/// translation. The registry is not internally synchronized.
+/// invocation is synchronous, copied under the registry lock, invoked outside
+/// the lock, and errors are returned to the caller without translation.
 class PromptRegistry {
  public:
+  PromptRegistry() = default;
+  PromptRegistry(const PromptRegistry& other);
+  PromptRegistry& operator=(const PromptRegistry& other);
+  PromptRegistry(PromptRegistry&& other) noexcept;
+  PromptRegistry& operator=(PromptRegistry&& other) noexcept;
+
   /// @brief Register a prompt definition and handler.
-  /// @return core::Unit on success, or InvalidRequest for empty name,
+  /// @return core::Unit on success, or InvalidRequest for invalid name,
   /// duplicate name, or empty handler.
   core::Result<core::Unit> add(protocol::Prompt prompt, PromptHandler handler);
 
@@ -218,18 +166,27 @@ class PromptRegistry {
     PromptHandler handler;
   };
 
+  mutable std::mutex mutex_;
   std::unordered_map<std::string, Entry> prompts_;
+  mutable std::vector<protocol::Prompt> sorted_prompts_cache_;
+  mutable bool sorted_prompts_cache_dirty_ = true;
 };
 
 /// @brief Registry of concrete MCP resources and read handlers.
 ///
 /// ResourceRegistry owns resource metadata and handler callables. Reads are
 /// synchronous and copy session metadata into ResourceContext before invoking
-/// the handler. The registry is not internally synchronized.
+/// the handler outside the registry lock.
 class ResourceRegistry {
  public:
+  ResourceRegistry() = default;
+  ResourceRegistry(const ResourceRegistry& other);
+  ResourceRegistry& operator=(const ResourceRegistry& other);
+  ResourceRegistry(ResourceRegistry&& other) noexcept;
+  ResourceRegistry& operator=(ResourceRegistry&& other) noexcept;
+
   /// @brief Register a concrete resource and read handler.
-  /// @return core::Unit on success, or InvalidRequest for empty URI,
+  /// @return core::Unit on success, or InvalidRequest for invalid URI/name,
   /// duplicate URI, or empty handler.
   core::Result<core::Unit> add(protocol::Resource resource,
                                ResourceReadHandler handler);
@@ -258,27 +215,40 @@ class ResourceRegistry {
     ResourceReadHandler handler;
   };
 
+  mutable std::mutex mutex_;
   std::unordered_map<std::string, Entry> resources_;
+  mutable std::vector<protocol::Resource> sorted_resources_cache_;
+  mutable bool sorted_resources_cache_dirty_ = true;
 };
 
 /// @brief Registry of advertised resource templates.
 ///
 /// Templates are metadata only; no handler is stored here. The registry owns
-/// copies of templates, validates unique non-empty uriTemplate values, and is
-/// not internally synchronized.
+/// copies of templates, validates unique bounded uriTemplate/name values
+/// without control characters, and synchronizes add/list access internally.
 class ResourceTemplateRegistry {
  public:
+  ResourceTemplateRegistry() = default;
+  ResourceTemplateRegistry(const ResourceTemplateRegistry& other);
+  ResourceTemplateRegistry& operator=(const ResourceTemplateRegistry& other);
+  ResourceTemplateRegistry(ResourceTemplateRegistry&& other) noexcept;
+  ResourceTemplateRegistry& operator=(
+      ResourceTemplateRegistry&& other) noexcept;
+
   /// @brief Register a resource template.
-  /// @return core::Unit on success, or InvalidRequest for empty or duplicate
-  /// uriTemplate values.
+  /// @return core::Unit on success, or InvalidRequest for invalid or duplicate
+  /// uriTemplate/name values.
   core::Result<core::Unit> add(protocol::ResourceTemplate resource_template);
 
   /// @brief Return registered resource templates sorted by uriTemplate.
   std::vector<protocol::ResourceTemplate> list() const;
 
  private:
+  mutable std::mutex mutex_;
   std::unordered_map<std::string, protocol::ResourceTemplate>
       resource_templates_;
+  mutable std::vector<protocol::ResourceTemplate> sorted_templates_cache_;
+  mutable bool sorted_templates_cache_dirty_ = true;
 };
 
 }  // namespace mcp::server

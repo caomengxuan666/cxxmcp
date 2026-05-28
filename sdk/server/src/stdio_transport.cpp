@@ -9,12 +9,59 @@
 #include <utility>
 #include <variant>
 
+#ifndef _WIN32
+#include <pthread.h>
+#include <signal.h>
+#endif
+
 #include "cxxmcp/error.hpp"
 #include "cxxmcp/protocol/serialization.hpp"
 
 namespace mcp::server {
 
 namespace {
+
+#ifndef _WIN32
+class ScopedSigpipeBlock final {
+ public:
+  ScopedSigpipeBlock() noexcept {
+    sigemptyset(&sigpipe_set_);
+    sigaddset(&sigpipe_set_, SIGPIPE);
+    if (::pthread_sigmask(SIG_BLOCK, &sigpipe_set_, &previous_mask_) == 0) {
+      blocked_ = true;
+      sigset_t pending;
+      if (::sigpending(&pending) == 0) {
+        had_pending_sigpipe_ = sigismember(&pending, SIGPIPE) == 1;
+      }
+    }
+  }
+
+  ~ScopedSigpipeBlock() {
+    if (!blocked_) {
+      return;
+    }
+
+    if (!had_pending_sigpipe_) {
+      sigset_t pending;
+      if (::sigpending(&pending) == 0 && sigismember(&pending, SIGPIPE) == 1) {
+        int signal = 0;
+        (void)::sigwait(&sigpipe_set_, &signal);
+      }
+    }
+
+    (void)::pthread_sigmask(SIG_SETMASK, &previous_mask_, nullptr);
+  }
+
+  ScopedSigpipeBlock(const ScopedSigpipeBlock&) = delete;
+  ScopedSigpipeBlock& operator=(const ScopedSigpipeBlock&) = delete;
+
+ private:
+  sigset_t sigpipe_set_{};
+  sigset_t previous_mask_{};
+  bool blocked_ = false;
+  bool had_pending_sigpipe_ = false;
+};
+#endif
 
 core::Error make_transport_error(int code, std::string message,
                                  std::string detail = {}) {
@@ -25,13 +72,16 @@ core::Result<core::Unit> write_response(
     std::ostream& output, const protocol::JsonRpcResponse& response) {
   const auto serialized = protocol::serialize_response(response);
   if (!serialized) {
-    return std::unexpected(serialized.error());
+    return mcp::core::unexpected(serialized.error());
   }
 
+#ifndef _WIN32
+  const ScopedSigpipeBlock sigpipe_block;
+#endif
   output << *serialized << '\n';
   output.flush();
   if (!output.good()) {
-    return std::unexpected(make_transport_error(
+    return mcp::core::unexpected(make_transport_error(
         static_cast<int>(protocol::ErrorCode::InternalError),
         "failed to write stdio response"));
   }
@@ -43,13 +93,16 @@ core::Result<core::Unit> write_notification(
     std::ostream& output, const protocol::JsonRpcNotification& notification) {
   const auto serialized = protocol::serialize_notification(notification);
   if (!serialized) {
-    return std::unexpected(serialized.error());
+    return mcp::core::unexpected(serialized.error());
   }
 
+#ifndef _WIN32
+  const ScopedSigpipeBlock sigpipe_block;
+#endif
   output << *serialized << '\n';
   output.flush();
   if (!output.good()) {
-    return std::unexpected(make_transport_error(
+    return mcp::core::unexpected(make_transport_error(
         static_cast<int>(protocol::ErrorCode::InternalError),
         "failed to write stdio notification"));
   }
@@ -79,6 +132,16 @@ std::optional<protocol::RequestId> request_id_from_message(
   return std::nullopt;
 }
 
+bool is_initialized_notification(
+    const protocol::JsonRpcNotification& notification) {
+  return notification.method == protocol::InitializedMethod;
+}
+
+bool is_allowed_before_initialized(const protocol::JsonRpcRequest& request) {
+  return request.method == protocol::InitializeMethod ||
+         request.method == protocol::PingMethod;
+}
+
 }  // namespace
 
 StdioTransport::StdioTransport() : StdioTransport(std::cin, std::cout) {}
@@ -89,68 +152,88 @@ StdioTransport::StdioTransport(std::istream& input, std::ostream& output)
 core::Result<core::Unit> StdioTransport::start(
     RequestHandler handler, NotificationHandler notification_handler) {
   if (!input_ || !output_) {
-    return std::unexpected(make_transport_error(
+    return mcp::core::unexpected(make_transport_error(
         static_cast<int>(protocol::ErrorCode::InternalError),
         "stdio transport streams are not configured"));
   }
 
   if (!handler) {
-    return std::unexpected(make_transport_error(
+    return mcp::core::unexpected(make_transport_error(
         static_cast<int>(protocol::ErrorCode::InvalidRequest),
         "stdio transport handler is not configured"));
   }
 
-  running_ = true;
+  initialized_ = false;
+  running_.store(true, std::memory_order_release);
 
   std::string line;
-  while (running_ && std::getline(*input_, line)) {
+  while (running_.load(std::memory_order_acquire) &&
+         std::getline(*input_, line)) {
     if (line.empty()) {
       continue;
     }
 
     const auto message = protocol::parse_message(line);
     if (!message) {
-      const auto written =
-          write_error(*output_, message.error().code, message.error().message);
+      core::Result<core::Unit> written;
+      {
+        std::lock_guard lock(output_mutex_);
+        written = write_error(*output_, message.error().code,
+                              message.error().message);
+      }
       if (!written) {
-        running_ = false;
-        return std::unexpected(written.error());
+        running_.store(false, std::memory_order_release);
+        return mcp::core::unexpected(written.error());
       }
       continue;
     }
 
     if (const auto* notification =
             std::get_if<protocol::JsonRpcNotification>(&*message)) {
+      if (!initialized_ && !is_initialized_notification(*notification)) {
+        running_.store(false, std::memory_order_release);
+        return mcp::core::unexpected(make_transport_error(
+            static_cast<int>(protocol::ErrorCode::InvalidRequest),
+            "stdio transport session is not initialized"));
+      }
       if (notification_handler) {
         SessionContext context;
         context.session_id = "stdio";
         context.remote_address = "stdio";
         context.transport = this;
+        context.transport_lifetime = lifetime_token();
         core::Result<core::Unit> handled;
         try {
           handled = notification_handler(*notification, context);
         } catch (const std::exception& ex) {
-          handled = std::unexpected(errors::handler_failed(ex.what()));
+          handled = mcp::core::unexpected(errors::handler_failed(ex.what()));
         } catch (...) {
-          handled = std::unexpected(errors::handler_unknown_exception());
+          handled = mcp::core::unexpected(errors::handler_unknown_exception());
         }
         if (!handled) {
-          running_ = false;
-          return std::unexpected(handled.error());
+          running_.store(false, std::memory_order_release);
+          return mcp::core::unexpected(handled.error());
         }
+      }
+      if (is_initialized_notification(*notification)) {
+        initialized_ = true;
       }
       continue;
     }
 
     const auto* request = std::get_if<protocol::JsonRpcRequest>(&*message);
     if (!request) {
-      const auto written = write_error(
-          *output_, static_cast<int>(protocol::ErrorCode::InvalidRequest),
-          "stdio transport expected a JSON-RPC request",
-          request_id_from_message(*message));
+      core::Result<core::Unit> written;
+      {
+        std::lock_guard lock(output_mutex_);
+        written = write_error(
+            *output_, static_cast<int>(protocol::ErrorCode::InvalidRequest),
+            "stdio transport expected a JSON-RPC request",
+            request_id_from_message(*message));
+      }
       if (!written) {
-        running_ = false;
-        return std::unexpected(written.error());
+        running_.store(false, std::memory_order_release);
+        return mcp::core::unexpected(written.error());
       }
       continue;
     }
@@ -159,13 +242,28 @@ core::Result<core::Unit> StdioTransport::start(
     context.session_id = "stdio";
     context.remote_address = "stdio";
     context.transport = this;
+    context.transport_lifetime = lifetime_token();
+    if (!initialized_ && !is_allowed_before_initialized(*request)) {
+      core::Result<core::Unit> written;
+      {
+        std::lock_guard lock(output_mutex_);
+        written = write_error(
+            *output_, static_cast<int>(protocol::ErrorCode::InvalidRequest),
+            "stdio transport session is not initialized", request->id);
+      }
+      if (!written) {
+        running_.store(false, std::memory_order_release);
+        return mcp::core::unexpected(written.error());
+      }
+      continue;
+    }
     core::Result<protocol::JsonRpcResponse> response;
     try {
       response = handler(*request, context);
     } catch (const std::exception& ex) {
-      response = std::unexpected(errors::handler_failed(ex.what()));
+      response = mcp::core::unexpected(errors::handler_failed(ex.what()));
     } catch (...) {
-      response = std::unexpected(errors::handler_unknown_exception());
+      response = mcp::core::unexpected(errors::handler_unknown_exception());
     }
     if (!response) {
       response = protocol::make_error_response(
@@ -178,6 +276,7 @@ core::Result<core::Unit> StdioTransport::start(
     }
 
     if (request->method == protocol::InitializeMethod) {
+      std::lock_guard lock(client_capabilities_mutex_);
       if (request->params.is_object() &&
           request->params.contains("capabilities")) {
         client_capabilities_ = protocol::client_capabilities_from_json(
@@ -187,16 +286,20 @@ core::Result<core::Unit> StdioTransport::start(
       }
     }
 
-    const auto written = write_response(*output_, *response);
+    core::Result<core::Unit> written;
+    {
+      std::lock_guard lock(output_mutex_);
+      written = write_response(*output_, *response);
+    }
     if (!written) {
-      running_ = false;
-      return std::unexpected(written.error());
+      running_.store(false, std::memory_order_release);
+      return mcp::core::unexpected(written.error());
     }
   }
 
-  running_ = false;
+  running_.store(false, std::memory_order_release);
   if (input_->bad()) {
-    return std::unexpected(make_transport_error(
+    return mcp::core::unexpected(make_transport_error(
         static_cast<int>(protocol::ErrorCode::InternalError),
         "failed to read stdio request"));
   }
@@ -207,7 +310,7 @@ core::Result<core::Unit> StdioTransport::start(
 core::Result<core::Unit> StdioTransport::send_notification(
     const protocol::JsonRpcNotification& notification) {
   if (!output_) {
-    return std::unexpected(make_transport_error(
+    return mcp::core::unexpected(make_transport_error(
         static_cast<int>(protocol::ErrorCode::InternalError),
         "stdio transport output stream is not configured"));
   }
@@ -218,10 +321,13 @@ core::Result<core::Unit> StdioTransport::send_notification(
 
 std::optional<protocol::ClientCapabilities>
 StdioTransport::client_capabilities() const {
+  std::lock_guard lock(client_capabilities_mutex_);
   return client_capabilities_;
 }
 
-void StdioTransport::stop() noexcept { running_ = false; }
+void StdioTransport::stop() noexcept {
+  running_.store(false, std::memory_order_release);
+}
 
 std::string_view StdioTransport::name() const noexcept { return "stdio"; }
 
