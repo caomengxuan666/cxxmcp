@@ -173,7 +173,7 @@ core::Result<ResolvedEndpoint> resolve_endpoint(
   if (!options.uri.empty()) {
     if (!httplib::detail::parse_url(options.uri, components) ||
         components.host.empty()) {
-      return std::unexpected(make_transport_error(
+      return mcp::core::unexpected(make_transport_error(
           static_cast<int>(protocol::ErrorCode::InvalidRequest),
           "invalid http transport uri", options.uri));
     }
@@ -185,13 +185,13 @@ core::Result<ResolvedEndpoint> resolve_endpoint(
 
   if (!components.scheme.empty() && components.scheme != "http" &&
       components.scheme != "https") {
-    return std::unexpected(make_transport_error(
+    return mcp::core::unexpected(make_transport_error(
         static_cast<int>(protocol::ErrorCode::InvalidRequest),
         "unsupported http transport uri scheme", components.scheme));
   }
 
   if (components.host.empty()) {
-    return std::unexpected(make_transport_error(
+    return mcp::core::unexpected(make_transport_error(
         static_cast<int>(protocol::ErrorCode::InvalidRequest),
         "http transport endpoint is missing a host"));
   }
@@ -200,7 +200,7 @@ core::Result<ResolvedEndpoint> resolve_endpoint(
   int port = is_ssl ? 443 : 80;
   if (!components.port.empty() &&
       !httplib::detail::parse_port(components.port, port)) {
-    return std::unexpected(make_transport_error(
+    return mcp::core::unexpected(make_transport_error(
         static_cast<int>(protocol::ErrorCode::InvalidRequest),
         "invalid http transport port", components.port));
   }
@@ -323,12 +323,12 @@ struct HttpTransport::Impl {
   core::Result<protocol::JsonRpcResponse> send(
       const protocol::JsonRpcRequest& request) {
     if (options_error.has_value()) {
-      return std::unexpected(*options_error);
+      return mcp::core::unexpected(*options_error);
     }
 
     const auto serialized = protocol::serialize_request(request);
     if (!serialized) {
-      return std::unexpected(serialized.error());
+      return mcp::core::unexpected(serialized.error());
     }
 
     bool retried_after_session_reset = false;
@@ -346,12 +346,12 @@ struct HttpTransport::Impl {
       if (!response) {
         if (options.timeout.count() > 0 &&
             is_http_timeout_error(response.error())) {
-          return std::unexpected(make_transport_error(
+          return mcp::core::unexpected(make_transport_error(
               static_cast<int>(protocol::ErrorCode::InternalError),
               "http transport request timed out",
               httplib::to_string(response.error())));
         }
-        return std::unexpected(make_transport_error(
+        return mcp::core::unexpected(make_transport_error(
             static_cast<int>(protocol::ErrorCode::InternalError),
             "http transport request failed",
             httplib::to_string(response.error())));
@@ -363,7 +363,7 @@ struct HttpTransport::Impl {
           retried_after_session_reset = true;
           continue;
         }
-        return std::unexpected(make_transport_error(
+        return mcp::core::unexpected(make_transport_error(
             static_cast<int>(protocol::ErrorCode::InvalidRequest),
             "http transport session was terminated",
             std::to_string(response->status)));
@@ -376,18 +376,18 @@ struct HttpTransport::Impl {
         }
       }
       if (response->status == 401 || response->status == 403) {
-        return std::unexpected(make_http_auth_error(*response));
+        return mcp::core::unexpected(make_http_auth_error(*response));
       }
 
       const auto remembered_session = remember_session(
           *response, request.method == protocol::InitializeMethod);
       if (!remembered_session) {
-        return std::unexpected(remembered_session.error());
+        return mcp::core::unexpected(remembered_session.error());
       }
 
       auto decoded_response = decode_request_response(*response, request.id);
       if (!decoded_response) {
-        return std::unexpected(decoded_response.error());
+        return mcp::core::unexpected(decoded_response.error());
       }
       if (request.method == protocol::InitializeMethod) {
         remember_protocol_version_from_initialize_response(*decoded_response);
@@ -395,7 +395,7 @@ struct HttpTransport::Impl {
 
       const auto stream_started = ensure_stream_started();
       if (!stream_started) {
-        return std::unexpected(stream_started.error());
+        return mcp::core::unexpected(stream_started.error());
       }
 
       return *decoded_response;
@@ -405,12 +405,12 @@ struct HttpTransport::Impl {
   core::Result<core::Unit> send_notification(
       const protocol::JsonRpcNotification& notification) {
     if (options_error.has_value()) {
-      return std::unexpected(*options_error);
+      return mcp::core::unexpected(*options_error);
     }
 
     const auto serialized = protocol::serialize_notification(notification);
     if (!serialized) {
-      return std::unexpected(serialized.error());
+      return mcp::core::unexpected(serialized.error());
     }
 
     bool retried_after_auth_refresh = false;
@@ -431,34 +431,34 @@ struct HttpTransport::Impl {
       retried_after_auth_refresh = true;
     }
     if (!response) {
-      return std::unexpected(make_transport_error(
+      return mcp::core::unexpected(make_transport_error(
           static_cast<int>(protocol::ErrorCode::InternalError),
           "http transport notification failed",
           httplib::to_string(response.error())));
     }
     if (response->status == 404) {
       reset_session();
-      return std::unexpected(make_transport_error(
+      return mcp::core::unexpected(make_transport_error(
           static_cast<int>(protocol::ErrorCode::InvalidRequest),
           "http transport session was terminated",
           std::to_string(response->status)));
     }
     if (response->status == 401 || response->status == 403) {
-      return std::unexpected(make_http_auth_error(*response));
+      return mcp::core::unexpected(make_http_auth_error(*response));
     }
 
     const auto remembered_session =
         remember_session(*response, /*require_session_id=*/false);
     if (!remembered_session) {
-      return std::unexpected(remembered_session.error());
+      return mcp::core::unexpected(remembered_session.error());
     }
     const auto stream_started_result = ensure_stream_started();
     if (!stream_started_result) {
-      return std::unexpected(stream_started_result.error());
+      return mcp::core::unexpected(stream_started_result.error());
     }
 
     if (response->status < 200 || response->status >= 300) {
-      return std::unexpected(make_transport_error(
+      return mcp::core::unexpected(make_transport_error(
           static_cast<int>(protocol::ErrorCode::InternalError),
           "http transport notification returned an error status",
           std::to_string(response->status)));
@@ -468,7 +468,7 @@ struct HttpTransport::Impl {
       for (const auto& event : parse_sse_data_events(response->body)) {
         const auto handled = dispatch_event_payload(event, std::nullopt);
         if (!handled) {
-          return std::unexpected(handled.error());
+          return mcp::core::unexpected(handled.error());
         }
       }
     }
@@ -582,7 +582,7 @@ struct HttpTransport::Impl {
     const auto response_session_id =
         response.get_header_value(std::string(SessionHeader));
     if (response_session_id.empty()) {
-      return std::unexpected(make_transport_error(
+      return mcp::core::unexpected(make_transport_error(
           static_cast<int>(protocol::ErrorCode::InvalidRequest),
           "http transport response has an empty Mcp-Session-Id header"));
     }
@@ -635,14 +635,14 @@ struct HttpTransport::Impl {
       const httplib::Response& response,
       const protocol::RequestId& request_id) {
     if (response.status < 200 || response.status >= 300) {
-      return std::unexpected(make_transport_error(
+      return mcp::core::unexpected(make_transport_error(
           static_cast<int>(protocol::ErrorCode::InternalError),
           "http transport request returned an error status",
           std::to_string(response.status)));
     }
 
     if (response.body.empty()) {
-      return std::unexpected(make_transport_error(
+      return mcp::core::unexpected(make_transport_error(
           static_cast<int>(protocol::ErrorCode::InternalError),
           "http transport returned an empty response body"));
     }
@@ -650,10 +650,10 @@ struct HttpTransport::Impl {
     if (!has_event_stream_content_type(response)) {
       const auto parsed = protocol::parse_response(response.body);
       if (!parsed) {
-        return std::unexpected(parsed.error());
+        return mcp::core::unexpected(parsed.error());
       }
       if (!parsed->id.has_value() || *parsed->id != request_id) {
-        return std::unexpected(make_transport_error(
+        return mcp::core::unexpected(make_transport_error(
             static_cast<int>(protocol::ErrorCode::InvalidRequest),
             "http transport received an unexpected response",
             parsed->id.has_value() ? request_id_to_string(*parsed->id)
@@ -666,7 +666,7 @@ struct HttpTransport::Impl {
     for (const auto& event : parse_sse_data_events(response.body)) {
       const auto handled = dispatch_event_payload(event, request_id);
       if (!handled) {
-        return std::unexpected(handled.error());
+        return mcp::core::unexpected(handled.error());
       }
       if (handled->has_value()) {
         final_response = std::move(**handled);
@@ -674,7 +674,7 @@ struct HttpTransport::Impl {
     }
 
     if (!final_response.has_value()) {
-      return std::unexpected(make_transport_error(
+      return mcp::core::unexpected(make_transport_error(
           static_cast<int>(protocol::ErrorCode::InternalError),
           "http event stream did not contain a response",
           request_id_to_string(request_id)));
@@ -688,7 +688,7 @@ struct HttpTransport::Impl {
       std::optional<protocol::RequestId> expected_response_id) {
     const auto message = protocol::parse_message(payload);
     if (!message) {
-      return std::unexpected(message.error());
+      return mcp::core::unexpected(message.error());
     }
 
     if (const auto* notification =
@@ -703,12 +703,12 @@ struct HttpTransport::Impl {
         try {
           handled = handler(*notification);
         } catch (const std::exception& ex) {
-          handled = std::unexpected(errors::handler_failed(ex.what()));
+          handled = mcp::core::unexpected(errors::handler_failed(ex.what()));
         } catch (...) {
-          handled = std::unexpected(errors::handler_unknown_exception());
+          handled = mcp::core::unexpected(errors::handler_unknown_exception());
         }
         if (!handled) {
-          return std::unexpected(handled.error());
+          return mcp::core::unexpected(handled.error());
         }
       }
       return std::optional<protocol::JsonRpcResponse>{};
@@ -730,7 +730,7 @@ struct HttpTransport::Impl {
         const auto posted = post_response(response, request->method,
                                           header_name_from_request(*request));
         if (!posted) {
-          return std::unexpected(posted.error());
+          return mcp::core::unexpected(posted.error());
         }
         return std::optional<protocol::JsonRpcResponse>{};
       }
@@ -739,9 +739,9 @@ struct HttpTransport::Impl {
       try {
         response = handler(*request);
       } catch (const std::exception& ex) {
-        response = std::unexpected(errors::handler_failed(ex.what()));
+        response = mcp::core::unexpected(errors::handler_failed(ex.what()));
       } catch (...) {
-        response = std::unexpected(errors::handler_unknown_exception());
+        response = mcp::core::unexpected(errors::handler_unknown_exception());
       }
       if (!response) {
         response = protocol::make_error_response(
@@ -756,14 +756,14 @@ struct HttpTransport::Impl {
       const auto posted = post_response(*response, request->method,
                                         header_name_from_request(*request));
       if (!posted) {
-        return std::unexpected(posted.error());
+        return mcp::core::unexpected(posted.error());
       }
       return std::optional<protocol::JsonRpcResponse>{};
     }
 
     const auto* response = std::get_if<protocol::JsonRpcResponse>(&*message);
     if (response == nullptr) {
-      return std::unexpected(make_transport_error(
+      return mcp::core::unexpected(make_transport_error(
           static_cast<int>(protocol::ErrorCode::InvalidRequest),
           "http event stream received an unknown message"));
     }
@@ -772,7 +772,7 @@ struct HttpTransport::Impl {
       if (response->id.has_value() && *response->id == *expected_response_id) {
         return std::optional<protocol::JsonRpcResponse>{*response};
       }
-      return std::unexpected(make_transport_error(
+      return mcp::core::unexpected(make_transport_error(
           static_cast<int>(protocol::ErrorCode::InvalidRequest),
           "http event stream received an unexpected response",
           response->id.has_value() ? request_id_to_string(*response->id)
@@ -787,23 +787,23 @@ struct HttpTransport::Impl {
       std::optional<std::string> name) {
     const auto serialized = protocol::serialize_response(response);
     if (!serialized) {
-      return std::unexpected(serialized.error());
+      return mcp::core::unexpected(serialized.error());
     }
 
     auto client = make_client();
     auto headers = make_headers(method, std::move(name), /*json_body=*/true,
-                                /*event_stream=*/false);
+                                /*event_stream=*/true);
     const auto result =
         client.Post(path, headers, *serialized, "application/json");
     if (!result) {
-      return std::unexpected(make_transport_error(
+      return mcp::core::unexpected(make_transport_error(
           static_cast<int>(protocol::ErrorCode::InternalError),
           "http transport failed to post response",
           httplib::to_string(result.error())));
     }
 
     if (result->status < 200 || result->status >= 300) {
-      return std::unexpected(make_transport_error(
+      return mcp::core::unexpected(make_transport_error(
           static_cast<int>(protocol::ErrorCode::InternalError),
           "http transport response post returned an error status",
           std::to_string(result->status)));
@@ -812,7 +812,7 @@ struct HttpTransport::Impl {
     const auto remembered_session =
         remember_session(*result, /*require_session_id=*/false);
     if (!remembered_session) {
-      return std::unexpected(remembered_session.error());
+      return mcp::core::unexpected(remembered_session.error());
     }
     return core::Unit{};
   }
@@ -939,7 +939,7 @@ class StreamableHttpClientTransport::Impl {
   core::Result<core::Unit> send(protocol::JsonRpcMessage message) {
     const auto started = ensure_started();
     if (!started) {
-      return std::unexpected(started.error());
+      return mcp::core::unexpected(started.error());
     }
 
     if (auto* request = std::get_if<protocol::JsonRpcRequest>(&message)) {
@@ -953,7 +953,7 @@ class StreamableHttpClientTransport::Impl {
 
     auto* response = std::get_if<protocol::JsonRpcResponse>(&message);
     if (response == nullptr || !response->id.has_value()) {
-      return std::unexpected(make_native_http_error(
+      return mcp::core::unexpected(make_native_http_error(
           protocol::ErrorCode::InvalidRequest,
           "streamable http client transport cannot send response without id"));
     }
@@ -963,7 +963,7 @@ class StreamableHttpClientTransport::Impl {
   core::Result<std::optional<protocol::JsonRpcMessage>> receive() {
     const auto started = ensure_started();
     if (!started) {
-      return std::unexpected(started.error());
+      return mcp::core::unexpected(started.error());
     }
 
     std::unique_lock<std::mutex> lock(mutex_);
@@ -1025,7 +1025,7 @@ class StreamableHttpClientTransport::Impl {
   core::Result<core::Unit> ensure_started() {
     std::lock_guard<std::mutex> lock(mutex_);
     if (closed_) {
-      return std::unexpected(
+      return mcp::core::unexpected(
           make_native_http_error(protocol::ErrorCode::InvalidRequest,
                                  "streamable http client transport is closed"));
     }
@@ -1043,7 +1043,7 @@ class StreamableHttpClientTransport::Impl {
         });
     if (!started) {
       started_ = false;
-      return std::unexpected(started.error());
+      return mcp::core::unexpected(started.error());
     }
     return core::Unit{};
   }
@@ -1055,13 +1055,13 @@ class StreamableHttpClientTransport::Impl {
     try {
       std::lock_guard<std::mutex> lock(mutex_);
       if (closed_) {
-        return std::unexpected(make_native_http_error(
+        return mcp::core::unexpected(make_native_http_error(
             protocol::ErrorCode::InvalidRequest,
             "streamable http client transport is closed"));
       }
       const auto [_, inserted] = in_flight_request_ids_.insert(request_id);
       if (!inserted) {
-        return std::unexpected(make_native_http_error(
+        return mcp::core::unexpected(make_native_http_error(
             protocol::ErrorCode::InvalidRequest,
             "duplicate streamable http request id",
             request_id_to_string_for_native_http(request_id)));
@@ -1091,7 +1091,7 @@ class StreamableHttpClientTransport::Impl {
       if (registered) {
         forget_request_worker(request_id);
       }
-      return std::unexpected(make_native_http_error(
+      return mcp::core::unexpected(make_native_http_error(
           protocol::ErrorCode::InternalError,
           "failed to start streamable http request worker", ex.what()));
     }
@@ -1188,7 +1188,7 @@ class StreamableHttpClientTransport::Impl {
       std::lock_guard<std::mutex> lock(mutex_);
       const auto it = pending_server_requests_.find(id);
       if (it == pending_server_requests_.end()) {
-        return std::unexpected(make_native_http_error(
+        return mcp::core::unexpected(make_native_http_error(
             protocol::ErrorCode::InvalidRequest,
             "streamable http client transport has no pending server request",
             request_id_to_string_for_native_http(id)));

@@ -2,7 +2,7 @@
 
 #pragma once
 
-#include <string_view>
+#include <string>
 #include <vector>
 
 #include "cxxmcp/core/result.hpp"
@@ -11,7 +11,7 @@
 namespace mcp::plugin {
 
 struct ToolExecutionContext {
-  std::string_view tool_name;
+  std::string tool_name;
   protocol::Json arguments = protocol::Json::object();
 };
 

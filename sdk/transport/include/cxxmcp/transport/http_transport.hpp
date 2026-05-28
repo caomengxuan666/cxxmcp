@@ -112,6 +112,10 @@ struct StreamableHttpServerTransportOptions {
   /// Optional Origin allow-list. Empty means Origin is not restricted.
   std::vector<std::string> allowed_origins;
 
+  /// Host allow-list used to reject DNS-rebinding attempts. Empty disables Host
+  /// validation. Entries may be hostnames/IP literals or host:port authorities.
+  std::vector<std::string> allowed_hosts = {"localhost", "127.0.0.1", "::1"};
+
   /// Maximum server-to-client events waiting for an SSE stream.
   std::size_t max_pending_sse_events = 1024;
 
@@ -124,6 +128,20 @@ struct StreamableHttpServerTransportOptions {
   /// Maximum time to wait for a client response to a server-to-client request.
   /// Set to zero or a negative duration to wait indefinitely.
   std::chrono::milliseconds request_timeout{30000};
+
+  /// Maximum HTTP request body size accepted by the underlying server.
+  /// Set to zero to disable the limit.
+  std::size_t max_request_body_bytes = 10 * 1024 * 1024;
+
+  /// Socket read timeout for HTTP request handling.
+  std::chrono::milliseconds read_timeout{30000};
+
+  /// Socket write timeout for HTTP response handling.
+  std::chrono::milliseconds write_timeout{30000};
+
+  /// Maximum active HTTP sessions accepted by this transport. Set to zero to
+  /// disable the limit.
+  std::size_t max_sessions = 1024;
 };
 
 /// @brief Native transport-contract server for Streamable HTTP.

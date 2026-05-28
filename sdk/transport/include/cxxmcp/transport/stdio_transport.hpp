@@ -53,18 +53,18 @@ class StdioTransport final : public Transport<Role> {
   core::Result<core::Unit> send(TxMessage message) override {
     const auto serialized = protocol::serialize_message(message);
     if (!serialized) {
-      return std::unexpected(serialized.error());
+      return mcp::core::unexpected(serialized.error());
     }
 
     std::lock_guard<std::mutex> lock(mutex_);
     if (closed_) {
-      return std::unexpected(transport_error(
+      return mcp::core::unexpected(transport_error(
           protocol::ErrorCode::InvalidRequest, "transport is closed"));
     }
     (*output_) << *serialized << '\n';
     output_->flush();
     if (!*output_) {
-      return std::unexpected(
+      return mcp::core::unexpected(
           transport_error(protocol::ErrorCode::InternalError,
                           "failed to write transport message"));
     }
@@ -84,13 +84,13 @@ class StdioTransport final : public Transport<Role> {
       return std::nullopt;
     }
     if (line.empty()) {
-      return std::unexpected(transport_error(protocol::ErrorCode::ParseError,
-                                             "empty transport message"));
+      return mcp::core::unexpected(transport_error(
+          protocol::ErrorCode::ParseError, "empty transport message"));
     }
 
     const auto parsed = protocol::parse_message(line);
     if (!parsed) {
-      return std::unexpected(parsed.error());
+      return mcp::core::unexpected(parsed.error());
     }
     return RxMessage{*parsed};
   }

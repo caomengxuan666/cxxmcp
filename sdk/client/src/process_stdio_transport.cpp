@@ -311,16 +311,25 @@ class FileDescriptor final {
   int fd_ = -1;
 };
 
-std::vector<char*> argv_from_options(
-    const ProcessStdioTransportOptions& options) {
+struct MutableArgv {
+  std::vector<std::string> storage;
   std::vector<char*> argv;
-  argv.reserve(options.args.size() + 2);
-  argv.push_back(const_cast<char*>(options.command.c_str()));
+};
+
+MutableArgv argv_from_options(const ProcessStdioTransportOptions& options) {
+  MutableArgv result;
+  result.storage.reserve(options.args.size() + 1);
+  result.storage.push_back(options.command);
   for (const auto& arg : options.args) {
-    argv.push_back(const_cast<char*>(arg.c_str()));
+    result.storage.push_back(arg);
   }
-  argv.push_back(nullptr);
-  return argv;
+
+  result.argv.reserve(result.storage.size() + 1);
+  for (auto& value : result.storage) {
+    result.argv.push_back(value.data());
+  }
+  result.argv.push_back(nullptr);
+  return result;
 }
 
 void apply_child_environment(const ProcessStdioTransportOptions& options) {
@@ -368,13 +377,13 @@ class ProcessStdioTransport::Impl {
   core::Result<core::Unit> write_line(const std::string& line) {
     const auto started = ensure_started();
     if (!started) {
-      return std::unexpected(started.error());
+      return mcp::core::unexpected(started.error());
     }
 
 #ifdef _WIN32
     std::lock_guard<std::mutex> lock(write_mutex_);
     if (!running_ || !stdin_write_) {
-      return std::unexpected(
+      return mcp::core::unexpected(
           make_process_error("process stdio transport closed"));
     }
     const std::string payload = line + "\n";
@@ -382,7 +391,7 @@ class ProcessStdioTransport::Impl {
     if (!WriteFile(stdin_write_.get(), payload.data(),
                    static_cast<DWORD>(payload.size()), &written, nullptr) ||
         written != payload.size()) {
-      return std::unexpected(
+      return mcp::core::unexpected(
           make_process_error("failed to write process stdin",
                              windows_error_message(GetLastError())));
     }
@@ -390,7 +399,7 @@ class ProcessStdioTransport::Impl {
 #else
     std::lock_guard<std::mutex> lock(write_mutex_);
     if (!running_ || !stdin_write_) {
-      return std::unexpected(
+      return mcp::core::unexpected(
           make_process_error("process stdio transport closed"));
     }
     const std::string payload = line + "\n";
@@ -403,11 +412,11 @@ class ProcessStdioTransport::Impl {
         if (errno == EINTR) {
           continue;
         }
-        return std::unexpected(make_process_error(
+        return mcp::core::unexpected(make_process_error(
             "failed to write process stdin", posix_error_message(errno)));
       }
       if (result == 0) {
-        return std::unexpected(make_process_error(
+        return mcp::core::unexpected(make_process_error(
             "failed to write process stdin", "write returned zero bytes"));
       }
       written += static_cast<std::size_t>(result);
@@ -442,7 +451,7 @@ class ProcessStdioTransport::Impl {
       const protocol::JsonRpcRequest& request) {
     const auto serialized = protocol::serialize_request(request);
     if (!serialized) {
-      return std::unexpected(serialized.error());
+      return mcp::core::unexpected(serialized.error());
     }
 
     std::promise<protocol::JsonRpcResponse> promise;
@@ -452,7 +461,7 @@ class ProcessStdioTransport::Impl {
       const auto [_, inserted] =
           pending_responses_.emplace(request.id, std::move(promise));
       if (!inserted) {
-        return std::unexpected(make_process_error(
+        return mcp::core::unexpected(make_process_error(
             static_cast<int>(protocol::ErrorCode::InvalidRequest),
             "duplicate process stdio request id",
             request_id_to_string(request.id)));
@@ -463,7 +472,7 @@ class ProcessStdioTransport::Impl {
     if (!written) {
       std::lock_guard<std::mutex> lock(pending_mutex_);
       pending_responses_.erase(request.id);
-      return std::unexpected(written.error());
+      return mcp::core::unexpected(written.error());
     }
 
     if (!options_.request_timeout.has_value()) {
@@ -480,7 +489,7 @@ class ProcessStdioTransport::Impl {
       pending_responses_.erase(request.id);
     }
 
-    return std::unexpected(make_process_error(
+    return mcp::core::unexpected(make_process_error(
         static_cast<int>(protocol::ErrorCode::InternalError),
         "process stdio request timed out", request_id_to_string(request.id)));
   }
@@ -592,18 +601,18 @@ class ProcessStdioTransport::Impl {
   core::Result<std::string> read_line() {
     const auto started = ensure_started();
     if (!started) {
-      return std::unexpected(started.error());
+      return mcp::core::unexpected(started.error());
     }
 
     std::lock_guard<std::mutex> lock(read_mutex_);
     if (!running_) {
-      return std::unexpected(
+      return mcp::core::unexpected(
           make_process_error("process stdio transport closed"));
     }
 
 #ifdef _WIN32
     if (!stdout_read_) {
-      return std::unexpected(make_process_error(
+      return mcp::core::unexpected(make_process_error(
           "failed to read process stdout", "process stdout pipe is closed"));
     }
     std::string line;
@@ -611,7 +620,7 @@ class ProcessStdioTransport::Impl {
     DWORD read = 0;
     while (true) {
       if (!ReadFile(stdout_read_.get(), &ch, 1, &read, nullptr) || read == 0) {
-        return std::unexpected(
+        return mcp::core::unexpected(
             make_process_error("failed to read process stdout",
                                windows_error_message(GetLastError())));
       }
@@ -625,7 +634,7 @@ class ProcessStdioTransport::Impl {
     return line;
 #else
     if (!stdout_read_) {
-      return std::unexpected(make_process_error(
+      return mcp::core::unexpected(make_process_error(
           "failed to read process stdout", "process stdout pipe is closed"));
     }
     std::string line;
@@ -636,11 +645,11 @@ class ProcessStdioTransport::Impl {
         if (errno == EINTR) {
           continue;
         }
-        return std::unexpected(make_process_error(
+        return mcp::core::unexpected(make_process_error(
             "failed to read process stdout", posix_error_message(errno)));
       }
       if (result == 0) {
-        return std::unexpected(make_process_error(
+        return mcp::core::unexpected(make_process_error(
             "failed to read process stdout", "child process closed stdout"));
       }
       if (ch == '\n') {
@@ -660,14 +669,14 @@ class ProcessStdioTransport::Impl {
 #ifdef _WIN32
     std::lock_guard<std::mutex> process_lock(process_mutex_);
     if (!running_) {
-      return std::unexpected(
+      return mcp::core::unexpected(
           make_process_error("process stdio transport closed"));
     }
     if (process_) {
       return core::Unit{};
     }
     if (options_.command.empty()) {
-      return std::unexpected(
+      return mcp::core::unexpected(
           make_process_error("process command must not be empty"));
     }
 
@@ -679,7 +688,7 @@ class ProcessStdioTransport::Impl {
     HANDLE stdin_read_raw = nullptr;
     HANDLE stdin_write_raw = nullptr;
     if (!CreatePipe(&stdin_read_raw, &stdin_write_raw, &security, 0)) {
-      return std::unexpected(
+      return mcp::core::unexpected(
           make_process_error("failed to create process stdin pipe",
                              windows_error_message(GetLastError())));
     }
@@ -690,7 +699,7 @@ class ProcessStdioTransport::Impl {
     HANDLE stdout_read_raw = nullptr;
     HANDLE stdout_write_raw = nullptr;
     if (!CreatePipe(&stdout_read_raw, &stdout_write_raw, &security, 0)) {
-      return std::unexpected(
+      return mcp::core::unexpected(
           make_process_error("failed to create process stdout pipe",
                              windows_error_message(GetLastError())));
     }
@@ -719,7 +728,7 @@ class ProcessStdioTransport::Impl {
         environment.empty() ? nullptr : environment.data(),
         cwd.empty() ? nullptr : cwd.c_str(), &startup, &process_info);
     if (!created) {
-      return std::unexpected(make_process_error(
+      return mcp::core::unexpected(make_process_error(
           "failed to start process", windows_error_message(GetLastError())));
     }
 
@@ -729,20 +738,20 @@ class ProcessStdioTransport::Impl {
 #else
     std::lock_guard<std::mutex> process_lock(process_mutex_);
     if (!running_) {
-      return std::unexpected(
+      return mcp::core::unexpected(
           make_process_error("process stdio transport closed"));
     }
     if (process_pid_ > 0) {
       return core::Unit{};
     }
     if (options_.command.empty()) {
-      return std::unexpected(
+      return mcp::core::unexpected(
           make_process_error("process command must not be empty"));
     }
 
     int stdin_pipe_raw[2] = {-1, -1};
     if (::pipe(stdin_pipe_raw) != 0) {
-      return std::unexpected(make_process_error(
+      return mcp::core::unexpected(make_process_error(
           "failed to create process stdin pipe", posix_error_message(errno)));
     }
     FileDescriptor stdin_read(stdin_pipe_raw[0]);
@@ -750,7 +759,7 @@ class ProcessStdioTransport::Impl {
 
     int stdout_pipe_raw[2] = {-1, -1};
     if (::pipe(stdout_pipe_raw) != 0) {
-      return std::unexpected(make_process_error(
+      return mcp::core::unexpected(make_process_error(
           "failed to create process stdout pipe", posix_error_message(errno)));
     }
     FileDescriptor stdout_read(stdout_pipe_raw[0]);
@@ -758,8 +767,8 @@ class ProcessStdioTransport::Impl {
 
     const pid_t pid = ::fork();
     if (pid < 0) {
-      return std::unexpected(make_process_error("failed to start process",
-                                                posix_error_message(errno)));
+      return mcp::core::unexpected(make_process_error(
+          "failed to start process", posix_error_message(errno)));
     }
 
     if (pid == 0) {
@@ -778,7 +787,7 @@ class ProcessStdioTransport::Impl {
       }
       apply_child_environment(options_);
       auto argv = argv_from_options(options_);
-      ::execvp(options_.command.c_str(), argv.data());
+      ::execvp(argv.argv.front(), argv.argv.data());
       _exit(127);
     }
 
@@ -899,25 +908,25 @@ core::Result<protocol::JsonRpcResponse> ProcessStdioTransport::send(
   if (!impl_->started()) {
     const auto serialized = protocol::serialize_request(request);
     if (!serialized) {
-      return std::unexpected(serialized.error());
+      return mcp::core::unexpected(serialized.error());
     }
 
     const auto written = impl_->write_line(*serialized);
     if (!written) {
-      return std::unexpected(written.error());
+      return mcp::core::unexpected(written.error());
     }
 
     const auto line = impl_->read_line();
     if (!line) {
-      return std::unexpected(line.error());
+      return mcp::core::unexpected(line.error());
     }
 
     auto response = protocol::parse_response(*line);
     if (!response) {
-      return std::unexpected(response.error());
+      return mcp::core::unexpected(response.error());
     }
     if (!response->id.has_value() || *response->id != request.id) {
-      return std::unexpected(make_process_error(
+      return mcp::core::unexpected(make_process_error(
           static_cast<int>(protocol::ErrorCode::InvalidRequest),
           "process stdio transport received an unexpected response",
           response->id.has_value() ? request_id_to_string(*response->id)
@@ -933,7 +942,7 @@ core::Result<core::Unit> ProcessStdioTransport::send_notification(
     const protocol::JsonRpcNotification& notification) {
   const auto serialized = protocol::serialize_notification(notification);
   if (!serialized) {
-    return std::unexpected(serialized.error());
+    return mcp::core::unexpected(serialized.error());
   }
 
   return impl_->write_line(*serialized);
@@ -1009,7 +1018,7 @@ class ProcessStdioClientTransport::Impl {
   core::Result<core::Unit> send(protocol::JsonRpcMessage message) {
     const auto started = ensure_started();
     if (!started) {
-      return std::unexpected(started.error());
+      return mcp::core::unexpected(started.error());
     }
 
     if (auto* request = std::get_if<protocol::JsonRpcRequest>(&message)) {
@@ -1023,7 +1032,7 @@ class ProcessStdioClientTransport::Impl {
 
     auto* response = std::get_if<protocol::JsonRpcResponse>(&message);
     if (response == nullptr || !response->id.has_value()) {
-      return std::unexpected(make_native_process_error(
+      return mcp::core::unexpected(make_native_process_error(
           protocol::ErrorCode::InvalidRequest,
           "process stdio client transport cannot send response without id"));
     }
@@ -1033,7 +1042,7 @@ class ProcessStdioClientTransport::Impl {
   core::Result<std::optional<protocol::JsonRpcMessage>> receive() {
     const auto started = ensure_started();
     if (!started) {
-      return std::unexpected(started.error());
+      return mcp::core::unexpected(started.error());
     }
 
     std::unique_lock<std::mutex> lock(mutex_);
@@ -1095,7 +1104,7 @@ class ProcessStdioClientTransport::Impl {
   core::Result<core::Unit> ensure_started() {
     std::lock_guard<std::mutex> lock(mutex_);
     if (closed_) {
-      return std::unexpected(make_native_process_error(
+      return mcp::core::unexpected(make_native_process_error(
           protocol::ErrorCode::InvalidRequest,
           "process stdio client transport is closed"));
     }
@@ -1113,7 +1122,7 @@ class ProcessStdioClientTransport::Impl {
         });
     if (!started) {
       started_ = false;
-      return std::unexpected(started.error());
+      return mcp::core::unexpected(started.error());
     }
     return core::Unit{};
   }
@@ -1125,13 +1134,13 @@ class ProcessStdioClientTransport::Impl {
     try {
       std::lock_guard<std::mutex> lock(mutex_);
       if (closed_) {
-        return std::unexpected(make_native_process_error(
+        return mcp::core::unexpected(make_native_process_error(
             protocol::ErrorCode::InvalidRequest,
             "process stdio client transport is closed"));
       }
       const auto [_, inserted] = in_flight_request_ids_.insert(request_id);
       if (!inserted) {
-        return std::unexpected(make_native_process_error(
+        return mcp::core::unexpected(make_native_process_error(
             protocol::ErrorCode::InvalidRequest,
             "duplicate process stdio client request id",
             request_id_to_string_for_native(request_id)));
@@ -1161,7 +1170,7 @@ class ProcessStdioClientTransport::Impl {
       if (registered) {
         forget_request_worker(request_id);
       }
-      return std::unexpected(make_native_process_error(
+      return mcp::core::unexpected(make_native_process_error(
           protocol::ErrorCode::InternalError,
           "failed to start process stdio request worker", ex.what()));
     }
@@ -1258,7 +1267,7 @@ class ProcessStdioClientTransport::Impl {
       std::lock_guard<std::mutex> lock(mutex_);
       const auto it = pending_server_requests_.find(id);
       if (it == pending_server_requests_.end()) {
-        return std::unexpected(make_native_process_error(
+        return mcp::core::unexpected(make_native_process_error(
             protocol::ErrorCode::InvalidRequest,
             "process stdio client transport has no pending server request",
             request_id_to_string_for_native(id)));

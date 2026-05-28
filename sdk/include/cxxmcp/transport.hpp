@@ -8,6 +8,7 @@
 /// Include this header when SDK code needs the lightweight message-level
 /// transport abstraction.
 
+#include "cxxmcp/transport/adapters.hpp"
 #include "cxxmcp/transport/http_transport.hpp"
 #include "cxxmcp/transport/process_stdio_transport.hpp"
 #include "cxxmcp/transport/stdio_transport.hpp"

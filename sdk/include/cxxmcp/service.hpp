@@ -13,9 +13,9 @@
 /// - Server services own a background service loop that calls
 ///   ServerPeer::start(token), or ServerPeer::serve_transport() when
 ///   constructed with a one-off role-generic server transport. Client services
-///   do not create an additional universal receive loop because the current
-///   built-in client transports already drive inbound callbacks through the
-///   concrete Client transport model.
+///   start the underlying receive side; role-generic client transports are
+///   driven by a single background receive loop, while concrete client
+///   transports use their own start() callback model.
 /// - close() and stop() are equivalent, idempotent, noexcept-safe shutdown
 ///   entry points. They cancel the service token, stop the underlying peer, and
 ///   unblock wait().
@@ -132,26 +132,32 @@ class RunningService;
 template <>
 class RunningService<RoleClient> {
  public:
-  explicit RunningService(ClientPeer peer) : peer_(std::move(peer)) {}
+  explicit RunningService(ClientPeer peer)
+      : peer_(std::make_shared<ClientPeer>(std::move(peer))) {
+    start();
+  }
 
   RunningService(const RunningService&) = delete;
   RunningService& operator=(const RunningService&) = delete;
   RunningService(RunningService&& other) noexcept
-      : peer_(std::move(other.peer_)), state_(std::move(other.state_)) {}
+      : peer_(std::move(other.peer_)),
+        state_(std::move(other.state_)),
+        loop_(std::move(other.loop_)) {}
   RunningService& operator=(RunningService&& other) noexcept {
     if (this != &other) {
       (void)stop();
       peer_ = std::move(other.peer_);
       state_ = std::move(other.state_);
+      loop_ = std::move(other.loop_);
     }
     return *this;
   }
 
   ~RunningService() { (void)stop(); }
 
-  ClientPeer& peer() noexcept { return peer_; }
+  ClientPeer& peer() noexcept { return *peer_; }
 
-  const ClientPeer& peer() const noexcept { return peer_; }
+  const ClientPeer& peer() const noexcept { return *peer_; }
 
   bool running() const noexcept { return detail::service_running(state_); }
 
@@ -167,17 +173,87 @@ class RunningService<RoleClient> {
   ///
   /// Blocks until close() or stop() completes.
   core::Result<core::Unit> wait() noexcept {
-    return detail::wait_service(state_);
+    const auto waited = detail::wait_service(state_);
+    join_loop();
+    if (!waited) {
+      return mcp::core::unexpected(waited.error());
+    }
+    if (state_) {
+      std::lock_guard lock(state_->mutex);
+      if (state_->failure.has_value()) {
+        return mcp::core::unexpected(*state_->failure);
+      }
+    }
+    return core::Unit{};
   }
 
   core::Result<core::Unit> stop() noexcept {
-    return detail::stop_service(state_, [this] { peer_.stop(); });
+    if (!state_) {
+      return core::Unit{};
+    }
+    {
+      std::unique_lock lock(state_->mutex);
+      if (!state_->running) {
+        lock.unlock();
+        return wait();
+      }
+      if (state_->closing) {
+        lock.unlock();
+        return wait();
+      }
+      state_->closing = true;
+      state_->cancellation.cancel();
+    }
+    if (peer_) {
+      peer_->stop();
+    }
+    if (!peer_ || !peer_->uses_native_transport()) {
+      detail::finish_service(state_);
+    }
+    return wait();
   }
 
  private:
-  ClientPeer peer_;
+  void start() {
+    if (!peer_) {
+      detail::finish_service(state_);
+      return;
+    }
+    if (!peer_->uses_native_transport()) {
+      const auto started = peer_->start(state_->cancellation.token());
+      if (!started) {
+        detail::finish_service(state_, started.error());
+      }
+      return;
+    }
+
+    auto state = state_;
+    auto peer = peer_;
+    auto cancellation = state_->cancellation.token();
+    loop_ = std::thread([state, peer, cancellation]() noexcept {
+      const auto started = peer->start(cancellation);
+      if (!started) {
+        detail::finish_service(state, started.error());
+      } else {
+        detail::finish_service(state);
+      }
+    });
+  }
+
+  void join_loop() noexcept {
+    if (!state_) {
+      return;
+    }
+    std::lock_guard lock(state_->join_mutex);
+    if (loop_.joinable() && loop_.get_id() != std::this_thread::get_id()) {
+      loop_.join();
+    }
+  }
+
+  std::shared_ptr<ClientPeer> peer_;
   std::shared_ptr<detail::ServiceLifecycleState> state_ =
       std::make_shared<detail::ServiceLifecycleState>();
+  std::thread loop_;
 };
 
 /// @brief Running server-side MCP service.
@@ -241,12 +317,12 @@ class RunningService<RoleServer> {
     const auto waited = detail::wait_service(state_);
     join_loop();
     if (!waited) {
-      return std::unexpected(waited.error());
+      return mcp::core::unexpected(waited.error());
     }
     if (state_) {
       std::lock_guard lock(state_->mutex);
       if (state_->failure.has_value()) {
-        return std::unexpected(*state_->failure);
+        return mcp::core::unexpected(*state_->failure);
       }
     }
     return core::Unit{};

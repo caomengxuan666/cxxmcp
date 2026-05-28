@@ -38,13 +38,13 @@ core::Result<core::Unit> write_response(
     std::ostream& output, const protocol::JsonRpcResponse& response) {
   const auto serialized = protocol::serialize_response(response);
   if (!serialized) {
-    return std::unexpected(serialized.error());
+    return mcp::core::unexpected(serialized.error());
   }
 
   output << *serialized << '\n';
   output.flush();
   if (!output.good()) {
-    return std::unexpected(make_transport_error(
+    return mcp::core::unexpected(make_transport_error(
         static_cast<int>(protocol::ErrorCode::InternalError),
         "failed to write stdio response"));
   }
@@ -59,7 +59,7 @@ core::Result<protocol::JsonRpcResponse> require_matching_response(
     return response;
   }
 
-  return std::unexpected(make_transport_error(
+  return mcp::core::unexpected(make_transport_error(
       static_cast<int>(protocol::ErrorCode::InvalidRequest),
       "stdio transport received an unexpected response",
       response.id.has_value() ? request_id_to_string(*response.id)
@@ -85,20 +85,20 @@ core::Result<core::Unit> StdioTransport::start(
 core::Result<protocol::JsonRpcResponse> StdioTransport::send(
     const protocol::JsonRpcRequest& request) {
   if (!input_ || !output_) {
-    return std::unexpected(make_transport_error(
+    return mcp::core::unexpected(make_transport_error(
         static_cast<int>(protocol::ErrorCode::InternalError),
         "stdio transport streams are not configured"));
   }
 
   const auto serialized = protocol::serialize_request(request);
   if (!serialized) {
-    return std::unexpected(serialized.error());
+    return mcp::core::unexpected(serialized.error());
   }
 
   *output_ << *serialized << '\n';
   output_->flush();
   if (!output_->good()) {
-    return std::unexpected(make_transport_error(
+    return mcp::core::unexpected(make_transport_error(
         static_cast<int>(protocol::ErrorCode::InternalError),
         "failed to write stdio request"));
   }
@@ -106,14 +106,14 @@ core::Result<protocol::JsonRpcResponse> StdioTransport::send(
   if (!started_) {
     std::string line;
     if (!std::getline(*input_, line)) {
-      return std::unexpected(make_transport_error(
+      return mcp::core::unexpected(make_transport_error(
           static_cast<int>(protocol::ErrorCode::InternalError),
           "failed to read stdio response"));
     }
 
     const auto response = protocol::parse_response(line);
     if (!response) {
-      return std::unexpected(response.error());
+      return mcp::core::unexpected(response.error());
     }
     return require_matching_response(request, *response);
   }
@@ -126,7 +126,7 @@ core::Result<protocol::JsonRpcResponse> StdioTransport::send(
 
     const auto message = protocol::parse_message(line);
     if (!message) {
-      return std::unexpected(message.error());
+      return mcp::core::unexpected(message.error());
     }
 
     if (const auto* notification =
@@ -136,12 +136,12 @@ core::Result<protocol::JsonRpcResponse> StdioTransport::send(
         try {
           handled = notification_handler_(*notification);
         } catch (const std::exception& ex) {
-          handled = std::unexpected(errors::handler_failed(ex.what()));
+          handled = mcp::core::unexpected(errors::handler_failed(ex.what()));
         } catch (...) {
-          handled = std::unexpected(errors::handler_unknown_exception());
+          handled = mcp::core::unexpected(errors::handler_unknown_exception());
         }
         if (!handled) {
-          return std::unexpected(handled.error());
+          return mcp::core::unexpected(handled.error());
         }
       }
       continue;
@@ -150,7 +150,7 @@ core::Result<protocol::JsonRpcResponse> StdioTransport::send(
     if (const auto* incoming_request =
             std::get_if<protocol::JsonRpcRequest>(&*message)) {
       if (!request_handler_) {
-        return std::unexpected(make_transport_error(
+        return mcp::core::unexpected(make_transport_error(
             static_cast<int>(protocol::ErrorCode::MethodNotFound),
             "stdio transport request handler is not configured",
             incoming_request->method));
@@ -160,9 +160,9 @@ core::Result<protocol::JsonRpcResponse> StdioTransport::send(
       try {
         handled = request_handler_(*incoming_request);
       } catch (const std::exception& ex) {
-        handled = std::unexpected(errors::handler_failed(ex.what()));
+        handled = mcp::core::unexpected(errors::handler_failed(ex.what()));
       } catch (...) {
-        handled = std::unexpected(errors::handler_unknown_exception());
+        handled = mcp::core::unexpected(errors::handler_unknown_exception());
       }
       if (!handled) {
         handled = protocol::make_error_response(
@@ -176,14 +176,14 @@ core::Result<protocol::JsonRpcResponse> StdioTransport::send(
 
       const auto written = write_response(*output_, *handled);
       if (!written) {
-        return std::unexpected(written.error());
+        return mcp::core::unexpected(written.error());
       }
       continue;
     }
 
     const auto* response = std::get_if<protocol::JsonRpcResponse>(&*message);
     if (!response) {
-      return std::unexpected(make_transport_error(
+      return mcp::core::unexpected(make_transport_error(
           static_cast<int>(protocol::ErrorCode::InvalidRequest),
           "stdio transport received an unknown message"));
     }
@@ -191,7 +191,7 @@ core::Result<protocol::JsonRpcResponse> StdioTransport::send(
     return require_matching_response(request, *response);
   }
 
-  return std::unexpected(
+  return mcp::core::unexpected(
       make_transport_error(static_cast<int>(protocol::ErrorCode::InternalError),
                            "failed to read stdio response"));
 }
@@ -199,20 +199,20 @@ core::Result<protocol::JsonRpcResponse> StdioTransport::send(
 core::Result<core::Unit> StdioTransport::send_notification(
     const protocol::JsonRpcNotification& notification) {
   if (!output_) {
-    return std::unexpected(make_transport_error(
+    return mcp::core::unexpected(make_transport_error(
         static_cast<int>(protocol::ErrorCode::InternalError),
         "stdio transport output stream is not configured"));
   }
 
   const auto serialized = protocol::serialize_notification(notification);
   if (!serialized) {
-    return std::unexpected(serialized.error());
+    return mcp::core::unexpected(serialized.error());
   }
 
   *output_ << *serialized << '\n';
   output_->flush();
   if (!output_->good()) {
-    return std::unexpected(make_transport_error(
+    return mcp::core::unexpected(make_transport_error(
         static_cast<int>(protocol::ErrorCode::InternalError),
         "failed to write stdio notification"));
   }
