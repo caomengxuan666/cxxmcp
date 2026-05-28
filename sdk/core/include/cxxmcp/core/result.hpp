@@ -12,12 +12,6 @@
 #include <expected>
 #else
 #include <tl/expected.hpp>
-namespace std {
-template <class E>
-constexpr auto unexpected(E&& value) {
-  return tl::unexpected<std::decay_t<E> >(std::forward<E>(value));
-}
-}  // namespace std
 #endif
 
 /// @file
@@ -29,6 +23,16 @@ constexpr auto unexpected(E&& value) {
 /// failures without losing protocol error details.
 
 namespace mcp::core {
+
+/// @brief Creates an unexpected result value for the active expected backend.
+template <class E>
+constexpr auto unexpected(E&& value) {
+#if defined(__cpp_lib_expected)
+  return std::unexpected<std::decay_t<E> >(std::forward<E>(value));
+#else
+  return tl::unexpected<std::decay_t<E> >(std::forward<E>(value));
+#endif
+}
 
 /// @brief Structured error returned by fallible SDK operations.
 ///

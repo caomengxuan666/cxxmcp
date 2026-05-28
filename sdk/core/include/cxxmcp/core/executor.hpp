@@ -5,6 +5,7 @@
 #include <condition_variable>
 #include <cstddef>
 #include <deque>
+#include <exception>
 #include <functional>
 #include <mutex>
 #include <string>
@@ -19,9 +20,13 @@ namespace mcp::core {
 /// @brief Small bounded worker executor used by the SDK for background tasks.
 class BoundedExecutor {
  public:
+  using ExceptionHandler = std::function<void(std::exception_ptr)>;
+
   explicit BoundedExecutor(std::size_t worker_count = 4,
-                           std::size_t max_queue_size = 64)
-      : max_queue_size_(max_queue_size) {
+                           std::size_t max_queue_size = 64,
+                           ExceptionHandler exception_handler = {})
+      : max_queue_size_(max_queue_size),
+        exception_handler_(std::move(exception_handler)) {
     worker_count = worker_count == 0 ? 1 : worker_count;
     for (std::size_t i = 0; i < worker_count; ++i) {
       workers_.emplace_back([this]() { worker_loop(); });
@@ -36,7 +41,7 @@ class BoundedExecutor {
   /// @brief Enqueue a task for background execution.
   core::Result<Unit> enqueue(std::function<void()> task) {
     if (!task) {
-      return std::unexpected(Error{
+      return mcp::core::unexpected(Error{
           1,
           "executor task must be callable",
           {},
@@ -45,14 +50,14 @@ class BoundedExecutor {
     {
       std::lock_guard<std::mutex> lock(mutex_);
       if (stopping_) {
-        return std::unexpected(Error{
+        return mcp::core::unexpected(Error{
             1,
             "executor is stopped",
             {},
         });
       }
       if (tasks_.size() >= max_queue_size_) {
-        return std::unexpected(Error{
+        return mcp::core::unexpected(Error{
             1,
             "executor queue is full",
             {},
@@ -98,6 +103,9 @@ class BoundedExecutor {
       try {
         task();
       } catch (...) {
+        if (exception_handler_) {
+          exception_handler_(std::current_exception());
+        }
       }
     }
   }
@@ -107,6 +115,7 @@ class BoundedExecutor {
   std::deque<std::function<void()>> tasks_;
   std::vector<std::thread> workers_;
   std::size_t max_queue_size_;
+  ExceptionHandler exception_handler_;
   bool stopping_ = false;
 };
 
