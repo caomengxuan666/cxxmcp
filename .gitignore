@@ -1,12 +1,60 @@
+# Build artifacts
+build*/
+cmake-build-*/
+out/
+CMakeFiles/
+CMakeCache.txt
+cmake_install.cmake
+Makefile
+*.ninja
+.ninja_deps
+.ninja_log
+
+# IDE
+.vscode/
+.vs/
+.idea/
+*.swp
+*.swo
+*~
+
+# Compiled objects
+*.o
+*.obj
+*.a
+*.lib
+*.so
+*.dylib
+*.dll
+*.exe
+*.pdb
+*.ilk
+*.exp
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+
+# Docs generated
+docs/doxygen/
+
+# Logs and cache
 .cache/
 logs/
-.vscode
-out/
-build*/
-cmake-build-release/
-.idea/
-/out 
-.vs/
+*.log
+
+# Environment
+.env
+.env.*
+
+# Conan
+conanbuildinfo.*
+conaninfo.*
+graph_info.json
+
+# Misc
+compile_commands.json
 reference/
-/compile_commands.json
-docs/doxygen__pycache__
+.claude/
