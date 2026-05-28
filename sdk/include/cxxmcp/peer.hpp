@@ -2395,11 +2395,11 @@ class Peer<RoleClient>::Builder {
   /// @param command Executable path or command string.
   Builder& process_stdio(std::string command) {
     reset_transport();
+    transport::ProcessStdioClientTransportOptions options;
+    options.command = std::move(command);
     native_transport_ =
         std::make_unique<transport::ProcessStdioClientTransport>(
-            transport::ProcessStdioClientTransportOptions{
-                .command = std::move(command),
-            });
+            std::move(options));
     transport_kind_ = TransportKind::Native;
     return *this;
   }
