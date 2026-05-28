@@ -1200,8 +1200,9 @@ core::Result<core::Unit> Client::subscribe(std::string_view uri) {
         make_client_error(static_cast<int>(protocol::ErrorCode::MethodNotFound),
                           "server does not support resource subscriptions"));
   }
-  const auto result = send_request("resources/subscribe",
-                                   protocol::Json{{"uri", std::string(uri)}});
+  const auto result =
+      send_request(std::string(protocol::ResourcesSubscribeMethod),
+                   protocol::Json{{"uri", std::string(uri)}});
   if (!result) {
     return mcp::core::unexpected(result.error());
   }
@@ -1214,8 +1215,9 @@ core::Result<core::Unit> Client::unsubscribe(std::string_view uri) {
         make_client_error(static_cast<int>(protocol::ErrorCode::MethodNotFound),
                           "server does not support resource subscriptions"));
   }
-  const auto result = send_request("resources/unsubscribe",
-                                   protocol::Json{{"uri", std::string(uri)}});
+  const auto result =
+      send_request(std::string(protocol::ResourcesUnsubscribeMethod),
+                   protocol::Json{{"uri", std::string(uri)}});
   if (!result) {
     return mcp::core::unexpected(result.error());
   }

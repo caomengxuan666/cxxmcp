@@ -87,6 +87,7 @@ std::string windows_error_message(DWORD error) {
       FORMAT_MESSAGE_ALLOCATE_BUFFER | FORMAT_MESSAGE_FROM_SYSTEM |
           FORMAT_MESSAGE_IGNORE_INSERTS,
       nullptr, error, MAKELANGID(LANG_NEUTRAL, SUBLANG_DEFAULT),
+      // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
       reinterpret_cast<LPWSTR>(&buffer), 0, nullptr);
   if (size == 0 || !buffer) {
     return "Windows error " + std::to_string(error);
