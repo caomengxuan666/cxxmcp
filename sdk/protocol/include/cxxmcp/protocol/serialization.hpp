@@ -28,11 +28,10 @@ inline const std::string McpProtocolVersion2025_06_18 = "2025-06-18";
 inline const std::string McpProtocolVersion2025_03_26 = "2025-03-26";
 inline const std::string McpProtocolVersion2024_11_05 = "2024-11-05";
 /// @brief Latest MCP protocol version advertised during initialization.
-inline const std::string McpProtocolVersion = McpProtocolVersion2025_11_25;
+inline const std::string McpProtocolVersion = "2025-11-25";
 /// @brief Protocol versions accepted by this SDK during initialization.
 inline const std::array<std::string, 4> McpSupportedProtocolVersions{
-    McpProtocolVersion2024_11_05, McpProtocolVersion2025_03_26,
-    McpProtocolVersion2025_06_18, McpProtocolVersion2025_11_25};
+    "2024-11-05", "2025-03-26", "2025-06-18", "2025-11-25"};
 
 /// @brief Returns true when a peer protocol version is supported.
 inline bool is_supported_protocol_version(std::string_view version) noexcept {
