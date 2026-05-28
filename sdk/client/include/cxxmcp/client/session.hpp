@@ -81,6 +81,19 @@ class McpClientSession {
   /// @brief Calls a tool through the underlying Client.
   core::Result<protocol::ToolResult> call_tool(const protocol::ToolCall& call);
 
+  /// @brief Requests completion using typed protocol parameters.
+  core::Result<protocol::CompleteResult> complete(
+      const protocol::CompleteParams& params);
+
+  /// @brief Sets the server logging level by level name.
+  core::Result<core::Unit> set_level(std::string_view level);
+
+  /// @brief Subscribes to resource update notifications for a URI.
+  core::Result<core::Unit> subscribe(std::string_view uri);
+
+  /// @brief Unsubscribes from resource update notifications for a URI.
+  core::Result<core::Unit> unsubscribe(std::string_view uri);
+
   /// @brief Returns the mutable underlying Client.
   Client& client();
 

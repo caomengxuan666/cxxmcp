@@ -2093,6 +2093,23 @@ core::Result<protocol::ToolResult> McpClientSession::call_tool(
   return client_.call_tool(call);
 }
 
+core::Result<protocol::CompleteResult> McpClientSession::complete(
+    const protocol::CompleteParams& params) {
+  return client_.complete(params);
+}
+
+core::Result<core::Unit> McpClientSession::set_level(std::string_view level) {
+  return client_.set_level(level);
+}
+
+core::Result<core::Unit> McpClientSession::subscribe(std::string_view uri) {
+  return client_.subscribe(uri);
+}
+
+core::Result<core::Unit> McpClientSession::unsubscribe(std::string_view uri) {
+  return client_.unsubscribe(uri);
+}
+
 Client& McpClientSession::client() { return client_; }
 
 const Client& McpClientSession::client() const { return client_; }
