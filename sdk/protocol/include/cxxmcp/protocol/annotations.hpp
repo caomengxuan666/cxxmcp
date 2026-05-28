@@ -45,6 +45,134 @@ struct Annotations {
   Json raw = Json::object();
 };
 
+/// @brief Typed representation of MCP tool annotations.
+///
+/// Maps to the `ToolAnnotations` struct in the MCP reference model
+/// (`rmcp::ToolAnnotations`).  All fields are optional; absent members are
+/// omitted from the serialized JSON.
+struct ToolAnnotations {
+  /// Optional human-readable display title for the tool.
+  std::optional<std::string> title;
+  /// Optional hint describing what the tool does.
+  std::optional<std::string> description_hint;
+  /// Whether the tool may perform destructive actions.
+  std::optional<bool> destructive_hint;
+  /// Whether the tool only reads data without side effects.
+  std::optional<bool> read_only_hint;
+  /// Whether the tool may interact with an open world of entities.
+  std::optional<bool> open_world_hint;
+  /// Whether the tool is idempotent (safe to retry).
+  std::optional<bool> idempotent_hint;
+  /// Unknown JSON members preserved for forward-compatible round trips.
+  Json raw = Json::object();
+};
+
+/// @brief Serializes a ToolAnnotations struct to JSON.
+inline Json tool_annotations_to_json(const ToolAnnotations& annotations) {
+  Json json = Json::object();
+  if (annotations.title.has_value()) {
+    json["title"] = *annotations.title;
+  }
+  if (annotations.description_hint.has_value()) {
+    json["descriptionHint"] = *annotations.description_hint;
+  }
+  if (annotations.destructive_hint.has_value()) {
+    json["destructiveHint"] = *annotations.destructive_hint;
+  }
+  if (annotations.read_only_hint.has_value()) {
+    json["readOnlyHint"] = *annotations.read_only_hint;
+  }
+  if (annotations.open_world_hint.has_value()) {
+    json["openWorldHint"] = *annotations.open_world_hint;
+  }
+  if (annotations.idempotent_hint.has_value()) {
+    json["idempotentHint"] = *annotations.idempotent_hint;
+  }
+  if (annotations.raw.is_object()) {
+    for (const auto& item : annotations.raw.items()) {
+      if (!json.contains(item.key())) {
+        json[item.key()] = item.value();
+      }
+    }
+  }
+  return json;
+}
+
+/// @brief Parses a ToolAnnotations struct from JSON.
+inline core::Result<ToolAnnotations> tool_annotations_from_json(
+    const Json& json) {
+  if (!json.is_object()) {
+    return mcp::core::unexpected(
+        core::Error{static_cast<int>(ErrorCode::InvalidRequest),
+                    "tool annotations must be an object",
+                    {}});
+  }
+
+  ToolAnnotations annotations;
+
+  if (json.contains("title")) {
+    if (!json.at("title").is_string()) {
+      return mcp::core::unexpected(
+          core::Error{static_cast<int>(ErrorCode::InvalidRequest),
+                      "tool annotations title must be a string",
+                      {}});
+    }
+    annotations.title = json.at("title").get<std::string>();
+  }
+  if (json.contains("descriptionHint")) {
+    if (!json.at("descriptionHint").is_string()) {
+      return mcp::core::unexpected(
+          core::Error{static_cast<int>(ErrorCode::InvalidRequest),
+                      "tool annotations descriptionHint must be a string",
+                      {}});
+    }
+    annotations.description_hint =
+        json.at("descriptionHint").get<std::string>();
+  }
+  if (json.contains("destructiveHint")) {
+    if (!json.at("destructiveHint").is_boolean()) {
+      return mcp::core::unexpected(
+          core::Error{static_cast<int>(ErrorCode::InvalidRequest),
+                      "tool annotations destructiveHint must be a boolean",
+                      {}});
+    }
+    annotations.destructive_hint = json.at("destructiveHint").get<bool>();
+  }
+  if (json.contains("readOnlyHint")) {
+    if (!json.at("readOnlyHint").is_boolean()) {
+      return mcp::core::unexpected(
+          core::Error{static_cast<int>(ErrorCode::InvalidRequest),
+                      "tool annotations readOnlyHint must be a boolean",
+                      {}});
+    }
+    annotations.read_only_hint = json.at("readOnlyHint").get<bool>();
+  }
+  if (json.contains("openWorldHint")) {
+    if (!json.at("openWorldHint").is_boolean()) {
+      return mcp::core::unexpected(
+          core::Error{static_cast<int>(ErrorCode::InvalidRequest),
+                      "tool annotations openWorldHint must be a boolean",
+                      {}});
+    }
+    annotations.open_world_hint = json.at("openWorldHint").get<bool>();
+  }
+  if (json.contains("idempotentHint")) {
+    if (!json.at("idempotentHint").is_boolean()) {
+      return mcp::core::unexpected(
+          core::Error{static_cast<int>(ErrorCode::InvalidRequest),
+                      "tool annotations idempotentHint must be a boolean",
+                      {}});
+    }
+    annotations.idempotent_hint = json.at("idempotentHint").get<bool>();
+  }
+
+  annotations.raw = collect_json_extensions(
+      json, {"title", "descriptionHint", "destructiveHint", "readOnlyHint",
+             "openWorldHint", "idempotentHint"});
+
+  return annotations;
+}
+
 /// @brief Serializes an Annotations struct to JSON.
 ///
 /// Known fields (`audience`, `priority`, `lastModified`) are written with their

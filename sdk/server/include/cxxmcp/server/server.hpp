@@ -271,6 +271,14 @@ class Server {
   /// @brief Sends a task status notification.
   core::Result<core::Unit> notify_task_status(const protocol::Task& task);
 
+  /// @brief Sends a server-to-client request to create a new task.
+  ///
+  /// This lets the server proactively create a task on the client, for example
+  /// when a long-running background job is initiated server-side.  The returned
+  /// CreateTaskResult carries the client-accepted task snapshot.
+  core::Result<protocol::CreateTaskResult> enqueue_task(
+      const protocol::Task& task);
+
   /// @brief Adds a transport owned by the server.
   /// @param transport Transport to start when start() is called. It must not be
   /// null.

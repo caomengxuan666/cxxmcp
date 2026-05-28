@@ -109,6 +109,8 @@ inline constexpr std::string_view TasksGetMethod = "tasks/get";
 inline constexpr std::string_view TasksCancelMethod = "tasks/cancel";
 /// @brief Retrieves the result associated with a completed task.
 inline constexpr std::string_view TasksResultMethod = "tasks/result";
+/// @brief Server-to-client request to create a new task.
+inline constexpr std::string_view TasksCreateMethod = "tasks/create";
 /// @brief Notification carrying task status updates.
 inline constexpr std::string_view TasksStatusNotificationMethod =
     "notifications/tasks/status";

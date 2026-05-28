@@ -153,6 +153,82 @@ struct ElicitationSchema {
   /// Unknown JSON members preserved for forward-compatible round trips.
   Json extensions = Json::object();
 
+  /// @brief Creates a new string primitive schema.
+  static StringSchema new_string(
+      std::optional<std::string> title = std::nullopt,
+      std::optional<std::string> description = std::nullopt,
+      std::optional<std::string> format = std::nullopt,
+      std::optional<std::int64_t> min_length = std::nullopt,
+      std::optional<std::int64_t> max_length = std::nullopt,
+      std::optional<std::string> default_value = std::nullopt) {
+    StringSchema schema;
+    schema.title = std::move(title);
+    schema.description = std::move(description);
+    schema.format = std::move(format);
+    schema.min_length = min_length;
+    schema.max_length = max_length;
+    schema.default_value = std::move(default_value);
+    return schema;
+  }
+
+  /// @brief Creates a new number primitive schema.
+  static NumberSchema new_number(
+      std::optional<std::string> title = std::nullopt,
+      std::optional<std::string> description = std::nullopt,
+      std::optional<double> minimum = std::nullopt,
+      std::optional<double> maximum = std::nullopt,
+      std::optional<double> default_value = std::nullopt) {
+    NumberSchema schema;
+    schema.title = std::move(title);
+    schema.description = std::move(description);
+    schema.minimum = minimum;
+    schema.maximum = maximum;
+    schema.default_value = default_value;
+    return schema;
+  }
+
+  /// @brief Creates a new integer primitive schema.
+  static IntegerSchema new_integer(
+      std::optional<std::string> title = std::nullopt,
+      std::optional<std::string> description = std::nullopt,
+      std::optional<std::int64_t> minimum = std::nullopt,
+      std::optional<std::int64_t> maximum = std::nullopt,
+      std::optional<std::int64_t> default_value = std::nullopt) {
+    IntegerSchema schema;
+    schema.title = std::move(title);
+    schema.description = std::move(description);
+    schema.minimum = minimum;
+    schema.maximum = maximum;
+    schema.default_value = default_value;
+    return schema;
+  }
+
+  /// @brief Creates a new boolean primitive schema.
+  static BooleanSchema new_boolean(
+      std::optional<std::string> title = std::nullopt,
+      std::optional<std::string> description = std::nullopt,
+      std::optional<bool> default_value = std::nullopt) {
+    BooleanSchema schema;
+    schema.title = std::move(title);
+    schema.description = std::move(description);
+    schema.default_value = default_value;
+    return schema;
+  }
+
+  /// @brief Creates a new enum primitive schema.
+  static EnumSchema new_enum(
+      std::vector<std::string> values,
+      std::optional<std::string> title = std::nullopt,
+      std::optional<std::string> description = std::nullopt,
+      std::optional<std::string> default_value = std::nullopt) {
+    EnumSchema schema;
+    schema.values = std::move(values);
+    schema.title = std::move(title);
+    schema.description = std::move(description);
+    schema.default_value = std::move(default_value);
+    return schema;
+  }
+
   /// @brief Fluent builder for valid elicitation object schemas.
   ///
   /// The builder adds primitive fields and tracks required field names. The
@@ -225,6 +301,16 @@ struct ElicitationSchema {
         std::string name, std::vector<std::string> values,
         std::optional<std::string> default_value = std::nullopt);
 
+    /// @brief Adds a required property with a pre-built primitive schema.
+    Builder& required_property(std::string name, PrimitiveSchema schema) {
+      return add_required(std::move(name), std::move(schema));
+    }
+
+    /// @brief Adds an optional property with a pre-built primitive schema.
+    Builder& optional_property(std::string name, PrimitiveSchema schema) {
+      return add_optional(std::move(name), std::move(schema));
+    }
+
     /// @brief Builds the schema after validation.
     /// @return Schema or an error when no properties were added.
     core::Result<ElicitationSchema> build() const;
@@ -240,6 +326,9 @@ struct ElicitationSchema {
     std::map<std::string, PrimitiveSchema> properties_;
     std::vector<std::string> required_;
   };
+
+  /// @brief Creates a builder for an elicitation object schema.
+  static Builder builder() { return Builder{}; }
 };
 
 /// @brief Parameters for `elicitation/create`.
