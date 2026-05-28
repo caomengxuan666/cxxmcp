@@ -64,10 +64,6 @@ jobs:
           cmake -S . -B build-compiler-compat -G Ninja \
             -DCMAKE_BUILD_TYPE=Debug \
             -DCXXMCP_BUILD_SDK=ON \
-            -DCXXMCP_BUILD_RUNTIME=OFF \
-            -DCXXMCP_BUILD_APP=OFF \
-            -DCXXMCP_BUILD_GATEWAY=OFF \
-            -DCXXMCP_BUILD_CLI=OFF \
             -DCXXMCP_BUILD_EXAMPLES=ON \
             -DCXXMCP_BUILD_TESTS=ON
 

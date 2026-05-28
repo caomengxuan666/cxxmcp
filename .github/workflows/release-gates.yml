@@ -37,11 +37,26 @@ jobs:
       - name: Check protocol model coverage
         run: python scripts/check_protocol_model_coverage.py --source .
 
+      - name: Check RMCP source drift
+        run: python scripts/check_rmcp_source_drift.py --source .
+
       - name: Check SDK header boundaries
         run: python scripts/check_sdk_header_boundaries.py --source .
 
+      - name: Check unresolved source markers
+        run: python scripts/check_source_markers.py --source .
+
       - name: Check package auth features
         run: python scripts/check_package_auth_features.py --source .
+
+      - name: Check package recipe sync
+        run: python scripts/check_package_recipe_sync.py --source .
+
+      - name: Self-test release artifact verifier
+        run: python scripts/selftest_release_artifacts.py
+
+      - name: Self-test public API surface comparison
+        run: python scripts/selftest_public_api_surface.py
 
       - name: Check P2 TODO status
         run: python scripts/check_p2_todo_status.py --source .
@@ -77,16 +92,119 @@ jobs:
             -DCXXMCP_BUILD_SDK=ON \
             -DCXXMCP_BUILD_CLIENT=ON \
             -DCXXMCP_BUILD_SERVER=ON \
-            -DCXXMCP_BUILD_RUNTIME=OFF \
-            -DCXXMCP_BUILD_APP=OFF \
-            -DCXXMCP_BUILD_GATEWAY=OFF \
-            -DCXXMCP_BUILD_CLI=OFF \
             -DCXXMCP_BUILD_EXAMPLES=ON \
             -DCXXMCP_BUILD_TESTS=OFF \
             -DCXXMCP_BUILD_DOCS=OFF
 
       - name: Build SDK
         run: cmake --build build-config-smoke --parallel
+
+  performance-evidence:
+    name: performance-evidence-linux-gcc-ninja
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Install Ninja
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ninja-build
+
+      - name: Configure performance evidence
+        run: |
+          cmake \
+            -S . \
+            -B build-performance-evidence \
+            -G Ninja \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DCXXMCP_BUILD_SDK=ON \
+            -DCXXMCP_BUILD_CLIENT=OFF \
+            -DCXXMCP_BUILD_SERVER=OFF \
+            -DCXXMCP_BUILD_EXAMPLES=OFF \
+            -DCXXMCP_BUILD_TESTS=ON \
+            -DCXXMCP_BUILD_DOCS=OFF
+
+      - name: Build serialization benchmark
+        run: >
+          cmake --build build-performance-evidence --parallel
+          --target mcp_protocol_serialization_benchmark
+
+      - name: Run serialization benchmark
+        run: |
+          mkdir -p build-performance-evidence/test-results
+          ctest \
+            --test-dir build-performance-evidence \
+            -R "^protocol_serialization_benchmark$" \
+            --output-on-failure \
+            --timeout 120 \
+            --output-junit build-performance-evidence/test-results/performance-evidence.xml
+
+      - name: Upload performance evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: cxxmcp-performance-evidence-linux-gcc-ninja
+          path: |
+            build-performance-evidence/CMakeCache.txt
+            build-performance-evidence/test-results/performance-evidence.xml
+            build-performance-evidence/Testing/Temporary/*.log
+          if-no-files-found: error
+
+  public-header-compile-evidence:
+    name: public-header-compile-evidence-linux-gcc-ninja
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Install Ninja
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ninja-build
+
+      - name: Configure public-header compile evidence
+        run: |
+          cmake \
+            -S . \
+            -B build-public-header-compile-evidence \
+            -G Ninja \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DCXXMCP_BUILD_SDK=ON \
+            -DCXXMCP_BUILD_CLIENT=ON \
+            -DCXXMCP_BUILD_SERVER=ON \
+            -DCXXMCP_BUILD_EXAMPLES=OFF \
+            -DCXXMCP_BUILD_TESTS=ON \
+            -DCXXMCP_ENABLE_AUTH=ON \
+            -DCXXMCP_BUILD_DOCS=OFF
+
+      - name: Build SDK dependencies
+        run: >
+          cmake --build build-public-header-compile-evidence --parallel
+          --target mcp_protocol mcp_auth mcp_transport mcp_client mcp_server mcp_sdk
+
+      - name: Collect public-header compile evidence
+        run: |
+          python scripts/collect_public_header_compile_evidence.py \
+            --build-dir build-public-header-compile-evidence \
+            --output build-public-header-compile-evidence/public-header-compile-evidence.json \
+            --parallel 1
+
+      - name: Upload public-header compile evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: cxxmcp-public-header-compile-evidence-linux-gcc-ninja
+          path: |
+            build-public-header-compile-evidence/CMakeCache.txt
+            build-public-header-compile-evidence/public-header-compile-evidence.json
+          if-no-files-found: error
 
   sanitizer:
     name: sanitizer-${{ matrix.name }}
@@ -172,10 +290,6 @@ jobs:
             -DCXXMCP_BUILD_SDK=ON \
             -DCXXMCP_BUILD_CLIENT=ON \
             -DCXXMCP_BUILD_SERVER=ON \
-            -DCXXMCP_BUILD_RUNTIME=OFF \
-            -DCXXMCP_BUILD_APP=OFF \
-            -DCXXMCP_BUILD_GATEWAY=OFF \
-            -DCXXMCP_BUILD_CLI=OFF \
             -DCXXMCP_BUILD_EXAMPLES=OFF \
             -DCXXMCP_BUILD_TESTS=ON \
             -DCXXMCP_ENABLE_AUTH=ON \
@@ -257,10 +371,6 @@ jobs:
             -DCXXMCP_BUILD_SDK=ON `
             -DCXXMCP_BUILD_CLIENT=ON `
             -DCXXMCP_BUILD_SERVER=ON `
-            -DCXXMCP_BUILD_RUNTIME=OFF `
-            -DCXXMCP_BUILD_APP=OFF `
-            -DCXXMCP_BUILD_GATEWAY=OFF `
-            -DCXXMCP_BUILD_CLI=OFF `
             -DCXXMCP_BUILD_EXAMPLES=OFF `
             -DCXXMCP_BUILD_TESTS=ON `
             -DCXXMCP_ENABLE_AUTH=ON
@@ -289,7 +399,61 @@ jobs:
             build-auth-release-gate/CMakeCache.txt
             build-auth-release-gate/test-results/auth-release-gate.xml
             build-auth-release-gate/Testing/Temporary/*.log
-          if-no-files-found: warn
+          if-no-files-found: error
+
+  auth-openssl-release-gate:
+    name: auth-openssl-linux-gcc-ninja
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Install OpenSSL build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ninja-build libssl-dev
+
+      - name: Configure OpenSSL auth SDK
+        run: |
+          cmake \
+            -S . \
+            -B build-auth-openssl-release-gate \
+            -G Ninja \
+            -DCMAKE_BUILD_TYPE=Debug \
+            -DCXXMCP_BUILD_SDK=ON \
+            -DCXXMCP_BUILD_CLIENT=ON \
+            -DCXXMCP_BUILD_SERVER=ON \
+            -DCXXMCP_BUILD_EXAMPLES=OFF \
+            -DCXXMCP_BUILD_TESTS=ON \
+            -DCXXMCP_ENABLE_AUTH=ON \
+            -DCXXMCP_AUTH_CRYPTO=OpenSSL
+
+      - name: Build OpenSSL auth tests
+        run: cmake --build build-auth-openssl-release-gate --parallel
+
+      - name: Run OpenSSL auth release gate
+        run: |
+          mkdir -p build-auth-openssl-release-gate/test-results
+          ctest \
+            --test-dir build-auth-openssl-release-gate \
+            -R "^(auth|auth_openssl|public_header_auth|package_smoke)$" \
+            --output-on-failure \
+            --timeout 300 \
+            --output-junit build-auth-openssl-release-gate/test-results/auth-openssl-release-gate.xml
+
+      - name: Upload OpenSSL auth release gate evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: cxxmcp-auth-openssl-release-gate-linux-gcc-ninja
+          path: |
+            build-auth-openssl-release-gate/CMakeCache.txt
+            build-auth-openssl-release-gate/test-results/auth-openssl-release-gate.xml
+            build-auth-openssl-release-gate/Testing/Temporary/*.log
+          if-no-files-found: error
 
   release-blocking:
     name: ${{ matrix.name }}
@@ -393,10 +557,6 @@ jobs:
             "-DCXXMCP_BUILD_SDK=ON",
             "-DCXXMCP_BUILD_CLIENT=ON",
             "-DCXXMCP_BUILD_SERVER=ON",
-            "-DCXXMCP_BUILD_RUNTIME=ON",
-            "-DCXXMCP_BUILD_APP=ON",
-            "-DCXXMCP_BUILD_GATEWAY=ON",
-            "-DCXXMCP_BUILD_CLI=OFF",
             "-DCXXMCP_BUILD_EXAMPLES=ON",
             "-DCXXMCP_BUILD_TESTS=ON"
           )
@@ -445,7 +605,279 @@ jobs:
             build-release-gates/CMakeCache.txt
             build-release-gates/test-results/release-blocking.xml
             build-release-gates/Testing/Temporary/*.log
-          if-no-files-found: warn
+          if-no-files-found: error
+
+  package-manager-vcpkg:
+    name: package-vcpkg-${{ matrix.name }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: default
+            feature: ""
+            auth_enabled: "OFF"
+          - name: auth
+            feature: "[auth]"
+            auth_enabled: "ON"
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Install tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y git curl zip unzip tar ninja-build
+
+      - name: Bootstrap vcpkg
+        run: |
+          git clone --depth 1 https://github.com/microsoft/vcpkg.git "${RUNNER_TEMP}/vcpkg"
+          "${RUNNER_TEMP}/vcpkg/bootstrap-vcpkg.sh" -disableMetrics
+
+      - name: Install cxxmcp overlay package
+        run: |
+          set -euo pipefail
+          mkdir -p "build-package-vcpkg-${{ matrix.name }}"
+          "${RUNNER_TEMP}/vcpkg/vcpkg" install "cxxmcp${{ matrix.feature }}" \
+            --overlay-ports="${GITHUB_WORKSPACE}/packaging/vcpkg/ports" \
+            --triplet x64-linux \
+            2>&1 | tee "build-package-vcpkg-${{ matrix.name }}/vcpkg-install.log"
+
+      - name: Build clean CMake consumer
+        run: |
+          set -euo pipefail
+          cmake \
+            -S tests/fixtures/package_smoke \
+            -B "build-package-vcpkg-${{ matrix.name }}" \
+            -G Ninja \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_TOOLCHAIN_FILE="${RUNNER_TEMP}/vcpkg/scripts/buildsystems/vcpkg.cmake" \
+            -DVCPKG_TARGET_TRIPLET=x64-linux \
+            -DCXXMCP_PACKAGE_SMOKE_AUTH_ENABLED=${{ matrix.auth_enabled }} \
+            2>&1 | tee "build-package-vcpkg-${{ matrix.name }}/cmake-configure.log"
+          cmake --build "build-package-vcpkg-${{ matrix.name }}" --parallel \
+            2>&1 | tee "build-package-vcpkg-${{ matrix.name }}/cmake-build.log"
+
+      - name: Upload vcpkg package evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: cxxmcp-package-vcpkg-${{ matrix.name }}
+          path: |
+            build-package-vcpkg-${{ matrix.name }}/CMakeCache.txt
+            build-package-vcpkg-${{ matrix.name }}/CMakeFiles/CMakeConfigureLog.yaml
+            build-package-vcpkg-${{ matrix.name }}/*.log
+            ${{ runner.temp }}/vcpkg/installed/vcpkg/status
+          if-no-files-found: error
+
+  package-manager-conan:
+    name: package-conan-${{ matrix.name }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: default
+            with_auth: "False"
+            auth_enabled: "OFF"
+          - name: auth
+            with_auth: "True"
+            auth_enabled: "ON"
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Install tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ninja-build
+          python -m pip install --user "conan>=2,<3"
+          echo "${HOME}/.local/bin" >> "${GITHUB_PATH}"
+
+      - name: Create Conan package
+        run: |
+          set -euo pipefail
+          mkdir -p "build-package-conan-${{ matrix.name }}"
+          conan profile detect --force
+          conan create . \
+            -s build_type=Release \
+            -o cxxmcp/*:with_auth=${{ matrix.with_auth }} \
+            2>&1 | tee "build-package-conan-${{ matrix.name }}/conan-create.log"
+
+      - name: Install Conan consumer dependencies
+        run: |
+          set -euo pipefail
+          conan install \
+            --requires=cxxmcp/2.0.2 \
+            --generator=CMakeDeps \
+            --generator=CMakeToolchain \
+            --output-folder="build-package-conan-${{ matrix.name }}-deps" \
+            --build=missing \
+            -s build_type=Release \
+            -o cxxmcp/*:with_auth=${{ matrix.with_auth }} \
+            2>&1 | tee "build-package-conan-${{ matrix.name }}/conan-install.log"
+
+      - name: Build clean CMake consumer
+        run: |
+          set -euo pipefail
+          toolchain="$(find "build-package-conan-${{ matrix.name }}-deps" -name conan_toolchain.cmake -print -quit)"
+          test -n "${toolchain}"
+          cmake \
+            -S tests/fixtures/package_smoke \
+            -B "build-package-conan-${{ matrix.name }}" \
+            -G Ninja \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_TOOLCHAIN_FILE="${toolchain}" \
+            -DCXXMCP_PACKAGE_SMOKE_AUTH_ENABLED=${{ matrix.auth_enabled }} \
+            2>&1 | tee "build-package-conan-${{ matrix.name }}/cmake-configure.log"
+          cmake --build "build-package-conan-${{ matrix.name }}" --parallel \
+            2>&1 | tee "build-package-conan-${{ matrix.name }}/cmake-build.log"
+
+      - name: Upload Conan package evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: cxxmcp-package-conan-${{ matrix.name }}
+          path: |
+            build-package-conan-${{ matrix.name }}/CMakeCache.txt
+            build-package-conan-${{ matrix.name }}/CMakeFiles/CMakeConfigureLog.yaml
+            build-package-conan-${{ matrix.name }}/*.log
+            build-package-conan-${{ matrix.name }}-deps/**
+          if-no-files-found: error
+
+  package-manager-xmake:
+    name: package-xmake-${{ matrix.name }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: default
+            auth_enabled: "false"
+            auth_define: ""
+          - name: auth
+            auth_enabled: "true"
+            auth_define: "add_defines(\"CXXMCP_PACKAGE_SMOKE_AUTH\")"
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Setup xmake
+        uses: xmake-io/github-action-setup-xmake@v1
+
+      - name: Create xmake consumer
+        shell: bash
+        env:
+          XMAKE_PACKAGE_NAME: ${{ matrix.name }}
+        run: |
+          set -euo pipefail
+          mkdir -p "build-package-xmake-${{ matrix.name }}"
+          mkdir -p "build-package-xmake-${{ matrix.name }}/repo/packages/c"
+          cp -R packaging/xmake/packages/c/cxxmcp \
+            "build-package-xmake-${{ matrix.name }}/repo/packages/c/cxxmcp"
+          tar \
+            --exclude='.git' \
+            --exclude='build-package-xmake-*' \
+            -czf "build-package-xmake-${{ matrix.name }}/cxxmcp-xmake-source-${GITHUB_SHA}.tar.gz" \
+            .
+          python - <<'PY'
+          import hashlib
+          import os
+          import re
+          from pathlib import Path
+
+          name = os.environ["XMAKE_PACKAGE_NAME"]
+          workspace = Path(os.environ["GITHUB_WORKSPACE"])
+          root = workspace / f"build-package-xmake-{name}"
+          archive = root / f"cxxmcp-xmake-source-{os.environ['GITHUB_SHA']}.tar.gz"
+          digest = hashlib.sha256(archive.read_bytes()).hexdigest()
+          recipe = root / "repo" / "packages" / "c" / "cxxmcp" / "xmake.lua"
+          text = recipe.read_text(encoding="utf-8")
+          text, url_count = re.subn(
+              r'add_urls\(".*?"\)',
+              f'add_urls("file://{archive.as_posix()}")',
+              text,
+          )
+          text, version_count = re.subn(
+              r'add_versions\("v2\.0\.2",\s*".*?"\)',
+              f'add_versions("v2.0.2", "{digest}")',
+              text,
+          )
+          if url_count != 1:
+              raise SystemExit(f"expected one add_urls rewrite, got {url_count}")
+          if version_count != 1:
+              raise SystemExit(f"expected one v2.0.2 add_versions rewrite, got {version_count}")
+          if f'file://{archive.as_posix()}' not in text:
+              raise SystemExit("xmake recipe was not rewritten to the generated source archive")
+          if "github.com" in text or "releases/download" in text:
+              raise SystemExit("xmake recipe still contains a remote release archive URL")
+          recipe.write_text(text, encoding="utf-8")
+          PY
+          cat > "build-package-xmake-${{ matrix.name }}/xmake.lua" <<'EOF'
+          add_rules("mode.release")
+          set_languages("c++17")
+          add_repositories("cxxmcp-local repo")
+          add_requires("cxxmcp v2.0.2", {configs = {auth = ${{ matrix.auth_enabled }}}})
+
+          target("consumer")
+              set_kind("binary")
+              add_files("main.cpp")
+              add_packages("cxxmcp")
+              ${{ matrix.auth_define }}
+          EOF
+          cat > "build-package-xmake-${{ matrix.name }}/main.cpp" <<'EOF'
+          #include <cstdint>
+          #include <cxxmcp/protocol/serialization.hpp>
+          #ifdef CXXMCP_PACKAGE_SMOKE_AUTH
+          #include <cxxmcp/auth.hpp>
+          #endif
+
+          int main() {
+              auto request = mcp::protocol::make_ping_request(std::int64_t{1});
+              auto serialized = mcp::protocol::serialize_request(request);
+              (void)serialized;
+          #ifdef CXXMCP_PACKAGE_SMOKE_AUTH
+              mcp::auth::ClientRegistrationOptions options;
+              options.redirect_uri = "http://localhost/callback";
+              auto registration =
+                  mcp::auth::build_client_registration_request(options);
+              (void)registration;
+          #endif
+              return 0;
+          }
+          EOF
+
+      - name: Build xmake consumer
+        working-directory: build-package-xmake-${{ matrix.name }}
+        run: |
+          set -euo pipefail
+          xmake repo --add cxxmcp-local "${GITHUB_WORKSPACE}/build-package-xmake-${{ matrix.name }}/repo" \
+            2>&1 | tee xmake-repo.log
+          xmake --yes 2>&1 | tee xmake-build.log
+
+      - name: Upload xmake package evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: cxxmcp-package-xmake-${{ matrix.name }}
+          path: |
+            build-package-xmake-${{ matrix.name }}/xmake.lua
+            build-package-xmake-${{ matrix.name }}/main.cpp
+            build-package-xmake-${{ matrix.name }}/repo/**
+            build-package-xmake-${{ matrix.name }}/cxxmcp-xmake-source-*.tar.gz
+            build-package-xmake-${{ matrix.name }}/*.log
+            build-package-xmake-${{ matrix.name }}/build/**
+            build-package-xmake-${{ matrix.name }}/.xmake/**
+          if-no-files-found: error
 
   docs-artifact:
     name: doxygen-docs
@@ -535,7 +967,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          mkdir -p release-evidence/docs release-evidence/examples release-evidence/templates
+          mkdir -p release-evidence/docs release-evidence/examples release-evidence/scripts release-evidence/templates
           cp \
             README.md \
             README_zh.md \
@@ -546,6 +978,7 @@ jobs:
             todo.md \
             release-evidence/
           cp \
+            docs/adoption_ledger.md \
             docs/auth_design.md \
             docs/auth_user_guide.md \
             docs/compatibility_policy.md \
@@ -553,10 +986,12 @@ jobs:
             docs/elicitation_lifecycle.md \
             docs/ecosystem_maturity_evidence.md \
             docs/examples.md \
+            docs/graceful_shutdown.md \
             docs/http_transport_backend_evidence.md \
             docs/official_sdk_candidate_process.md \
             docs/package_consumption.md \
             docs/package_consumption_zh.md \
+            docs/performance_debt.md \
             docs/protocol_model_audit.md \
             docs/public_api_stability.md \
             docs/release_process.md \
@@ -564,15 +999,37 @@ jobs:
             docs/release_candidate_checklist.md \
             docs/release_notes_template.md \
             docs/request_lifecycle.md \
+            docs/rmcp_source_mapping.json \
             docs/runtime_gateway.md \
             docs/sdk_peer_service_migration.md \
             docs/task_lifecycle.md \
+            docs/technical_audit.md \
+            docs/transport_adapters.md \
             release-evidence/docs/
           cp -r docs/pages release-evidence/docs/pages
           test -f release-evidence/docs/pages/index.html
           test -f release-evidence/docs/pages/getting-started.html
           test -f release-evidence/docs/pages/auth.html
           test -f release-evidence/docs/pages/stability.html
+          cp \
+            scripts/check_release_artifacts.py \
+            scripts/check_release_evidence.py \
+            scripts/check_package_auth_features.py \
+            scripts/check_package_recipe_sync.py \
+            scripts/check_p2_todo_status.py \
+            scripts/check_protocol_model_coverage.py \
+            scripts/check_rmcp_source_drift.py \
+            scripts/check_sdk_header_boundaries.py \
+            scripts/check_source_markers.py \
+            scripts/compare_public_api_surface.py \
+            scripts/collect_public_api_surface.py \
+            scripts/collect_public_header_compile_evidence.py \
+            scripts/selftest_release_artifacts.py \
+            scripts/selftest_public_api_surface.py \
+            release-evidence/scripts/
+          python scripts/collect_public_api_surface.py \
+            --source . \
+            --output release-evidence/public-api-surface.json
           cp examples/*.cpp examples/CMakeLists.txt release-evidence/examples/
           cp -r templates/external_consumer release-evidence/templates/
           {
