@@ -31,6 +31,9 @@ namespace mcp::protocol {
 ///   Json my_params_to_json(const MyParams& p) { return {{"value", p.value}}; }
 ///
 ///   struct MyResult { int answer; };
+///   Json my_result_to_json(const MyResult& r) {
+///     return {{"answer", r.answer}};
+///   }
 ///   core::Result<MyResult> my_result_from_json(const Json& j) { ... }
 ///
 ///   using MyRequest = CustomRequest<MyParams, MyResult>;
