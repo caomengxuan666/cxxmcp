@@ -59,6 +59,8 @@ using RequestId = std::variant<std::int64_t, std::string>;
 /// Values in the JSON-RPC reserved range keep their standard meaning. Negative
 /// MCP-specific values represent SDK-level protocol failures such as missing
 /// tools, permission failures, or URL elicitation requirements.
+///
+/// Aligned with the MCP 2025-11-25 specification for standard error codes.
 enum class ErrorCode : int {
   /// Invalid JSON text was received.
   ParseError = -32700,
@@ -73,9 +75,9 @@ enum class ErrorCode : int {
   /// The named tool does not exist or is not available.
   ToolNotFound = -32000,
   /// The requested resource URI does not exist or is not available.
-  ResourceNotFound = -32001,
+  ResourceNotFound = -32002,
   /// The caller is not allowed to perform the requested operation.
-  PermissionDenied = -32002,
+  PermissionDenied = -32005,
   /// The request was rejected by rate limiting policy.
   RateLimited = -32003,
   /// The operation requires URL-based elicitation before it can continue.

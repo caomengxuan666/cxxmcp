@@ -36,7 +36,7 @@ constexpr std::string_view ProtocolVersionHeader = "MCP-Protocol-Version";
 constexpr std::string_view MethodHeader = "Mcp-Method";
 constexpr std::string_view NameHeader = "Mcp-Name";
 constexpr std::string_view LastEventIdHeader = "Last-Event-ID";
-constexpr int HeaderMismatchCode = -32001;
+constexpr int HeaderMismatchCode = -32043;
 
 core::Error make_transport_error(int code, std::string message,
                                  std::string detail = {}) {
