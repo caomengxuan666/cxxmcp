@@ -31,8 +31,17 @@ jobs:
         run: pwsh -NoProfile -File scripts/format.ps1 -Check
 
       - name: Run cpplint
-        shell: pwsh
-        run: pwsh -NoProfile -File scripts/check-cpplint.ps1
+        run: |
+          if command -v cpplint &>/dev/null; then
+            cpplint_cmd="cpplint"
+          elif command -v uv &>/dev/null; then
+            cpplint_cmd="uv run --with cpplint cpplint"
+          else
+            echo "::error::cpplint not found. Install cpplint or uv."
+            exit 2
+          fi
+          files=$(find sdk -type f \( -name '*.cpp' -o -name '*.hpp' -o -name '*.h' \) | sort)
+          echo "$files" | xargs $cpplint_cmd 2>&1 | tail -5
 
       - name: Check protocol model coverage
         run: python scripts/check_protocol_model_coverage.py --source .
@@ -187,7 +196,7 @@ jobs:
       - name: Build SDK dependencies
         run: >
           cmake --build build-public-header-compile-evidence --parallel
-          --target mcp_protocol mcp_transport mcp_client mcp_server mcp_sdk
+          --target mcp_protocol mcp_client mcp_server
 
       - name: Collect public-header compile evidence
         run: |

@@ -147,11 +147,3 @@ class CxxmcpConan(ConanFile):
             self.cpp_info.components["auth"].set_property(
                 "cmake_target_name", "cxxmcp::auth")
             self.cpp_info.components["auth"].requires = ["core"]
-
-        self.cpp_info.components["plugin_sdk"].set_property(
-            "cmake_target_name", "cxxmcp::plugin_sdk")
-        self.cpp_info.components["plugin_sdk"].requires = ["protocol"]
-
-        self.cpp_info.components["adapters"].set_property(
-            "cmake_target_name", "cxxmcp::adapters")
-        self.cpp_info.components["adapters"].requires = ["server", "plugin_sdk"]
