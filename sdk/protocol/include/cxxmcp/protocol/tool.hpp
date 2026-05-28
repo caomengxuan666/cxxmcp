@@ -16,6 +16,7 @@
 #include <vector>
 
 #include "cxxmcp/core/result.hpp"
+#include "cxxmcp/protocol/annotations.hpp"
 #include "cxxmcp/protocol/resource.hpp"
 #include "cxxmcp/protocol/schema.hpp"
 #include "cxxmcp/protocol/task.hpp"
@@ -554,11 +555,11 @@ inline core::Result<ContentBlock> content_block_from_json(const Json& json) {
   }
 
   if (json.contains("annotations")) {
-    if (!json.at("annotations").is_object()) {
-      return mcp::core::unexpected(
-          tool_json_error("content block annotations must be an object"));
+    const auto parsed = annotations_from_json(json.at("annotations"));
+    if (!parsed) {
+      return mcp::core::unexpected(parsed.error());
     }
-    block.annotations = json.at("annotations");
+    block.annotations = annotations_to_json(*parsed);
   }
   if (json.contains("_meta")) {
     if (!json.at("_meta").is_object()) {
