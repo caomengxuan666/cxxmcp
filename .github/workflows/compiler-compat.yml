@@ -57,7 +57,6 @@ jobs:
           pacboy: >-
             toolchain:p
             cmake:p
-            gdb:p
             ninja:p
 
       - name: Configure SDK compatibility build
@@ -79,31 +78,6 @@ jobs:
             --output-on-failure \
             --timeout 240 \
             --output-junit build-compiler-compat/test-results/compiler-compat.xml
-
-      - name: Diagnose clang64 crashes
-        if: failure() && matrix.msystem == 'CLANG64'
-        run: |
-          set +e
-          for target in \
-            mcp_protocol_tests \
-            mcp_transport_contract_tests \
-            mcp_transport_stdio_contract_tests \
-            mcp_stdio_transport_tests \
-            mcp_http_transport_tests
-          do
-            exe="$(find build-compiler-compat -name "${target}.exe" | head -n 1)"
-            if [ -z "${exe}" ]; then
-              echo "::warning::${target}.exe was not found"
-              continue
-            fi
-            echo "::group::gdb ${target}"
-            gdb -q -batch \
-              -ex "set pagination off" \
-              -ex "run" \
-              -ex "bt full" \
-              --args "${exe}"
-            echo "::endgroup::"
-          done
 
       - name: Upload compatibility evidence
         if: always()
