@@ -14,15 +14,29 @@
 
 namespace {
 
+// Allocation tracking is disabled under sanitizers because they provide
+// their own operator new/delete and the multiple-definition link is not
+// resolvable.
+#if !defined(__SANITIZE_THREAD__) && !defined(__SANITIZE_ADDRESS__) && \
+    !defined(__SANITIZE_MEMORY__)
+#define CXXMCP_BENCH_TRACK_ALLOCATIONS 1
+#else
+#define CXXMCP_BENCH_TRACK_ALLOCATIONS 0
+#endif
+
 std::atomic_bool g_count_allocations{false};
 std::atomic<std::size_t> g_allocation_count{0};
 std::atomic<std::size_t> g_allocation_bytes{0};
 
 void record_allocation(std::size_t size) noexcept {
+#if CXXMCP_BENCH_TRACK_ALLOCATIONS
   if (g_count_allocations.load(std::memory_order_relaxed)) {
     g_allocation_count.fetch_add(1, std::memory_order_relaxed);
     g_allocation_bytes.fetch_add(size, std::memory_order_relaxed);
   }
+#else
+  (void)size;
+#endif
 }
 
 void reset_allocation_counters() noexcept {
@@ -101,6 +115,8 @@ void print_result(const BenchmarkResult& result) {
 
 }  // namespace
 
+#if CXXMCP_BENCH_TRACK_ALLOCATIONS
+
 void* operator new(std::size_t size) {
   record_allocation(size);
   if (void* pointer = std::malloc(size)) {
@@ -128,6 +144,8 @@ void operator delete(void* pointer, std::size_t) noexcept {
 void operator delete[](void* pointer, std::size_t) noexcept {
   std::free(pointer);
 }
+
+#endif  // CXXMCP_BENCH_TRACK_ALLOCATIONS
 
 int main() {
   constexpr std::size_t kIterations = 1000;

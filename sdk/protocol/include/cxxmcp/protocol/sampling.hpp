@@ -25,6 +25,47 @@
 
 namespace mcp::protocol {
 
+/// @brief Context inclusion mode for sampling requests.
+enum class ContextInclusion {
+  /// Include context from all servers.
+  AllServers,
+  /// Do not include any server context.
+  None,
+  /// Include context only from the requesting server.
+  ThisServer,
+};
+
+/// @brief Message role for sampling messages.
+enum class Role {
+  /// The human/user participant.
+  User,
+  /// The model/assistant participant.
+  Assistant,
+};
+
+/// @brief Converts a Role to its lowercase wire representation.
+inline std::string_view to_string(Role role) noexcept {
+  switch (role) {
+    case Role::User:
+      return "user";
+    case Role::Assistant:
+      return "assistant";
+  }
+  return "user";
+}
+
+/// @brief Parses a Role from its wire string.
+/// @return Parsed role, or nullopt for unrecognized strings.
+inline std::optional<Role> from_string_role(std::string_view value) noexcept {
+  if (value == "user") {
+    return Role::User;
+  }
+  if (value == "assistant") {
+    return Role::Assistant;
+  }
+  return std::nullopt;
+}
+
 /// @brief Tool selection mode for SEP-1577 sampling requests.
 enum class ToolChoiceMode {
   /// Let the model decide whether to use tools.
@@ -242,12 +283,43 @@ inline core::Error sampling_json_error(std::string message) {
 
 /// @brief Returns true for the MCP sampling message roles.
 inline bool sampling_role_is_valid(std::string_view role) noexcept {
-  return role == "user" || role == "assistant";
+  return from_string_role(role).has_value();
+}
+
+/// @brief Returns true for the MCP sampling message roles (enum overload).
+inline bool sampling_role_is_valid(Role /*role*/) noexcept { return true; }
+
+/// @brief Converts a context-inclusion mode to the camelCase wire value.
+inline std::string_view context_inclusion_to_string(ContextInclusion mode) {
+  switch (mode) {
+    case ContextInclusion::AllServers:
+      return "allServers";
+    case ContextInclusion::None:
+      return "none";
+    case ContextInclusion::ThisServer:
+      return "thisServer";
+  }
+  return "none";
+}
+
+/// @brief Parses a context-inclusion mode string.
+inline std::optional<ContextInclusion> context_inclusion_from_string(
+    std::string_view value) {
+  if (value == "allServers") {
+    return ContextInclusion::AllServers;
+  }
+  if (value == "none") {
+    return ContextInclusion::None;
+  }
+  if (value == "thisServer") {
+    return ContextInclusion::ThisServer;
+  }
+  return std::nullopt;
 }
 
 /// @brief Returns true for the MCP sampling includeContext values.
 inline bool sampling_include_context_is_valid(std::string_view value) noexcept {
-  return value == "allServers" || value == "none" || value == "thisServer";
+  return context_inclusion_from_string(value).has_value();
 }
 
 /// @brief Returns true for finite JSON numbers accepted by sampling.

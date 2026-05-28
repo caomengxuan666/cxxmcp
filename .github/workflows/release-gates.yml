@@ -187,7 +187,7 @@ jobs:
       - name: Build SDK dependencies
         run: >
           cmake --build build-public-header-compile-evidence --parallel
-          --target mcp_protocol mcp_auth mcp_transport mcp_client mcp_server mcp_sdk
+          --target mcp_protocol mcp_transport mcp_client mcp_server mcp_sdk
 
       - name: Collect public-header compile evidence
         run: |
