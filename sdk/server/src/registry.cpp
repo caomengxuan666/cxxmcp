@@ -8,12 +8,14 @@
 #include <string>
 #include <string_view>
 #include <utility>
+#include <vector>
 
 namespace mcp::server {
 
 namespace {
 
 constexpr std::size_t kMaxRegistryNameBytes = 1024;
+constexpr std::size_t kMaxToolNameBytes = 128;
 constexpr std::size_t kMaxRegistryUriBytes = 4096;
 
 bool contains_control_character(std::string_view value) {
@@ -21,6 +23,12 @@ bool contains_control_character(std::string_view value) {
     const auto byte = static_cast<unsigned char>(ch);
     return byte < 0x20 || byte == 0x7F;
   });
+}
+
+/// @brief Check whether a tool name character is in the SEP-986 whitelist.
+bool is_tool_name_char(char ch) {
+  return (ch >= 'A' && ch <= 'Z') || (ch >= 'a' && ch <= 'z') ||
+         (ch >= '0' && ch <= '9') || ch == '.' || ch == '_' || ch == '-';
 }
 
 core::Error registry_name_error(std::string message, std::string detail) {
@@ -58,6 +66,54 @@ core::Result<core::Unit> validate_registry_text(std::string_view value,
 core::Result<core::Unit> validate_registry_name(std::string_view value,
                                                 std::string_view field) {
   return validate_registry_text(value, field, kMaxRegistryNameBytes);
+}
+
+/// @brief SEP-986: validate tool name format.
+///
+/// Tool names must contain only [A-Za-z0-9._-], be at most 128 bytes,
+/// and not be empty.
+core::Result<core::Unit> validate_tool_name(std::string_view value) {
+  if (value.empty()) {
+    return mcp::core::unexpected(
+        registry_name_error("tool name must not be empty", "tool name"));
+  }
+
+  if (value.size() > kMaxToolNameBytes) {
+    return mcp::core::unexpected(
+        registry_name_error("tool name must not exceed " +
+                                std::to_string(kMaxToolNameBytes) + " bytes",
+                            "tool name"));
+  }
+
+  for (std::size_t i = 0; i < value.size(); ++i) {
+    if (!is_tool_name_char(value[i])) {
+      return mcp::core::unexpected(registry_name_error(
+          "tool name contains invalid character '" + std::string(1, value[i]) +
+              "'; allowed: [A-Za-z0-9._-]",
+          "tool name"));
+    }
+  }
+
+  return core::Unit{};
+}
+
+/// @brief SEP-986: collect advisory warnings for a tool name.
+///
+/// These are non-fatal style warnings. Leading/trailing `-` or `.` are
+/// discouraged but not rejected.
+[[maybe_unused]] std::vector<std::string> tool_name_advisory_warnings(
+    std::string_view value) {
+  std::vector<std::string> warnings;
+  if (!value.empty() && (value.front() == '-' || value.front() == '.')) {
+    warnings.push_back("tool name starts with '" +
+                       std::string(1, value.front()) +
+                       "'; this is discouraged");
+  }
+  if (!value.empty() && (value.back() == '-' || value.back() == '.')) {
+    warnings.push_back("tool name ends with '" + std::string(1, value.back()) +
+                       "'; this is discouraged");
+  }
+  return warnings;
 }
 
 core::Result<core::Unit> validate_registry_uri(std::string_view value,
@@ -202,7 +258,7 @@ ToolRegistry& ToolRegistry::operator=(ToolRegistry&& other) noexcept {
 
 core::Result<core::Unit> ToolRegistry::add(protocol::ToolDefinition definition,
                                            ToolHandler handler) {
-  const auto valid_name = validate_registry_name(definition.name, "tool name");
+  const auto valid_name = validate_tool_name(definition.name);
   if (!valid_name) {
     return mcp::core::unexpected(valid_name.error());
   }

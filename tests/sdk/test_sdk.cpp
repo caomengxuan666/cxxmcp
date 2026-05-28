@@ -3099,19 +3099,33 @@ void test_registries_validate_names_and_keys() {
   require(tools
               .add(
                   mcp::protocol::ToolDefinition{
-                      .name = "workspace.search/v1 - dry_run",
+                      .name = "workspace.search-v1_dry_run",
                       .input_schema = Json{{"type", "object"}},
                   },
                   tool_handler)
               .has_value(),
-          "tool registry should accept punctuation and spaces");
+          "tool registry should accept SEP-986 valid names");
   require_invalid_request(tools.add(
                               mcp::protocol::ToolDefinition{
-                                  .name = std::string(1025, 't'),
+                                  .name = std::string(129, 't'),
                                   .input_schema = Json{{"type", "object"}},
                               },
                               tool_handler),
                           "tool registry should reject overlong names");
+  require_invalid_request(tools.add(
+                              mcp::protocol::ToolDefinition{
+                                  .name = "workspace.search/v1",
+                                  .input_schema = Json{{"type", "object"}},
+                              },
+                              tool_handler),
+                          "tool registry should reject names with slash");
+  require_invalid_request(tools.add(
+                              mcp::protocol::ToolDefinition{
+                                  .name = "has space",
+                                  .input_schema = Json{{"type", "object"}},
+                              },
+                              tool_handler),
+                          "tool registry should reject names with spaces");
 
   mcp::server::PromptRegistry prompts;
   require(prompts
