@@ -183,6 +183,19 @@ struct TaskCancelResult {
   Json extensions = Json::object();
 };
 
+/// @brief Result object for `tasks/result` (GetTaskPayloadResult equivalent).
+///
+/// Carries the original request's polymorphic result payload. On the wire the
+/// payload fields are flattened alongside `_meta` and any future extensions.
+struct TaskGetPayloadResult {
+  /// The original request's result (polymorphic -- may be any JSON value).
+  Json payload;
+  /// Optional `_meta` extension object preserved on the wire.
+  std::optional<Json> meta;
+  /// Unknown JSON members preserved for forward-compatible round trips.
+  Json extensions = Json::object();
+};
+
 /// @brief Builds an InvalidRequest error for task JSON validation failures.
 inline core::Error task_json_error(std::string message) {
   return core::Error{
@@ -586,6 +599,51 @@ inline core::Result<TaskCancelResult> task_cancel_result_from_json(
   result.task = parsed->task;
   result.meta = parsed->meta;
   result.extensions = parsed->extensions;
+  return result;
+}
+
+/// @brief Serializes a `tasks/result` payload result.
+///
+/// The wire format flattens the payload fields at the top level alongside
+/// `_meta` and any future extension keys.
+inline Json task_get_payload_result_to_json(
+    const TaskGetPayloadResult& result) {
+  Json json = Json::object();
+  if (result.payload.is_object()) {
+    for (const auto& [key, value] : result.payload.items()) {
+      json[key] = value;
+    }
+  }
+  if (result.meta.has_value()) {
+    json["_meta"] = *result.meta;
+  }
+  append_json_extensions(json, result.extensions);
+  return json;
+}
+
+/// @brief Parses a `tasks/result` payload result.
+/// @return Parsed result or validation error.
+inline core::Result<TaskGetPayloadResult> task_get_payload_result_from_json(
+    const Json& json) {
+  if (!json.is_object()) {
+    return mcp::core::unexpected(
+        task_json_error("tasks/result result must be an object"));
+  }
+
+  TaskGetPayloadResult result;
+  result.payload = Json::object();
+  for (const auto& [key, value] : json.items()) {
+    if (key != "_meta") {
+      result.payload[key] = value;
+    }
+  }
+  if (json.contains("_meta")) {
+    if (!json.at("_meta").is_object()) {
+      return mcp::core::unexpected(
+          task_json_error("tasks/result _meta must be an object"));
+    }
+    result.meta = json.at("_meta");
+  }
   return result;
 }
 
