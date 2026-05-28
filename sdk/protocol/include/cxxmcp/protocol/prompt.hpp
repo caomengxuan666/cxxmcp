@@ -11,6 +11,7 @@
 
 #include <optional>
 #include <string>
+#include <string_view>
 #include <utility>
 #include <vector>
 
@@ -19,6 +20,43 @@
 #include "cxxmcp/protocol/types.hpp"
 
 namespace mcp::protocol {
+
+/// @brief Roles allowed on a prompt message.
+enum class PromptMessageRole {
+  /// Message from the user.
+  User,
+  /// Message from the assistant (model).
+  Assistant,
+};
+
+/// @brief Converts a prompt message role to its MCP wire string.
+inline std::string_view prompt_message_role_to_string(PromptMessageRole role) {
+  switch (role) {
+    case PromptMessageRole::User:
+      return "user";
+    case PromptMessageRole::Assistant:
+      return "assistant";
+  }
+  return "user";
+}
+
+/// @brief Parses a prompt message role string.
+/// @return Parsed role, or nullopt for unsupported strings.
+inline std::optional<PromptMessageRole> prompt_message_role_from_string(
+    std::string_view value) {
+  if (value == "user") {
+    return PromptMessageRole::User;
+  }
+  if (value == "assistant") {
+    return PromptMessageRole::Assistant;
+  }
+  return std::nullopt;
+}
+
+/// @brief Checks whether a string is a valid prompt message role.
+inline bool is_valid_prompt_message_role(std::string_view value) {
+  return prompt_message_role_from_string(value).has_value();
+}
 
 /// @brief Argument accepted by a prompt template.
 struct PromptArgument {
