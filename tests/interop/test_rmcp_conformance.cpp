@@ -60,7 +60,13 @@ void require(bool condition, std::string_view message) {
   }
 }
 
+std::mutex& process_env_mutex() {
+  static std::mutex mutex;
+  return mutex;
+}
+
 void set_process_env(std::string_view key, const std::string& value) {
+  std::lock_guard lock(process_env_mutex());
   const std::string key_string(key);
 #ifdef _WIN32
   _putenv_s(key_string.c_str(), value.c_str());
@@ -71,6 +77,7 @@ void set_process_env(std::string_view key, const std::string& value) {
 }
 
 void unset_process_env(std::string_view key) {
+  std::lock_guard lock(process_env_mutex());
   const std::string key_string(key);
 #ifdef _WIN32
   _putenv_s(key_string.c_str(), "");
@@ -81,6 +88,7 @@ void unset_process_env(std::string_view key) {
 }
 
 std::optional<std::string> get_process_env(std::string_view key) {
+  std::lock_guard lock(process_env_mutex());
   const std::string key_string(key);
 #ifdef _WIN32
   char* value = nullptr;
@@ -3188,14 +3196,15 @@ void test_cxxmcp_client_against_rmcp_reverse_http_server() {
 void run_rmcp_conformance_scenario(std::string_view scenario) {
   build_conformance_client();
 
-  RunningInteropServer server;
-  const auto port = server.port();
-
   set_process_env("MCP_CONFORMANCE_SCENARIO", std::string(scenario));
   set_process_env("NO_PROXY", "127.0.0.1,localhost");
   set_process_env("no_proxy", "127.0.0.1,localhost");
   set_process_env("RUST_BACKTRACE", "1");
   set_process_env("RUST_LOG", "debug");
+
+  RunningInteropServer server;
+  const auto port = server.port();
+
   const auto command =
       quote_path(conformance_client_executable()) + " " +
       quote_text("http://127.0.0.1:" + std::to_string(port) + "/mcp");
@@ -3209,14 +3218,15 @@ void run_rmcp_conformance_scenario(std::string_view scenario) {
 void run_rmcp_pagination_client_scenario() {
   build_pagination_client();
 
-  RunningInteropServer server;
-  const auto port = server.port();
-
   set_process_env("MCP_CONFORMANCE_SCENARIO", "rmcp-pagination");
   set_process_env("NO_PROXY", "127.0.0.1,localhost");
   set_process_env("no_proxy", "127.0.0.1,localhost");
   set_process_env("RUST_BACKTRACE", "1");
   set_process_env("RUST_LOG", "debug");
+
+  RunningInteropServer server;
+  const auto port = server.port();
+
   const auto command =
       quote_path(pagination_client_executable()) + " " +
       quote_text("http://127.0.0.1:" + std::to_string(port) + "/mcp");
@@ -3269,14 +3279,15 @@ void run_rmcp_canonical_server_peer_http_scenario() {
 void run_rmcp_completion_client_scenario() {
   build_completion_client();
 
-  RunningInteropServer server;
-  const auto port = server.port();
-
   set_process_env("MCP_CONFORMANCE_SCENARIO", "rmcp-completion");
   set_process_env("NO_PROXY", "127.0.0.1,localhost");
   set_process_env("no_proxy", "127.0.0.1,localhost");
   set_process_env("RUST_BACKTRACE", "1");
   set_process_env("RUST_LOG", "debug");
+
+  RunningInteropServer server;
+  const auto port = server.port();
+
   const auto command =
       quote_path(completion_client_executable()) + " " +
       quote_text("http://127.0.0.1:" + std::to_string(port) + "/mcp");
@@ -3292,14 +3303,15 @@ void run_rmcp_completion_client_scenario() {
 void run_rmcp_roots_sampling_client_scenario() {
   build_roots_sampling_client();
 
-  RunningInteropServer server;
-  const auto port = server.port();
-
   set_process_env("MCP_CONFORMANCE_SCENARIO", "rmcp-roots-sampling");
   set_process_env("NO_PROXY", "127.0.0.1,localhost");
   set_process_env("no_proxy", "127.0.0.1,localhost");
   set_process_env("RUST_BACKTRACE", "1");
   set_process_env("RUST_LOG", "debug");
+
+  RunningInteropServer server;
+  const auto port = server.port();
+
   const auto command =
       quote_path(roots_sampling_client_executable()) + " " +
       quote_text("http://127.0.0.1:" + std::to_string(port) + "/mcp");
@@ -3315,14 +3327,15 @@ void run_rmcp_roots_sampling_client_scenario() {
 void run_rmcp_task_lifecycle_client_scenario() {
   build_task_lifecycle_client();
 
-  RunningInteropServer server;
-  const auto port = server.port();
-
   set_process_env("MCP_CONFORMANCE_SCENARIO", "rmcp-task-lifecycle");
   set_process_env("NO_PROXY", "127.0.0.1,localhost");
   set_process_env("no_proxy", "127.0.0.1,localhost");
   set_process_env("RUST_BACKTRACE", "1");
   set_process_env("RUST_LOG", "debug");
+
+  RunningInteropServer server;
+  const auto port = server.port();
+
   const auto command =
       quote_path(task_lifecycle_client_executable()) + " " +
       quote_text("http://127.0.0.1:" + std::to_string(port) + "/mcp");
