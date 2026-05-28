@@ -522,6 +522,184 @@ std::string serialize_protected_resource_metadata(
   return doc.dump(2);
 }
 
+#if defined(CXXMCP_ENABLE_AUTH)
+
+using ::mcp::auth::AuthorizationRequestParams;
+using ::mcp::auth::AuthorizationServerConfig;
+using ::mcp::auth::ClientRegistrationRequest;
+using ::mcp::auth::TokenRequestParams;
+using ::mcp::auth::TokenRevocationParams;
+
+std::vector<std::string> split_space_separated_list(const std::string& value) {
+  std::vector<std::string> result;
+  std::string current;
+  for (char ch : value) {
+    if (ch == ' ' || ch == '\t' || ch == '\n' || ch == '\r') {
+      if (!current.empty()) {
+        result.push_back(std::move(current));
+        current.clear();
+      }
+      continue;
+    }
+    current.push_back(ch);
+  }
+  if (!current.empty()) {
+    result.push_back(std::move(current));
+  }
+  return result;
+}
+
+std::string serialize_authorization_server_metadata(
+    const AuthorizationServerConfig& config) {
+  nlohmann::json doc;
+  doc["issuer"] = config.issuer;
+  doc["authorization_endpoint"] = config.issuer + config.authorize_path;
+  doc["token_endpoint"] = config.issuer + config.token_path;
+  if (config.registration_handler) {
+    doc["registration_endpoint"] = config.issuer + config.registration_path;
+  }
+  if (config.revocation_handler) {
+    doc["revocation_endpoint"] = config.issuer + config.revocation_path;
+  }
+  if (config.jwks_uri.has_value()) {
+    doc["jwks_uri"] = *config.jwks_uri;
+  }
+  if (config.service_documentation.has_value()) {
+    doc["service_documentation"] = *config.service_documentation;
+  }
+  doc["response_types_supported"] = config.response_types_supported;
+  doc["grant_types_supported"] = config.grant_types_supported;
+  doc["code_challenge_methods_supported"] =
+      config.code_challenge_methods_supported;
+  doc["token_endpoint_auth_methods_supported"] =
+      config.token_endpoint_auth_methods_supported;
+  if (!config.scopes_supported.empty()) {
+    doc["scopes_supported"] = config.scopes_supported;
+  }
+  for (const auto& entry : config.metadata) {
+    doc[entry.first] = entry.second;
+  }
+  return doc.dump(2);
+}
+
+AuthorizationRequestParams parse_authorization_request(
+    const httplib::Params& params) {
+  AuthorizationRequestParams result;
+  for (const auto& [key, value] : params) {
+    if (key == "response_type") {
+      result.response_type = value;
+    } else if (key == "client_id") {
+      result.client_id = value;
+    } else if (key == "redirect_uri") {
+      result.redirect_uri = value;
+    } else if (key == "state") {
+      result.state = value;
+    } else if (key == "scope") {
+      result.scope = value;
+    } else if (key == "code_challenge") {
+      result.code_challenge = value;
+    } else if (key == "code_challenge_method") {
+      result.code_challenge_method = value;
+    } else if (key == "resource") {
+      result.resource = value;
+    } else if (key == "nonce") {
+      result.nonce = value;
+    }
+  }
+  return result;
+}
+
+TokenRequestParams parse_token_request(const httplib::Params& params) {
+  TokenRequestParams result;
+  for (const auto& [key, value] : params) {
+    if (key == "grant_type") {
+      result.grant_type = value;
+    } else if (key == "code") {
+      result.code = value;
+    } else if (key == "redirect_uri") {
+      result.redirect_uri = value;
+    } else if (key == "client_id") {
+      result.client_id = value;
+    } else if (key == "client_secret") {
+      result.client_secret = value;
+    } else if (key == "code_verifier") {
+      result.code_verifier = value;
+    } else if (key == "refresh_token") {
+      result.refresh_token = value;
+    } else if (key == "scope") {
+      result.scope = value;
+    } else if (key == "resource") {
+      result.resource = value;
+    }
+  }
+  return result;
+}
+
+TokenRevocationParams parse_revocation_request(const httplib::Params& params) {
+  TokenRevocationParams result;
+  for (const auto& [key, value] : params) {
+    if (key == "token") {
+      result.token = value;
+    } else if (key == "token_type_hint") {
+      result.token_type_hint = value;
+    } else if (key == "client_id") {
+      result.client_id = value;
+    } else if (key == "client_secret") {
+      result.client_secret = value;
+    }
+  }
+  return result;
+}
+
+ClientRegistrationRequest parse_registration_request(
+    const nlohmann::json& parsed) {
+  ClientRegistrationRequest result;
+  if (parsed.contains("redirect_uris") && parsed["redirect_uris"].is_array()) {
+    result.redirect_uris =
+        parsed["redirect_uris"].get<std::vector<std::string>>();
+  }
+  if (parsed.contains("grant_types") && parsed["grant_types"].is_array()) {
+    result.grant_types = parsed["grant_types"].get<std::vector<std::string>>();
+  }
+  if (parsed.contains("response_types") &&
+      parsed["response_types"].is_array()) {
+    result.response_types =
+        parsed["response_types"].get<std::vector<std::string>>();
+  }
+  if (parsed.contains("scope") && parsed["scope"].is_string()) {
+    result.scope =
+        split_space_separated_list(parsed["scope"].get<std::string>());
+  }
+  if (parsed.contains("client_name") && parsed["client_name"].is_string()) {
+    result.client_name = parsed["client_name"];
+  }
+  if (parsed.contains("token_endpoint_auth_method") &&
+      parsed["token_endpoint_auth_method"].is_string()) {
+    result.token_endpoint_auth_method = parsed["token_endpoint_auth_method"];
+  }
+  return result;
+}
+
+void write_oauth_json_error(httplib::Response& response, int status,
+                            const std::string& error,
+                            const std::string& error_description) {
+  response.status = status;
+  nlohmann::json body;
+  body["error"] = error;
+  if (!error_description.empty()) {
+    body["error_description"] = error_description;
+  }
+  response.set_content(body.dump(), "application/json");
+}
+
+void write_oauth_json_error(httplib::Response& response, int status,
+                            const core::Error& err) {
+  const auto& msg = err.message.empty() ? "server_error" : err.message;
+  write_oauth_json_error(response, status, "server_error", msg);
+}
+
+#endif  // defined(CXXMCP_ENABLE_AUTH)
+
 bool is_auth_error(const core::Error& error) {
   return error.code ==
              static_cast<int>(protocol::ErrorCode::PermissionDenied) &&
@@ -629,6 +807,159 @@ core::Result<core::Unit> HttpTransport::start(
           response.set_content(metadata_json, "application/json");
         });
   }
+
+#if defined(CXXMCP_ENABLE_AUTH)
+  if (!options_.authorization_server.issuer.empty()) {
+    const auto& as_config = options_.authorization_server;
+    const auto metadata_json =
+        serialize_authorization_server_metadata(as_config);
+    http_server->Get(
+        "/.well-known/oauth-authorization-server",
+        [&metadata_json](const httplib::Request&, httplib::Response& response) {
+          response.set_content(metadata_json, "application/json");
+        });
+
+    if (as_config.authorization_handler) {
+      auto handler = as_config.authorization_handler;
+      http_server->Get(
+          as_config.authorize_path, [handler](const httplib::Request& request,
+                                              httplib::Response& response) {
+            auto params = parse_authorization_request(request.params);
+            if (params.response_type.empty() || params.client_id.empty()) {
+              write_oauth_json_error(response, 400, "invalid_request",
+                                     "response_type and client_id required");
+              return;
+            }
+            auto result = handler(params);
+            if (!result.has_value()) {
+              if (!params.redirect_uri.empty()) {
+                std::string sep =
+                    params.redirect_uri.find('?') == std::string::npos ? "?"
+                                                                       : "&";
+                std::string redirect =
+                    params.redirect_uri + sep + "error=server_error";
+                if (!params.state.empty()) {
+                  redirect += "&state=" + params.state;
+                }
+                response.status = 302;
+                response.set_header("Location", redirect);
+              } else {
+                write_oauth_json_error(response, 400, result.error());
+              }
+              return;
+            }
+            std::string sep =
+                result->redirect_uri.find('?') == std::string::npos ? "?" : "&";
+            std::string redirect = result->redirect_uri + sep +
+                                   "code=" + result->authorization_code +
+                                   "&state=" + result->state;
+            response.status = 302;
+            response.set_header("Location", redirect);
+          });
+    }
+
+    if (as_config.token_handler) {
+      auto handler = as_config.token_handler;
+      http_server->Post(
+          as_config.token_path, [handler](const httplib::Request& request,
+                                          httplib::Response& response) {
+            httplib::Params params;
+            httplib::detail::parse_query_text(request.body, params);
+            auto parsed = parse_token_request(params);
+            if (parsed.grant_type.empty()) {
+              write_oauth_json_error(response, 400, "invalid_request",
+                                     "grant_type is required");
+              return;
+            }
+            auto result = handler(parsed);
+            if (!result.has_value()) {
+              write_oauth_json_error(response, 400, result.error());
+              return;
+            }
+            nlohmann::json body;
+            body["access_token"] = result->access_token;
+            body["token_type"] = result->token_type;
+            if (result->expires_in.has_value()) {
+              body["expires_in"] = result->expires_in->count();
+            }
+            if (result->refresh_token.has_value()) {
+              body["refresh_token"] = *result->refresh_token;
+            }
+            if (result->scope.has_value()) {
+              body["scope"] = *result->scope;
+            }
+            for (const auto& metadata : result->metadata) {
+              body[metadata.first] = metadata.second;
+            }
+            response.set_content(body.dump(), "application/json");
+          });
+    }
+
+    if (as_config.registration_handler) {
+      auto handler = as_config.registration_handler;
+      http_server->Post(
+          as_config.registration_path,
+          [handler](const httplib::Request& request,
+                    httplib::Response& response) {
+            nlohmann::json parsed;
+            try {
+              parsed = nlohmann::json::parse(request.body);
+            } catch (const nlohmann::json::parse_error&) {
+              write_oauth_json_error(response, 400, "invalid_request",
+                                     "Request body is not valid JSON");
+              return;
+            }
+            auto reg_params = parse_registration_request(parsed);
+            auto result = handler(reg_params);
+            if (!result.has_value()) {
+              write_oauth_json_error(response, 400, result.error());
+              return;
+            }
+            nlohmann::json body;
+            body["client_id"] = result->client_id;
+            if (result->client_secret.has_value()) {
+              body["client_secret"] = *result->client_secret;
+            }
+            if (!result->client_metadata.redirect_uris.empty()) {
+              body["redirect_uris"] = result->client_metadata.redirect_uris;
+            }
+            if (!result->client_metadata.grant_types.empty()) {
+              body["grant_types"] = result->client_metadata.grant_types;
+            }
+            if (!result->client_metadata.response_types.empty()) {
+              body["response_types"] = result->client_metadata.response_types;
+            }
+            for (const auto& metadata : result->metadata) {
+              body[metadata.first] = metadata.second;
+            }
+            response.status = 201;
+            response.set_content(body.dump(), "application/json");
+          });
+    }
+
+    if (as_config.revocation_handler) {
+      auto handler = as_config.revocation_handler;
+      http_server->Post(
+          as_config.revocation_path, [handler](const httplib::Request& request,
+                                               httplib::Response& response) {
+            httplib::Params params;
+            httplib::detail::parse_query_text(request.body, params);
+            auto parsed = parse_revocation_request(params);
+            if (parsed.token.empty()) {
+              write_oauth_json_error(response, 400, "invalid_request",
+                                     "token is required");
+              return;
+            }
+            auto result = handler(parsed);
+            if (!result.has_value()) {
+              write_oauth_json_error(response, 400, result.error());
+              return;
+            }
+            response.status = 200;
+          });
+    }
+  }
+#endif  // defined(CXXMCP_ENABLE_AUTH)
 
   http_server->Post(options_.path, [this, handler = std::move(handler),
                                     notification_handler =

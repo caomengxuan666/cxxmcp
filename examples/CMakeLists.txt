@@ -15,6 +15,9 @@ function(cxxmcp_example_smoke_test test_name target_name)
     endif()
 endfunction()
 
+option(CXXMCP_BUILD_EXPERIMENTAL_OAUTH_EXAMPLES
+       "Build parked experimental OAuth flow examples" OFF)
+
 if(TARGET mcp_sdk)
     add_executable(mcp_example_cxx17_consumer cxx17_consumer.cpp)
     target_link_libraries(mcp_example_cxx17_consumer PRIVATE mcp_sdk)
@@ -23,13 +26,13 @@ if(TARGET mcp_sdk)
                               mcp_example_cxx17_consumer)
 endif()
 
-if(TARGET mcp_server)
+if(TARGET mcp_sdk)
     add_executable(mcp_example_stdio_server stdio_server.cpp)
-    target_link_libraries(mcp_example_stdio_server PRIVATE mcp_server)
+    target_link_libraries(mcp_example_stdio_server PRIVATE mcp_sdk)
     cxxmcp_example(mcp_example_stdio_server)
 
     add_executable(mcp_example_typed_stdio_server typed_stdio_server.cpp)
-    target_link_libraries(mcp_example_typed_stdio_server PRIVATE mcp_server)
+    target_link_libraries(mcp_example_typed_stdio_server PRIVATE mcp_sdk)
     cxxmcp_example(mcp_example_typed_stdio_server)
 endif()
 
@@ -122,6 +125,15 @@ if(TARGET mcp_client AND TARGET mcp_server)
     cxxmcp_example(mcp_example_streamable_http_client)
 endif()
 
+if(CXXMCP_BUILD_EXPERIMENTAL_OAUTH_EXAMPLES AND TARGET mcp_auth
+   AND TARGET mcp_server)
+    add_executable(mcp_example_oauth_authorization_server
+                   oauth_authorization_server.cpp)
+    target_link_libraries(mcp_example_oauth_authorization_server
+                          PRIVATE mcp_auth mcp_server)
+    cxxmcp_example(mcp_example_oauth_authorization_server)
+endif()
+
 if(TARGET mcp_auth_openssl AND TARGET mcp_client AND TARGET mcp_server)
     add_executable(mcp_example_auth_dpop_openssl auth_dpop_openssl.cpp)
     target_link_libraries(mcp_example_auth_dpop_openssl PRIVATE
@@ -130,4 +142,12 @@ if(TARGET mcp_auth_openssl AND TARGET mcp_client AND TARGET mcp_server)
     cxxmcp_example_smoke_test(example_auth_dpop_openssl
                               mcp_example_auth_dpop_openssl)
 
+endif()
+
+if(CXXMCP_BUILD_EXPERIMENTAL_OAUTH_EXAMPLES AND TARGET mcp_auth_openssl
+   AND TARGET mcp_client AND TARGET mcp_server)
+    add_executable(mcp_example_oauth_client_flow oauth_client_flow.cpp)
+    target_link_libraries(mcp_example_oauth_client_flow PRIVATE
+                          mcp_auth_openssl mcp_client mcp_server)
+    cxxmcp_example(mcp_example_oauth_client_flow)
 endif()

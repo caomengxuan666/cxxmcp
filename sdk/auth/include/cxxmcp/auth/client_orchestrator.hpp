@@ -69,6 +69,8 @@ struct OAuthClientOrchestratorConfig {
   std::chrono::seconds callback_timeout{300};
   /// How long before token expiry to proactively refresh.
   std::chrono::seconds refresh_skew{30};
+  /// Pre-configured client_id. When set, DCR is skipped.
+  std::optional<std::string> client_id;
 };
 
 /// @brief High-level OAuth 2.1 client orchestrator.

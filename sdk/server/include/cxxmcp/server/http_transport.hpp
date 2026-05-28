@@ -15,6 +15,10 @@
 #include <unordered_map>
 #include <vector>
 
+#if defined(CXXMCP_ENABLE_AUTH)
+#include "cxxmcp/auth/server_auth_endpoints.hpp"
+#endif
+
 #include "cxxmcp/server/transport.hpp"
 
 /// @file
@@ -99,6 +103,11 @@ struct HttpTransportOptions {
   /// RFC 9728 Protected Resource Metadata. When resource is non-empty, the
   /// transport serves the metadata at /.well-known/oauth-protected-resource.
   ProtectedResourceMetadataConfig protected_resource_metadata;
+#if defined(CXXMCP_ENABLE_AUTH)
+  /// RFC 8414 authorization server endpoints. Auth owns the endpoint contract;
+  /// the HTTP transport only wires configured callbacks to HTTP routes.
+  ::mcp::auth::AuthorizationServerConfig authorization_server;
+#endif
 };
 
 /// @brief MCP streamable HTTP transport with session-aware SSE delivery.
