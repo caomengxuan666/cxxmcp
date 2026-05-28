@@ -70,6 +70,32 @@ jobs:
       - name: Build process-stdio tests
         run: cmake --build build-process-stdio --target mcp_process_stdio_transport_tests
 
+      - name: Diagnose macOS process-stdio crash
+        if: runner.os == 'macOS'
+        shell: bash
+        run: |
+          set +e
+          cat > build-process-stdio/process-stdio-initialize.jsonl <<'EOF'
+          {"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"diagnostic","version":"0"}}}
+          EOF
+
+          echo "::group::lldb direct child initialize"
+          lldb --batch \
+            -o "settings set target.input-path build-process-stdio/process-stdio-initialize.jsonl" \
+            -o run \
+            -k "thread backtrace all" \
+            -- build-process-stdio/tests/mcp_test_stdio_child
+          echo "direct child lldb exit=$?"
+          echo "::endgroup::"
+
+          echo "::group::lldb process_stdio_transport"
+          lldb --batch \
+            -o run \
+            -k "thread backtrace all" \
+            -- build-process-stdio/tests/mcp_process_stdio_transport_tests
+          echo "process test lldb exit=$?"
+          echo "::endgroup::"
+
       - name: Run process-stdio tests
         run: >
           ctest --test-dir build-process-stdio
