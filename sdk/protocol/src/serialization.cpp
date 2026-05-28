@@ -301,8 +301,8 @@ core::Result<std::string> serialize_request_direct(
   output.reserve(64 + request.method.size());
   output.push_back('{');
   bool first = true;
-  append_json_property(output, first, "id", request_id_to_json(request.id));
   append_string_property(output, first, "jsonrpc", JsonRpcVersion);
+  append_json_property(output, first, "id", request_id_to_json(request.id));
   append_string_property(output, first, "method", request.method);
   const auto params =
       append_params_property(output, first, request.params, request.meta);
@@ -319,12 +319,12 @@ core::Result<std::string> serialize_response_direct(
   output.reserve(96);
   output.push_back('{');
   bool first = true;
+  append_string_property(output, first, "jsonrpc", JsonRpcVersion);
   if (response.id.has_value()) {
     append_json_property(output, first, "id", request_id_to_json(*response.id));
   } else {
     append_json_property(output, first, "id", nullptr);
   }
-  append_string_property(output, first, "jsonrpc", JsonRpcVersion);
   if (response.meta.has_value()) {
     append_json_property(output, first, "_meta", *response.meta);
   }
