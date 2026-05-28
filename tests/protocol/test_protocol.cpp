@@ -51,6 +51,10 @@ struct ReflectedResult {
   std::vector<ReflectedArgs> items;
 };
 
+struct ReflectedBool {
+  bool enabled = false;
+};
+
 }  // namespace schema_fixture
 
 namespace mcp::protocol {
@@ -120,6 +124,8 @@ struct Reflect<schema_fixture::ReflectedResult> {
   }
   static std::vector<std::string> known_keys() { return {"session", "items"}; }
 };
+
+CXXMCP_REFLECT(schema_fixture::ReflectedBool, enabled);
 
 }  // namespace mcp::protocol
 
@@ -4653,6 +4659,17 @@ void test_reflect_to_schema_bridge() {
   require(parsed->category.has_value(), "round-trip category should be set");
   require(*parsed->category == "docs", "round-trip category value mismatch");
   require(parsed->tags.size() == 2, "round-trip tags size mismatch");
+
+  const auto parsed_bool =
+      mcp::protocol::reflect_from_json<schema_fixture::ReflectedBool>(
+          mcp::protocol::Json{{"enabled", true}});
+  require(parsed_bool.has_value(), "bool field should accept JSON boolean");
+  require(parsed_bool->enabled, "bool field value mismatch");
+  const auto parsed_bool_as_integer =
+      mcp::protocol::reflect_from_json<schema_fixture::ReflectedBool>(
+          mcp::protocol::Json{{"enabled", 1}});
+  require(!parsed_bool_as_integer.has_value(),
+          "bool field should reject JSON integer");
 }
 
 int main() {

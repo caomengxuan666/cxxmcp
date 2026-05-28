@@ -310,32 +310,18 @@ int main() {
 ### Canonical Client Peer/Service
 
 ```cpp
-#include <memory>
-#include <utility>
-
 #include <cxxmcp/peer.hpp>
-#include <cxxmcp/service.hpp>
-#include <cxxmcp/transport/http_transport.hpp>
+#include <cxxmcp/run.hpp>
 
 int main() {
-    auto transport =
-        std::make_unique<mcp::transport::StreamableHttpClientTransport>(
-            mcp::transport::StreamableHttpClientTransportOptions{
-                .host = "127.0.0.1",
-                .port = 3000,
-                .path = "/mcp",
-            });
-    mcp::ClientPeer peer(std::move(transport));
-
-    auto running = mcp::serve(std::move(peer));
-    if (!running) {
-        return 1;
-    }
-
-    running->peer().initialize();
-    running->peer().list_all_tools();
-    running->peer().call_tool("echo", mcp::protocol::Json{{"value", "hello"}});
-    running->stop();
+    return mcp::ClientPeer::builder()
+        .streamable_http("http://127.0.0.1:3000/mcp")
+        .run([](auto& svc) {
+            svc.peer().initialize();
+            svc.peer().list_all_tools();
+            svc.peer().call_tool("echo",
+                                 mcp::protocol::Json{{"value", "hello"}});
+        });
 }
 ```
 

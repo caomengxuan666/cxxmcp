@@ -93,8 +93,9 @@ def read_text(path: Path) -> str:
 def require_contains(path: Path, needle: str) -> None:
     import re
     text = read_text(path)
-    normalized = re.sub(r'\s+', ' ', text)
-    if needle not in normalized:
+    normalized_text = re.sub(r'\s+', ' ', text)
+    normalized_needle = re.sub(r'\s+', ' ', needle)
+    if normalized_needle not in normalized_text:
         fail(f"{path} must contain {needle!r}")
 
 

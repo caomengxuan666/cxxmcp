@@ -490,4 +490,19 @@ inline int Peer<RoleServer>::Builder::run() {
   return running->wait().has_value() ? 0 : 1;
 }
 
+template <class Fn>
+int Peer<RoleClient>::Builder::run(Fn&& fn) {
+  auto peer = build();
+  if (!peer) {
+    return 1;
+  }
+  auto running = mcp::serve(std::move(*peer));
+  if (!running) {
+    return 1;
+  }
+  fn(*running);
+  (void)running->stop();
+  return 0;
+}
+
 }  // namespace mcp

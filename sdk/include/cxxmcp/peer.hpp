@@ -2552,10 +2552,6 @@ class Peer<RoleClient>::Builder {
     return std::move(*peer);
   }
 
-  /// @brief Builds the peer and starts serving it.
-  /// @return Running service handle, or error.
-  core::Result<RunningService<RoleClient>> serve();
-
   /// @brief Builds the peer, serves it, invokes the callback, then stops.
   ///
   /// Usage:

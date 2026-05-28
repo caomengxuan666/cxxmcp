@@ -14,6 +14,7 @@
 #include "cxxmcp/protocol/capabilities.hpp"
 #include "cxxmcp/protocol/serialization.hpp"
 #include "cxxmcp/protocol/types.hpp"
+#include "cxxmcp/protocol/types_reflect.hpp"
 
 namespace mcp::protocol {
 

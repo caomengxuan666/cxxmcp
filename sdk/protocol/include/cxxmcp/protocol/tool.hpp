@@ -21,6 +21,7 @@
 #include "cxxmcp/protocol/schema.hpp"
 #include "cxxmcp/protocol/task.hpp"
 #include "cxxmcp/protocol/types.hpp"
+#include "cxxmcp/protocol/types_reflect.hpp"
 
 namespace mcp::protocol {
 

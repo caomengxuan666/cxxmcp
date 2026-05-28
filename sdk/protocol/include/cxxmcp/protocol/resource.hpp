@@ -20,6 +20,7 @@
 #include "cxxmcp/core/result.hpp"
 #include "cxxmcp/protocol/reflect.hpp"
 #include "cxxmcp/protocol/types.hpp"
+#include "cxxmcp/protocol/types_reflect.hpp"
 
 namespace mcp::protocol {
 

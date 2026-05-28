@@ -201,7 +201,21 @@ struct JsonFieldTraits {
     if (!json.contains(key)) {
       return false;
     }
-    target = json.at(key).get<T>();
+    const auto& val = json.at(key);
+    if constexpr (std::is_same_v<T, bool>) {
+      if (!val.is_boolean()) {
+        return false;
+      }
+    } else if constexpr (std::is_floating_point_v<T>) {
+      if (!val.is_number()) {
+        return false;
+      }
+    } else if constexpr (std::is_integral_v<T>) {
+      if (!val.is_number_integer()) {
+        return false;
+      }
+    }
+    target = val.get<T>();
     return true;
   }
 };
@@ -233,9 +247,7 @@ struct JsonFieldTraits<T, std::enable_if_t<has_reflect_v<T>>> {
 template <>
 struct JsonFieldTraits<std::string> {
   static void serialize(Json& json, const char* key, const std::string& value) {
-    if (!value.empty()) {
-      json[key] = value;
-    }
+    json[key] = value;
   }
 
   static bool deserialize(const Json& json, const char* key,
@@ -292,58 +304,11 @@ struct JsonFieldTraits<IconTheme> {
   }
 };
 
-template <>
-struct JsonFieldTraits<Icon> {
-  static void serialize(Json& json, const char* key, const Icon& value) {
-    json[key] = icon_to_json(value);
-  }
-
-  static bool deserialize(const Json& json, const char* key, Icon& target) {
-    if (!json.contains(key)) {
-      return false;
-    }
-    auto value = icon_from_json(json.at(key));
-    if (!value.has_value()) {
-      return false;
-    }
-    target = std::move(*value);
-    return true;
-  }
-};
-
-template <>
-struct JsonFieldTraits<std::vector<Icon>> {
-  static void serialize(Json& json, const char* key,
-                        const std::vector<Icon>& value) {
-    if (value.empty()) {
-      return;
-    }
-    json[key] = Json::array();
-    for (const auto& icon : value) {
-      json[key].push_back(icon_to_json(icon));
-    }
-  }
-
-  static bool deserialize(const Json& json, const char* key,
-                          std::vector<Icon>& target) {
-    if (!json.contains(key)) {
-      return true;
-    }
-    if (!json.at(key).is_array()) {
-      return false;
-    }
-    target.clear();
-    target.reserve(json.at(key).size());
-    for (const auto& item : json.at(key)) {
-      auto icon = icon_from_json(item);
-      if (!icon.has_value()) {
-        return false;
-      }
-      target.push_back(std::move(*icon));
-    }
-    return true;
-  }
-};
+// ---------------------------------------------------------------------------
+// Note: JsonFieldTraits<Icon> and JsonFieldTraits<std::vector<Icon>> are no
+// longer needed. Icon uses Reflect<Icon> (in types_reflect.hpp) via the
+// generic vector<T> trait and reflect_to_json/reflect_from_json.
+// ---------------------------------------------------------------------------
 
 // ---------------------------------------------------------------------------
 // Traits for std::optional<T>
@@ -475,13 +440,6 @@ struct JsonFieldTraits<std::vector<std::string>> {
     return true;
   }
 };
-
-// ---------------------------------------------------------------------------
-// Traits for std::vector<Icon> (Icon has icon_to_json/icon_from_json)
-// ---------------------------------------------------------------------------
-
-// Note: Icon vector traits are registered in types.hpp after Icon is defined.
-// This forward declaration is resolved by the include order.
 
 // ---------------------------------------------------------------------------
 // Traits for std::map<std::string, std::string> (string-to-string maps)
@@ -742,6 +700,127 @@ core::Result<T> reflect_from_json(const Json& json) {
 
   return obj;
 }
+
+// ---------------------------------------------------------------------------
+// CXXMCP_REFLECT: one-line Reflect<T> specialization
+// ---------------------------------------------------------------------------
+
+#define CXXMCP_REFL_IMPL_1(T, f1)                                        \
+  template <>                                                            \
+  struct Reflect<T> {                                                    \
+    static constexpr bool defined = true;                                \
+    static auto fields() { return std::make_tuple(field(#f1, &T::f1)); } \
+    static std::vector<std::string> known_keys() { return {#f1}; }       \
+  };
+
+#define CXXMCP_REFL_IMPL_2(T, f1, f2)                                   \
+  template <>                                                           \
+  struct Reflect<T> {                                                   \
+    static constexpr bool defined = true;                               \
+    static auto fields() {                                              \
+      return std::make_tuple(field(#f1, &T::f1), field(#f2, &T::f2));   \
+    }                                                                   \
+    static std::vector<std::string> known_keys() { return {#f1, #f2}; } \
+  };
+
+#define CXXMCP_REFL_IMPL_3(T, f1, f2, f3)                                    \
+  template <>                                                                \
+  struct Reflect<T> {                                                        \
+    static constexpr bool defined = true;                                    \
+    static auto fields() {                                                   \
+      return std::make_tuple(field(#f1, &T::f1), field(#f2, &T::f2),         \
+                             field(#f3, &T::f3));                            \
+    }                                                                        \
+    static std::vector<std::string> known_keys() { return {#f1, #f2, #f3}; } \
+  };
+
+#define CXXMCP_REFL_IMPL_4(T, f1, f2, f3, f4)                         \
+  template <>                                                         \
+  struct Reflect<T> {                                                 \
+    static constexpr bool defined = true;                             \
+    static auto fields() {                                            \
+      return std::make_tuple(field(#f1, &T::f1), field(#f2, &T::f2),  \
+                             field(#f3, &T::f3), field(#f4, &T::f4)); \
+    }                                                                 \
+    static std::vector<std::string> known_keys() {                    \
+      return {#f1, #f2, #f3, #f4};                                    \
+    }                                                                 \
+  };
+
+#define CXXMCP_REFL_IMPL_5(T, f1, f2, f3, f4, f5)                    \
+  template <>                                                        \
+  struct Reflect<T> {                                                \
+    static constexpr bool defined = true;                            \
+    static auto fields() {                                           \
+      return std::make_tuple(field(#f1, &T::f1), field(#f2, &T::f2), \
+                             field(#f3, &T::f3), field(#f4, &T::f4), \
+                             field(#f5, &T::f5));                    \
+    }                                                                \
+    static std::vector<std::string> known_keys() {                   \
+      return {#f1, #f2, #f3, #f4, #f5};                              \
+    }                                                                \
+  };
+
+#define CXXMCP_REFL_IMPL_6(T, f1, f2, f3, f4, f5, f6)                 \
+  template <>                                                         \
+  struct Reflect<T> {                                                 \
+    static constexpr bool defined = true;                             \
+    static auto fields() {                                            \
+      return std::make_tuple(field(#f1, &T::f1), field(#f2, &T::f2),  \
+                             field(#f3, &T::f3), field(#f4, &T::f4),  \
+                             field(#f5, &T::f5), field(#f6, &T::f6)); \
+    }                                                                 \
+    static std::vector<std::string> known_keys() {                    \
+      return {#f1, #f2, #f3, #f4, #f5, #f6};                          \
+    }                                                                 \
+  };
+
+#define CXXMCP_REFL_IMPL_7(T, f1, f2, f3, f4, f5, f6, f7)            \
+  template <>                                                        \
+  struct Reflect<T> {                                                \
+    static constexpr bool defined = true;                            \
+    static auto fields() {                                           \
+      return std::make_tuple(field(#f1, &T::f1), field(#f2, &T::f2), \
+                             field(#f3, &T::f3), field(#f4, &T::f4), \
+                             field(#f5, &T::f5), field(#f6, &T::f6), \
+                             field(#f7, &T::f7));                    \
+    }                                                                \
+    static std::vector<std::string> known_keys() {                   \
+      return {#f1, #f2, #f3, #f4, #f5, #f6, #f7};                    \
+    }                                                                \
+  };
+
+#define CXXMCP_REFL_IMPL_8(T, f1, f2, f3, f4, f5, f6, f7, f8)         \
+  template <>                                                         \
+  struct Reflect<T> {                                                 \
+    static constexpr bool defined = true;                             \
+    static auto fields() {                                            \
+      return std::make_tuple(field(#f1, &T::f1), field(#f2, &T::f2),  \
+                             field(#f3, &T::f3), field(#f4, &T::f4),  \
+                             field(#f5, &T::f5), field(#f6, &T::f6),  \
+                             field(#f7, &T::f7), field(#f8, &T::f8)); \
+    }                                                                 \
+    static std::vector<std::string> known_keys() {                    \
+      return {#f1, #f2, #f3, #f4, #f5, #f6, #f7, #f8};                \
+    }                                                                 \
+  };
+
+// Internal dispatch by counting variadic args (supports 1-8 fields).
+#define CXXMCP_CONCAT_IMPL(a, b) a##b
+#define CXXMCP_CONCAT(a, b) CXXMCP_CONCAT_IMPL(a, b)
+#define CXXMCP_NARG_IMPL(_1, _2, _3, _4, _5, _6, _7, _8, N, ...) N
+#define CXXMCP_NARG(...) CXXMCP_NARG_IMPL(__VA_ARGS__, 8, 7, 6, 5, 4, 3, 2, 1)
+
+/// @brief One-line Reflect<T> specialization.
+///
+/// Usage (inside namespace mcp::protocol):
+/// @code
+///   CXXMCP_REFLECT(MyStruct, field1, field2, field3)
+/// @endcode
+///
+/// Supports 1 to 8 fields. For more, use a manual Reflect<> specialization.
+#define CXXMCP_REFLECT(Type, ...) \
+  CXXMCP_CONCAT(CXXMCP_REFL_IMPL_, CXXMCP_NARG(__VA_ARGS__))(Type, __VA_ARGS__)
 
 // ---------------------------------------------------------------------------
 // Compile-time reflection completeness check

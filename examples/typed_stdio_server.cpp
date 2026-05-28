@@ -33,35 +33,9 @@ struct SearchResult {
 
 namespace mcp::protocol {
 
-template <>
-struct Reflect<example::SearchArgs> {
-  static constexpr bool defined = true;
-  static auto fields() {
-    return std::make_tuple(field("query", &example::SearchArgs::query),
-                           field("limit", &example::SearchArgs::limit));
-  }
-  static std::vector<std::string> known_keys() { return {"query", "limit"}; }
-};
-
-template <>
-struct Reflect<example::SearchHit> {
-  static constexpr bool defined = true;
-  static auto fields() {
-    return std::make_tuple(field("title", &example::SearchHit::title),
-                           field("uri", &example::SearchHit::uri));
-  }
-  static std::vector<std::string> known_keys() { return {"title", "uri"}; }
-};
-
-template <>
-struct Reflect<example::SearchResult> {
-  static constexpr bool defined = true;
-  static auto fields() {
-    return std::make_tuple(field("session", &example::SearchResult::session),
-                           field("hits", &example::SearchResult::hits));
-  }
-  static std::vector<std::string> known_keys() { return {"session", "hits"}; }
-};
+CXXMCP_REFLECT(example::SearchArgs, query, limit)
+CXXMCP_REFLECT(example::SearchHit, title, uri)
+CXXMCP_REFLECT(example::SearchResult, session, hits)
 
 }  // namespace mcp::protocol
 

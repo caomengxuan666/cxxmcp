@@ -76,6 +76,11 @@ if(TARGET mcp_protocol)
     add_cxxmcp_public_header_compile_test(
         protocol protocol_header.cpp cxxmcp::protocol)
     add_cxxmcp_public_header_compile_test(
+        protocol_types protocol_types_header.cpp cxxmcp::protocol)
+    add_cxxmcp_public_header_compile_test(
+        protocol_types_reflect protocol_types_reflect_header.cpp
+        cxxmcp::protocol)
+    add_cxxmcp_public_header_compile_test(
         error error_header.cpp cxxmcp::protocol)
 endif()
 
