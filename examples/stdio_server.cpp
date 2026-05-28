@@ -1,8 +1,8 @@
 // Copyright (c) 2025 [caomengxuan666]
 //
-// Compatibility example: demonstrates ServerPeer builder with typed
-// tool/prompt/resource registration. Uses the one-call run() helper to serve
-// the server on stdio transport.
+// Comprehensive stdio server example using ServerPeer::builder() with typed
+// tool, prompt, resource, completion, sampling, logging, and raw request
+// registration. Uses the one-call .run() entry point via cxxmcp/run.hpp.
 
 #include <optional>
 #include <string>

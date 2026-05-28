@@ -277,14 +277,11 @@ cmake --install build-smoke --config Debug --prefix out/install/cxxmcp
 ### Canonical Server Peer/Service
 
 ```cpp
-#include <iostream>
-#include <utility>
-
 #include <cxxmcp/peer.hpp>
-#include <cxxmcp/service.hpp>
+#include <cxxmcp/run.hpp>
 
 int main() {
-    auto peer = mcp::ServerPeer::builder()
+    return mcp::ServerPeer::builder()
         .name("demo-server")
         .version("1.0.0")
         .stdio()
@@ -293,17 +290,7 @@ int main() {
             .handler([](const mcp::protocol::Json& input) {
                 return mcp::protocol::Json{{"echo", input}};
             }))
-        .build();
-
-    if (!peer) {
-        return 1;
-    }
-
-    auto running = mcp::serve(std::move(*peer));
-    if (!running) {
-        return 1;
-    }
-    return running->wait().has_value() ? 0 : 1;
+        .run();
 }
 ```
 
@@ -527,12 +514,13 @@ request semantics remain stable.
 
 The in-tree examples preset builds compact SDK entry points:
 
-- First-choice Peer/Service examples: `auth_bearer_http`,
+- First-choice Peer/Service examples: `cxx17_consumer`, `auth_bearer_http`,
   `server_stdio_peer`, `server_peer`, `client_peer`, `process_stdio_client`,
-  `timeout_cancellation`, `elicitation_client`
+  `timeout_cancellation`, `elicitation_client`, `stdio_server`,
+  `typed_stdio_server`
 - Focused capability examples: `auth_dpop_openssl`, `handler_contracts`,
-  `task_async_client_server`, `typed_stdio_server`, `streamable_http_client`
-- Compatibility and low-level examples: `stdio_server`, `client_loopback`
+  `task_async_client_server`, `streamable_http_client`
+- Compatibility and low-level examples: `client_loopback`
 `ctest --preset examples` runs only self-contained smoke examples. Long-running
 stdio servers and external Streamable HTTP samples are build-checked but not run
 as standalone CTest cases.

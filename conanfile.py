@@ -62,10 +62,6 @@ class CxxmcpConan(ConanFile):
 
         toolchain = CMakeToolchain(self)
         toolchain.variables["CXXMCP_BUILD_SDK"] = True
-        toolchain.variables["CXXMCP_BUILD_RUNTIME"] = False
-        toolchain.variables["CXXMCP_BUILD_APP"] = False
-        toolchain.variables["CXXMCP_BUILD_GATEWAY"] = False
-        toolchain.variables["CXXMCP_BUILD_CLI"] = False
         toolchain.variables["CXXMCP_BUILD_EXAMPLES"] = bool(
             self.options.with_examples)
         toolchain.variables["CXXMCP_BUILD_TESTS"] = bool(

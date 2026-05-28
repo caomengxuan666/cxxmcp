@@ -56,7 +56,7 @@ In-tree examples should stay focused on SDK use: `Peer`, `Service`, client,
 server, protocol, transport, auth, plugin, and adapter flows. Gateway examples
 belong in the external gateway/examples repository and should not be presented
 as the first-choice SDK path in this README, release notes, or package
-documentation. The former `gateway_runtime.cpp` example is intentionally not
+documentation. The former in-tree gateway runtime example is intentionally not
 part of this SDK repository.
 
 ## Transport Adapter Ergonomics

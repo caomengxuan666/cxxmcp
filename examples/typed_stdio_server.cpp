@@ -1,7 +1,7 @@
 // Copyright (c) 2025 [caomengxuan666]
 //
-// Compatibility example: demonstrates typed ServerPeer builder registration
-// with reflected structs.
+// Typed tool registration example using CXXMCP_REFLECT and
+// ServerPeer::builder() with mcp::server::tool<>().
 
 #include <algorithm>
 #include <optional>

@@ -24,10 +24,6 @@ package("cxxmcp")
         end
         local configs = {
             "-DCXXMCP_BUILD_SDK=ON",
-            "-DCXXMCP_BUILD_RUNTIME=OFF",
-            "-DCXXMCP_BUILD_APP=OFF",
-            "-DCXXMCP_BUILD_GATEWAY=OFF",
-            "-DCXXMCP_BUILD_CLI=OFF",
             "-DCXXMCP_BUILD_EXAMPLES=OFF",
             "-DCXXMCP_BUILD_TESTS=OFF",
             "-DCXXMCP_BUILD_DOCS=OFF",

@@ -12,27 +12,31 @@ requirements into the default SDK path.
 - `server_stdio_peer.cpp`: copyable server-side `Peer` / `Service` over stdio.
 - `server_peer.cpp`: server-side `Peer` / `Service` loopback coverage.
 - `client_peer.cpp`: client-side `Peer` / `Service` requests.
-- `process_stdio_client.cpp`: launching and talking to a local MCP server.
+- `process_stdio_client.cpp`: launching and talking to a local MCP server via
+  `ClientPeer::builder().process_stdio(command)`.
 - `timeout_cancellation.cpp`: request timeout and cooperative cancellation.
 - `elicitation_client.cpp`: client-side elicitation handling.
 - `stdio_server.cpp`: compact stdio server using `ServerPeer::builder()` with
   typed tool, prompt, resource, completion, sampling, and logging registration.
 - `typed_stdio_server.cpp`: typed tool registration with reflected structs via
-  `ServerPeer::builder()` and `mcp::server::tool<>()`.
+  `ServerPeer::builder()` and `mcp::server::tool<>()`. Uses the
+  `CXXMCP_REFLECT(Type, field1, ...)` macro for one-line reflection
+  specializations.
 
 ## Focused Capability Examples
 
 - `handler_contracts.cpp`: durable handler interfaces.
 - `auth_dpop_openssl.cpp`: opt-in OpenSSL DPoP/JWKS auth-provider wiring.
 - `task_async_client_server.cpp`: task-aware tool lifecycle.
-- `streamable_http_client.cpp`: Streamable HTTP client construction.
+- `streamable_http_client.cpp`: Streamable HTTP client construction via
+  `ClientPeer::builder().streamable_http(uri)`.
 
 ## Compatibility Or Low-Level Examples
 
 - `client_loopback.cpp`: local loopback coverage using `ServerPeer::builder()`
   with the deprecated `server()` accessor for client transport plumbing.
 
-## Runtime Tooling Example
+## External Gateway Boundary
 
 Runtime/gateway examples have moved to the external gateway repository. This SDK
 repository does not ship `gateway_runtime.cpp` or present gateway tooling as a
@@ -41,6 +45,40 @@ canonical SDK example path.
 `ctest --preset examples` runs self-contained smoke examples. Long-running
 server samples and externally hosted HTTP samples are build-checked but are not
 registered as standalone CTest cases.
+
+## One-Call Entry Points
+
+Both `ServerPeer::builder()` and `ClientPeer::builder()` support a `.run()`
+method via `<cxxmcp/run.hpp>`:
+
+- **Server**: `.run()` builds the peer, serves it on stdio, and blocks until
+  shutdown. Returns 0 on clean exit, 1 on error.
+- **Client**: `.run(callback)` builds the peer, serves it, invokes the callback
+  with a `RunningService<RoleClient>&`, then stops. Returns 0 on success.
+
+```cpp
+// Server - one call:
+return mcp::ServerPeer::builder()
+    .name("my-server")
+    .stdio()
+    .tool<Json, Json>("echo", [](const Json& in) { return in; })
+    .run();
+
+// Client - one call:
+return mcp::ClientPeer::builder()
+    .process_stdio("my-server")
+    .run([](auto& svc) {
+        svc.peer().initialize();
+        svc.peer().call_tool("echo", Json{{"value", "hello"}});
+    });
+```
+
+## Reflect Macro
+
+`CXXMCP_REFLECT(Type, field1, field2, ...)` in `<cxxmcp/protocol/reflect.hpp>`
+generates a complete `Reflect<T>` specialization in one line, replacing the
+manual `fields()` + `known_keys()` + `defined` boilerplate. Supports 1-16
+fields. Must be used inside `namespace mcp::protocol`.
 
 `cxx17_consumer.cpp` is compiled as `cxx_std_17` in-tree. The richer examples
 may use newer C++ syntax for readability, but they are not allowed to raise the

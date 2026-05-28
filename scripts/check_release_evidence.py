@@ -299,11 +299,11 @@ def check_source_tree(source: Path) -> None:
     require_contains(examples_doc, "auth_bearer_http.cpp")
     require_contains(examples_doc, "auth_dpop_openssl.cpp")
     require_contains(examples_doc, "server_stdio_peer.cpp")
-    require_contains(examples_doc, "Runtime Tooling Example")
+    require_contains(examples_doc, "External Gateway Boundary")
 
     runtime_gateway = source / "docs/runtime_gateway.md"
     require_contains(runtime_gateway, "not part of the core public SDK contract")
-    require_contains(runtime_gateway, "gateway_runtime.cpp")
+    require_contains(runtime_gateway, "not part of this SDK repository")
 
     compatibility = source / "docs/compatibility_policy.md"
     require_contains(compatibility, "Do not add another HTTP backend")
@@ -773,9 +773,8 @@ def check_source_tree(source: Path) -> None:
     example_markers = {
         "examples/client_loopback.cpp": "Compatibility example",
         "examples/task_async_client_server.cpp": "Compatibility example",
-        "examples/stdio_server.cpp": "Compatibility example",
-        "examples/typed_stdio_server.cpp": "Compatibility example",
-        "examples/gateway_runtime.cpp": "Runtime tooling example",
+        "examples/stdio_server.cpp": "Comprehensive stdio server example",
+        "examples/typed_stdio_server.cpp": "Typed tool registration example",
     }
     for relative, marker in example_markers.items():
         text = read_text(source / relative)
