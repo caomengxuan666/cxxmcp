@@ -129,10 +129,5 @@ if(TARGET mcp_auth_openssl AND TARGET mcp_client AND TARGET mcp_server)
     cxxmcp_example(mcp_example_auth_dpop_openssl)
     cxxmcp_example_smoke_test(example_auth_dpop_openssl
                               mcp_example_auth_dpop_openssl)
-endif()
 
-if(TARGET mcp_app AND TARGET mcp_gateway)
-    add_executable(mcp_example_gateway_runtime gateway_runtime.cpp)
-    target_link_libraries(mcp_example_gateway_runtime PRIVATE mcp_gateway)
-    cxxmcp_example(mcp_example_gateway_runtime)
 endif()

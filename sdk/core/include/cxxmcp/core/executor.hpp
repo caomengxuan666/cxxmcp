@@ -3,6 +3,7 @@
 #pragma once
 
 #include <algorithm>
+#include <atomic>
 #include <chrono>
 #include <condition_variable>
 #include <cstddef>
@@ -327,7 +328,7 @@ class Executor {
   std::condition_variable work_cv_;
   std::deque<std::function<void()>> queues_[3];
   std::vector<std::thread> workers_;
-  bool stopping_ = false;
+  std::atomic<bool> stopping_ = false;
   bool drain_mode_ = false;
 
   std::mutex timer_mutex_;

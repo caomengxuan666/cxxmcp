@@ -999,11 +999,8 @@ jobs:
             docs/auth_user_guide.md \
             docs/compatibility_policy.md \
             docs/dependency_policy.md \
-            docs/elicitation_lifecycle.md \
             docs/ecosystem_maturity_evidence.md \
             docs/examples.md \
-            docs/graceful_shutdown.md \
-            docs/http_transport_backend_evidence.md \
             docs/official_sdk_candidate_process.md \
             docs/package_consumption.md \
             docs/package_consumption_zh.md \
@@ -1017,9 +1014,7 @@ jobs:
             docs/request_lifecycle.md \
             docs/rmcp_source_mapping.json \
             docs/runtime_gateway.md \
-            docs/task_lifecycle.md \
             docs/technical_audit.md \
-            docs/transport_adapters.md \
             release-evidence/docs/
           cp -r docs/pages release-evidence/docs/pages
           test -f release-evidence/docs/pages/index.html

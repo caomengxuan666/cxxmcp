@@ -107,6 +107,38 @@ struct TaskRequestParameters {
   std::optional<Json> meta;
 };
 
+template <>
+struct Reflect<TaskRequestParameters> {
+  static constexpr bool defined = true;
+  static auto fields() {
+    return std::make_tuple(
+        field("ttl", &TaskRequestParameters::ttl),
+        field("_meta", &TaskRequestParameters::meta),
+        extensions_field(&TaskRequestParameters::extensions, {"ttl", "_meta"}));
+  }
+  static std::vector<std::string> known_keys() { return {"ttl", "_meta"}; }
+};
+
+template <>
+struct JsonFieldTraits<TaskRequestParameters> {
+  static void serialize(Json& json, const char* key,
+                        const TaskRequestParameters& value) {
+    json[key] = reflect_to_json(value);
+  }
+  static bool deserialize(const Json& json, const char* key,
+                          TaskRequestParameters& target) {
+    if (!json.contains(key)) {
+      return false;
+    }
+    auto result = reflect_from_json<TaskRequestParameters>(json.at(key));
+    if (!result) {
+      return false;
+    }
+    target = std::move(*result);
+    return true;
+  }
+};
+
 /// @brief Snapshot of an asynchronous task.
 struct Task {
   /// Stable task identifier used by task management methods.
@@ -284,53 +316,14 @@ inline core::Error task_json_error(std::string message) {
 /// @brief Serializes optional task request parameters.
 inline Json task_request_parameters_to_json(
     const TaskRequestParameters& parameters) {
-  Json json = Json::object();
-  if (parameters.extensions.is_object()) {
-    for (const auto& [key, value] : parameters.extensions.items()) {
-      if (key != "ttl" && key != "_meta") {
-        json[key] = value;
-      }
-    }
-  }
-  if (parameters.ttl.has_value()) {
-    json["ttl"] = *parameters.ttl;
-  }
-  if (parameters.meta.has_value()) {
-    json["_meta"] = *parameters.meta;
-  }
-  return json;
+  return reflect_to_json(parameters);
 }
 
 /// @brief Parses optional task request parameters.
 /// @return Parsed parameters or validation error.
 inline core::Result<TaskRequestParameters> task_request_parameters_from_json(
     const Json& json) {
-  if (!json.is_object()) {
-    return mcp::core::unexpected(
-        task_json_error("task parameters must be an object"));
-  }
-
-  TaskRequestParameters parameters;
-  if (json.contains("ttl")) {
-    if (!json.at("ttl").is_number_integer()) {
-      return mcp::core::unexpected(
-          task_json_error("task ttl must be an integer"));
-    }
-    parameters.ttl = json.at("ttl").get<std::int64_t>();
-  }
-  if (json.contains("_meta")) {
-    if (!json.at("_meta").is_object()) {
-      return mcp::core::unexpected(
-          task_json_error("task parameters _meta must be an object"));
-    }
-    parameters.meta = json.at("_meta");
-  }
-  for (const auto& [key, value] : json.items()) {
-    if (key != "ttl" && key != "_meta") {
-      parameters.extensions[key] = value;
-    }
-  }
-  return parameters;
+  return reflect_from_json<TaskRequestParameters>(json);
 }
 
 /// @brief Serializes a task snapshot.

@@ -62,7 +62,7 @@ their policy changes.
 | C1 | FIXED | `stdio_transport`, process-stdio interop, release-blocking transport matrix |
 | C2 | FIXED | `stdio_transport`, ThreadSanitizer/source-style policy |
 | C3 | FIXED | `stdio_transport`, notification/response interleaving regressions |
-| H1 | ACCEPTED LIMITATION | `docs/graceful_shutdown.md`, `docs/request_lifecycle.md`, release notes limitation disclosure |
+| H1 | ACCEPTED LIMITATION | `docs/request_lifecycle.md#recommended-signal-handling-pattern`, release notes limitation disclosure |
 | H2 | FIXED | `sdk`, public authoring compile tests, handler ambiguity diagnostics |
 | H3 | FIXED_WITH_TRACKED_DEBT | public-header compile evidence, `docs/performance_debt.md`, `todo.md` compile-time gate |
 | H4 | FIXED | `http_transport`, public-header backend isolation checks |
@@ -107,7 +107,7 @@ their policy changes.
 | Auth-F6 | FIXED | auth metadata discovery SSRF guard tests |
 | Auth-F7 | FIXED | authorization-state TTL tests |
 | EXT-H1 | FIXED | handler dispatch return regression coverage |
-| EXT-H2 | FIXED_POLICY | `docs/graceful_shutdown.md` and release evidence docs |
+| EXT-H2 | FIXED_POLICY | `docs/request_lifecycle.md#recommended-signal-handling-pattern` and release evidence docs |
 | EXT-H3 | FIXED | synchronized registry reentrancy tests |
 | EXT-M1 | FIXED | owned `ServerHandlerInterface` lifetime tests |
 | EXT-M2 | FIXED | `ServerHandler::apply_to()` non-empty overwrite tests |
@@ -606,11 +606,15 @@ propose a separate design note.
 
 Background tasks continue running after timeout — cancellation is cooperative only (notification sent to peer, but the task is not forcibly stopped).
 
-**Resolution:** Timeout-only awaits now use `shared_future::wait_until()` with
-the exact deadline instead of 10ms sliced waits. Await paths that include a
-`CancellationToken` still poll because the current token is an atomic
-cooperative flag with no blocking notification primitive; this is now a
-documented design boundary tracked in `docs/performance_debt.md` and `todo.md`.
+**Resolution:** `RequestHandle::await_response()` now uses `AsyncResult<T>` with
+CV-based blocking instead of `shared_future` or polling. `CancellationToken` has
+been extended with `wait_for_cancel()` (CV-based, zero CPU) backed by a
+`CancellationState` containing `atomic_bool` + `mutex` + `condition_variable`.
+The cancellation watcher is posted as a `BACKGROUND` task on the executor,
+blocks on `token.wait_for_cancel()`, then cancels the `AsyncResult` to wake
+waiters. `TaskHandle::wait()` also uses CV-based push notification
+(`task_status_cv_`) with an RPC poll fallback for servers that don't send task
+status notifications. All `sleep_for` polling has been eliminated.
 
 ---
 
@@ -1029,7 +1033,7 @@ No handler for SIGINT or SIGTERM exists anywhere in the SDK. If the process rece
 
 **Fix:** Provide a signal handler utility or document that applications must install their own graceful shutdown handler.
 
-**Resolution:** `docs/graceful_shutdown.md` now documents the application-owned
+**Resolution:** `docs/request_lifecycle.md#recommended-signal-handling-pattern` now documents the application-owned
 signal model for POSIX `SIGINT` / `SIGTERM` and Windows console control
 handling. The guidance uses a minimal atomic flag in the signal/control handler
 and calls SDK `stop()` / `close()` APIs from normal application control flow.

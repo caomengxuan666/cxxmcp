@@ -33,7 +33,7 @@ contract and should not be required by SDK-only packages.
 
 `cpp-httplib` remains an implementation dependency hidden behind transport
 interfaces. The evidence and replacement trigger for considering another HTTP
-backend are tracked in `docs/http_transport_backend_evidence.md`.
+backend are tracked in `docs/compatibility_policy.md#http-transport-backend-evidence`.
 
 Gateway/tooling state is outside the public SDK header contract and now lives
 outside this SDK repository. The canonical SDK include roots must not expose
@@ -89,7 +89,7 @@ For the current SDK surface:
   exported target.
 - `cpp-httplib` remains hidden behind transport interfaces; replacement claims
   require the load/reliability evidence tracked in
-  `docs/http_transport_backend_evidence.md`.
+  `docs/compatibility_policy.md#http-transport-backend-evidence`.
 
 The release candidate checklist must cite this dependency review before
 publishing stable, curated-registry, or fact-standard claims.

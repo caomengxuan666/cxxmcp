@@ -33,7 +33,6 @@ REQUIRED_EXTERNAL_GATE_MARKERS = (
 REQUIRED_EVIDENCE_DOCS = (
     Path("docs/examples.md"),
     Path("docs/runtime_gateway.md"),
-    Path("docs/http_transport_backend_evidence.md"),
     Path("docs/ecosystem_maturity_evidence.md"),
 )
 

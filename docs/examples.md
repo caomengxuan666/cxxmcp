@@ -65,11 +65,11 @@ For release/vcpkg evidence, keep at least these downstream scenarios green:
 - Request lifecycle coverage for async requests, timeouts, cancellation,
   cancellation-aware inbound callbacks, pagination helpers, subscriptions, and
   task cancellation. Application-level signal handling should follow
-  [Graceful Shutdown](graceful_shutdown.md) so examples and downstream services
+  [Graceful Shutdown](request_lifecycle.md#recommended-signal-handling-pattern) so examples and downstream services
   call `stop()` / `close()` from normal control flow instead of from a signal
   handler.
 - Authoring ergonomics coverage for typed tools, handler interfaces,
   server-to-client context calls, rich content blocks, custom role-generic
   transports, and transport adapters. See
-  [Transport Adapter Ergonomics](transport_adapters.md) for the stable helper
+  [Transport Adapter Ergonomics](runtime_gateway.md#transport-adapter-ergonomics) for the stable helper
   layer used by custom source/sink and queue integrations.

@@ -190,11 +190,8 @@ def check_source_tree(source: Path) -> None:
         "docs/auth_user_guide.md",
         "docs/compatibility_policy.md",
         "docs/dependency_policy.md",
-        "docs/elicitation_lifecycle.md",
         "docs/ecosystem_maturity_evidence.md",
         "docs/examples.md",
-        "docs/graceful_shutdown.md",
-        "docs/http_transport_backend_evidence.md",
         "docs/official_sdk_candidate_process.md",
         "docs/package_consumption.md",
         "docs/package_consumption_zh.md",
@@ -208,7 +205,6 @@ def check_source_tree(source: Path) -> None:
         "docs/request_lifecycle.md",
         "docs/rmcp_source_mapping.json",
         "docs/runtime_gateway.md",
-        "docs/task_lifecycle.md",
         "docs/technical_audit.md",
         "docs/Doxyfile",
         "docs/pages/index.html",
@@ -278,7 +274,7 @@ def check_source_tree(source: Path) -> None:
         for needle in [
             "docs/examples.md",
             "docs/runtime_gateway.md",
-            "docs/http_transport_backend_evidence.md",
+            "docs/compatibility_policy.md#http-transport-backend-evidence",
         ]:
             if needle not in text:
                 fail(f"{path} must link {needle!r}")
@@ -305,9 +301,9 @@ def check_source_tree(source: Path) -> None:
     require_contains(runtime_gateway, "not part of the core public SDK contract")
     require_contains(runtime_gateway, "gateway_runtime.cpp")
 
-    http_backend = source / "docs/http_transport_backend_evidence.md"
-    require_contains(http_backend, "Do not add another HTTP backend")
-    require_contains(http_backend, "release-blocking `http_transport`")
+    compatibility = source / "docs/compatibility_policy.md"
+    require_contains(compatibility, "Do not add another HTTP backend")
+    require_contains(compatibility, "release-blocking `http_transport`")
 
     performance_debt = source / "docs/performance_debt.md"
     require_contains(performance_debt, "protocol_serialization_benchmark")
@@ -338,7 +334,6 @@ def check_source_tree(source: Path) -> None:
         "tl::expected",
         "jsonrpcpp",
         "cpp-httplib",
-        "docs/http_transport_backend_evidence.md",
     ]:
         require_contains(dependency_policy, needle)
 
@@ -801,11 +796,8 @@ def check_evidence_dir(evidence: Path) -> None:
         "docs/auth_user_guide.md",
         "docs/compatibility_policy.md",
         "docs/dependency_policy.md",
-        "docs/elicitation_lifecycle.md",
         "docs/ecosystem_maturity_evidence.md",
         "docs/examples.md",
-        "docs/graceful_shutdown.md",
-        "docs/http_transport_backend_evidence.md",
         "docs/official_sdk_candidate_process.md",
         "docs/package_consumption.md",
         "docs/package_consumption_zh.md",
@@ -819,9 +811,7 @@ def check_evidence_dir(evidence: Path) -> None:
         "docs/request_lifecycle.md",
         "docs/rmcp_source_mapping.json",
         "docs/runtime_gateway.md",
-        "docs/task_lifecycle.md",
         "docs/technical_audit.md",
-        "docs/transport_adapters.md",
         "docs/pages/index.html",
         "docs/pages/getting-started.html",
         "docs/pages/auth.html",

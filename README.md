@@ -410,10 +410,8 @@ optional feature families. A milestone that targets core MCP parity must not
 force applications to implement task or elicitation handlers unless that
 milestone explicitly covers those capabilities. Capability negotiation and raw
 JSON-RPC escape hatches remain the compatibility path for partial or future
-feature support. Server-side task lifecycle semantics are documented in
-[Task lifecycle](docs/task_lifecycle.md). Elicitation lifecycle and capability
-semantics are documented in
-[Elicitation lifecycle](docs/elicitation_lifecycle.md). Request timeout,
+feature support. Server-side task and elicitation lifecycle semantics are documented in
+[Capability lifecycles](docs/capability_lifecycles.md). Request timeout,
 cancellation, progress, and shutdown semantics are documented in
 [Request lifecycle](docs/request_lifecycle.md).
 
@@ -487,7 +485,7 @@ Streamable HTTP POST/GET/DELETE behavior and treat raw SSE endpoints as an
 adapter concern, not a separate SDK protocol.
 
 The current `cpp-httplib` backend decision and replacement trigger are tracked
-in `docs/http_transport_backend_evidence.md`.
+in `docs/compatibility_policy.md#http-transport-backend-evidence`.
 
 ## CMake Options
 

@@ -53,6 +53,35 @@ struct ToolExecution {
   }
 };
 
+template <>
+struct Reflect<ToolExecution> {
+  static constexpr bool defined = true;
+  static auto fields() {
+    return std::make_tuple(field("taskSupport", &ToolExecution::task_support));
+  }
+  static std::vector<std::string> known_keys() { return {"taskSupport"}; }
+};
+
+template <>
+struct JsonFieldTraits<ToolExecution> {
+  static void serialize(Json& json, const char* key,
+                        const ToolExecution& value) {
+    json[key] = reflect_to_json(value);
+  }
+  static bool deserialize(const Json& json, const char* key,
+                          ToolExecution& target) {
+    if (!json.contains(key)) {
+      return false;
+    }
+    auto result = reflect_from_json<ToolExecution>(json.at(key));
+    if (!result) {
+      return false;
+    }
+    target = std::move(*result);
+    return true;
+  }
+};
+
 /// @brief A single content item returned by a tool or embedded in prompts.
 struct ContentBlock {
   /// Content kind. Common values are `text`, `image`, `audio`, `resource`, and
@@ -446,36 +475,13 @@ inline bool is_valid_base64(std::string_view value) noexcept {
 
 /// @brief Serializes tool execution configuration.
 inline Json tool_execution_to_json(const ToolExecution& execution) {
-  Json json = Json::object();
-  if (execution.task_support.has_value()) {
-    json["taskSupport"] = task_support_to_string(*execution.task_support);
-  }
-  return json;
+  return reflect_to_json(execution);
 }
 
 /// @brief Parses tool execution configuration.
 /// @return Parsed execution configuration or validation error.
 inline core::Result<ToolExecution> tool_execution_from_json(const Json& json) {
-  if (!json.is_object()) {
-    return mcp::core::unexpected(
-        tool_json_error("tool execution must be an object"));
-  }
-
-  ToolExecution execution;
-  if (json.contains("taskSupport")) {
-    if (!json.at("taskSupport").is_string()) {
-      return mcp::core::unexpected(
-          tool_json_error("tool execution taskSupport must be a string"));
-    }
-    const auto task_support = task_support_from_string(
-        json.at("taskSupport").get_ref<const std::string&>());
-    if (!task_support.has_value()) {
-      return mcp::core::unexpected(
-          tool_json_error("tool execution taskSupport is invalid"));
-    }
-    execution.task_support = *task_support;
-  }
-  return execution;
+  return reflect_from_json<ToolExecution>(json);
 }
 
 /// @brief Serializes a content block.

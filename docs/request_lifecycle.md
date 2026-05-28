@@ -50,7 +50,10 @@ must observe its cancellation token for cooperative stop behavior.
 
 Cancellation is cooperative. `CancellationSource` owns cancellation state and
 `CancellationToken` is the cheap copyable value passed to SDK internals and
-handlers.
+handlers. `CancellationToken::cancelled()` uses `atomic_bool` with
+`memory_order_acquire` for the fast path. `CancellationToken::wait_for_cancel()`
+blocks on a condition variable until cancellation is requested (zero CPU), with
+optional timeout and deadline overloads.
 
 The SDK propagates cancellation tokens into handler contexts where there is a
 meaningful execution boundary:
@@ -109,7 +112,7 @@ attached transports are closed and pending receive loops observe the same
 service cancellation.
 
 Process-level `SIGINT` / `SIGTERM` or console-control handling remains an
-application responsibility. See `docs/graceful_shutdown.md` for the recommended
+application responsibility. See the signal handling section below for the recommended
 atomic-flag pattern and transport-specific shutdown notes.
 
 ## Transport Notes

@@ -159,7 +159,7 @@ bool wait_for_http_initialize(int port, const std::string& path) {
       {"Mcp-Method", std::string(mcp::protocol::InitializeMethod)},
   };
 
-  for (int attempt = 0; attempt < 100; ++attempt) {
+  for (int attempt = 0; attempt < 400; ++attempt) {
     httplib::Client client("127.0.0.1", port);
     const auto response = client.Post(path, initialize_headers,
                                       initialize_request, "application/json");

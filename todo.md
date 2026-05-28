@@ -992,7 +992,7 @@ true:
 - [x] Add thread sanitizer builds where practical.
 - [x] Use load-test results before considering a different HTTP backend.
   - [x] Track the current HTTP backend evidence and replacement triggers in
-        `docs/http_transport_backend_evidence.md`.
+        `docs/compatibility_policy.md#http-transport-backend-evidence`.
 
 ## Non-Goals
 

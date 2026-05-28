@@ -14,7 +14,7 @@ INPUT                  = README.md \
                          docs/auth_user_guide.md \
                          docs/compatibility_policy.md \
                          docs/dependency_policy.md \
-                         docs/elicitation_lifecycle.md \
+                         docs/capability_lifecycles.md \
                          docs/official_sdk_candidate_process.md \
                          docs/package_consumption.md \
                          docs/package_consumption_zh.md \
@@ -25,7 +25,6 @@ INPUT                  = README.md \
                          docs/release_candidate_checklist.md \
                          docs/release_notes_template.md \
                          docs/request_lifecycle.md \
-                         docs/task_lifecycle.md \
                          todo.md \
                          sdk/include \
                          sdk/auth/include \

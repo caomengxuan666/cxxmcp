@@ -123,7 +123,7 @@ registered through `cxxmcp_mark_release_blocking()`.
   `transport_adapters`: concrete and compatibility transport behavior,
   including failure-path coverage plus short HTTP concurrent-session and
   many-in-flight request smoke coverage. The current HTTP backend decision is
-  recorded in `docs/http_transport_backend_evidence.md`;
+  recorded in `docs/compatibility_policy.md#http-transport-backend-evidence`;
   another HTTP stack requires measured load, lifecycle, sanitizer, or
   downstream workload evidence.
 - `client_server`, `sdk`: canonical Peer/Service, request lifecycle,
