@@ -15,6 +15,7 @@
 #include <utility>
 #include <vector>
 
+#include "cxxmcp/auth/constant_time.hpp"
 #include "cxxmcp/auth/metadata.hpp"
 #include "cxxmcp/auth/pkce.hpp"
 #include "cxxmcp/auth/registration.hpp"
@@ -114,9 +115,26 @@ class InMemoryCredentialStore final : public CredentialStore {
  private:
   using Entry = std::pair<CredentialKey, StoredCredentials>;
 
+  static bool matches(const MetadataMap& lhs, const MetadataMap& rhs) {
+    if (lhs.size() != rhs.size()) {
+      return false;
+    }
+    bool equal = true;
+    auto lhs_iter = lhs.begin();
+    auto rhs_iter = rhs.begin();
+    for (; lhs_iter != lhs.end(); ++lhs_iter, ++rhs_iter) {
+      equal = constant_time_string_equal(lhs_iter->first, rhs_iter->first) &
+              constant_time_string_equal(lhs_iter->second, rhs_iter->second) &
+              equal;
+    }
+    return equal;
+  }
+
   static bool matches(const CredentialKey& lhs, const CredentialKey& rhs) {
-    return lhs.resource == rhs.resource && lhs.issuer == rhs.issuer &&
-           lhs.client_id == rhs.client_id && lhs.attributes == rhs.attributes;
+    return constant_time_string_equal(lhs.resource, rhs.resource) &
+           constant_time_string_equal(lhs.issuer, rhs.issuer) &
+           constant_time_string_equal(lhs.client_id, rhs.client_id) &
+           matches(lhs.attributes, rhs.attributes);
   }
 
   std::vector<Entry>::iterator find_entry(const CredentialKey& key) {
@@ -152,6 +170,8 @@ struct StoredAuthorizationState {
   ScopeList requested_scopes;
   MetadataMap metadata;
 };
+
+inline constexpr std::chrono::seconds kDefaultAuthorizationStateTtl{60};
 
 /// @brief Application-provided authorization state persistence boundary.
 class StateStore {
@@ -201,7 +221,7 @@ class InMemoryStateStore final : public StateStore {
 
   std::vector<Entry>::iterator find_entry(const std::string& state) {
     for (auto iter = entries_.begin(); iter != entries_.end(); ++iter) {
-      if (iter->first == state) {
+      if (constant_time_string_equal(iter->first, state)) {
         return iter;
       }
     }
@@ -211,7 +231,7 @@ class InMemoryStateStore final : public StateStore {
   std::vector<Entry>::const_iterator find_entry(
       const std::string& state) const {
     for (auto iter = entries_.begin(); iter != entries_.end(); ++iter) {
-      if (iter->first == state) {
+      if (constant_time_string_equal(iter->first, state)) {
         return iter;
       }
     }
@@ -299,6 +319,13 @@ struct AuthResponseDecision {
   ScopeList required_scopes;
   std::optional<std::string> resource_metadata_url;
   std::optional<std::string> error_description;
+};
+
+/// @brief Result of evaluating an HTTP auth response for one-shot retry.
+struct OAuthRefreshRetryResult {
+  AuthResponseDecision decision;
+  bool should_retry = false;
+  std::optional<std::string> bearer_token;
 };
 
 /// @brief Metadata fetch request routed through application/transport code.
@@ -395,8 +422,6 @@ inline ScopeList split_scopes(std::string_view scopes) {
 
 inline std::string pkce_method_name(PkceCodeChallengeMethod method) {
   switch (method) {
-    case PkceCodeChallengeMethod::kPlain:
-      return "plain";
     case PkceCodeChallengeMethod::kS256:
       return "S256";
   }
@@ -471,6 +496,94 @@ inline std::string path_from_url(std::string_view url) {
   return path.empty() ? std::string("/") : path;
 }
 
+inline bool url_has_fragment(std::string_view url) {
+  return url.find('#') != std::string_view::npos;
+}
+
+inline std::string url_scheme(std::string_view url) {
+  const auto scheme_end = url.find("://");
+  if (scheme_end == std::string_view::npos) {
+    return {};
+  }
+  return std::string(url.substr(0, scheme_end));
+}
+
+inline bool url_has_userinfo(std::string_view url) {
+  const auto scheme_end = url.find("://");
+  if (scheme_end == std::string_view::npos) {
+    return false;
+  }
+  const auto authority_start = scheme_end + 3;
+  const auto authority_end = url.find_first_of("/?#", authority_start);
+  const auto authority =
+      url.substr(authority_start, authority_end == std::string_view::npos
+                                      ? std::string_view::npos
+                                      : authority_end - authority_start);
+  return authority.find('@') != std::string_view::npos;
+}
+
+inline std::string url_host(std::string_view url) {
+  const auto scheme_end = url.find("://");
+  if (scheme_end == std::string_view::npos) {
+    return {};
+  }
+  const auto authority_start = scheme_end + 3;
+  const auto authority_end = url.find_first_of("/?#", authority_start);
+  auto authority =
+      url.substr(authority_start, authority_end == std::string_view::npos
+                                      ? std::string_view::npos
+                                      : authority_end - authority_start);
+  const auto userinfo = authority.rfind('@');
+  if (userinfo != std::string_view::npos) {
+    authority.remove_prefix(userinfo + 1);
+  }
+  if (authority.empty()) {
+    return {};
+  }
+  if (authority.front() == '[') {
+    const auto bracket = authority.find(']');
+    if (bracket == std::string_view::npos) {
+      return {};
+    }
+    return std::string(authority.substr(1, bracket - 1));
+  }
+  const auto port = authority.find(':');
+  return std::string(authority.substr(0, port));
+}
+
+inline bool url_uses_https(std::string_view url) {
+  return ascii_iequals(url_scheme(url), "https");
+}
+
+inline bool url_uses_loopback_http(std::string_view url) {
+  if (!ascii_iequals(url_scheme(url), "http")) {
+    return false;
+  }
+  const auto host = url_host(url);
+  return ascii_iequals(host, "localhost") || host == "127.0.0.1" ||
+         host == "::1";
+}
+
+inline bool redirect_uri_is_secure(std::string_view url) {
+  return url_uses_https(url) || url_uses_loopback_http(url);
+}
+
+inline bool metadata_discovery_url_is_safe(std::string_view url) {
+  if (url.empty() || url_has_fragment(url) || url_has_userinfo(url)) {
+    return false;
+  }
+  if (!url_uses_https(url) && !url_uses_loopback_http(url)) {
+    return false;
+  }
+  if (url_host(url).empty()) {
+    return false;
+  }
+  if (url_contains_dot_segment(path_from_url(url))) {
+    return false;
+  }
+  return true;
+}
+
 inline std::string trim_leading_slash(std::string value) {
   while (!value.empty() && value.front() == '/') {
     value.erase(value.begin());
@@ -500,11 +613,16 @@ inline StringList build_protected_resource_metadata_urls(
     std::optional<std::string> challenged_resource_metadata_url =
         std::nullopt) {
   StringList urls;
-  if (challenged_resource_metadata_url.has_value()) {
+  if (challenged_resource_metadata_url.has_value() &&
+      detail::metadata_discovery_url_is_safe(
+          *challenged_resource_metadata_url)) {
     detail::append_unique(&urls, detail::strip_query_and_fragment(std::move(
                                      *challenged_resource_metadata_url)));
   }
 
+  if (!detail::metadata_discovery_url_is_safe(resource_url)) {
+    return urls;
+  }
   const auto normalized_resource =
       detail::strip_query_and_fragment(resource_url);
   const auto origin = detail::origin_from_url(normalized_resource);
@@ -527,6 +645,9 @@ inline StringList build_protected_resource_metadata_urls(
 inline StringList build_authorization_server_metadata_urls(
     const std::string& issuer_or_base_url) {
   StringList urls;
+  if (!detail::metadata_discovery_url_is_safe(issuer_or_base_url)) {
+    return urls;
+  }
   const auto normalized = detail::strip_query_and_fragment(issuer_or_base_url);
   const auto origin = detail::origin_from_url(normalized);
   if (origin.empty()) {
@@ -570,7 +691,7 @@ class MetadataDiscoveryExecutor {
       MetadataDiscoveryOptions options = {}) {
     const auto plan = build_metadata_discovery_plan(resource_url, decision);
     if (plan.protected_resource_metadata_urls.empty()) {
-      return std::unexpected(make_oauth_error(
+      return mcp::core::unexpected(make_oauth_error(
           OAuthErrorCode::kInvalidRequest,
           "resource URL cannot produce metadata candidates", resource_url));
     }
@@ -587,7 +708,7 @@ class MetadataDiscoveryExecutor {
       last_error = fetched.error();
     }
     if (!protected_resource.has_value()) {
-      return std::unexpected(make_oauth_error(
+      return mcp::core::unexpected(make_oauth_error(
           OAuthErrorCode::kMetadataDiscoveryFailed,
           "protected resource metadata discovery failed",
           last_error.has_value() ? last_error->message : std::string{}));
@@ -617,7 +738,7 @@ class MetadataDiscoveryExecutor {
       last_error = fetched.error();
     }
 
-    return std::unexpected(make_oauth_error(
+    return mcp::core::unexpected(make_oauth_error(
         OAuthErrorCode::kMetadataDiscoveryFailed,
         "authorization server metadata discovery failed",
         last_error.has_value() ? last_error->message : std::string{}));
@@ -673,28 +794,43 @@ struct AuthorizationSessionRequest {
 inline core::Result<AuthorizationUrlResult> build_authorization_url(
     const AuthorizationUrlRequest& request) {
   if (request.authorization_server.authorization_endpoint.empty()) {
-    return std::unexpected(make_oauth_error(
+    return mcp::core::unexpected(make_oauth_error(
         OAuthErrorCode::kInvalidRequest, "authorization endpoint is required"));
   }
   if (request.client.client_id.empty()) {
-    return std::unexpected(make_oauth_error(OAuthErrorCode::kInvalidRequest,
-                                            "client_id is required"));
+    return mcp::core::unexpected(make_oauth_error(
+        OAuthErrorCode::kInvalidRequest, "client_id is required"));
   }
   if (request.client.redirect_uri.empty()) {
-    return std::unexpected(make_oauth_error(OAuthErrorCode::kInvalidRequest,
-                                            "redirect_uri is required"));
+    return mcp::core::unexpected(make_oauth_error(
+        OAuthErrorCode::kInvalidRequest, "redirect_uri is required"));
+  }
+  if (!detail::url_uses_https(
+          request.authorization_server.authorization_endpoint)) {
+    return mcp::core::unexpected(
+        make_oauth_error(OAuthErrorCode::kInvalidRequest,
+                         "authorization endpoint must use HTTPS"));
+  }
+  if (!request.authorization_server.token_endpoint.empty() &&
+      !detail::url_uses_https(request.authorization_server.token_endpoint)) {
+    return mcp::core::unexpected(make_oauth_error(
+        OAuthErrorCode::kInvalidRequest, "token endpoint must use HTTPS"));
+  }
+  if (!detail::redirect_uri_is_secure(request.client.redirect_uri)) {
+    return mcp::core::unexpected(
+        make_oauth_error(OAuthErrorCode::kInvalidRequest,
+                         "redirect_uri must use HTTPS or loopback HTTP"));
   }
   if (request.state.empty()) {
-    return std::unexpected(
+    return mcp::core::unexpected(
         make_oauth_error(OAuthErrorCode::kInvalidRequest, "state is required"));
   }
   if (request.pkce.code_challenge.empty() ||
       request.pkce.code_verifier.empty()) {
-    return std::unexpected(
+    return mcp::core::unexpected(
         make_oauth_error(OAuthErrorCode::kInvalidRequest,
                          "PKCE verifier and challenge are required"));
   }
-
   auto url = request.authorization_server.authorization_endpoint;
   detail::append_query_param(&url, "response_type", "code");
   detail::append_query_param(&url, "client_id", request.client.client_id);
@@ -745,7 +881,7 @@ inline core::Result<AuthResponseDecision> analyze_auth_response(
 
   auto parsed = parse_www_authenticate(*header);
   if (!parsed.has_value()) {
-    return std::unexpected(parsed.error());
+    return mcp::core::unexpected(parsed.error());
   }
 
   for (const auto& challenge : *parsed) {
@@ -813,10 +949,16 @@ class AuthorizationManager {
   void set_scope_upgrade_config(ScopeUpgradeConfig config) {
     scope_upgrade_config_ = config;
   }
+  void set_authorization_state_ttl(std::chrono::seconds ttl) {
+    authorization_state_ttl_ = ttl;
+  }
 
   OAuthLifecycleState lifecycle_state() const { return state_; }
   const OAuthClientConfig& client_config() const { return client_; }
   const ScopeList& current_scopes() const { return current_scopes_; }
+  std::chrono::seconds authorization_state_ttl() const {
+    return authorization_state_ttl_;
+  }
   std::uint32_t scope_upgrade_attempts() const {
     return scope_upgrade_attempts_;
   }
@@ -829,15 +971,15 @@ class AuthorizationManager {
       std::string client_id, std::string redirect_uri = {},
       ScopeList scopes = {}) {
     if (client_id.empty()) {
-      return std::unexpected(make_oauth_error(OAuthErrorCode::kInvalidRequest,
-                                              "client_id is required"));
+      return mcp::core::unexpected(make_oauth_error(
+          OAuthErrorCode::kInvalidRequest, "client_id is required"));
     }
     if (redirect_uri.empty()) {
       redirect_uri = client_.redirect_uri;
     }
     if (redirect_uri.empty()) {
-      return std::unexpected(make_oauth_error(OAuthErrorCode::kInvalidRequest,
-                                              "redirect_uri is required"));
+      return mcp::core::unexpected(make_oauth_error(
+          OAuthErrorCode::kInvalidRequest, "redirect_uri is required"));
     }
     OAuthClientConfig config;
     config.client_id = std::move(client_id);
@@ -852,13 +994,13 @@ class AuthorizationManager {
       std::string client_id_metadata_url, std::string redirect_uri,
       ScopeList scopes = {}) {
     if (!supports_client_id_metadata_document(metadata_)) {
-      return std::unexpected(make_oauth_error(
+      return mcp::core::unexpected(make_oauth_error(
           OAuthErrorCode::kClientMetadataDocumentUnsupported,
           "authorization server does not advertise Client ID Metadata "
           "Document support"));
     }
     if (!is_valid_client_id_metadata_url(client_id_metadata_url)) {
-      return std::unexpected(make_oauth_error(
+      return mcp::core::unexpected(make_oauth_error(
           OAuthErrorCode::kClientMetadataDocumentInvalid,
           "client_id metadata document URL must be HTTPS with a non-root path",
           client_id_metadata_url));
@@ -870,20 +1012,20 @@ class AuthorizationManager {
   core::Result<OAuthClientConfig> register_client(
       ClientRegistrationOptions options, HeaderMap headers = {}) {
     if (!registration_endpoint_) {
-      return std::unexpected(make_oauth_error(
+      return mcp::core::unexpected(make_oauth_error(
           OAuthErrorCode::kClientRegistrationUnavailable,
           "dynamic client registration endpoint is not configured"));
     }
     if (!metadata_.registration_endpoint.has_value() ||
         metadata_.registration_endpoint->empty()) {
-      return std::unexpected(make_oauth_error(
+      return mcp::core::unexpected(make_oauth_error(
           OAuthErrorCode::kClientRegistrationUnavailable,
           "authorization server metadata has no registration endpoint"));
     }
 
     auto registration = build_client_registration_request(options);
     if (!registration.has_value()) {
-      return std::unexpected(registration.error());
+      return mcp::core::unexpected(registration.error());
     }
 
     ClientRegistrationEndpointRequest request;
@@ -893,12 +1035,12 @@ class AuthorizationManager {
 
     auto response = registration_endpoint_->register_client(request);
     if (!response.has_value()) {
-      return std::unexpected(make_oauth_error(
+      return mcp::core::unexpected(make_oauth_error(
           OAuthErrorCode::kClientRegistrationFailed,
           "dynamic client registration failed", response.error().message));
     }
     if (response->client_id.empty()) {
-      return std::unexpected(make_oauth_error(
+      return mcp::core::unexpected(make_oauth_error(
           OAuthErrorCode::kClientRegistrationFailed,
           "dynamic client registration response did not include client_id"));
     }
@@ -933,7 +1075,7 @@ class AuthorizationManager {
         client_.redirect_uri != request.client.redirect_uri) {
       auto configured = configure_client_for_authorization(request.client);
       if (!configured.has_value()) {
-        return std::unexpected(configured.error());
+        return mcp::core::unexpected(configured.error());
       }
     }
 
@@ -942,7 +1084,7 @@ class AuthorizationManager {
         std::move(request.state),
         std::move(request.additional_authorization_parameters));
     if (!authorization.has_value()) {
-      return std::unexpected(authorization.error());
+      return mcp::core::unexpected(authorization.error());
     }
     return OAuthSession{std::move(*authorization), client_.redirect_uri};
   }
@@ -961,12 +1103,12 @@ class AuthorizationManager {
 
     auto result = build_authorization_url(request);
     if (!result.has_value()) {
-      return std::unexpected(result.error());
+      return mcp::core::unexpected(result.error());
     }
 
     auto store_result = state_store().save(result->state.state, result->state);
     if (!store_result.has_value()) {
-      return std::unexpected(store_result.error());
+      return mcp::core::unexpected(store_result.error());
     }
     state_ = OAuthLifecycleState::kAuthorizationPending;
     return result;
@@ -975,23 +1117,32 @@ class AuthorizationManager {
   core::Result<TokenSet> exchange_authorization_code(
       std::string authorization_code, const std::string& state) {
     if (!token_endpoint_) {
-      return std::unexpected(
+      return mcp::core::unexpected(
           make_oauth_error(OAuthErrorCode::kTokenExchangeUnavailable,
                            "OAuth token endpoint is not configured"));
     }
 
     auto loaded_state = state_store().load(state);
     if (!loaded_state.has_value()) {
-      return std::unexpected(loaded_state.error());
+      return mcp::core::unexpected(loaded_state.error());
     }
     if (!loaded_state->has_value()) {
-      return std::unexpected(
+      return mcp::core::unexpected(
           make_oauth_error(OAuthErrorCode::kAuthorizationRequired,
                            "authorization state was not found"));
     }
     auto remove_result = state_store().remove(state);
     if (!remove_result.has_value()) {
-      return std::unexpected(remove_result.error());
+      return mcp::core::unexpected(remove_result.error());
+    }
+
+    auto stored_state = std::move(**loaded_state);
+    const auto now = SystemClock::now();
+    if (authorization_state_ttl_ <= std::chrono::seconds::zero() ||
+        stored_state.created_at + authorization_state_ttl_ <= now) {
+      return mcp::core::unexpected(
+          make_oauth_error(OAuthErrorCode::kAuthorizationRequired,
+                           "authorization state has expired"));
     }
 
     TokenExchangeRequest request;
@@ -999,11 +1150,11 @@ class AuthorizationManager {
     request.authorization_server = metadata_;
     request.resource = resource_;
     request.authorization_code = std::move(authorization_code);
-    request.state = std::move(**loaded_state);
+    request.state = std::move(stored_state);
 
     auto token_result = token_endpoint_->exchange_authorization_code(request);
     if (!token_result.has_value()) {
-      return std::unexpected(token_result.error());
+      return mcp::core::unexpected(token_result.error());
     }
 
     current_scopes_ = token_result->scopes.empty()
@@ -1018,7 +1169,7 @@ class AuthorizationManager {
     auto save_result =
         credential_store().save(credential_key(), std::move(credentials));
     if (!save_result.has_value()) {
-      return std::unexpected(save_result.error());
+      return mcp::core::unexpected(save_result.error());
     }
 
     state_ = OAuthLifecycleState::kAuthorized;
@@ -1027,17 +1178,17 @@ class AuthorizationManager {
 
   core::Result<TokenRefreshResult> refresh_access_token() {
     if (!token_endpoint_) {
-      return std::unexpected(
+      return mcp::core::unexpected(
           make_oauth_error(OAuthErrorCode::kTokenExchangeUnavailable,
                            "OAuth token endpoint is not configured"));
     }
 
     auto loaded = credential_store().load(credential_key());
     if (!loaded.has_value()) {
-      return std::unexpected(loaded.error());
+      return mcp::core::unexpected(loaded.error());
     }
     if (!loaded->has_value() || !(**loaded).token_set.has_value()) {
-      return std::unexpected(
+      return mcp::core::unexpected(
           make_oauth_error(OAuthErrorCode::kAuthorizationRequired,
                            "stored credentials are not available"));
     }
@@ -1045,7 +1196,7 @@ class AuthorizationManager {
     auto credentials = **loaded;
     const auto& current = *credentials.token_set;
     if (!current.refresh_token.has_value() || current.refresh_token->empty()) {
-      return std::unexpected(
+      return mcp::core::unexpected(
           make_oauth_error(OAuthErrorCode::kTokenRefreshFailed,
                            "refresh token is not available"));
     }
@@ -1059,7 +1210,7 @@ class AuthorizationManager {
 
     auto refreshed = token_endpoint_->refresh_access_token(request);
     if (!refreshed.has_value()) {
-      return std::unexpected(refreshed.error());
+      return mcp::core::unexpected(refreshed.error());
     }
     if (!refreshed->token_set.refresh_token.has_value()) {
       refreshed->token_set.refresh_token = current.refresh_token;
@@ -1078,7 +1229,7 @@ class AuthorizationManager {
     auto save_result =
         credential_store().save(credential_key(), std::move(credentials));
     if (!save_result.has_value()) {
-      return std::unexpected(save_result.error());
+      return mcp::core::unexpected(save_result.error());
     }
 
     state_ = OAuthLifecycleState::kAuthorized;
@@ -1089,10 +1240,10 @@ class AuthorizationManager {
       std::chrono::seconds refresh_skew = std::chrono::seconds(30)) {
     auto loaded = credential_store().load(credential_key());
     if (!loaded.has_value()) {
-      return std::unexpected(loaded.error());
+      return mcp::core::unexpected(loaded.error());
     }
     if (!loaded->has_value() || !(**loaded).token_set.has_value()) {
-      return std::unexpected(
+      return mcp::core::unexpected(
           make_oauth_error(OAuthErrorCode::kAuthorizationRequired,
                            "stored credentials are not available"));
     }
@@ -1103,16 +1254,40 @@ class AuthorizationManager {
       return token_set.access_token;
     }
     if (!token_set.refresh_token.has_value()) {
-      return std::unexpected(make_oauth_error(
+      return mcp::core::unexpected(make_oauth_error(
           OAuthErrorCode::kAuthorizationRequired,
           "access token is expired and no refresh token is available"));
     }
 
     auto refreshed = refresh_access_token();
     if (!refreshed.has_value()) {
-      return std::unexpected(refreshed.error());
+      return mcp::core::unexpected(refreshed.error());
     }
     return refreshed->token_set.access_token;
+  }
+
+  core::Result<OAuthRefreshRetryResult> refresh_after_unauthorized_response(
+      const HttpResponseMetadata& response) {
+    auto decision = analyze_auth_response(response);
+    if (!decision.has_value()) {
+      return mcp::core::unexpected(decision.error());
+    }
+
+    OAuthRefreshRetryResult retry;
+    retry.decision = std::move(*decision);
+    if (response.status_code != 401 ||
+        retry.decision.action != AuthResponseAction::kAuthorizationRequired) {
+      return retry;
+    }
+
+    auto refreshed = refresh_access_token();
+    if (!refreshed.has_value()) {
+      return mcp::core::unexpected(refreshed.error());
+    }
+
+    retry.should_retry = true;
+    retry.bearer_token = refreshed->token_set.access_token;
+    return retry;
   }
 
   bool can_attempt_scope_upgrade() const {
@@ -1124,12 +1299,12 @@ class AuthorizationManager {
       const WwwAuthenticateChallenge& challenge, PkceChallenge pkce,
       std::string state, MetadataMap additional_parameters = {}) {
     if (!insufficient_scope(challenge)) {
-      return std::unexpected(make_oauth_error(
+      return mcp::core::unexpected(make_oauth_error(
           OAuthErrorCode::kInsufficientScope,
           "WWW-Authenticate challenge is not insufficient_scope"));
     }
     if (!can_attempt_scope_upgrade()) {
-      return std::unexpected(
+      return mcp::core::unexpected(
           make_oauth_error(OAuthErrorCode::kInsufficientScope,
                            "scope upgrade attempts are exhausted"));
     }
@@ -1181,6 +1356,7 @@ class AuthorizationManager {
   OAuthLifecycleState state_ = OAuthLifecycleState::kUnauthorized;
   ScopeList current_scopes_;
   std::uint32_t scope_upgrade_attempts_ = 0;
+  std::chrono::seconds authorization_state_ttl_ = kDefaultAuthorizationStateTtl;
 };
 
 }  // namespace mcp::auth

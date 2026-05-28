@@ -7,6 +7,7 @@
 #include <utility>
 #include <vector>
 
+#include "cxxmcp/auth/constant_time.hpp"
 #include "cxxmcp/auth/types.hpp"
 #include "cxxmcp/core/result.hpp"
 
@@ -95,9 +96,26 @@ class InMemoryTokenStore final : public TokenStore {
  private:
   using Entry = std::pair<TokenKey, TokenSet>;
 
+  static bool matches(const MetadataMap& lhs, const MetadataMap& rhs) {
+    if (lhs.size() != rhs.size()) {
+      return false;
+    }
+    bool equal = true;
+    auto lhs_iter = lhs.begin();
+    auto rhs_iter = rhs.begin();
+    for (; lhs_iter != lhs.end(); ++lhs_iter, ++rhs_iter) {
+      equal = constant_time_string_equal(lhs_iter->first, rhs_iter->first) &
+              constant_time_string_equal(lhs_iter->second, rhs_iter->second) &
+              equal;
+    }
+    return equal;
+  }
+
   static bool matches(const TokenKey& lhs, const TokenKey& rhs) {
-    return lhs.resource == rhs.resource && lhs.issuer == rhs.issuer &&
-           lhs.client_id == rhs.client_id && lhs.attributes == rhs.attributes;
+    return constant_time_string_equal(lhs.resource, rhs.resource) &
+           constant_time_string_equal(lhs.issuer, rhs.issuer) &
+           constant_time_string_equal(lhs.client_id, rhs.client_id) &
+           matches(lhs.attributes, rhs.attributes);
   }
 
   std::vector<Entry>::iterator find_entry(const TokenKey& key) {

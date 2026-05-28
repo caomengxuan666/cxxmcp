@@ -11,8 +11,11 @@
 /// contracts. Crypto and HTTP integration are intentionally implementation
 /// details of later source files, not public API dependencies.
 
+#include "cxxmcp/auth/constant_time.hpp"
 #include "cxxmcp/auth/dpop.hpp"
 #include "cxxmcp/auth/http_metadata_endpoint.hpp"
+#include "cxxmcp/auth/http_token_endpoint.hpp"
+#include "cxxmcp/auth/jwks.hpp"
 #include "cxxmcp/auth/lifecycle.hpp"
 #include "cxxmcp/auth/metadata.hpp"
 #include "cxxmcp/auth/pkce.hpp"

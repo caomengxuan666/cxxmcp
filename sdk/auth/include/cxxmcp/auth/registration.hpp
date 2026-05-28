@@ -108,7 +108,7 @@ struct ClientIdConfigurationOptions {
 inline core::Result<ClientRegistrationRequest>
 build_client_registration_request(const ClientRegistrationOptions& options) {
   if (options.redirect_uri.empty()) {
-    return std::unexpected(
+    return mcp::core::unexpected(
         core::Error{1,
                     "redirect_uri is required for dynamic client registration",
                     {},
@@ -165,13 +165,29 @@ inline bool metadata_flag_enabled(const MetadataMap& metadata,
   return iter->second == "true" || iter->second == "1" || iter->second == "yes";
 }
 
+inline bool segment_is_dot_reference(std::string_view segment) {
+  std::string normalized;
+  normalized.reserve(segment.size());
+  for (std::size_t index = 0; index < segment.size(); ++index) {
+    if (segment[index] == '%' && index + 2 < segment.size() &&
+        segment[index + 1] == '2' &&
+        (segment[index + 2] == 'e' || segment[index + 2] == 'E')) {
+      normalized.push_back('.');
+      index += 2;
+      continue;
+    }
+    normalized.push_back(segment[index]);
+  }
+  return normalized == "." || normalized == "..";
+}
+
 inline bool url_contains_dot_segment(std::string_view path) {
   std::size_t pos = 0;
   while (pos <= path.size()) {
     const auto next = path.find('/', pos);
     const auto end = next == std::string_view::npos ? path.size() : next;
     const auto segment = path.substr(pos, end - pos);
-    if (segment == "." || segment == "..") {
+    if (segment_is_dot_reference(segment)) {
       return true;
     }
     if (next == std::string_view::npos) {

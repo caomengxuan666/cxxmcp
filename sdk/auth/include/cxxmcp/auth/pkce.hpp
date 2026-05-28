@@ -12,7 +12,6 @@
 namespace mcp::auth {
 
 enum class PkceCodeChallengeMethod {
-  kPlain,
   kS256,
 };
 

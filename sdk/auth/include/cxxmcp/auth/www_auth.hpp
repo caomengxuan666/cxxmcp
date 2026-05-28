@@ -92,7 +92,7 @@ inline core::Error www_auth_parse_error(std::string message) {
 inline core::Result<std::string> parse_quoted_string(std::string_view input,
                                                      std::size_t& pos) {
   if (pos >= input.size() || input[pos] != '"') {
-    return std::unexpected(
+    return mcp::core::unexpected(
         www_auth_parse_error("expected quoted WWW-Authenticate value"));
   }
   ++pos;
@@ -105,7 +105,7 @@ inline core::Result<std::string> parse_quoted_string(std::string_view input,
     }
     if (ch == '\\') {
       if (pos >= input.size()) {
-        return std::unexpected(
+        return mcp::core::unexpected(
             www_auth_parse_error("unterminated WWW-Authenticate escape"));
       }
       result.push_back(input[pos++]);
@@ -114,7 +114,7 @@ inline core::Result<std::string> parse_quoted_string(std::string_view input,
     result.push_back(ch);
   }
 
-  return std::unexpected(
+  return mcp::core::unexpected(
       www_auth_parse_error("unterminated WWW-Authenticate quoted value"));
 }
 
@@ -246,7 +246,7 @@ class DefaultWwwAuthenticateParser final : public WwwAuthenticateParser {
 
       auto scheme = detail::parse_token(input, pos);
       if (scheme.empty()) {
-        return std::unexpected(detail::www_auth_parse_error(
+        return mcp::core::unexpected(detail::www_auth_parse_error(
             "expected WWW-Authenticate auth scheme"));
       }
 
@@ -258,13 +258,13 @@ class DefaultWwwAuthenticateParser final : public WwwAuthenticateParser {
         if (!detail::starts_parameter(input, pos)) {
           auto token68 = parse_token68(input, pos);
           if (!token68.has_value()) {
-            return std::unexpected(token68.error());
+            return mcp::core::unexpected(token68.error());
           }
           challenge.token68 = std::move(*token68);
         } else {
           auto parsed = parse_parameters(input, pos, challenge);
           if (!parsed.has_value()) {
-            return std::unexpected(parsed.error());
+            return mcp::core::unexpected(parsed.error());
           }
         }
       }
@@ -277,7 +277,7 @@ class DefaultWwwAuthenticateParser final : public WwwAuthenticateParser {
         ++pos;
         continue;
       }
-      return std::unexpected(detail::www_auth_parse_error(
+      return mcp::core::unexpected(detail::www_auth_parse_error(
           "expected comma after WWW-Authenticate challenge"));
     }
 
@@ -292,13 +292,13 @@ class DefaultWwwAuthenticateParser final : public WwwAuthenticateParser {
       ++pos;
     }
     if (begin == pos) {
-      return std::unexpected(
+      return mcp::core::unexpected(
           detail::www_auth_parse_error("expected WWW-Authenticate token68"));
     }
     const auto token68 = std::string(input.substr(begin, pos - begin));
     detail::skip_ows(input, pos);
     if (pos < input.size() && input[pos] != ',') {
-      return std::unexpected(detail::www_auth_parse_error(
+      return mcp::core::unexpected(detail::www_auth_parse_error(
           "unexpected character after WWW-Authenticate token68"));
     }
     return token68;
@@ -312,13 +312,13 @@ class DefaultWwwAuthenticateParser final : public WwwAuthenticateParser {
 
       const auto name = detail::parse_token(input, pos);
       if (name.empty()) {
-        return std::unexpected(detail::www_auth_parse_error(
+        return mcp::core::unexpected(detail::www_auth_parse_error(
             "expected WWW-Authenticate parameter name"));
       }
 
       detail::skip_ows(input, pos);
       if (pos >= input.size() || input[pos] != '=') {
-        return std::unexpected(detail::www_auth_parse_error(
+        return mcp::core::unexpected(detail::www_auth_parse_error(
             "expected '=' after WWW-Authenticate parameter name"));
       }
       ++pos;
@@ -326,7 +326,7 @@ class DefaultWwwAuthenticateParser final : public WwwAuthenticateParser {
 
       auto value = parse_parameter_value(input, pos);
       if (!value.has_value()) {
-        return std::unexpected(value.error());
+        return mcp::core::unexpected(value.error());
       }
       challenge.parameters[detail::ascii_lower(name)] = std::move(*value);
 
@@ -335,7 +335,7 @@ class DefaultWwwAuthenticateParser final : public WwwAuthenticateParser {
         return core::Unit{};
       }
       if (input[pos] != ',') {
-        return std::unexpected(detail::www_auth_parse_error(
+        return mcp::core::unexpected(detail::www_auth_parse_error(
             "expected comma after WWW-Authenticate parameter"));
       }
       if (!detail::comma_starts_parameter(input, pos)) {
@@ -350,7 +350,7 @@ class DefaultWwwAuthenticateParser final : public WwwAuthenticateParser {
   static core::Result<std::string> parse_parameter_value(std::string_view input,
                                                          std::size_t& pos) {
     if (pos >= input.size()) {
-      return std::unexpected(detail::www_auth_parse_error(
+      return mcp::core::unexpected(detail::www_auth_parse_error(
           "expected WWW-Authenticate parameter value"));
     }
     if (input[pos] == '"') {
@@ -358,7 +358,7 @@ class DefaultWwwAuthenticateParser final : public WwwAuthenticateParser {
     }
     auto value = detail::parse_token(input, pos);
     if (value.empty()) {
-      return std::unexpected(detail::www_auth_parse_error(
+      return mcp::core::unexpected(detail::www_auth_parse_error(
           "expected WWW-Authenticate token parameter value"));
     }
     return value;

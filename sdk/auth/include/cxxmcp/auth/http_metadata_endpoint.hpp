@@ -39,7 +39,7 @@ class HttpOAuthMetadataEndpoint final : public OAuthMetadataEndpoint {
       const MetadataFetchRequest& request) override {
     auto response = fetch_json(request);
     if (!response.has_value()) {
-      return std::unexpected(response.error());
+      return mcp::core::unexpected(response.error());
     }
     return parse_protected_resource_metadata(*response);
   }
@@ -48,7 +48,7 @@ class HttpOAuthMetadataEndpoint final : public OAuthMetadataEndpoint {
       const MetadataFetchRequest& request) override {
     auto response = fetch_json(request);
     if (!response.has_value()) {
-      return std::unexpected(response.error());
+      return mcp::core::unexpected(response.error());
     }
     return parse_authorization_server_metadata(*response);
   }
@@ -58,17 +58,17 @@ class HttpOAuthMetadataEndpoint final : public OAuthMetadataEndpoint {
 
   core::Result<Json> fetch_json(const MetadataFetchRequest& request) {
     if (!get_) {
-      return std::unexpected(make_oauth_error(
+      return mcp::core::unexpected(make_oauth_error(
           OAuthErrorCode::kMetadataDiscoveryFailed,
           "OAuth metadata HTTP GET endpoint is not configured"));
     }
 
     auto response = get_(request);
     if (!response.has_value()) {
-      return std::unexpected(response.error());
+      return mcp::core::unexpected(response.error());
     }
     if (response->status_code < 200 || response->status_code >= 300) {
-      return std::unexpected(make_oauth_error(
+      return mcp::core::unexpected(make_oauth_error(
           OAuthErrorCode::kMetadataDiscoveryFailed,
           "OAuth metadata endpoint returned non-success HTTP status",
           std::to_string(response->status_code)));
@@ -77,7 +77,7 @@ class HttpOAuthMetadataEndpoint final : public OAuthMetadataEndpoint {
     try {
       return Json::parse(response->body);
     } catch (const Json::exception& error) {
-      return std::unexpected(make_oauth_error(
+      return mcp::core::unexpected(make_oauth_error(
           OAuthErrorCode::kMetadataDiscoveryFailed,
           "OAuth metadata endpoint returned invalid JSON", error.what()));
     }
@@ -131,7 +131,7 @@ class HttpOAuthMetadataEndpoint final : public OAuthMetadataEndpoint {
   static core::Result<ProtectedResourceMetadata>
   parse_protected_resource_metadata(const Json& value) {
     if (!value.is_object()) {
-      return std::unexpected(make_oauth_error(
+      return mcp::core::unexpected(make_oauth_error(
           OAuthErrorCode::kMetadataDiscoveryFailed,
           "protected resource metadata JSON must be an object"));
     }
@@ -155,7 +155,7 @@ class HttpOAuthMetadataEndpoint final : public OAuthMetadataEndpoint {
   static core::Result<AuthorizationServerMetadata>
   parse_authorization_server_metadata(const Json& value) {
     if (!value.is_object()) {
-      return std::unexpected(make_oauth_error(
+      return mcp::core::unexpected(make_oauth_error(
           OAuthErrorCode::kMetadataDiscoveryFailed,
           "authorization server metadata JSON must be an object"));
     }
