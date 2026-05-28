@@ -46,6 +46,12 @@ jobs:
       - name: Check protocol model coverage
         run: python scripts/check_protocol_model_coverage.py --source .
 
+      - name: Checkout pinned RMCP reference
+        run: |
+          mkdir -p reference
+          git clone https://github.com/modelcontextprotocol/rust-sdk.git reference/rmcp
+          git -C reference/rmcp checkout c330fede90e4729c234f8e87fdbc5ea27a1dd10c
+
       - name: Check RMCP source drift
         run: python scripts/check_rmcp_source_drift.py --source .
 

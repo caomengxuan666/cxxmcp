@@ -17,7 +17,14 @@ namespace {
 // Allocation tracking is disabled under sanitizers because they provide
 // their own operator new/delete and the multiple-definition link is not
 // resolvable.
-#if !defined(__SANITIZE_THREAD__) && !defined(__SANITIZE_ADDRESS__) && \
+#if defined(__has_feature)
+#if __has_feature(thread_sanitizer) || __has_feature(address_sanitizer) || \
+    __has_feature(memory_sanitizer)
+#define CXXMCP_BENCH_TRACK_ALLOCATIONS 0
+#else
+#define CXXMCP_BENCH_TRACK_ALLOCATIONS 1
+#endif
+#elif !defined(__SANITIZE_THREAD__) && !defined(__SANITIZE_ADDRESS__) && \
     !defined(__SANITIZE_MEMORY__)
 #define CXXMCP_BENCH_TRACK_ALLOCATIONS 1
 #else
