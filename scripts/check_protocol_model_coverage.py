@@ -21,6 +21,9 @@ TO_ONLY = {
     "integer_schema",
     "number_schema",
     "string_schema",
+    # Docstring-only examples in custom_methods.hpp.
+    "my_event",
+    "my_params",
 }
 
 

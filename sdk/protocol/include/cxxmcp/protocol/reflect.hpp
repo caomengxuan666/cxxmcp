@@ -147,6 +147,12 @@ struct has_reflect<T, std::void_t<decltype(Reflect<T>::defined)>>
 template <typename T>
 inline constexpr bool has_reflect_v = has_reflect<T>::value;
 
+// Forward declarations for reflect_to_json / reflect_from_json.
+template <typename T>
+Json reflect_to_json(const T& obj);
+template <typename T>
+core::Result<T> reflect_from_json(const Json& json);
+
 // ---------------------------------------------------------------------------
 // JsonFieldTraits: primary template for scalars (int64, double, bool)
 // ---------------------------------------------------------------------------
