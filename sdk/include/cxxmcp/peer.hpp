@@ -41,6 +41,7 @@
 #include "cxxmcp/server/peer.hpp"
 #include "cxxmcp/server/transport_adapter_fwd.hpp"
 #include "cxxmcp/transport/http_transport.hpp"
+#include "cxxmcp/transport/process_stdio_transport.hpp"
 #include "cxxmcp/transport/stdio_transport.hpp"
 #include "cxxmcp/transport/transport.hpp"
 
@@ -2390,6 +2391,19 @@ class Peer<RoleClient>::Builder {
     return stdio(std::move(endpoint));
   }
 
+  /// @brief Convenience: launch a child process as the MCP server.
+  /// @param command Executable path or command string.
+  Builder& process_stdio(std::string command) {
+    reset_transport();
+    native_transport_ =
+        std::make_unique<transport::ProcessStdioClientTransport>(
+            transport::ProcessStdioClientTransportOptions{
+                .command = std::move(command),
+            });
+    transport_kind_ = TransportKind::Native;
+    return *this;
+  }
+
   Builder& header(std::string name, std::string value) {
     http_headers_[std::move(name)] = std::move(value);
     return *this;
@@ -2537,6 +2551,27 @@ class Peer<RoleClient>::Builder {
     apply_to(*peer);
     return std::move(*peer);
   }
+
+  /// @brief Builds the peer and starts serving it.
+  /// @return Running service handle, or error.
+  core::Result<RunningService<RoleClient>> serve();
+
+  /// @brief Builds the peer, serves it, invokes the callback, then stops.
+  ///
+  /// Usage:
+  /// @code
+  /// return ClientPeer::builder()
+  ///     .process_stdio("my-server")
+  ///     .run([](auto& svc) {
+  ///         svc.peer().initialize();
+  ///         svc.peer().call_tool("echo", Json{{"value", "hello"}});
+  ///     });
+  /// @endcode
+  ///
+  /// @param fn Callback receiving the running service handle.
+  /// @return 0 on success, 1 on build or serve error.
+  template <class Fn>
+  int run(Fn&& fn);
 
  private:
   enum class TransportKind {
