@@ -130,6 +130,7 @@ struct Task {
 /// @brief Reflection trait for Task.
 template <>
 struct Reflect<Task> {
+  static constexpr bool defined = true;
   static auto fields() {
     return std::make_tuple(
         field("taskId", &Task::task_id), field("status", &Task::status),
@@ -137,14 +138,13 @@ struct Reflect<Task> {
         field("createdAt", &Task::created_at), field("ttl", &Task::ttl),
         field("pollInterval", &Task::poll_interval),
         field("lastUpdatedAt", &Task::last_updated_at),
-        field("_meta", &Task::meta),
         extensions_field(&Task::extensions,
                          {"taskId", "status", "statusMessage", "createdAt",
-                          "ttl", "pollInterval", "lastUpdatedAt", "_meta"}));
+                          "ttl", "pollInterval", "lastUpdatedAt"}));
   }
   static std::vector<std::string> known_keys() {
     return {"taskId", "status",       "statusMessage", "createdAt",
-            "ttl",    "pollInterval", "lastUpdatedAt", "_meta"};
+            "ttl",    "pollInterval", "lastUpdatedAt"};
   }
 };
 

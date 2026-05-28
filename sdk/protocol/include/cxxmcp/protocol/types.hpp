@@ -388,6 +388,28 @@ inline Json collect_json_extensions(
   return extensions;
 }
 
+/// @brief Overload accepting a vector of string keys.
+inline Json collect_json_extensions(
+    const Json& json, const std::vector<std::string>& known_keys) {
+  Json extensions = Json::object();
+  if (!json.is_object()) {
+    return extensions;
+  }
+  for (const auto& item : json.items()) {
+    bool found = false;
+    for (const auto& key : known_keys) {
+      if (item.key() == key) {
+        found = true;
+        break;
+      }
+    }
+    if (!found) {
+      extensions[item.key()] = item.value();
+    }
+  }
+  return extensions;
+}
+
 /// @brief Flattens extension members into a JSON object without overwriting
 /// typed fields.
 inline void append_json_extensions(Json& json, const Json& extensions) {
