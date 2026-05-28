@@ -44,6 +44,7 @@ struct FieldDescriptor {
   using struct_type = Struct;
   core::Result<core::Unit> (*post_validate)(const Field&) = nullptr;
   bool absent_as_monostate = false;
+  bool absent_as_default = false;
 };
 
 /// @brief Tag-only field descriptor for the extensions member.
@@ -135,6 +136,14 @@ constexpr FieldDescriptor<Struct, Field> nullable_field(
                 "nullable_field requires a std::variant containing "
                 "std::monostate");
   return {wire_name, pointer, nullptr, true};
+}
+
+/// @brief Creates a FieldDescriptor whose missing wire value keeps the C++
+/// default value.
+template <typename Struct, typename Field>
+constexpr FieldDescriptor<Struct, Field> defaulted_field(
+    const char* wire_name, Field Struct::* pointer) {
+  return {wire_name, pointer, nullptr, false, true};
 }
 
 /// @brief Detects whether a type has an `extensions` member of type Json.
@@ -572,6 +581,11 @@ bool deserialize_one(const Json& json, Struct& obj,
                      core::Result<core::Unit>& status) {
   const bool present = json.contains(fd.wire_name);
   if (!present) {
+    if (fd.absent_as_default) {
+      obj.*(fd.pointer) = Field{};
+      status = core::Unit{};
+      return true;
+    }
     // For optional types, absent is fine. Nullable variants must opt in
     // explicitly with nullable_field(); otherwise they are required fields.
     if constexpr (is_optional_v<Field>) {

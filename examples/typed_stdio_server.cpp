@@ -1,6 +1,7 @@
 // Copyright (c) 2025 [caomengxuan666]
 //
-// Demonstrates typed ServerPeer builder registration with reflected structs.
+// Compatibility example: demonstrates typed ServerPeer builder registration
+// with reflected structs.
 
 #include <algorithm>
 #include <optional>

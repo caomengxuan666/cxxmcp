@@ -10,7 +10,7 @@ int main() {
   const auto icon_json = mcp::protocol::icon_to_json(icon);
   const auto parsed_icon = mcp::protocol::icon_from_json(icon_json);
   if (!parsed_icon.has_value()) {
-    return 1;
+    return 10;
   }
 
   mcp::protocol::CancelledNotificationParams cancelled;
@@ -18,7 +18,7 @@ int main() {
   const auto cancelled_json =
       mcp::protocol::cancelled_notification_params_to_json(cancelled);
   if (!mcp::protocol::cancelled_notification_params_from_json(cancelled_json)) {
-    return 1;
+    return 20;
   }
 
   mcp::protocol::ProgressNotificationParams progress;
@@ -27,7 +27,7 @@ int main() {
   const auto progress_json =
       mcp::protocol::progress_notification_params_to_json(progress);
   if (!mcp::protocol::progress_notification_params_from_json(progress_json)) {
-    return 1;
+    return 30;
   }
 
   return 0;

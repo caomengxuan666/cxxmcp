@@ -1,7 +1,8 @@
 // Copyright (c) 2025 [caomengxuan666]
 //
-// Demonstrates ServerPeer builder with typed tool/prompt/resource registration.
-// Uses the one-call run() helper to serve the server on stdio transport.
+// Compatibility example: demonstrates ServerPeer builder with typed
+// tool/prompt/resource registration. Uses the one-call run() helper to serve
+// the server on stdio transport.
 
 #include <optional>
 #include <string>

@@ -1,8 +1,9 @@
 // Copyright (c) 2025 [caomengxuan666]
 //
-// Exercises concrete client/server loopback plumbing. The server is built via
-// ServerPeer::builder(); the deprecated server() accessor exposes the
-// underlying Server for the client::Transport loopback adapter.
+// Compatibility example: exercises concrete client/server loopback plumbing.
+// The server is built via ServerPeer::builder(); the deprecated server()
+// accessor exposes the underlying Server for the client::Transport loopback
+// adapter.
 
 #include <cstdint>
 #include <iostream>

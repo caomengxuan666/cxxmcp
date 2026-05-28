@@ -49,8 +49,8 @@ struct Reflect<Icon> {
   static constexpr bool defined = true;
   static auto fields() {
     return std::make_tuple(
-        field("src", &Icon::src), field("mimeType", &Icon::mime_type),
-        field("sizes", &Icon::sizes), field("theme", &Icon::theme));
+        field("src", &Icon::src), defaulted_field("mimeType", &Icon::mime_type),
+        defaulted_field("sizes", &Icon::sizes), field("theme", &Icon::theme));
   }
   static std::vector<std::string> known_keys() {
     return {"src", "mimeType", "sizes", "theme"};
