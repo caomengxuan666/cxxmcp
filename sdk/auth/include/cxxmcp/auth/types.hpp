@@ -9,6 +9,8 @@
 #include <string_view>
 #include <vector>
 
+#include "cxxmcp/core/string_constant.hpp"
+
 /// @file
 /// @brief Shared lightweight value types for cxxmcp auth contracts.
 
@@ -21,20 +23,7 @@ using StringList = std::vector<std::string>;
 using SystemClock = std::chrono::system_clock;
 using TimePoint = SystemClock::time_point;
 
-namespace detail {
-
-template <typename Tag>
-inline const std::string& static_string_constant(const char* value) {
-  static const std::string constant(value);
-  return constant;
-}
-
-struct AuthErrorCategoryTag {};
-
-}  // namespace detail
-
-inline const std::string& AuthErrorCategory =
-    detail::static_string_constant<detail::AuthErrorCategoryTag>("auth");
+inline constexpr core::StringConstant AuthErrorCategory{"auth"};
 
 /// @brief Transport-neutral HTTP request descriptor used by auth helpers.
 struct HttpRequestTarget {

@@ -17,26 +17,13 @@
 #include <variant>
 
 #include "cxxmcp/core/result.hpp"
+#include "cxxmcp/core/string_constant.hpp"
 #include "cxxmcp/protocol/types.hpp"
 
 namespace mcp::protocol {
 
-namespace detail {
-
-template <typename Tag>
-inline const std::string& static_string_constant(const char* value) {
-  static const std::string constant(value);
-  return constant;
-}
-
-}  // namespace detail
-
 #define CXXMCP_PROTOCOL_STRING_CONSTANT(name, value) \
-  namespace detail {                                 \
-  struct name##Tag {};                               \
-  }                                                  \
-  inline const std::string& name =                   \
-      detail::static_string_constant<detail::name##Tag>(value)
+  inline constexpr core::StringConstant name { value }
 
 /// @brief JSON-RPC protocol version string placed in message envelopes.
 CXXMCP_PROTOCOL_STRING_CONSTANT(JsonRpcVersion, "2.0");
@@ -45,7 +32,7 @@ CXXMCP_PROTOCOL_STRING_CONSTANT(McpProtocolVersion2025_06_18, "2025-06-18");
 CXXMCP_PROTOCOL_STRING_CONSTANT(McpProtocolVersion2025_03_26, "2025-03-26");
 CXXMCP_PROTOCOL_STRING_CONSTANT(McpProtocolVersion2024_11_05, "2024-11-05");
 /// @brief Latest MCP protocol version advertised during initialization.
-inline const std::string& McpProtocolVersion = McpProtocolVersion2025_11_25;
+inline constexpr core::StringConstant McpProtocolVersion{"2025-11-25"};
 /// @brief Protocol versions accepted by this SDK during initialization.
 inline constexpr std::array<const char*, 4> McpSupportedProtocolVersions{
     "2024-11-05", "2025-03-26", "2025-06-18", "2025-11-25"};

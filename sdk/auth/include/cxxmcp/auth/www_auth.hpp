@@ -17,27 +17,12 @@
 
 namespace mcp::auth {
 
-namespace detail {
-
-struct WwwAuthenticateResourceMetadataParamTag {};
-struct WwwAuthenticateErrorParamTag {};
-struct WwwAuthenticateScopeParamTag {};
-struct WwwAuthenticateInsufficientScopeErrorTag {};
-
-}  // namespace detail
-
-inline const std::string& WwwAuthenticateResourceMetadataParam =
-    detail::static_string_constant<
-        detail::WwwAuthenticateResourceMetadataParamTag>("resource_metadata");
-inline const std::string& WwwAuthenticateErrorParam =
-    detail::static_string_constant<detail::WwwAuthenticateErrorParamTag>(
-        "error");
-inline const std::string& WwwAuthenticateScopeParam =
-    detail::static_string_constant<detail::WwwAuthenticateScopeParamTag>(
-        "scope");
-inline const std::string& WwwAuthenticateInsufficientScopeError =
-    detail::static_string_constant<
-        detail::WwwAuthenticateInsufficientScopeErrorTag>("insufficient_scope");
+inline constexpr core::StringConstant WwwAuthenticateResourceMetadataParam{
+    "resource_metadata"};
+inline constexpr core::StringConstant WwwAuthenticateErrorParam{"error"};
+inline constexpr core::StringConstant WwwAuthenticateScopeParam{"scope"};
+inline constexpr core::StringConstant WwwAuthenticateInsufficientScopeError{
+    "insufficient_scope"};
 
 namespace detail {
 
