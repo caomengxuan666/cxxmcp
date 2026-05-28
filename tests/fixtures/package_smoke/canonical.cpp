@@ -21,7 +21,7 @@ class CanonicalClientTransport final : public mcp::transport::ClientTransport {
 
     mcp::protocol::JsonRpcResponse response;
     response.id = request->id;
-    if (request->method == std::string(mcp::protocol::ToolsListMethod)) {
+    if (request->method == mcp::protocol::ToolsListMethod) {
       response.result = mcp::protocol::Json{
           {"tools",
            mcp::protocol::Json::array({mcp::protocol::Json{

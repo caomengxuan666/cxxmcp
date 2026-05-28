@@ -69,6 +69,9 @@ int main() {
       return 1;
     }
 
+    // Give the client service time to start its receive loop.
+    std::this_thread::sleep_for(std::chrono::milliseconds(200));
+
     const auto inited = client_running->peer().initialize();
     if (!inited) {
       std::cerr << "bearer auth initialize failed: " << inited.error().message

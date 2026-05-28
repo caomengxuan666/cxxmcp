@@ -492,17 +492,15 @@ JsonRpcNotification make_notification(std::string method, Json params) {
 }
 
 JsonRpcRequest make_initialize_request(RequestId id, Json params) {
-  return make_request(std::string(InitializeMethod), std::move(id),
-                      std::move(params));
+  return make_request(InitializeMethod, std::move(id), std::move(params));
 }
 
 JsonRpcNotification make_initialized_notification(Json params) {
-  return make_notification(std::string(InitializedMethod), std::move(params));
+  return make_notification(InitializedMethod, std::move(params));
 }
 
 JsonRpcRequest make_ping_request(RequestId id, Json params) {
-  return make_request(std::string(PingMethod), std::move(id),
-                      std::move(params));
+  return make_request(PingMethod, std::move(id), std::move(params));
 }
 
 core::Result<JsonRpcMessage> parse_message(std::string_view text) {

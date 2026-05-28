@@ -300,13 +300,13 @@ void test_www_authenticate_parser_parses_mcp_oauth_challenge() {
   require(parsed->at(0).parameter("realm") == "mcp, api",
           "quoted comma parameter mismatch");
   require(parsed->at(0).parameter(
-              std::string(mcp::auth::WwwAuthenticateResourceMetadataParam)) ==
+              mcp::auth::WwwAuthenticateResourceMetadataParam)) ==
               "https://resource.example/.well-known/oauth-protected-resource",
           "resource_metadata parameter mismatch");
   require(mcp::auth::insufficient_scope(parsed->at(0)),
           "insufficient_scope helper mismatch");
   require(parsed->at(0).parameter(
-              std::string(mcp::auth::WwwAuthenticateScopeParam)) ==
+              mcp::auth::WwwAuthenticateScopeParam)) ==
               "tools:call prompts:read",
           "scope parameter mismatch");
   require(parsed->at(1).scheme == "Basic", "second challenge scheme mismatch");
@@ -335,7 +335,7 @@ void test_www_authenticate_parser_rejects_malformed_headers() {
       mcp::auth::parse_www_authenticate("Bearer realm=\"unterminated");
   require(!malformed.has_value(), "unterminated quoted value should fail");
   require(
-      malformed.error().category == std::string(mcp::auth::AuthErrorCategory),
+      malformed.error().category == mcp::auth::AuthErrorCategory),
       "parse error category mismatch");
 }
 
@@ -1380,7 +1380,7 @@ void test_http_metadata_endpoint_reports_http_and_json_errors() {
       http_error_endpoint.fetch_protected_resource_metadata({"https://x", {}});
   require(!http_error.has_value(), "HTTP metadata 404 should fail");
   require(
-      http_error.error().category == std::string(mcp::auth::AuthErrorCategory),
+      http_error.error().category == mcp::auth::AuthErrorCategory),
       "HTTP metadata error category mismatch");
 
   mcp::auth::HttpOAuthMetadataEndpoint json_error_endpoint(

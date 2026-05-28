@@ -190,7 +190,7 @@ int main() {
     init_params.client_info.name = "example";
     init_params.client_info.version = "1.0";
     transport_ptr->push_request(mcp::protocol::JsonRpcRequest{
-        .method = std::string(mcp::protocol::InitializeMethod),
+        .method = mcp::protocol::InitializeMethod,
         .params = mcp::protocol::initialize_params_to_json(init_params),
         .id = std::int64_t{1},
     });
@@ -201,11 +201,11 @@ int main() {
             "server peer initialize result missing");
 
     transport_ptr->push_notification(mcp::protocol::JsonRpcNotification{
-        .method = std::string(mcp::protocol::InitializedMethod),
+        .method = mcp::protocol::InitializedMethod,
     });
 
     transport_ptr->push_request(mcp::protocol::JsonRpcRequest{
-        .method = std::string(mcp::protocol::ToolsListMethod),
+        .method = mcp::protocol::ToolsListMethod,
         .params = Json::object(),
         .id = std::int64_t{2},
     });

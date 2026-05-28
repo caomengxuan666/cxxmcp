@@ -75,7 +75,7 @@ void handle_request(const mcp::protocol::JsonRpcRequest& request) {
     write_response(mcp::protocol::make_response(
         request.id,
         Json{
-            {"protocolVersion", std::string(mcp::protocol::McpProtocolVersion)},
+            {"protocolVersion", mcp::protocol::McpProtocolVersion},
             {"capabilities",
              Json{{"tools", Json::object()},
                   {"prompts", Json::object()},

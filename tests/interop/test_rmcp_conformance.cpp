@@ -508,12 +508,12 @@ bool wait_for_http_endpoint(std::uint16_t port) {
     const auto body =
         Json{{"jsonrpc", "2.0"},
              {"id", 1},
-             {"method", std::string(mcp::protocol::InitializeMethod)},
-             {"params", Json{{"protocolVersion",
-                              std::string(mcp::protocol::McpProtocolVersion)},
-                             {"capabilities", Json::object()},
-                             {"clientInfo", Json{{"name", "cxxmcp-ready-probe"},
-                                                 {"version", "1"}}}}}}
+             {"method", mcp::protocol::InitializeMethod},
+             {"params",
+              Json{{"protocolVersion", mcp::protocol::McpProtocolVersion},
+                   {"capabilities", Json::object()},
+                   {"clientInfo",
+                    Json{{"name", "cxxmcp-ready-probe"}, {"version", "1"}}}}}}
             .dump();
     if (client.Post("/mcp", body, "application/json") != nullptr) {
       return true;
@@ -1812,7 +1812,7 @@ class RunningInteropServer {
  private:
   std::string make_elicitation_defaults_request_payload() {
     const auto request = mcp::protocol::make_request(
-        std::string(mcp::protocol::ElicitationCreateMethod),
+        mcp::protocol::ElicitationCreateMethod,
         std::string(kElicitationDefaultsRequestId),
         Json{
             {"mode", "form"},
@@ -1891,9 +1891,8 @@ class RunningInteropServer {
   }
 
   std::string make_roots_roundtrip_request_payload() {
-    const auto request =
-        mcp::protocol::make_request(std::string(mcp::protocol::RootsListMethod),
-                                    std::string(kRootsRoundTripRequestId));
+    const auto request = mcp::protocol::make_request(
+        mcp::protocol::RootsListMethod, std::string(kRootsRoundTripRequestId));
     const auto serialized = mcp::protocol::serialize_request(request);
     require(serialized.has_value(), "roots/list request should serialize");
     return *serialized;
@@ -1933,7 +1932,7 @@ class RunningInteropServer {
         "user", "Describe the RMCP roots fixture"));
     params.max_tokens = 64;
     const auto request = mcp::protocol::make_request(
-        std::string(mcp::protocol::SamplingCreateMessageMethod),
+        mcp::protocol::SamplingCreateMessageMethod,
         std::string(kSamplingRoundTripRequestId),
         mcp::protocol::create_message_params_to_json(params));
     const auto serialized = mcp::protocol::serialize_request(request);
@@ -2047,7 +2046,7 @@ class RunningInteropServer {
          sent_response = false](std::size_t, httplib::DataSink& sink) mutable {
           if (!sent_progress) {
             const auto notification = mcp::protocol::make_notification(
-                std::string(mcp::protocol::ProgressNotificationMethod),
+                mcp::protocol::ProgressNotificationMethod,
                 mcp::protocol::progress_notification_params_to_json(
                     mcp::protocol::ProgressNotificationParams{
                         .progress_token = std::string("rmcp-progress-token"),
@@ -2399,7 +2398,7 @@ httplib::Result post_json_rpc_with_session(std::uint16_t port,
   httplib::Headers headers{
       {"Accept", "application/json"},
       {"Content-Type", "application/json"},
-      {"MCP-Protocol-Version", std::string(mcp::protocol::McpProtocolVersion)},
+      {"MCP-Protocol-Version", mcp::protocol::McpProtocolVersion},
       {"Mcp-Session-Id", session_id},
   };
   if (request.contains("method") && request.at("method").is_string()) {
@@ -2421,8 +2420,7 @@ void post_json_rpc_notification(std::uint16_t port, const Json& notification) {
 void post_json_rpc_initialized_notification(std::uint16_t port,
                                             const std::string& session_id) {
   const auto initialized = post_json_rpc_with_session(
-      port, rpc_notification(std::string(mcp::protocol::InitializedMethod)),
-      session_id);
+      port, rpc_notification(mcp::protocol::InitializedMethod), session_id);
   require(initialized != nullptr,
           "HTTP initialized notification should receive a response");
   require(initialized->status == 202,
@@ -2461,9 +2459,8 @@ void test_cxxmcp_streamable_http_session_stale_matrix() {
   const auto initialized = client.Post(
       "/mcp",
       rpc_request(
-          1, std::string(mcp::protocol::InitializeMethod),
-          Json{{"protocolVersion",
-                std::string(mcp::protocol::McpProtocolVersion)},
+          1, mcp::protocol::InitializeMethod,
+          Json{{"protocolVersion", mcp::protocol::McpProtocolVersion},
                {"clientInfo", Json{{"name", "session-test"}, {"version", "1"}}},
                {"capabilities", Json::object()}})
           .dump(),
@@ -2489,8 +2486,7 @@ void test_cxxmcp_streamable_http_session_stale_matrix() {
           "wrong-session SSE request should be rejected");
 
   const auto tool_list = post_json_rpc_with_session(
-      port, rpc_request(2, std::string(mcp::protocol::ToolsListMethod)),
-      session_id);
+      port, rpc_request(2, mcp::protocol::ToolsListMethod), session_id);
   require(tool_list != nullptr, "session POST should return a response");
   require(tool_list->status == 200, "valid session POST should succeed");
 
@@ -2500,8 +2496,7 @@ void test_cxxmcp_streamable_http_session_stale_matrix() {
   require(deleted->status == 204, "session DELETE should terminate session");
 
   const auto stale_post = post_json_rpc_with_session(
-      port, rpc_request(3, std::string(mcp::protocol::ToolsListMethod)),
-      session_id);
+      port, rpc_request(3, mcp::protocol::ToolsListMethod), session_id);
   require(stale_post != nullptr, "stale session POST should return a response");
   require(stale_post->status == 404, "stale session POST should be rejected");
 
@@ -2523,12 +2518,12 @@ void test_cxxmcp_streamable_http_interop_matrix_core_methods() {
   const auto port = server.port();
 
   const auto initialized = expect_result(post_json_rpc(
-      port, rpc_request(1, std::string(mcp::protocol::InitializeMethod),
-                        Json{{"protocolVersion",
-                              std::string(mcp::protocol::McpProtocolVersion)},
-                             {"clientInfo",
-                              Json{{"name", "cxxmcp-test"}, {"version", "1"}}},
-                             {"capabilities", Json::object()}})));
+      port,
+      rpc_request(
+          1, mcp::protocol::InitializeMethod,
+          Json{{"protocolVersion", mcp::protocol::McpProtocolVersion},
+               {"clientInfo", Json{{"name", "cxxmcp-test"}, {"version", "1"}}},
+               {"capabilities", Json::object()}})));
   require(initialized.at("capabilities").contains("tools"),
           "initialize should advertise tools");
   require(initialized.at("capabilities").contains("prompts"),
@@ -2542,39 +2537,34 @@ void test_cxxmcp_streamable_http_interop_matrix_core_methods() {
 
   const auto tools =
       expect_result(
-          post_json_rpc(
-              port,
-              rpc_request(2, std::string(mcp::protocol::ToolsListMethod))))
+          post_json_rpc(port, rpc_request(2, mcp::protocol::ToolsListMethod)))
           .at("tools");
   require(tools.size() == 2, "tools/list should expose two default tools");
   require(tools.at(0).at("name") == "test_simple_text",
           "tools/list tool name mismatch");
 
-  const auto tool_result = expect_result(post_json_rpc(
-      port, rpc_request(3, std::string(mcp::protocol::ToolsCallMethod),
-                        Json{{"name", "test_simple_text"}})));
+  const auto tool_result = expect_result(
+      post_json_rpc(port, rpc_request(3, mcp::protocol::ToolsCallMethod,
+                                      Json{{"name", "test_simple_text"}})));
   require(tool_result.at("content").at(0).at("text") ==
               "This is a simple text response for testing.",
           "tools/call text result mismatch");
 
   expect_error(
-      post_json_rpc(port,
-                    rpc_request(4, std::string(mcp::protocol::ToolsCallMethod),
-                                Json{{"name", "missing_tool"}})),
+      post_json_rpc(port, rpc_request(4, mcp::protocol::ToolsCallMethod,
+                                      Json{{"name", "missing_tool"}})),
       static_cast<int>(mcp::protocol::ErrorCode::ToolNotFound));
 
   const auto prompts =
       expect_result(
-          post_json_rpc(
-              port,
-              rpc_request(5, std::string(mcp::protocol::PromptsListMethod))))
+          post_json_rpc(port, rpc_request(5, mcp::protocol::PromptsListMethod)))
           .at("prompts");
   require(prompts.size() == 1, "prompts/list should expose one prompt");
   require(prompts.at(0).at("name") == "summarize",
           "prompts/list prompt name mismatch");
 
   const auto prompt_result = expect_result(post_json_rpc(
-      port, rpc_request(6, std::string(mcp::protocol::PromptsGetMethod),
+      port, rpc_request(6, mcp::protocol::PromptsGetMethod,
                         Json{{"name", "summarize"},
                              {"arguments", Json{{"text", "hello"}}}})));
   require(prompt_result.at("messages").at(0).at("content").at("text") ==
@@ -2583,16 +2573,15 @@ void test_cxxmcp_streamable_http_interop_matrix_core_methods() {
 
   const auto resources =
       expect_result(
-          post_json_rpc(
-              port,
-              rpc_request(7, std::string(mcp::protocol::ResourcesListMethod))))
+          post_json_rpc(port,
+                        rpc_request(7, mcp::protocol::ResourcesListMethod)))
           .at("resources");
   require(resources.size() == 1, "resources/list should expose one resource");
   require(resources.at(0).at("uri") == "file:///workspace/README.md",
           "resources/list uri mismatch");
 
   const auto read_result = expect_result(post_json_rpc(
-      port, rpc_request(8, std::string(mcp::protocol::ResourcesReadMethod),
+      port, rpc_request(8, mcp::protocol::ResourcesReadMethod,
                         Json{{"uri", "file:///workspace/README.md"}})));
   require(read_result.at("contents").at(0).at("text") == "# cxxmcp",
           "resources/read text mismatch");
@@ -2601,8 +2590,7 @@ void test_cxxmcp_streamable_http_interop_matrix_core_methods() {
       expect_result(
           post_json_rpc(
               port,
-              rpc_request(
-                  9, std::string(mcp::protocol::ResourcesTemplatesListMethod))))
+              rpc_request(9, mcp::protocol::ResourcesTemplatesListMethod)))
           .at("resourceTemplates");
   require(templates.size() == 1,
           "resources/templates/list should expose one template");
@@ -2610,18 +2598,16 @@ void test_cxxmcp_streamable_http_interop_matrix_core_methods() {
           "resources/templates/list uriTemplate mismatch");
 
   expect_result(post_json_rpc(
-      port,
-      rpc_request(10, std::string(mcp::protocol::ResourcesSubscribeMethod),
-                  Json{{"uri", "file:///workspace/README.md"}})));
+      port, rpc_request(10, mcp::protocol::ResourcesSubscribeMethod,
+                        Json{{"uri", "file:///workspace/README.md"}})));
   expect_result(post_json_rpc(
-      port,
-      rpc_request(11, std::string(mcp::protocol::ResourcesUnsubscribeMethod),
-                  Json{{"uri", "file:///workspace/README.md"}})));
+      port, rpc_request(11, mcp::protocol::ResourcesUnsubscribeMethod,
+                        Json{{"uri", "file:///workspace/README.md"}})));
 
   const auto completion_result = expect_result(post_json_rpc(
       port,
       rpc_request(
-          12, std::string(mcp::protocol::CompletionCompleteMethod),
+          12, mcp::protocol::CompletionCompleteMethod,
           Json{{"ref", Json{{"type", "ref/prompt"}, {"name", "summarize"}}},
                {"argument", Json{{"name", "text"}, {"value", "he"}}}})));
   require(completion_result.at("completion").at("values").at(0) == "he-one",
@@ -2629,29 +2615,27 @@ void test_cxxmcp_streamable_http_interop_matrix_core_methods() {
   require(completion_result.at("completion").at("total") == 2,
           "completion/complete total mismatch");
 
-  expect_result(post_json_rpc(
-      port, rpc_request(13, std::string(mcp::protocol::LoggingSetLevelMethod),
-                        Json{{"level", "warning"}})));
+  expect_result(
+      post_json_rpc(port, rpc_request(13, mcp::protocol::LoggingSetLevelMethod,
+                                      Json{{"level", "warning"}})));
+  post_json_rpc_notification(
+      port, rpc_notification(mcp::protocol::LoggingMessageNotificationMethod,
+                             Json{{"level", "info"},
+                                  {"logger", "interop"},
+                                  {"data", Json{{"message", "hello"}}}}));
+  post_json_rpc_notification(
+      port, rpc_notification(mcp::protocol::ProgressNotificationMethod,
+                             Json{{"progressToken", "progress-1"},
+                                  {"progress", 1.0},
+                                  {"total", 2.0},
+                                  {"message", "halfway"}}));
   post_json_rpc_notification(
       port, rpc_notification(
-                std::string(mcp::protocol::LoggingMessageNotificationMethod),
-                Json{{"level", "info"},
-                     {"logger", "interop"},
-                     {"data", Json{{"message", "hello"}}}}));
-  post_json_rpc_notification(
-      port,
-      rpc_notification(std::string(mcp::protocol::ProgressNotificationMethod),
-                       Json{{"progressToken", "progress-1"},
-                            {"progress", 1.0},
-                            {"total", 2.0},
-                            {"message", "halfway"}}));
-  post_json_rpc_notification(
-      port, rpc_notification(
-                std::string(mcp::protocol::CancelledNotificationMethod),
+                mcp::protocol::CancelledNotificationMethod,
                 Json{{"requestId", 99}, {"reason", "client cancelled"}}));
 
-  const auto roots_result = expect_result(post_json_rpc(
-      port, rpc_request(14, std::string(mcp::protocol::RootsListMethod))));
+  const auto roots_result = expect_result(
+      post_json_rpc(port, rpc_request(14, mcp::protocol::RootsListMethod)));
   const auto parsed_roots =
       mcp::protocol::roots_list_result_from_json(roots_result);
   require(parsed_roots.has_value(), "roots/list result should parse");
@@ -2659,14 +2643,13 @@ void test_cxxmcp_streamable_http_interop_matrix_core_methods() {
   require(parsed_roots->roots.front().uri == "file:///workspace",
           "roots/list uri mismatch");
   post_json_rpc_notification(
-      port, rpc_notification(
-                std::string(mcp::protocol::RootsListChangedNotificationMethod),
-                Json::object()));
+      port, rpc_notification(mcp::protocol::RootsListChangedNotificationMethod,
+                             Json::object()));
 
   const auto sampling_result = expect_result(post_json_rpc(
       port,
       rpc_request(
-          15, std::string(mcp::protocol::SamplingCreateMessageMethod),
+          15, mcp::protocol::SamplingCreateMessageMethod,
           Json{{"messages",
                 Json::array({Json{
                     {"role", "user"},
@@ -2696,16 +2679,15 @@ void test_cxxmcp_streamable_http_interop_matrix_core_methods() {
   require(parsed_sampling->content.text == "sampled response to: hello",
           "sampling/createMessage text mismatch");
   expect_error(
-      post_json_rpc(
-          port, rpc_request(
-                    16, std::string(mcp::protocol::SamplingCreateMessageMethod),
-                    Json{{"messages", Json::array()}})),
+      post_json_rpc(port,
+                    rpc_request(16, mcp::protocol::SamplingCreateMessageMethod,
+                                Json{{"messages", Json::array()}})),
       static_cast<int>(mcp::protocol::ErrorCode::InvalidParams));
 
   const auto form_elicitation = expect_result(post_json_rpc(
       port,
       rpc_request(
-          17, std::string(mcp::protocol::ElicitationCreateMethod),
+          17, mcp::protocol::ElicitationCreateMethod,
           Json{{"message", "Need account details"},
                {"mode", "form"},
                {"requestedSchema",
@@ -2728,7 +2710,7 @@ void test_cxxmcp_streamable_http_interop_matrix_core_methods() {
           "form elicitation content mismatch");
 
   const auto url_elicitation = expect_result(post_json_rpc(
-      port, rpc_request(18, std::string(mcp::protocol::ElicitationCreateMethod),
+      port, rpc_request(18, mcp::protocol::ElicitationCreateMethod,
                         Json{{"message", "Authorize external flow"},
                              {"mode", "url"},
                              {"elicitationId", "elicitation-url-1"},
@@ -2742,39 +2724,38 @@ void test_cxxmcp_streamable_http_interop_matrix_core_methods() {
           "URL elicitation id mismatch");
   post_json_rpc_notification(
       port,
-      rpc_notification(
-          std::string(mcp::protocol::ElicitationCompleteNotificationMethod),
-          Json{{"elicitationId", "elicitation-url-1"}}));
+      rpc_notification(mcp::protocol::ElicitationCompleteNotificationMethod,
+                       Json{{"elicitationId", "elicitation-url-1"}}));
 
-  const auto created_task = expect_result(post_json_rpc(
-      port, rpc_request(19, std::string(mcp::protocol::ToolsCallMethod),
-                        Json{{"name", "test_simple_text"},
-                             {"task", Json{{"ttl", 60}}}})));
+  const auto created_task = expect_result(
+      post_json_rpc(port, rpc_request(19, mcp::protocol::ToolsCallMethod,
+                                      Json{{"name", "test_simple_text"},
+                                           {"task", Json{{"ttl", 60}}}})));
   const auto parsed_created_task =
       mcp::protocol::create_task_result_from_json(created_task);
   require(parsed_created_task.has_value(), "task create result should parse");
   require(parsed_created_task->task.task_id == "task-created",
           "task create id mismatch");
 
-  const auto tasks = expect_result(post_json_rpc(
-      port, rpc_request(20, std::string(mcp::protocol::TasksListMethod))));
+  const auto tasks = expect_result(
+      post_json_rpc(port, rpc_request(20, mcp::protocol::TasksListMethod)));
   const auto parsed_tasks = mcp::protocol::task_list_result_from_json(tasks);
   require(parsed_tasks.has_value(), "tasks/list result should parse");
   require(parsed_tasks->tasks.size() == 6,
           "tasks/list should expose lifecycle states");
 
-  const auto completed_task = expect_result(post_json_rpc(
-      port, rpc_request(21, std::string(mcp::protocol::TasksGetMethod),
-                        Json{{"taskId", "task-completed"}})));
+  const auto completed_task = expect_result(
+      post_json_rpc(port, rpc_request(21, mcp::protocol::TasksGetMethod,
+                                      Json{{"taskId", "task-completed"}})));
   const auto parsed_completed_task =
       mcp::protocol::task_from_json(completed_task);
   require(parsed_completed_task.has_value(), "tasks/get result should parse");
   require(parsed_completed_task->status == mcp::protocol::TaskStatus::Completed,
           "tasks/get completed status mismatch");
 
-  const auto cancelled_task = expect_result(post_json_rpc(
-      port, rpc_request(22, std::string(mcp::protocol::TasksCancelMethod),
-                        Json{{"taskId", "task-cancelled"}})));
+  const auto cancelled_task = expect_result(
+      post_json_rpc(port, rpc_request(22, mcp::protocol::TasksCancelMethod,
+                                      Json{{"taskId", "task-cancelled"}})));
   const auto parsed_cancelled_task =
       mcp::protocol::task_from_json(cancelled_task);
   require(parsed_cancelled_task.has_value(),
@@ -2782,39 +2763,37 @@ void test_cxxmcp_streamable_http_interop_matrix_core_methods() {
   require(parsed_cancelled_task->status == mcp::protocol::TaskStatus::Cancelled,
           "tasks/cancel status mismatch");
 
-  const auto retained_result = expect_result(post_json_rpc(
-      port, rpc_request(23, std::string(mcp::protocol::TasksResultMethod),
-                        Json{{"taskId", "task-retained"}})));
+  const auto retained_result = expect_result(
+      post_json_rpc(port, rpc_request(23, mcp::protocol::TasksResultMethod,
+                                      Json{{"taskId", "task-retained"}})));
   require(
       retained_result.at("content").at(0).at("text") == "task-retained result",
       "tasks/result retained payload mismatch");
   expect_error(
-      post_json_rpc(
-          port, rpc_request(24, std::string(mcp::protocol::TasksResultMethod),
-                            Json{{"taskId", "task-failed"}})),
+      post_json_rpc(port, rpc_request(24, mcp::protocol::TasksResultMethod,
+                                      Json{{"taskId", "task-failed"}})),
       static_cast<int>(mcp::protocol::ErrorCode::InvalidParams));
   expect_error(
-      post_json_rpc(
-          port, rpc_request(25, std::string(mcp::protocol::TasksResultMethod),
-                            Json{{"taskId", "task-timeout"}})),
+      post_json_rpc(port, rpc_request(25, mcp::protocol::TasksResultMethod,
+                                      Json{{"taskId", "task-timeout"}})),
       static_cast<int>(mcp::protocol::ErrorCode::InvalidParams));
   post_json_rpc_notification(
-      port, rpc_notification(
-                std::string(mcp::protocol::TasksStatusNotificationMethod),
-                mcp::protocol::task_to_json(make_task(
-                    "task-working", mcp::protocol::TaskStatus::Working,
-                    "still running"))));
+      port,
+      rpc_notification(mcp::protocol::TasksStatusNotificationMethod,
+                       mcp::protocol::task_to_json(make_task(
+                           "task-working", mcp::protocol::TaskStatus::Working,
+                           "still running"))));
 
   expect_error(post_json_rpc(port, rpc_request(26, "experimental/unknown",
                                                Json::object())),
                static_cast<int>(mcp::protocol::ErrorCode::MethodNotFound));
   expect_error(
-      post_json_rpc(
-          port, rpc_request(27, std::string(mcp::protocol::InitializeMethod),
-                            Json{{"protocolVersion", "1900-01-01"},
-                                 {"capabilities", Json::object()},
-                                 {"clientInfo", Json{{"name", "old-client"},
-                                                     {"version", "1"}}}})),
+      post_json_rpc(port,
+                    rpc_request(27, mcp::protocol::InitializeMethod,
+                                Json{{"protocolVersion", "1900-01-01"},
+                                     {"capabilities", Json::object()},
+                                     {"clientInfo", Json{{"name", "old-client"},
+                                                         {"version", "1"}}}})),
       static_cast<int>(mcp::protocol::ErrorCode::InvalidParams));
 
   httplib::Client client("127.0.0.1", port);
@@ -2998,7 +2977,7 @@ void test_cxxmcp_client_against_rmcp_conformance_http_server() {
           "cxxmcp client should set RMCP logging level");
 
   const auto raw_completion = client.raw_request(mcp::protocol::make_request(
-      std::string(mcp::protocol::CompletionCompleteMethod), std::int64_t{9001},
+      mcp::protocol::CompletionCompleteMethod, std::int64_t{9001},
       Json{{"ref", Json{{"type", "ref/prompt"},
                         {"name", "test_prompt_with_arguments"}}},
            {"argument", Json{{"name", "name"}, {"value", "A"}}}}));
@@ -3014,14 +2993,14 @@ void test_cxxmcp_client_against_rmcp_conformance_http_server() {
 
   require(client
               .raw_request(mcp::protocol::make_request(
-                  std::string(mcp::protocol::ResourcesSubscribeMethod),
-                  std::int64_t{9002}, Json{{"uri", "test://static-text"}}))
+                  mcp::protocol::ResourcesSubscribeMethod, std::int64_t{9002},
+                  Json{{"uri", "test://static-text"}}))
               .has_value(),
           "cxxmcp client raw subscribe should reach RMCP server");
   require(client
               .raw_request(mcp::protocol::make_request(
-                  std::string(mcp::protocol::ResourcesUnsubscribeMethod),
-                  std::int64_t{9003}, Json{{"uri", "test://static-text"}}))
+                  mcp::protocol::ResourcesUnsubscribeMethod, std::int64_t{9003},
+                  Json{{"uri", "test://static-text"}}))
               .has_value(),
           "cxxmcp client raw unsubscribe should reach RMCP server");
 

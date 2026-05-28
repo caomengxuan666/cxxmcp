@@ -22,23 +22,21 @@
 namespace mcp::protocol {
 
 /// @brief JSON-RPC protocol version string placed in message envelopes.
-inline constexpr std::string_view JsonRpcVersion = "2.0";
-inline constexpr std::string_view McpProtocolVersion2025_11_25 = "2025-11-25";
-inline constexpr std::string_view McpProtocolVersion2025_06_18 = "2025-06-18";
-inline constexpr std::string_view McpProtocolVersion2025_03_26 = "2025-03-26";
-inline constexpr std::string_view McpProtocolVersion2024_11_05 = "2024-11-05";
+inline const std::string JsonRpcVersion = "2.0";
+inline const std::string McpProtocolVersion2025_11_25 = "2025-11-25";
+inline const std::string McpProtocolVersion2025_06_18 = "2025-06-18";
+inline const std::string McpProtocolVersion2025_03_26 = "2025-03-26";
+inline const std::string McpProtocolVersion2024_11_05 = "2024-11-05";
 /// @brief Latest MCP protocol version advertised during initialization.
-inline constexpr std::string_view McpProtocolVersion =
-    McpProtocolVersion2025_11_25;
+inline const std::string McpProtocolVersion = McpProtocolVersion2025_11_25;
 /// @brief Protocol versions accepted by this SDK during initialization.
-inline constexpr std::array<std::string_view, 4> McpSupportedProtocolVersions{
+inline const std::array<std::string, 4> McpSupportedProtocolVersions{
     McpProtocolVersion2024_11_05, McpProtocolVersion2025_03_26,
     McpProtocolVersion2025_06_18, McpProtocolVersion2025_11_25};
 
 /// @brief Returns true when a peer protocol version is supported.
-inline constexpr bool is_supported_protocol_version(
-    std::string_view version) noexcept {
-  for (const auto supported : McpSupportedProtocolVersions) {
+inline bool is_supported_protocol_version(std::string_view version) noexcept {
+  for (const auto& supported : McpSupportedProtocolVersions) {
     if (version == supported) {
       return true;
     }
@@ -47,98 +45,91 @@ inline constexpr bool is_supported_protocol_version(
 }
 
 /// @brief Returns the peer-requested version when known.
-inline constexpr std::optional<std::string_view> negotiate_protocol_version(
+inline std::optional<std::string_view> negotiate_protocol_version(
     std::string_view requested) noexcept {
-  for (const auto supported : McpSupportedProtocolVersions) {
+  for (const auto& supported : McpSupportedProtocolVersions) {
     if (requested == supported) {
-      return supported;
+      return std::string_view(supported);
     }
   }
   return std::nullopt;
 }
 
 /// @brief `initialize` request method for lifecycle negotiation.
-inline constexpr std::string_view InitializeMethod = "initialize";
+inline const std::string InitializeMethod = "initialize";
 /// @brief Notification sent after a successful initialize response.
-inline constexpr std::string_view InitializedMethod =
-    "notifications/initialized";
+inline const std::string InitializedMethod = "notifications/initialized";
 /// @brief Lightweight liveness request.
-inline constexpr std::string_view PingMethod = "ping";
+inline const std::string PingMethod = "ping";
 /// @brief Lists available prompts.
-inline constexpr std::string_view PromptsListMethod = "prompts/list";
+inline const std::string PromptsListMethod = "prompts/list";
 /// @brief Retrieves a prompt by name and arguments.
-inline constexpr std::string_view PromptsGetMethod = "prompts/get";
+inline const std::string PromptsGetMethod = "prompts/get";
 /// @brief Lists concrete resources.
-inline constexpr std::string_view ResourcesListMethod = "resources/list";
+inline const std::string ResourcesListMethod = "resources/list";
 /// @brief Reads resource contents by URI.
-inline constexpr std::string_view ResourcesReadMethod = "resources/read";
+inline const std::string ResourcesReadMethod = "resources/read";
 /// @brief Lists URI templates that can produce resources.
-inline constexpr std::string_view ResourcesTemplatesListMethod =
+inline const std::string ResourcesTemplatesListMethod =
     "resources/templates/list";
 /// @brief Subscribes to updates for a resource URI.
-inline constexpr std::string_view ResourcesSubscribeMethod =
-    "resources/subscribe";
+inline const std::string ResourcesSubscribeMethod = "resources/subscribe";
 /// @brief Removes a resource subscription.
-inline constexpr std::string_view ResourcesUnsubscribeMethod =
-    "resources/unsubscribe";
+inline const std::string ResourcesUnsubscribeMethod = "resources/unsubscribe";
 /// @brief Lists callable tools.
-inline constexpr std::string_view ToolsListMethod = "tools/list";
+inline const std::string ToolsListMethod = "tools/list";
 /// @brief Retrieves a tool definition.
-inline constexpr std::string_view ToolsGetMethod = "tools/get";
+inline const std::string ToolsGetMethod = "tools/get";
 /// @brief Calls a named tool with JSON arguments.
-inline constexpr std::string_view ToolsCallMethod = "tools/call";
+inline const std::string ToolsCallMethod = "tools/call";
 /// @brief Completes a prompt or resource-template argument value.
-inline constexpr std::string_view CompletionCompleteMethod =
-    "completion/complete";
+inline const std::string CompletionCompleteMethod = "completion/complete";
 /// @brief Updates the minimum logging level the peer should emit.
-inline constexpr std::string_view LoggingSetLevelMethod = "logging/setLevel";
+inline const std::string LoggingSetLevelMethod = "logging/setLevel";
 /// @brief Requests client-side model sampling.
-inline constexpr std::string_view SamplingCreateMessageMethod =
-    "sampling/createMessage";
+inline const std::string SamplingCreateMessageMethod = "sampling/createMessage";
 /// @brief Requests user input through MCP elicitation.
-inline constexpr std::string_view ElicitationCreateMethod =
-    "elicitation/create";
+inline const std::string ElicitationCreateMethod = "elicitation/create";
 /// @brief Notification that a URL-based elicitation interaction completed.
-inline constexpr std::string_view ElicitationCompleteNotificationMethod =
+inline const std::string ElicitationCompleteNotificationMethod =
     "notifications/elicitation/complete";
 /// @brief Lists asynchronous tasks known to the peer.
-inline constexpr std::string_view TasksListMethod = "tasks/list";
+inline const std::string TasksListMethod = "tasks/list";
 /// @brief Retrieves a task by id.
-inline constexpr std::string_view TasksGetMethod = "tasks/get";
+inline const std::string TasksGetMethod = "tasks/get";
 /// @brief Requests cancellation of a task.
-inline constexpr std::string_view TasksCancelMethod = "tasks/cancel";
+inline const std::string TasksCancelMethod = "tasks/cancel";
 /// @brief Retrieves the result associated with a completed task.
-inline constexpr std::string_view TasksResultMethod = "tasks/result";
+inline const std::string TasksResultMethod = "tasks/result";
 /// @brief Server-to-client request to create a new task.
-inline constexpr std::string_view TasksCreateMethod = "tasks/create";
+inline const std::string TasksCreateMethod = "tasks/create";
 /// @brief Notification carrying task status updates.
-inline constexpr std::string_view TasksStatusNotificationMethod =
+inline const std::string TasksStatusNotificationMethod =
     "notifications/tasks/status";
 /// @brief Lists client roots available to the server.
-inline constexpr std::string_view RootsListMethod = "roots/list";
+inline const std::string RootsListMethod = "roots/list";
 /// @brief JSON-RPC cancellation notification.
-inline constexpr std::string_view CancelledNotificationMethod =
+inline const std::string CancelledNotificationMethod =
     "notifications/cancelled";
 /// @brief JSON-RPC progress notification.
-inline constexpr std::string_view ProgressNotificationMethod =
-    "notifications/progress";
+inline const std::string ProgressNotificationMethod = "notifications/progress";
 /// @brief Notification that the client root list changed.
-inline constexpr std::string_view RootsListChangedNotificationMethod =
+inline const std::string RootsListChangedNotificationMethod =
     "notifications/roots/list_changed";
 /// @brief Notification that the server resource list changed.
-inline constexpr std::string_view ResourcesListChangedNotificationMethod =
+inline const std::string ResourcesListChangedNotificationMethod =
     "notifications/resources/list_changed";
 /// @brief Notification that one subscribed resource was updated.
-inline constexpr std::string_view ResourcesUpdatedNotificationMethod =
+inline const std::string ResourcesUpdatedNotificationMethod =
     "notifications/resources/updated";
 /// @brief Notification that the server tool list changed.
-inline constexpr std::string_view ToolsListChangedNotificationMethod =
+inline const std::string ToolsListChangedNotificationMethod =
     "notifications/tools/list_changed";
 /// @brief Notification that the server prompt list changed.
-inline constexpr std::string_view PromptsListChangedNotificationMethod =
+inline const std::string PromptsListChangedNotificationMethod =
     "notifications/prompts/list_changed";
 /// @brief Notification carrying a logging message.
-inline constexpr std::string_view LoggingMessageNotificationMethod =
+inline const std::string LoggingMessageNotificationMethod =
     "notifications/message";
 
 /// @brief Builds a JSON-RPC error object.

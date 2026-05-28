@@ -55,11 +55,11 @@ int main() {
   mcp::auth::WwwAuthenticateChallenge challenge;
   challenge.scheme = "Bearer";
   challenge.parameters.emplace(
-      std::string(mcp::auth::WwwAuthenticateResourceMetadataParam),
+      mcp::auth::WwwAuthenticateResourceMetadataParam),
       "https://resource.example/.well-known/oauth-protected-resource");
   challenge.parameters.emplace(
-      std::string(mcp::auth::WwwAuthenticateErrorParam),
-      std::string(mcp::auth::WwwAuthenticateInsufficientScopeError));
+      mcp::auth::WwwAuthenticateErrorParam),
+      mcp::auth::WwwAuthenticateInsufficientScopeError));
   const std::vector<mcp::auth::WwwAuthenticateChallenge> challenges{challenge};
   if (!challenge.bearer() || !mcp::auth::insufficient_scope(challenge) ||
       !mcp::auth::first_resource_metadata_url(challenges).has_value()) {

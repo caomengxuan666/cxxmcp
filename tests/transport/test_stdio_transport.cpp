@@ -39,21 +39,19 @@ std::string serialize_notification_line(
 mcp::protocol::JsonRpcResponse make_initialize_response(
     const mcp::protocol::RequestId& id) {
   return mcp::protocol::make_response(
-      id,
-      Json{
-          {"protocolVersion", std::string(mcp::protocol::McpProtocolVersion)},
-          {"capabilities", Json::object()},
-          {"serverInfo", Json{{"name", "stdio-test"}, {"version", "1"}}},
-      });
+      id, Json{
+              {"protocolVersion", mcp::protocol::McpProtocolVersion},
+              {"capabilities", Json::object()},
+              {"serverInfo", Json{{"name", "stdio-test"}, {"version", "1"}}},
+          });
 }
 
 std::string initialized_stdio_prefix() {
   return serialize_request_line(mcp::protocol::JsonRpcRequest{
-             .method = std::string(mcp::protocol::InitializeMethod),
+             .method = mcp::protocol::InitializeMethod,
              .params =
                  Json{
-                     {"protocolVersion",
-                      std::string(mcp::protocol::McpProtocolVersion)},
+                     {"protocolVersion", mcp::protocol::McpProtocolVersion},
                      {"capabilities", Json::object()},
                      {"clientInfo",
                       Json{{"name", "stdio-test"}, {"version", "1"}}},
@@ -476,8 +474,7 @@ void test_server_writes_parse_error_for_bad_json() {
 
 void test_server_handles_notifications() {
   const auto notification = mcp::protocol::make_notification(
-      std::string(mcp::protocol::RootsListChangedNotificationMethod),
-      Json::object());
+      mcp::protocol::RootsListChangedNotificationMethod, Json::object());
   const auto serialized = mcp::protocol::serialize_notification(notification);
   require(serialized.has_value(), "notification should serialize");
 
@@ -516,7 +513,7 @@ void test_server_handles_notifications() {
 
 void test_server_handles_cancelled_notification() {
   const auto notification = mcp::protocol::JsonRpcNotification{
-      .method = std::string(mcp::protocol::CancelledNotificationMethod),
+      .method = mcp::protocol::CancelledNotificationMethod,
       .params = Json{{"requestId", 7}, {"reason", "request timeout"}},
   };
   const auto serialized = mcp::protocol::serialize_notification(notification);
@@ -570,7 +567,7 @@ void test_client_writes_cancelled_notification_to_stdio() {
 
   const auto sent =
       transport.send_notification(mcp::protocol::JsonRpcNotification{
-          .method = std::string(mcp::protocol::CancelledNotificationMethod),
+          .method = mcp::protocol::CancelledNotificationMethod,
           .params = Json{{"requestId", "req-1"}, {"reason", "user cancel"}},
       });
   require(sent.has_value(),
@@ -598,8 +595,7 @@ void test_server_writes_outbound_notification_to_stdio() {
 
   const auto sent =
       transport.send_notification(mcp::protocol::JsonRpcNotification{
-          .method =
-              std::string(mcp::protocol::ToolsListChangedNotificationMethod),
+          .method = mcp::protocol::ToolsListChangedNotificationMethod,
           .params = mcp::protocol::Json::object(),
       });
   require(sent.has_value(),

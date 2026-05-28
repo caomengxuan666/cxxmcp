@@ -294,7 +294,7 @@ void test_initialize_payload_models_round_trip() {
           "implementation info websiteUrl mismatch");
 
   mcp::protocol::InitializeParams params;
-  params.protocol_version = std::string(mcp::protocol::McpProtocolVersion);
+  params.protocol_version = mcp::protocol::McpProtocolVersion;
   params.capabilities =
       mcp::protocol::ClientCapabilitiesBuilder().roots(true).sampling().build();
   params.client_info = client_info;
@@ -396,7 +396,7 @@ void test_ping_request_round_trip() {
 
 void test_json_rpc_request_notification_meta_is_in_params() {
   const mcp::protocol::JsonRpcRequest request{
-      .method = std::string(mcp::protocol::PingMethod),
+      .method = mcp::protocol::PingMethod,
       .params = Json::object(),
       .id = RequestId{std::string("ping-2")},
       .meta = Json{{"traceId", "request-1"}},
@@ -436,7 +436,7 @@ void test_json_rpc_request_notification_meta_is_in_params() {
           "direct request envelope meta should override params _meta");
 
   const mcp::protocol::JsonRpcNotification notification{
-      .method = std::string(mcp::protocol::InitializedMethod),
+      .method = mcp::protocol::InitializedMethod,
       .params = Json::object(),
       .meta = Json{{"traceId", "notification-1"}},
   };
@@ -475,15 +475,14 @@ void test_json_rpc_request_notification_meta_is_in_params() {
               "notification-1",
           "direct notification params _meta mismatch");
 
-  require_parse_failure(
-      mcp::protocol::serialize_message(
-          JsonRpcMessage{mcp::protocol::JsonRpcRequest{
-              .method = std::string(mcp::protocol::PingMethod),
-              .params = Json::array(),
-              .id = RequestId{std::int64_t{1}},
-              .meta = Json{{"traceId", "bad"}},
-          }}),
-      "request meta with non-object params should fail");
+  require_parse_failure(mcp::protocol::serialize_message(
+                            JsonRpcMessage{mcp::protocol::JsonRpcRequest{
+                                .method = mcp::protocol::PingMethod,
+                                .params = Json::array(),
+                                .id = RequestId{std::int64_t{1}},
+                                .meta = Json{{"traceId", "bad"}},
+                            }}),
+                        "request meta with non-object params should fail");
 }
 
 void test_response_round_trips() {
@@ -1409,7 +1408,7 @@ void test_task_protocol_round_trips() {
           "createTask meta mismatch");
 
   const mcp::protocol::JsonRpcNotification task_notification{
-      .method = std::string(mcp::protocol::TasksStatusNotificationMethod),
+      .method = mcp::protocol::TasksStatusNotificationMethod,
       .params = task_json,
       .meta = Json{{"relatedTaskId", "task-1"}},
   };
@@ -3533,7 +3532,7 @@ void test_notification_helpers_round_trip() {
           "explicit empty logger should round-trip");
 
   const auto notification = mcp::protocol::make_notification(
-      std::string(mcp::protocol::ProgressNotificationMethod), progress_json);
+      mcp::protocol::ProgressNotificationMethod, progress_json);
   require(notification.method == "notifications/progress",
           "constructed progress notification method mismatch");
 }

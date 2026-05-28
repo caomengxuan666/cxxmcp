@@ -161,7 +161,7 @@ int main() {
   const Json meta = Json{{"traceId", "bench"}, {"progressToken", 42}};
 
   mcp::protocol::JsonRpcRequest small_request;
-  small_request.method = std::string(mcp::protocol::PingMethod);
+  small_request.method = mcp::protocol::PingMethod;
   small_request.id = std::int64_t{1};
 
   mcp::protocol::JsonRpcRequest large_request = small_request;
@@ -171,7 +171,7 @@ int main() {
   large_request_with_meta.meta = meta;
 
   mcp::protocol::JsonRpcNotification notification;
-  notification.method = std::string(mcp::protocol::InitializedMethod);
+  notification.method = mcp::protocol::InitializedMethod;
   notification.params = large;
   notification.meta = meta;
 

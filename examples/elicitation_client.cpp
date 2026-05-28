@@ -59,7 +59,7 @@ int main() {
 
     const auto accepted_message = client.dispatch_message(
         mcp::protocol::JsonRpcMessage{mcp::protocol::JsonRpcRequest{
-            .method = std::string(mcp::protocol::ElicitationCreateMethod),
+            .method = mcp::protocol::ElicitationCreateMethod,
             .params = Json{{"message", "choose project"},
                            {"requestedSchema", form_schema}},
             .id = std::int64_t{1},
@@ -75,7 +75,7 @@ int main() {
 
     const auto declined_message = client.dispatch_message(
         mcp::protocol::JsonRpcMessage{mcp::protocol::JsonRpcRequest{
-            .method = std::string(mcp::protocol::ElicitationCreateMethod),
+            .method = mcp::protocol::ElicitationCreateMethod,
             .params =
                 Json{{"message", "decline"}, {"requestedSchema", form_schema}},
             .id = std::int64_t{2},

@@ -63,7 +63,7 @@ int main() {
 
   const auto completed = server.handle_request(
       mcp::protocol::JsonRpcRequest{
-          .method = std::string(mcp::protocol::CompletionCompleteMethod),
+          .method = mcp::protocol::CompletionCompleteMethod,
           .params = Json{{"prefix", "he"}},
           .id = std::int64_t{1},
       },
@@ -88,7 +88,7 @@ int main() {
   ClientContracts client_contracts;
   client.set_handler(client_contracts);
   const auto roots = client.handle_request(mcp::protocol::JsonRpcRequest{
-      .method = std::string(mcp::protocol::RootsListMethod),
+      .method = mcp::protocol::RootsListMethod,
       .params = Json::object(),
       .id = std::int64_t{3},
   });

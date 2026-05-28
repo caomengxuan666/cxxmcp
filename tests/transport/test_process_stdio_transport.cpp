@@ -265,7 +265,7 @@ void test_process_stdio_transport_stop_unblocks_pending_request() {
   bool stable_error_seen = false;
   std::thread request_thread([&]() {
     const auto response = transport.send(mcp::protocol::JsonRpcRequest{
-        .method = std::string(mcp::protocol::InitializeMethod),
+        .method = mcp::protocol::InitializeMethod,
         .params = mcp::protocol::Json::object(),
         .id = std::int64_t{99},
     });
@@ -317,7 +317,7 @@ void test_process_stdio_transport_sends_cancelled_notification_while_pending() {
   std::atomic_bool request_finished{false};
   std::thread request_thread([&]() {
     (void)transport.send(mcp::protocol::JsonRpcRequest{
-        .method = std::string(mcp::protocol::InitializeMethod),
+        .method = mcp::protocol::InitializeMethod,
         .params = mcp::protocol::Json::object(),
         .id = std::int64_t{101},
     });
@@ -330,7 +330,7 @@ void test_process_stdio_transport_sends_cancelled_notification_while_pending() {
 
   const auto notified =
       transport.send_notification(mcp::protocol::JsonRpcNotification{
-          .method = std::string(mcp::protocol::CancelledNotificationMethod),
+          .method = mcp::protocol::CancelledNotificationMethod,
           .params =
               mcp::protocol::Json{
                   {"requestId", 101},
@@ -680,7 +680,7 @@ void test_native_process_stdio_transport_exposes_client_contract() {
           "native process transport diagnostics mismatch");
 
   auto sent = transport.send(mcp::protocol::JsonRpcRequest{
-      .method = std::string(mcp::protocol::InitializeMethod),
+      .method = mcp::protocol::InitializeMethod,
       .params = mcp::protocol::Json::object(),
       .id = std::int64_t{1},
   });
@@ -743,7 +743,7 @@ void test_native_process_stdio_transport_reuses_child_for_multiple_requests() {
   mcp::transport::ProcessStdioClientTransport transport(std::move(options));
 
   auto sent = transport.send(mcp::protocol::JsonRpcRequest{
-      .method = std::string(mcp::protocol::InitializeMethod),
+      .method = mcp::protocol::InitializeMethod,
       .params = mcp::protocol::Json::object(),
       .id = std::int64_t{700},
   });
@@ -833,7 +833,7 @@ void test_native_process_stdio_transport_diagnostics_timeout_cleanup() {
   mcp::transport::ProcessStdioClientTransport transport(std::move(options));
 
   auto sent = transport.send(mcp::protocol::JsonRpcRequest{
-      .method = std::string(mcp::protocol::InitializeMethod),
+      .method = mcp::protocol::InitializeMethod,
       .params = mcp::protocol::Json::object(),
       .id = std::int64_t{501},
   });
@@ -967,7 +967,7 @@ void test_native_process_stdio_transport_surfaces_malformed_child_output() {
   mcp::transport::ProcessStdioClientTransport transport(std::move(options));
 
   auto sent = transport.send(mcp::protocol::JsonRpcRequest{
-      .method = std::string(mcp::protocol::InitializeMethod),
+      .method = mcp::protocol::InitializeMethod,
       .params = mcp::protocol::Json::object(),
       .id = std::int64_t{601},
   });

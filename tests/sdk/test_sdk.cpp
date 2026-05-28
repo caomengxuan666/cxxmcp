@@ -105,8 +105,7 @@ class RecordingClientTransport final : public mcp::client::Transport {
           .id = request.id,
           .result =
               Json{
-                  {"protocolVersion",
-                   std::string(mcp::protocol::McpProtocolVersion)},
+                  {"protocolVersion", mcp::protocol::McpProtocolVersion},
                   {"capabilities", server_capabilities},
                   {"serverInfo",
                    Json{{"name", "sdk-test-server"}, {"version", "1"}}},
@@ -175,24 +174,21 @@ class RecordingClientTransport final : public mcp::client::Transport {
           .result = mcp::protocol::tool_result_to_json(result),
       };
     }
-    if (request.method == std::string(mcp::protocol::LoggingSetLevelMethod) ||
-        request.method ==
-            std::string(mcp::protocol::ResourcesSubscribeMethod) ||
-        request.method ==
-            std::string(mcp::protocol::ResourcesUnsubscribeMethod)) {
+    if (request.method == mcp::protocol::LoggingSetLevelMethod ||
+        request.method == mcp::protocol::ResourcesSubscribeMethod ||
+        request.method == mcp::protocol::ResourcesUnsubscribeMethod) {
       return mcp::protocol::JsonRpcResponse{
           .id = request.id,
           .result = Json::object(),
       };
     }
-    if (request.method ==
-        std::string(mcp::protocol::CompletionCompleteMethod)) {
+    if (request.method == mcp::protocol::CompletionCompleteMethod) {
       return mcp::protocol::JsonRpcResponse{
           .id = request.id,
           .result = Json{{"completion", Json{{"values", Json::array({"ok"})}}}},
       };
     }
-    if (request.method == std::string(mcp::protocol::TasksListMethod)) {
+    if (request.method == mcp::protocol::TasksListMethod) {
       return mcp::protocol::JsonRpcResponse{
           .id = request.id,
           .result =
@@ -205,22 +201,21 @@ class RecordingClientTransport final : public mcp::client::Transport {
                              }})}},
       };
     }
-    if (request.method == std::string(mcp::protocol::TasksGetMethod) ||
-        request.method == std::string(mcp::protocol::TasksCancelMethod)) {
+    if (request.method == mcp::protocol::TasksGetMethod ||
+        request.method == mcp::protocol::TasksCancelMethod) {
       return mcp::protocol::JsonRpcResponse{
           .id = request.id,
-          .result = Json{{"taskId", request.params.at("taskId")},
-                         {"status",
-                          request.method ==
-                                  std::string(mcp::protocol::TasksCancelMethod)
-                              ? "cancelled"
-                              : "completed"},
-                         {"createdAt", "2025-01-01T00:00:00Z"},
-                         {"lastUpdatedAt", "2025-01-01T00:00:00Z"},
-                         {"ttl", nullptr}},
+          .result =
+              Json{{"taskId", request.params.at("taskId")},
+                   {"status", request.method == mcp::protocol::TasksCancelMethod
+                                  ? "cancelled"
+                                  : "completed"},
+                   {"createdAt", "2025-01-01T00:00:00Z"},
+                   {"lastUpdatedAt", "2025-01-01T00:00:00Z"},
+                   {"ttl", nullptr}},
       };
     }
-    if (request.method == std::string(mcp::protocol::TasksResultMethod)) {
+    if (request.method == mcp::protocol::TasksResultMethod) {
       return mcp::protocol::JsonRpcResponse{
           .id = request.id,
           .result =
@@ -267,8 +262,7 @@ class RecordingClientContractTransport final
       received.push_back(mcp::protocol::JsonRpcResponse{
           .id = request->id,
           .result = initialize_result_override.value_or(Json{
-              {"protocolVersion",
-               std::string(mcp::protocol::McpProtocolVersion)},
+              {"protocolVersion", mcp::protocol::McpProtocolVersion},
               {"capabilities", server_capabilities},
               {"serverInfo",
                Json{{"name", "sdk-test-server"}, {"version", "1"}}},
@@ -279,23 +273,19 @@ class RecordingClientContractTransport final
           .id = request->id,
           .result = Json::object(),
       });
-    } else if (request->method ==
-                   std::string(mcp::protocol::LoggingSetLevelMethod) ||
-               request->method ==
-                   std::string(mcp::protocol::ResourcesSubscribeMethod) ||
-               request->method ==
-                   std::string(mcp::protocol::ResourcesUnsubscribeMethod)) {
+    } else if (request->method == mcp::protocol::LoggingSetLevelMethod ||
+               request->method == mcp::protocol::ResourcesSubscribeMethod ||
+               request->method == mcp::protocol::ResourcesUnsubscribeMethod) {
       received.push_back(mcp::protocol::JsonRpcResponse{
           .id = request->id,
           .result = Json::object(),
       });
-    } else if (request->method ==
-               std::string(mcp::protocol::CompletionCompleteMethod)) {
+    } else if (request->method == mcp::protocol::CompletionCompleteMethod) {
       received.push_back(mcp::protocol::JsonRpcResponse{
           .id = request->id,
           .result = Json{{"completion", Json{{"values", Json::array({"ok"})}}}},
       });
-    } else if (request->method == std::string(mcp::protocol::ToolsCallMethod) &&
+    } else if (request->method == mcp::protocol::ToolsCallMethod &&
                request->params.is_object() &&
                request->params.contains("task")) {
       mcp::protocol::CreateTaskResult task;
@@ -307,7 +297,7 @@ class RecordingClientContractTransport final
           .id = request->id,
           .result = mcp::protocol::create_task_result_to_json(task),
       });
-    } else if (request->method == std::string(mcp::protocol::ToolsListMethod)) {
+    } else if (request->method == mcp::protocol::ToolsListMethod) {
       const bool has_cursor =
           request->params.is_object() && request->params.contains("cursor");
       received.push_back(mcp::protocol::JsonRpcResponse{
@@ -327,8 +317,7 @@ class RecordingClientContractTransport final
                                 }})},
                                {"nextCursor", "page-2"}},
       });
-    } else if (request->method ==
-               std::string(mcp::protocol::PromptsListMethod)) {
+    } else if (request->method == mcp::protocol::PromptsListMethod) {
       const bool has_cursor =
           request->params.is_object() && request->params.contains("cursor");
       received.push_back(mcp::protocol::JsonRpcResponse{
@@ -346,8 +335,7 @@ class RecordingClientContractTransport final
                                      }})},
                          {"nextCursor", "page-2"}},
       });
-    } else if (request->method ==
-               std::string(mcp::protocol::ResourcesListMethod)) {
+    } else if (request->method == mcp::protocol::ResourcesListMethod) {
       const bool has_cursor =
           request->params.is_object() && request->params.contains("cursor");
       received.push_back(mcp::protocol::JsonRpcResponse{
@@ -364,8 +352,7 @@ class RecordingClientContractTransport final
                                        }})},
                          {"nextCursor", "page-2"}},
       });
-    } else if (request->method ==
-               std::string(mcp::protocol::ResourcesTemplatesListMethod)) {
+    } else if (request->method == mcp::protocol::ResourcesTemplatesListMethod) {
       const bool has_cursor =
           request->params.is_object() && request->params.contains("cursor");
       received.push_back(mcp::protocol::JsonRpcResponse{
@@ -383,7 +370,7 @@ class RecordingClientContractTransport final
                                 }})},
                                {"nextCursor", "page-2"}},
       });
-    } else if (request->method == std::string(mcp::protocol::TasksListMethod)) {
+    } else if (request->method == mcp::protocol::TasksListMethod) {
       const bool has_cursor =
           request->params.is_object() && request->params.contains("cursor");
       received.push_back(mcp::protocol::JsonRpcResponse{
@@ -407,23 +394,20 @@ class RecordingClientContractTransport final
                                 }})},
                                {"nextCursor", "page-2"}},
       });
-    } else if (request->method == std::string(mcp::protocol::TasksGetMethod) ||
-               request->method ==
-                   std::string(mcp::protocol::TasksCancelMethod)) {
+    } else if (request->method == mcp::protocol::TasksGetMethod ||
+               request->method == mcp::protocol::TasksCancelMethod) {
       received.push_back(mcp::protocol::JsonRpcResponse{
           .id = request->id,
           .result = Json{{"taskId", request->params.at("taskId")},
                          {"status",
-                          request->method ==
-                                  std::string(mcp::protocol::TasksCancelMethod)
+                          request->method == mcp::protocol::TasksCancelMethod
                               ? "cancelled"
                               : "completed"},
                          {"createdAt", "2025-01-01T00:00:00Z"},
                          {"lastUpdatedAt", "2025-01-01T00:00:01Z"},
                          {"ttl", nullptr}},
       });
-    } else if (request->method ==
-               std::string(mcp::protocol::TasksResultMethod)) {
+    } else if (request->method == mcp::protocol::TasksResultMethod) {
       received.push_back(mcp::protocol::JsonRpcResponse{
           .id = request->id,
           .result =
@@ -580,11 +564,10 @@ class RecordingServerContractTransport final
 
 mcp::protocol::JsonRpcRequest make_server_transport_initialize_request() {
   return mcp::protocol::JsonRpcRequest{
-      .method = std::string(mcp::protocol::InitializeMethod),
+      .method = mcp::protocol::InitializeMethod,
       .params =
           Json{
-              {"protocolVersion",
-               std::string(mcp::protocol::McpProtocolVersion)},
+              {"protocolVersion", mcp::protocol::McpProtocolVersion},
               {"clientInfo",
                Json{{"name", "sdk-test-client"}, {"version", "1"}}},
               {"capabilities", Json::object()},
@@ -654,12 +637,11 @@ class CapabilityClientPeerTransport final : public mcp::server::Transport {
     requests.push_back(request);
 
     Json result = Json::object();
-    if (request.method == std::string(mcp::protocol::RootsListMethod)) {
+    if (request.method == mcp::protocol::RootsListMethod) {
       result = mcp::protocol::roots_list_result_to_json(
           mcp::protocol::RootsListResult{
               .roots = {mcp::protocol::Root{.uri = "file:///cap-root"}}});
-    } else if (request.method ==
-               std::string(mcp::protocol::SamplingCreateMessageMethod)) {
+    } else if (request.method == mcp::protocol::SamplingCreateMessageMethod) {
       mcp::protocol::CreateMessageResult message;
       message.role = "assistant";
       message.content = mcp::protocol::ContentBlock{
@@ -668,8 +650,7 @@ class CapabilityClientPeerTransport final : public mcp::server::Transport {
           .data = Json::object(),
       };
       result = mcp::protocol::create_message_result_to_json(message);
-    } else if (request.method ==
-               std::string(mcp::protocol::ElicitationCreateMethod)) {
+    } else if (request.method == mcp::protocol::ElicitationCreateMethod) {
       mcp::protocol::CreateElicitationResult elicitation;
       if (request.params.value("message", "") == "decline") {
         elicitation.action = mcp::protocol::ElicitationAction::Decline;
@@ -688,7 +669,7 @@ class CapabilityClientPeerTransport final : public mcp::server::Transport {
         }
       }
       result = mcp::protocol::create_elicitation_result_to_json(elicitation);
-    } else if (request.method == std::string(mcp::protocol::TasksListMethod)) {
+    } else if (request.method == mcp::protocol::TasksListMethod) {
       result = Json{{"tasks", Json::array({Json{
                                   {"taskId", "cap-task"},
                                   {"status", "working"},
@@ -696,20 +677,17 @@ class CapabilityClientPeerTransport final : public mcp::server::Transport {
                                   {"lastUpdatedAt", "2025-01-01T00:00:01Z"},
                                   {"ttl", nullptr},
                               }})}};
-    } else if (request.method == std::string(mcp::protocol::TasksGetMethod) ||
-               request.method ==
-                   std::string(mcp::protocol::TasksCancelMethod)) {
+    } else if (request.method == mcp::protocol::TasksGetMethod ||
+               request.method == mcp::protocol::TasksCancelMethod) {
       result =
           Json{{"taskId", request.params.at("taskId")},
-               {"status",
-                request.method == std::string(mcp::protocol::TasksCancelMethod)
-                    ? "cancelled"
-                    : "completed"},
+               {"status", request.method == mcp::protocol::TasksCancelMethod
+                              ? "cancelled"
+                              : "completed"},
                {"createdAt", "2025-01-01T00:00:00Z"},
                {"lastUpdatedAt", "2025-01-01T00:00:01Z"},
                {"ttl", nullptr}};
-    } else if (request.method ==
-               std::string(mcp::protocol::TasksResultMethod)) {
+    } else if (request.method == mcp::protocol::TasksResultMethod) {
       result = Json{{"taskId", request.params.at("taskId")}, {"value", 7}};
     }
 
@@ -973,7 +951,7 @@ void test_sdk_peer_and_service_surface() {
           "client peer builder capabilities missing roots");
   const auto roots_response =
       built_client_peer->dispatch_message(mcp::protocol::JsonRpcRequest{
-          .method = std::string(mcp::protocol::RootsListMethod),
+          .method = mcp::protocol::RootsListMethod,
           .params = Json::object(),
           .id = std::int64_t{700},
       });
@@ -988,7 +966,7 @@ void test_sdk_peer_and_service_surface() {
           "client peer builder roots mismatch");
   const auto initialized_notification =
       built_client_peer->dispatch_message(mcp::protocol::JsonRpcNotification{
-          .method = std::string(mcp::protocol::InitializedMethod),
+          .method = mcp::protocol::InitializedMethod,
           .params = Json::object(),
       });
   require(initialized_notification.has_value(),
@@ -1067,7 +1045,7 @@ void test_sdk_peer_and_service_surface() {
 
   const auto invalid_server_peer_call = server_peer.handle_request(
       mcp::protocol::JsonRpcRequest{
-          .method = std::string(mcp::protocol::ToolsCallMethod),
+          .method = mcp::protocol::ToolsCallMethod,
           .params = Json{{"name", 7}},
           .id = std::int64_t{601},
       },
@@ -1132,7 +1110,7 @@ void test_client_peer_initialize_rejects_invalid_result_shape() {
   };
 
   const auto missing_capabilities = initialize_with(Json{
-      {"protocolVersion", std::string(mcp::protocol::McpProtocolVersion)},
+      {"protocolVersion", mcp::protocol::McpProtocolVersion},
       {"serverInfo", Json{{"name", "sdk-test-server"}, {"version", "1"}}},
   });
   require(!missing_capabilities.has_value(),
@@ -1142,7 +1120,7 @@ void test_client_peer_initialize_rejects_invalid_result_shape() {
           "client peer missing capabilities error mismatch");
 
   const auto missing_server_info = initialize_with(Json{
-      {"protocolVersion", std::string(mcp::protocol::McpProtocolVersion)},
+      {"protocolVersion", mcp::protocol::McpProtocolVersion},
       {"capabilities", Json::object()},
   });
   require(!missing_server_info.has_value(),
@@ -1245,11 +1223,10 @@ void test_server_peer_initialize_dispatches_on_peer_boundary() {
 
   RecordingServerContractTransport transport;
   transport.received.push_back(mcp::protocol::JsonRpcRequest{
-      .method = std::string(mcp::protocol::InitializeMethod),
+      .method = mcp::protocol::InitializeMethod,
       .params =
           Json{
-              {"protocolVersion",
-               std::string(mcp::protocol::McpProtocolVersion)},
+              {"protocolVersion", mcp::protocol::McpProtocolVersion},
               {"clientInfo",
                Json{{"name", "sdk-test-client"}, {"version", "1"}}},
               {"capabilities", Json::object()},
@@ -1268,7 +1245,7 @@ void test_server_peer_initialize_dispatches_on_peer_boundary() {
   require(response->result.has_value(),
           "server peer initialize should return result");
   require(response->result->at("protocolVersion") ==
-              std::string(mcp::protocol::McpProtocolVersion),
+              mcp::protocol::McpProtocolVersion,
           "server peer initialize protocol version mismatch");
   require(response->result->at("serverInfo").at("name") == "peer-init-server",
           "server peer initialize server name mismatch");
@@ -1283,7 +1260,7 @@ void test_server_peer_initialize_dispatches_on_peer_boundary() {
 
   RecordingServerContractTransport unsupported_transport;
   unsupported_transport.received.push_back(mcp::protocol::JsonRpcRequest{
-      .method = std::string(mcp::protocol::InitializeMethod),
+      .method = mcp::protocol::InitializeMethod,
       .params =
           Json{
               {"protocolVersion", "1900-01-01"},
@@ -1319,7 +1296,7 @@ void test_server_peer_serve_transport_requires_initialized_notification() {
 
   RecordingServerContractTransport transport;
   transport.received.push_back(mcp::protocol::JsonRpcRequest{
-      .method = std::string(mcp::protocol::ToolsListMethod),
+      .method = mcp::protocol::ToolsListMethod,
       .params = Json::object(),
       .id = mcp::protocol::RequestId{std::int64_t{3}},
   });
@@ -1368,12 +1345,12 @@ void test_server_peer_tool_discovery_dispatches_on_peer_boundary() {
   RecordingServerContractTransport transport;
   enqueue_server_transport_lifecycle(transport);
   transport.received.push_back(mcp::protocol::JsonRpcRequest{
-      .method = std::string(mcp::protocol::ToolsListMethod),
+      .method = mcp::protocol::ToolsListMethod,
       .params = Json::object(),
       .id = mcp::protocol::RequestId{std::int64_t{10}},
   });
   transport.received.push_back(mcp::protocol::JsonRpcRequest{
-      .method = std::string(mcp::protocol::ToolsGetMethod),
+      .method = mcp::protocol::ToolsGetMethod,
       .params = Json{{"name", "echo"}},
       .id = mcp::protocol::RequestId{std::int64_t{11}},
   });
@@ -1416,7 +1393,7 @@ void test_server_peer_tool_discovery_dispatches_on_peer_boundary() {
   RecordingServerContractTransport raw_transport;
   enqueue_server_transport_lifecycle(raw_transport);
   raw_transport.received.push_back(mcp::protocol::JsonRpcRequest{
-      .method = std::string(mcp::protocol::ToolsListMethod),
+      .method = mcp::protocol::ToolsListMethod,
       .params = Json::object(),
       .id = mcp::protocol::RequestId{std::int64_t{12}},
   });
@@ -1476,7 +1453,7 @@ void test_server_peer_tool_call_dispatches_on_peer_boundary() {
   std::optional<mcp::core::Result<mcp::protocol::JsonRpcResponse>> response;
   std::thread worker([&] {
     response = peer.handle_request(mcp::protocol::JsonRpcRequest{
-        .method = std::string(mcp::protocol::ToolsCallMethod),
+        .method = mcp::protocol::ToolsCallMethod,
         .params =
             Json{{"name", "wait"}, {"arguments", Json{{"value", "peer"}}}},
         .id = mcp::protocol::RequestId{std::int64_t{50}},
@@ -1497,7 +1474,7 @@ void test_server_peer_tool_call_dispatches_on_peer_boundary() {
   cancelled.reason = "test cancellation";
   const auto cancelled_notification =
       peer.handle_notification(mcp::protocol::JsonRpcNotification{
-          .method = std::string(mcp::protocol::CancelledNotificationMethod),
+          .method = mcp::protocol::CancelledNotificationMethod,
           .params =
               mcp::protocol::cancelled_notification_params_to_json(cancelled),
       });
@@ -1543,7 +1520,7 @@ void test_server_peer_task_aware_tool_call_dispatches_on_peer_boundary() {
   RecordingServerContractTransport transport;
   enqueue_server_transport_lifecycle(transport);
   transport.received.push_back(mcp::protocol::JsonRpcRequest{
-      .method = std::string(mcp::protocol::ToolsCallMethod),
+      .method = mcp::protocol::ToolsCallMethod,
       .params = Json{{"name", "task-tool"},
                      {"arguments", Json::object()},
                      {"task", Json{{"ttl", 15}}}},
@@ -1590,28 +1567,28 @@ void test_server_peer_prompt_resource_dispatches_on_peer_boundary() {
   RecordingServerContractTransport transport;
   enqueue_server_transport_lifecycle(transport);
   transport.received.push_back(mcp::protocol::JsonRpcRequest{
-      .method = std::string(mcp::protocol::PromptsListMethod),
+      .method = mcp::protocol::PromptsListMethod,
       .params = Json::object(),
       .id = mcp::protocol::RequestId{std::int64_t{20}},
   });
   transport.received.push_back(mcp::protocol::JsonRpcRequest{
-      .method = std::string(mcp::protocol::PromptsGetMethod),
+      .method = mcp::protocol::PromptsGetMethod,
       .params = Json{{"name", "session-summary"},
                      {"arguments", Json{{"text", "hello"}}}},
       .id = mcp::protocol::RequestId{std::int64_t{21}},
   });
   transport.received.push_back(mcp::protocol::JsonRpcRequest{
-      .method = std::string(mcp::protocol::ResourcesListMethod),
+      .method = mcp::protocol::ResourcesListMethod,
       .params = Json::object(),
       .id = mcp::protocol::RequestId{std::int64_t{22}},
   });
   transport.received.push_back(mcp::protocol::JsonRpcRequest{
-      .method = std::string(mcp::protocol::ResourcesReadMethod),
+      .method = mcp::protocol::ResourcesReadMethod,
       .params = Json{{"uri", "file:///tmp/session.txt"}, {"section", "intro"}},
       .id = mcp::protocol::RequestId{std::int64_t{23}},
   });
   transport.received.push_back(mcp::protocol::JsonRpcRequest{
-      .method = std::string(mcp::protocol::ResourcesTemplatesListMethod),
+      .method = mcp::protocol::ResourcesTemplatesListMethod,
       .params = Json::object(),
       .id = mcp::protocol::RequestId{std::int64_t{24}},
   });
@@ -1675,7 +1652,7 @@ void test_server_peer_resource_subscriptions_use_native_transport_identity() {
 
   enqueue_server_transport_lifecycle(*transport_ptr);
   transport_ptr->received.push_back(mcp::protocol::JsonRpcRequest{
-      .method = std::string(mcp::protocol::ResourcesSubscribeMethod),
+      .method = mcp::protocol::ResourcesSubscribeMethod,
       .params = Json{{"uri", "file:///tmp/data.txt"}},
       .id = mcp::protocol::RequestId{std::int64_t{25}},
   });
@@ -1732,17 +1709,17 @@ void test_server_peer_handler_requests_dispatch_on_peer_boundary() {
   RecordingServerContractTransport transport;
   enqueue_server_transport_lifecycle(transport);
   transport.received.push_back(mcp::protocol::JsonRpcRequest{
-      .method = std::string(mcp::protocol::CompletionCompleteMethod),
+      .method = mcp::protocol::CompletionCompleteMethod,
       .params = Json{{"prefix", "he"}},
       .id = mcp::protocol::RequestId{std::int64_t{30}},
   });
   transport.received.push_back(mcp::protocol::JsonRpcRequest{
-      .method = std::string(mcp::protocol::SamplingCreateMessageMethod),
+      .method = mcp::protocol::SamplingCreateMessageMethod,
       .params = Json{{"messages", Json::array({Json{{"role", "user"}}})}},
       .id = mcp::protocol::RequestId{std::int64_t{31}},
   });
   transport.received.push_back(mcp::protocol::JsonRpcRequest{
-      .method = std::string(mcp::protocol::LoggingSetLevelMethod),
+      .method = mcp::protocol::LoggingSetLevelMethod,
       .params = Json{{"level", "debug"}},
       .id = mcp::protocol::RequestId{std::int64_t{32}},
   });
@@ -1794,7 +1771,7 @@ void test_server_handler_registration_is_snapshot_and_reentrant() {
 
   const auto first = server.handle_request(
       mcp::protocol::JsonRpcRequest{
-          .method = std::string(mcp::protocol::CompletionCompleteMethod),
+          .method = mcp::protocol::CompletionCompleteMethod,
           .params = Json::object(),
           .id = mcp::protocol::RequestId{std::int64_t{1}},
       },
@@ -1810,7 +1787,7 @@ void test_server_handler_registration_is_snapshot_and_reentrant() {
 
   const auto second = server.handle_request(
       mcp::protocol::JsonRpcRequest{
-          .method = std::string(mcp::protocol::CompletionCompleteMethod),
+          .method = mcp::protocol::CompletionCompleteMethod,
           .params = Json::object(),
           .id = mcp::protocol::RequestId{std::int64_t{2}},
       },
@@ -1914,7 +1891,7 @@ void test_client_handler_registration_is_snapshot_and_reentrant() {
   });
 
   const auto first = client.handle_request(mcp::protocol::JsonRpcRequest{
-      .method = std::string(mcp::protocol::RootsListMethod),
+      .method = mcp::protocol::RootsListMethod,
       .params = Json::object(),
       .id = mcp::protocol::RequestId{std::int64_t{10}},
   });
@@ -1923,7 +1900,7 @@ void test_client_handler_registration_is_snapshot_and_reentrant() {
           "in-flight client request should use snapshotted handler");
 
   const auto second = client.handle_request(mcp::protocol::JsonRpcRequest{
-      .method = std::string(mcp::protocol::RootsListMethod),
+      .method = mcp::protocol::RootsListMethod,
       .params = Json::object(),
       .id = mcp::protocol::RequestId{std::int64_t{11}},
   });
@@ -1973,22 +1950,22 @@ void test_server_peer_task_handlers_dispatch_on_peer_boundary() {
   RecordingServerContractTransport transport;
   enqueue_server_transport_lifecycle(transport);
   transport.received.push_back(mcp::protocol::JsonRpcRequest{
-      .method = std::string(mcp::protocol::TasksListMethod),
+      .method = mcp::protocol::TasksListMethod,
       .params = Json::object(),
       .id = mcp::protocol::RequestId{std::int64_t{40}},
   });
   transport.received.push_back(mcp::protocol::JsonRpcRequest{
-      .method = std::string(mcp::protocol::TasksGetMethod),
+      .method = mcp::protocol::TasksGetMethod,
       .params = Json{{"taskId", "task-a"}},
       .id = mcp::protocol::RequestId{std::int64_t{41}},
   });
   transport.received.push_back(mcp::protocol::JsonRpcRequest{
-      .method = std::string(mcp::protocol::TasksCancelMethod),
+      .method = mcp::protocol::TasksCancelMethod,
       .params = Json{{"taskId", "task-b"}},
       .id = mcp::protocol::RequestId{std::int64_t{42}},
   });
   transport.received.push_back(mcp::protocol::JsonRpcRequest{
-      .method = std::string(mcp::protocol::TasksResultMethod),
+      .method = mcp::protocol::TasksResultMethod,
       .params = Json{{"taskId", "task-c"}},
       .id = mcp::protocol::RequestId{std::int64_t{43}},
   });
@@ -2146,8 +2123,7 @@ void test_server_builder_peer_canonical_authoring_surface() {
           .method = "initialize",
           .params =
               Json{
-                  {"protocolVersion",
-                   std::string(mcp::protocol::McpProtocolVersion)},
+                  {"protocolVersion", mcp::protocol::McpProtocolVersion},
                   {"capabilities", Json::object()},
                   {"clientInfo", Json{{"name", "tester"}, {"version", "1"}}},
               },
@@ -2174,7 +2150,7 @@ void test_server_builder_peer_canonical_authoring_surface() {
 
   const auto tool = peer.handle_request(
       mcp::protocol::JsonRpcRequest{
-          .method = std::string(mcp::protocol::ToolsCallMethod),
+          .method = mcp::protocol::ToolsCallMethod,
           .params =
               Json{{"name", "echo-json"}, {"arguments", Json{{"value", 7}}}},
           .id = std::int64_t{71},
@@ -2189,7 +2165,7 @@ void test_server_builder_peer_canonical_authoring_surface() {
 
   const auto prompt = peer.handle_request(
       mcp::protocol::JsonRpcRequest{
-          .method = std::string(mcp::protocol::PromptsGetMethod),
+          .method = mcp::protocol::PromptsGetMethod,
           .params = Json{{"name", "summarize"},
                          {"arguments", Json{{"text", "hello"}}}},
           .id = std::int64_t{72},
@@ -2202,7 +2178,7 @@ void test_server_builder_peer_canonical_authoring_surface() {
 
   const auto resource = peer.handle_request(
       mcp::protocol::JsonRpcRequest{
-          .method = std::string(mcp::protocol::ResourcesReadMethod),
+          .method = mcp::protocol::ResourcesReadMethod,
           .params = Json{{"uri", "file:///tmp/readme.txt"}},
           .id = std::int64_t{73},
       },
@@ -2214,7 +2190,7 @@ void test_server_builder_peer_canonical_authoring_surface() {
 
   const auto templates = peer.handle_request(
       mcp::protocol::JsonRpcRequest{
-          .method = std::string(mcp::protocol::ResourcesTemplatesListMethod),
+          .method = mcp::protocol::ResourcesTemplatesListMethod,
           .params = Json::object(),
           .id = std::int64_t{74},
       },
@@ -2226,7 +2202,7 @@ void test_server_builder_peer_canonical_authoring_surface() {
 
   const auto completion = peer.handle_request(
       mcp::protocol::JsonRpcRequest{
-          .method = std::string(mcp::protocol::CompletionCompleteMethod),
+          .method = mcp::protocol::CompletionCompleteMethod,
           .params =
               Json{
                   {"ref", Json{{"type", "ref/prompt"}, {"name", "summarize"}}},
@@ -2242,7 +2218,7 @@ void test_server_builder_peer_canonical_authoring_surface() {
 
   const auto sampling = peer.handle_request(
       mcp::protocol::JsonRpcRequest{
-          .method = std::string(mcp::protocol::SamplingCreateMessageMethod),
+          .method = mcp::protocol::SamplingCreateMessageMethod,
           .params = Json{{"prompt", "sample"}},
           .id = std::int64_t{76},
       },
@@ -2253,7 +2229,7 @@ void test_server_builder_peer_canonical_authoring_surface() {
 
   const auto logging = peer.handle_request(
       mcp::protocol::JsonRpcRequest{
-          .method = std::string(mcp::protocol::LoggingSetLevelMethod),
+          .method = mcp::protocol::LoggingSetLevelMethod,
           .params = Json{{"level", "debug"}},
           .id = std::int64_t{77},
       },
@@ -2368,8 +2344,7 @@ void test_server_client_peer_gates_helpers_on_client_capabilities() {
   require(typed_elicited.has_value() && *typed_elicited,
           "typed elicitation helper should decode primitive value");
   const auto typed_request = supported_transport.requests.back();
-  require(typed_request.method ==
-              std::string(mcp::protocol::ElicitationCreateMethod),
+  require(typed_request.method == mcp::protocol::ElicitationCreateMethod,
           "typed elicitation should use elicitation/create");
   require(typed_request.params.at("requestedSchema")
                   .at("properties")
@@ -2581,11 +2556,11 @@ void test_client_peer_native_raw_request_dispatches_interleaved_messages() {
   auto transport = std::make_unique<RecordingClientContractTransport>();
   auto* transport_ptr = transport.get();
   transport_ptr->received.push_back(mcp::protocol::JsonRpcNotification{
-      .method = std::string(mcp::protocol::LoggingMessageNotificationMethod),
+      .method = mcp::protocol::LoggingMessageNotificationMethod,
       .params = Json{{"level", "info"}, {"data", "ready"}},
   });
   transport_ptr->received.push_back(mcp::protocol::JsonRpcRequest{
-      .method = std::string(mcp::protocol::RootsListMethod),
+      .method = mcp::protocol::RootsListMethod,
       .params = Json::object(),
       .id = std::string("server-roots"),
   });
@@ -3562,15 +3537,14 @@ void test_server_routers_emit_bound_list_changed_notifications() {
   require(bound_tool_changes == 1,
           "bound router should preserve existing change hook");
   require(server_transport.notifications[0].method ==
-              std::string(mcp::protocol::ToolsListChangedNotificationMethod),
+              mcp::protocol::ToolsListChangedNotificationMethod,
           "tool router notification method mismatch");
   require(server_transport.notifications[1].method ==
-              std::string(mcp::protocol::PromptsListChangedNotificationMethod),
+              mcp::protocol::PromptsListChangedNotificationMethod,
           "prompt router notification method mismatch");
-  require(
-      server_transport.notifications[2].method ==
-          std::string(mcp::protocol::ResourcesListChangedNotificationMethod),
-      "resource router notification method mismatch");
+  require(server_transport.notifications[2].method ==
+              mcp::protocol::ResourcesListChangedNotificationMethod,
+          "resource router notification method mismatch");
 
   auto peer_server =
       std::make_unique<mcp::server::Server>(mcp::server::ServerOptions{});
@@ -3596,7 +3570,7 @@ void test_server_routers_emit_bound_list_changed_notifications() {
   require(peer_transport.notifications.size() == 2,
           "bound server peer router notification count mismatch");
   require(peer_transport.notifications[0].method ==
-              std::string(mcp::protocol::ToolsListChangedNotificationMethod),
+              mcp::protocol::ToolsListChangedNotificationMethod,
           "server peer router notification method mismatch");
 }
 

@@ -21,7 +21,7 @@ using StringList = std::vector<std::string>;
 using SystemClock = std::chrono::system_clock;
 using TimePoint = SystemClock::time_point;
 
-inline constexpr std::string_view AuthErrorCategory = "auth";
+inline const std::string AuthErrorCategory = "auth";
 
 /// @brief Transport-neutral HTTP request descriptor used by auth helpers.
 struct HttpRequestTarget {

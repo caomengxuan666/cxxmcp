@@ -17,11 +17,11 @@
 
 namespace mcp::auth {
 
-inline constexpr std::string_view WwwAuthenticateResourceMetadataParam =
+inline const std::string WwwAuthenticateResourceMetadataParam =
     "resource_metadata";
-inline constexpr std::string_view WwwAuthenticateErrorParam = "error";
-inline constexpr std::string_view WwwAuthenticateScopeParam = "scope";
-inline constexpr std::string_view WwwAuthenticateInsufficientScopeError =
+inline const std::string WwwAuthenticateErrorParam = "error";
+inline const std::string WwwAuthenticateScopeParam = "scope";
+inline const std::string WwwAuthenticateInsufficientScopeError =
     "insufficient_scope";
 
 namespace detail {

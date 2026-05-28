@@ -308,7 +308,7 @@ void test_server_transport_adapter() {
 void test_server_contract_transport_adapter_start() {
   ScriptedServerContractTransport contract;
   contract.push(mcp::protocol::JsonRpcRequest{
-      .method = std::string(mcp::protocol::InitializeMethod),
+      .method = mcp::protocol::InitializeMethod,
       .params =
           Json{{"capabilities", Json{{"roots", Json{{"listChanged", true}}}}}},
       .id = std::int64_t{3},
@@ -756,7 +756,7 @@ void test_server_contract_transport_adapter_failure_paths() {
   {
     ScriptedServerContractTransport contract;
     contract.push(mcp::protocol::JsonRpcRequest{
-        .method = std::string(mcp::protocol::InitializeMethod),
+        .method = mcp::protocol::InitializeMethod,
         .params = Json{{"capabilities", Json::object()}},
         .id = std::int64_t{13},
     });
@@ -789,7 +789,7 @@ void test_server_contract_transport_adapter_failure_paths() {
   {
     ScriptedServerContractTransport contract;
     contract.push(mcp::protocol::JsonRpcRequest{
-        .method = std::string(mcp::protocol::InitializeMethod),
+        .method = mcp::protocol::InitializeMethod,
         .params = Json{{"capabilities", Json::object()}},
         .id = std::int64_t{15},
     });
