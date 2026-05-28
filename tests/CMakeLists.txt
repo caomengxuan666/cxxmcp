@@ -23,6 +23,19 @@ if(TARGET mcp_protocol)
 
     add_test(NAME protocol COMMAND mcp_protocol_tests)
     cxxmcp_mark_release_blocking(protocol protocol)
+
+    add_executable(mcp_protocol_serialization_benchmark
+        protocol/serialization_benchmark.cpp
+    )
+
+    target_link_libraries(mcp_protocol_serialization_benchmark PRIVATE
+        mcp_protocol)
+
+    add_test(NAME protocol_serialization_benchmark
+        COMMAND mcp_protocol_serialization_benchmark)
+    set_tests_properties(protocol_serialization_benchmark PROPERTIES
+        LABELS "benchmark;performance;protocol"
+        TIMEOUT 30)
 endif()
 
 add_test(NAME sdk_boundary COMMAND
@@ -80,9 +93,28 @@ if(TARGET mcp_auth)
     )
 
     target_link_libraries(mcp_auth_tests PRIVATE cxxmcp::auth)
+    if(TARGET mcp_server)
+        target_link_libraries(mcp_auth_tests PRIVATE mcp_server)
+        target_compile_definitions(mcp_auth_tests PRIVATE
+            CXXMCP_AUTH_TEST_HAS_SERVER=1)
+    endif()
 
     add_test(NAME auth COMMAND mcp_auth_tests)
     cxxmcp_mark_release_blocking(auth auth security)
+endif()
+
+if(TARGET mcp_auth_openssl)
+    add_executable(mcp_auth_openssl_tests
+        auth/test_auth_openssl.cpp
+    )
+
+    target_link_libraries(mcp_auth_openssl_tests PRIVATE cxxmcp::auth_openssl)
+    if(TARGET mcp_server)
+        target_link_libraries(mcp_auth_openssl_tests PRIVATE cxxmcp::server)
+    endif()
+
+    add_test(NAME auth_openssl COMMAND mcp_auth_openssl_tests)
+    cxxmcp_mark_release_blocking(auth_openssl auth security)
 endif()
 
 if(TARGET mcp_transport)
@@ -158,6 +190,9 @@ if(TARGET mcp_client AND TARGET mcp_server)
         mcp_server
         cpp_httplib
     )
+    if(WIN32)
+        target_link_libraries(mcp_http_transport_tests PRIVATE ws2_32)
+    endif()
 
     add_test(NAME http_transport COMMAND mcp_http_transport_tests)
     cxxmcp_mark_release_blocking(http_transport transport http)
@@ -239,7 +274,7 @@ if(CXXMCP_BUILD_TESTS AND TARGET mcp_sdk AND TARGET mcp_protocol AND TARGET mcp_
     cxxmcp_mark_release_blocking(package_smoke package)
 endif()
 
-if(TARGET mcp_protocol AND (TARGET mcp_client OR TARGET mcp_app OR TARGET mcp_gateway OR TARGET mcp_cli))
+if(TARGET mcp_protocol AND (TARGET mcp_client OR TARGET mcp_server))
     add_executable(mcp_test_stdio_child
         fixtures/process_stdio_child.cpp
     )
@@ -293,94 +328,6 @@ if(TARGET mcp_client AND TARGET mcp_test_stdio_child)
     )
     cxxmcp_mark_release_blocking(
         interop_rmcp_client_process_stdio interop process-stdio)
-endif()
-
-if(TARGET mcp_app AND TARGET mcp_gateway)
-    add_executable(mcp_app_tests
-        app/test_app.cpp
-    )
-
-    target_link_libraries(mcp_app_tests PRIVATE mcp_app mcp_gateway)
-
-    add_test(NAME app COMMAND mcp_app_tests)
-endif()
-
-if(TARGET mcp_app)
-    add_executable(mcp_server_management_tests
-        app/test_server_management.cpp
-    )
-
-    target_link_libraries(mcp_server_management_tests PRIVATE mcp_app)
-
-    add_test(NAME server_management COMMAND mcp_server_management_tests)
-
-    add_executable(mcp_client_discovery_tests
-        app/test_client_discovery.cpp
-    )
-
-    target_link_libraries(mcp_client_discovery_tests PRIVATE
-        mcp_app
-        cpp_httplib
-    )
-    if(TARGET mcp_test_stdio_child)
-        target_compile_definitions(mcp_client_discovery_tests PRIVATE
-            MCP_TEST_CHILD_EXE="$<TARGET_FILE:mcp_test_stdio_child>"
-        )
-        add_dependencies(mcp_client_discovery_tests mcp_test_stdio_child)
-    endif()
-
-    add_test(NAME client_discovery COMMAND mcp_client_discovery_tests)
-
-    add_executable(mcp_tool_management_tests
-        app/test_tool_management.cpp
-    )
-
-    target_link_libraries(mcp_tool_management_tests PRIVATE mcp_app)
-
-    add_test(NAME tool_management COMMAND mcp_tool_management_tests)
-
-    add_executable(mcp_task_management_tests
-        app/test_task_management.cpp
-    )
-
-    target_link_libraries(mcp_task_management_tests PRIVATE mcp_app)
-
-    add_test(NAME task_management COMMAND mcp_task_management_tests)
-endif()
-
-if(TARGET mcp_gateway AND TARGET mcp_test_stdio_child)
-    add_executable(mcp_gateway_tests
-        app/test_gateway.cpp
-    )
-
-    target_link_libraries(mcp_gateway_tests PRIVATE
-        mcp_gateway
-        cpp_httplib
-    )
-    target_compile_definitions(mcp_gateway_tests PRIVATE
-        MCP_TEST_CHILD_EXE="$<TARGET_FILE:mcp_test_stdio_child>"
-    )
-    add_dependencies(mcp_gateway_tests mcp_test_stdio_child)
-
-    add_test(NAME gateway COMMAND mcp_gateway_tests)
-endif()
-
-if(TARGET mcp_cli AND TARGET mcp_cli_app AND TARGET mcp_test_stdio_child)
-    add_executable(mcp_cli_tests
-        cli/test_cli.cpp
-    )
-
-    target_link_libraries(mcp_cli_tests PRIVATE
-        mcp_cli
-        cpp_httplib
-    )
-    target_compile_definitions(mcp_cli_tests PRIVATE
-        MCP_TEST_CLI_EXE="$<TARGET_FILE:mcp_cli_app>"
-        MCP_TEST_CHILD_EXE="$<TARGET_FILE:mcp_test_stdio_child>"
-    )
-    add_dependencies(mcp_cli_tests mcp_cli_app mcp_test_stdio_child)
-
-    add_test(NAME cli COMMAND mcp_cli_tests)
 endif()
 
 get_property(cxxmcp_test_targets DIRECTORY PROPERTY BUILDSYSTEM_TARGETS)

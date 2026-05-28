@@ -19,6 +19,20 @@
 #include <variant>
 #include <vector>
 
+#ifdef _WIN32
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#include <winsock2.h>
+#include <ws2tcpip.h>
+#else
+#include <arpa/inet.h>
+#include <errno.h>
+#include <netinet/in.h>
+#include <sys/socket.h>
+#include <unistd.h>
+#endif
+
 #include "cxxmcp/client/http_transport.hpp"
 #include "cxxmcp/protocol/serialization.hpp"
 #include "cxxmcp/server/http_transport.hpp"
@@ -140,7 +154,7 @@ bool wait_for_http_initialize(int port, const std::string& path) {
           .id = std::int64_t{1},
       });
   const httplib::Headers initialize_headers{
-      {"Accept", "application/json"},
+      {"Accept", "application/json, text/event-stream"},
       {"Content-Type", "application/json"},
       {"Mcp-Method", std::string(mcp::protocol::InitializeMethod)},
   };
@@ -169,13 +183,146 @@ bool wait_for(std::function<bool()> predicate,
   return predicate();
 }
 
+class RawTcpSocket {
+ public:
+#ifdef _WIN32
+  using SocketHandle = SOCKET;
+  static constexpr SocketHandle kInvalidSocket = INVALID_SOCKET;
+#else
+  using SocketHandle = int;
+  static constexpr SocketHandle kInvalidSocket = -1;
+#endif
+
+  RawTcpSocket() = default;
+
+  RawTcpSocket(const RawTcpSocket&) = delete;
+  RawTcpSocket& operator=(const RawTcpSocket&) = delete;
+
+  RawTcpSocket(RawTcpSocket&& other) noexcept : socket_(other.socket_) {
+    other.socket_ = kInvalidSocket;
+  }
+
+  RawTcpSocket& operator=(RawTcpSocket&& other) noexcept {
+    if (this != &other) {
+      close();
+      socket_ = other.socket_;
+      other.socket_ = kInvalidSocket;
+    }
+    return *this;
+  }
+
+  ~RawTcpSocket() { close(); }
+
+  static std::optional<RawTcpSocket> connect_localhost(
+      int port, std::chrono::milliseconds receive_timeout =
+                    std::chrono::milliseconds(1000)) {
+    initialize_platform();
+    RawTcpSocket raw;
+    raw.socket_ = ::socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
+    if (raw.socket_ == kInvalidSocket) {
+      return std::nullopt;
+    }
+    raw.set_receive_timeout(receive_timeout);
+
+    sockaddr_in address{};
+    address.sin_family = AF_INET;
+    address.sin_port = htons(static_cast<std::uint16_t>(port));
+    address.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+    if (::connect(raw.socket_, reinterpret_cast<sockaddr*>(&address),
+                  sizeof(address)) != 0) {
+      return std::nullopt;
+    }
+    return raw;
+  }
+
+  bool send_all(const std::string& data) {
+    const char* cursor = data.data();
+    std::size_t remaining = data.size();
+    while (remaining > 0) {
+      const int sent = ::send(socket_, cursor, static_cast<int>(remaining), 0);
+      if (sent <= 0) {
+        return false;
+      }
+      cursor += sent;
+      remaining -= static_cast<std::size_t>(sent);
+    }
+    return true;
+  }
+
+  std::string receive_available() {
+    std::string received;
+    char buffer[512];
+    while (true) {
+      const int count = ::recv(socket_, buffer, sizeof(buffer), 0);
+      if (count > 0) {
+        received.append(buffer, static_cast<std::size_t>(count));
+        if (count < static_cast<int>(sizeof(buffer))) {
+          return received;
+        }
+        continue;
+      }
+      return received;
+    }
+  }
+
+  void close() noexcept {
+    if (socket_ == kInvalidSocket) {
+      return;
+    }
+#ifdef _WIN32
+    ::closesocket(socket_);
+#else
+    ::close(socket_);
+#endif
+    socket_ = kInvalidSocket;
+  }
+
+ private:
+  static void initialize_platform() {
+#ifdef _WIN32
+    static const int initialized = [] {
+      WSADATA data;
+      return WSAStartup(MAKEWORD(2, 2), &data);
+    }();
+    (void)initialized;
+#endif
+  }
+
+  void set_receive_timeout(std::chrono::milliseconds timeout) {
+#ifdef _WIN32
+    const DWORD timeout_ms = static_cast<DWORD>(timeout.count());
+    setsockopt(socket_, SOL_SOCKET, SO_RCVTIMEO,
+               reinterpret_cast<const char*>(&timeout_ms), sizeof(timeout_ms));
+#else
+    timeval value{};
+    value.tv_sec = static_cast<decltype(value.tv_sec)>(timeout.count() / 1000);
+    value.tv_usec =
+        static_cast<decltype(value.tv_usec)>((timeout.count() % 1000) * 1000);
+    setsockopt(socket_, SOL_SOCKET, SO_RCVTIMEO, &value, sizeof(value));
+#endif
+  }
+
+  SocketHandle socket_ = kInvalidSocket;
+};
+
+std::string http_post_header(std::string_view path,
+                             std::size_t content_length) {
+  return "POST " + std::string(path) +
+         " HTTP/1.1\r\n"
+         "Host: 127.0.0.1\r\n"
+         "Accept: application/json, text/event-stream\r\n"
+         "Content-Type: application/json\r\n"
+         "Content-Length: " +
+         std::to_string(content_length) + "\r\n\r\n";
+}
+
 std::string initialize_http_session(int port, const std::string& path,
                                     std::int64_t id = 1) {
   httplib::Client http_client("127.0.0.1", port);
   const auto initialize_response = http_client.Post(
       path,
       httplib::Headers{
-          {"Accept", "application/json"},
+          {"Accept", "application/json, text/event-stream"},
           {"Content-Type", "application/json"},
           {"Mcp-Method", std::string(mcp::protocol::InitializeMethod)},
       },
@@ -192,6 +339,34 @@ std::string initialize_http_session(int port, const std::string& path,
   require(initialize_response->has_header("Mcp-Session-Id"),
           "initialize should return a session id");
   return initialize_response->get_header_value("Mcp-Session-Id");
+}
+
+httplib::Result post_initialized_notification(int port, const std::string& path,
+                                              const std::string& session_id) {
+  httplib::Client http_client("127.0.0.1", port);
+  return http_client.Post(
+      path,
+      httplib::Headers{
+          {"Accept", "application/json, text/event-stream"},
+          {"Content-Type", "application/json"},
+          {"MCP-Protocol-Version",
+           std::string(mcp::protocol::McpProtocolVersion)},
+          {"Mcp-Session-Id", session_id},
+          {"Mcp-Method", std::string(mcp::protocol::InitializedMethod)},
+      },
+      serialize_test_notification(
+          mcp::protocol::make_initialized_notification()),
+      "application/json");
+}
+
+void require_initialized_notification(int port, const std::string& path,
+                                      const std::string& session_id) {
+  const auto initialized =
+      post_initialized_notification(port, path, session_id);
+  require(static_cast<bool>(initialized),
+          "initialized notification should return");
+  require(initialized->status == 202,
+          "initialized notification should be accepted");
 }
 
 httplib::Headers sse_headers(const std::string& session_id) {
@@ -447,7 +622,7 @@ void test_http_transport_opens_get_sse_after_session_and_dispatches_notification
   const auto started = transport.start(
       [](const mcp::protocol::JsonRpcRequest&)
           -> mcp::core::Result<mcp::protocol::JsonRpcResponse> {
-        return std::unexpected(mcp::core::Error{
+        return mcp::core::unexpected(mcp::core::Error{
             static_cast<int>(mcp::protocol::ErrorCode::MethodNotFound),
             "unexpected request",
         });
@@ -505,7 +680,7 @@ void test_server_http_transport_writes_error_for_throwing_request_handler() {
     auto response = client.Post(
         kPath,
         httplib::Headers{
-            {"Accept", "application/json"},
+            {"Accept", "application/json, text/event-stream"},
             {"Content-Type", "application/json"},
             {"Mcp-Method", std::string(mcp::protocol::InitializeMethod)},
         },
@@ -619,7 +794,7 @@ void test_http_transport_sets_method_and_name_headers() {
   const auto started = transport.start(
       [](const mcp::protocol::JsonRpcRequest&)
           -> mcp::core::Result<mcp::protocol::JsonRpcResponse> {
-        return std::unexpected(mcp::core::Error{
+        return mcp::core::unexpected(mcp::core::Error{
             static_cast<int>(mcp::protocol::ErrorCode::MethodNotFound),
             "unexpected request",
         });
@@ -700,7 +875,7 @@ void test_server_http_transport_delivers_outbound_notification() {
   const auto initialize_response = http_client.Post(
       kPath,
       httplib::Headers{
-          {"Accept", "application/json"},
+          {"Accept", "application/json, text/event-stream"},
           {"Content-Type", "application/json"},
           {"Mcp-Method", std::string(mcp::protocol::InitializeMethod)},
       },
@@ -1104,7 +1279,7 @@ void test_server_http_transport_keeps_pending_request_across_reconnect() {
   const auto posted_response = response_client.Post(
       kPath,
       httplib::Headers{
-          {"Accept", "application/json"},
+          {"Accept", "application/json, text/event-stream"},
           {"Content-Type", "application/json"},
           {"MCP-Protocol-Version",
            std::string(mcp::protocol::McpProtocolVersion)},
@@ -1363,7 +1538,7 @@ void test_server_http_transport_rejects_duplicate_inflight_response() {
 
   httplib::Client response_client("127.0.0.1", kPort);
   const httplib::Headers headers{
-      {"Accept", "application/json"},
+      {"Accept", "application/json, text/event-stream"},
       {"Content-Type", "application/json"},
       {"MCP-Protocol-Version", std::string(mcp::protocol::McpProtocolVersion)},
       {"Mcp-Session-Id", session_id},
@@ -1436,7 +1611,7 @@ void test_server_http_transport_rejects_stale_session_after_delete() {
   httplib::Client http_client("127.0.0.1", kPort);
   const auto deleted = http_client.Delete(
       kPath, httplib::Headers{
-                 {"Accept", "application/json"},
+                 {"Accept", "application/json, text/event-stream"},
                  {"MCP-Protocol-Version",
                   std::string(mcp::protocol::McpProtocolVersion)},
                  {"Mcp-Session-Id", session_id},
@@ -1447,7 +1622,7 @@ void test_server_http_transport_rejects_stale_session_after_delete() {
   const auto stale_post = http_client.Post(
       kPath,
       httplib::Headers{
-          {"Accept", "application/json"},
+          {"Accept", "application/json, text/event-stream"},
           {"Content-Type", "application/json"},
           {"MCP-Protocol-Version",
            std::string(mcp::protocol::McpProtocolVersion)},
@@ -1513,7 +1688,7 @@ void test_server_http_transport_rejects_initialize_protocol_version_mismatch() {
   const auto mismatch = http_client.Post(
       kPath,
       httplib::Headers{
-          {"Accept", "application/json"},
+          {"Accept", "application/json, text/event-stream"},
           {"Content-Type", "application/json"},
           {"Mcp-Method", std::string(mcp::protocol::InitializeMethod)},
           {"MCP-Protocol-Version", "2024-11-05"},
@@ -1534,7 +1709,7 @@ void test_server_http_transport_rejects_initialize_protocol_version_mismatch() {
   const auto unsupported = http_client.Post(
       kPath,
       httplib::Headers{
-          {"Accept", "application/json"},
+          {"Accept", "application/json, text/event-stream"},
           {"Content-Type", "application/json"},
           {"Mcp-Method", std::string(mcp::protocol::InitializeMethod)},
           {"MCP-Protocol-Version", "1900-01-01"},
@@ -1598,7 +1773,7 @@ void test_server_http_transport_rejects_malformed_post_body() {
   const auto malformed =
       http_client.Post(kPath,
                        httplib::Headers{
-                           {"Accept", "application/json"},
+                           {"Accept", "application/json, text/event-stream"},
                            {"Content-Type", "application/json"},
                        },
                        "{not-json}", "application/json");
@@ -1613,6 +1788,345 @@ void test_server_http_transport_rejects_malformed_post_body() {
           "malformed post error code mismatch");
   require(!parsed->id.has_value(), "malformed post response id should be null");
   require(!handler_called.load(), "malformed post should not reach handler");
+
+  std::string deeply_nested =
+      R"({"jsonrpc":"2.0","method":"ping","id":72,"params":)";
+  for (int index = 0; index < 140; ++index) {
+    deeply_nested.append(R"({"x":)");
+  }
+  deeply_nested.append("0");
+  for (int index = 0; index < 140; ++index) {
+    deeply_nested.append("}");
+  }
+  deeply_nested.append("}");
+
+  const auto too_deep =
+      http_client.Post(kPath,
+                       httplib::Headers{
+                           {"Accept", "application/json, text/event-stream"},
+                           {"Content-Type", "application/json"},
+                       },
+                       deeply_nested, "application/json");
+  require(too_deep != nullptr, "too-deep post should return");
+  require(too_deep->status == 400, "too-deep post should be rejected");
+  const auto too_deep_body = mcp::protocol::parse_response(too_deep->body);
+  require(too_deep_body.has_value(),
+          "too-deep post error response should parse");
+  require(too_deep_body->error.has_value(),
+          "too-deep post response should contain error");
+  require(too_deep_body->error->code ==
+              static_cast<int>(mcp::protocol::ErrorCode::InvalidRequest),
+          "too-deep post error code mismatch");
+  require(!handler_called.load(), "too-deep post should not reach handler");
+
+  server_transport.transport().stop();
+}
+
+void test_server_http_transport_rejects_oversized_post_body() {
+  constexpr int kPort = 40224;
+  const std::string kPath = "/mcp";
+  std::atomic<bool> handler_called{false};
+
+  RunningServerTransportFixture server_transport(
+      std::make_unique<mcp::server::HttpTransport>(
+          mcp::server::HttpTransportOptions{
+              .listen_host = "127.0.0.1",
+              .listen_port = kPort,
+              .path = kPath,
+              .max_request_body_bytes = 16,
+              .read_timeout = std::chrono::milliseconds(500),
+              .write_timeout = std::chrono::milliseconds(500),
+          }),
+      [&](const mcp::protocol::JsonRpcRequest& request,
+          const mcp::server::SessionContext&) {
+        handler_called.store(true);
+        return mcp::protocol::make_response(request.id, Json::object());
+      });
+
+  require(!server_transport.start_error().has_value(),
+          "server transport should start");
+  require(wait_for(
+              [&] {
+                httplib::Client http_client("127.0.0.1", kPort);
+                http_client.set_connection_timeout(0, 100000);
+                http_client.set_read_timeout(0, 200000);
+                return static_cast<bool>(http_client.Post(
+                    kPath,
+                    httplib::Headers{
+                        {"Accept", "application/json, text/event-stream"},
+                        {"Content-Type", "application/json"},
+                    },
+                    "{}", "application/json"));
+              },
+              std::chrono::seconds(2)),
+          "server transport should become reachable");
+  handler_called.store(false);
+
+  httplib::Client http_client("127.0.0.1", kPort);
+  http_client.set_read_timeout(std::chrono::seconds(1));
+  const auto oversized =
+      http_client.Post(kPath,
+                       httplib::Headers{
+                           {"Accept", "application/json, text/event-stream"},
+                           {"Content-Type", "application/json"},
+                       },
+                       std::string(17, 'x'), "application/json");
+  require(oversized != nullptr, "oversized post should return");
+  require(oversized->status == 413, "oversized post should be rejected");
+  require(!handler_called.load(), "oversized post should not reach handler");
+
+  server_transport.transport().stop();
+}
+
+void test_server_http_transport_slow_client_body_does_not_reach_handler() {
+  constexpr int kPort = 40244;
+  const std::string kPath = "/slow-body";
+  std::atomic<bool> handler_called{false};
+
+  RunningServerTransportFixture server_transport(
+      std::make_unique<mcp::server::HttpTransport>(
+          mcp::server::HttpTransportOptions{
+              .listen_host = "127.0.0.1",
+              .listen_port = kPort,
+              .path = kPath,
+              .read_timeout = std::chrono::milliseconds(100),
+              .write_timeout = std::chrono::milliseconds(250),
+          }),
+      [&](const mcp::protocol::JsonRpcRequest& request,
+          const mcp::server::SessionContext&) {
+        handler_called.store(true);
+        return mcp::protocol::make_response(request.id, Json::object());
+      });
+
+  std::optional<RawTcpSocket> socket;
+  require(wait_for(
+              [&] {
+                socket = RawTcpSocket::connect_localhost(
+                    kPort, std::chrono::milliseconds(1000));
+                return socket.has_value();
+              },
+              std::chrono::seconds(2)),
+          "server transport should accept raw slow-body client");
+
+  require(socket->send_all(http_post_header(kPath, 1024)),
+          "slow-body client should send headers");
+  require(socket->send_all("{"), "slow-body client should send partial body");
+  std::this_thread::sleep_for(std::chrono::milliseconds(300));
+  (void)socket->receive_available();
+
+  require(!handler_called.load(),
+          "slow incomplete body should time out before reaching handler");
+  server_transport.transport().stop();
+}
+
+void test_server_http_transport_closed_client_during_response_does_not_hang() {
+  constexpr int kPort = 40254;
+  const std::string kPath = "/closed-client";
+  std::atomic<bool> handler_called{false};
+
+  RunningServerTransportFixture server_transport(
+      std::make_unique<mcp::server::HttpTransport>(
+          mcp::server::HttpTransportOptions{
+              .listen_host = "127.0.0.1",
+              .listen_port = kPort,
+              .path = kPath,
+              .read_timeout = std::chrono::milliseconds(250),
+              .write_timeout = std::chrono::milliseconds(100),
+          }),
+      [&](const mcp::protocol::JsonRpcRequest& request,
+          const mcp::server::SessionContext&) {
+        handler_called.store(true);
+        return mcp::protocol::make_response(
+            request.id, Json{
+                            {"protocolVersion",
+                             std::string(mcp::protocol::McpProtocolVersion)},
+                            {"capabilities", Json::object()},
+                            {"serverInfo",
+                             Json{{"name", "closed-client"}, {"version", "1"}}},
+                        });
+      });
+
+  const auto body = serialize_test_request(mcp::protocol::JsonRpcRequest{
+      .method = std::string(mcp::protocol::InitializeMethod),
+      .params =
+          Json{{"protocolVersion",
+                std::string(mcp::protocol::McpProtocolVersion)},
+               {"capabilities", Json::object()},
+               {"clientInfo", Json{{"name", "closed"}, {"version", "1"}}}},
+      .id = std::int64_t{99},
+  });
+
+  std::optional<RawTcpSocket> socket;
+  require(wait_for(
+              [&] {
+                socket = RawTcpSocket::connect_localhost(
+                    kPort, std::chrono::milliseconds(1000));
+                return socket.has_value();
+              },
+              std::chrono::seconds(2)),
+          "server transport should accept raw closed-client connection");
+  require(socket->send_all(http_post_header(kPath, body.size()) + body),
+          "closed client should send complete request");
+  socket->close();
+
+  require(
+      wait_for([&] { return handler_called.load(); }, std::chrono::seconds(2)),
+      "closed client request should reach handler without hanging");
+  server_transport.transport().stop();
+}
+
+void test_server_http_transport_limits_active_sessions() {
+  constexpr int kPort = 40234;
+  const std::string kPath = "/mcp";
+  std::atomic<int> initialize_count{0};
+
+  RunningServerTransportFixture server_transport(
+      std::make_unique<mcp::server::HttpTransport>(
+          mcp::server::HttpTransportOptions{
+              .listen_host = "127.0.0.1",
+              .listen_port = kPort,
+              .path = kPath,
+              .max_sessions = 1,
+          }),
+      [&](const mcp::protocol::JsonRpcRequest& request,
+          const mcp::server::SessionContext&) {
+        if (request.method == mcp::protocol::InitializeMethod) {
+          initialize_count.fetch_add(1);
+          return mcp::protocol::make_response(
+              request.id, Json{
+                              {"protocolVersion",
+                               std::string(mcp::protocol::McpProtocolVersion)},
+                              {"capabilities", Json::object()},
+                              {"serverInfo", Json{{"name", "server-http-test"},
+                                                  {"version", "1"}}},
+                          });
+        }
+        return mcp::protocol::make_response(request.id, Json::object());
+      });
+
+  require(!server_transport.start_error().has_value(),
+          "server transport should start");
+  require(wait_for_http_initialize(kPort, kPath),
+          "server transport should become reachable");
+
+  httplib::Client http_client("127.0.0.1", kPort);
+  const auto response = http_client.Post(
+      kPath,
+      httplib::Headers{
+          {"Accept", "application/json, text/event-stream"},
+          {"Content-Type", "application/json"},
+          {"Mcp-Method", std::string(mcp::protocol::InitializeMethod)},
+      },
+      serialize_test_request(mcp::protocol::JsonRpcRequest{
+          .method = std::string(mcp::protocol::InitializeMethod),
+          .params = Json::object(),
+          .id = std::int64_t{42},
+      }),
+      "application/json");
+  require(response != nullptr, "limited initialize should return");
+  require(response->status == 429,
+          "limited initialize should return too many requests");
+  const auto parsed = mcp::protocol::parse_response(response->body);
+  require(parsed.has_value(), "limited initialize error should parse");
+  require(parsed->error.has_value(),
+          "limited initialize response should contain error");
+  require(parsed->error->code ==
+              static_cast<int>(mcp::protocol::ErrorCode::RateLimited),
+          "limited initialize error code mismatch");
+  require(initialize_count.load() == 1,
+          "limited initialize should not reach handler again");
+
+  server_transport.transport().stop();
+}
+
+void test_server_http_transport_requires_initialized_before_business_request() {
+  constexpr int kPort = 40225;
+  const std::string kPath = "/mcp";
+  std::atomic<int> tools_list_count{0};
+
+  RunningServerTransportFixture server_transport(
+      std::make_unique<mcp::server::HttpTransport>(
+          mcp::server::HttpTransportOptions{
+              .listen_host = "127.0.0.1",
+              .listen_port = kPort,
+              .path = kPath,
+          }),
+      [&](const mcp::protocol::JsonRpcRequest& request,
+          const mcp::server::SessionContext&) {
+        if (request.method == mcp::protocol::InitializeMethod) {
+          return mcp::protocol::make_response(
+              request.id, Json{
+                              {"protocolVersion",
+                               std::string(mcp::protocol::McpProtocolVersion)},
+                              {"capabilities", Json::object()},
+                              {"serverInfo", Json{{"name", "server-http-test"},
+                                                  {"version", "1"}}},
+                          });
+        }
+        if (request.method == mcp::protocol::ToolsListMethod) {
+          tools_list_count.fetch_add(1);
+          return mcp::protocol::make_response(
+              request.id, mcp::protocol::tools_list_result_to_json(
+                              mcp::protocol::ToolsListResult{}));
+        }
+        return mcp::protocol::make_error_response(
+            std::optional<mcp::protocol::RequestId>{request.id},
+            mcp::protocol::make_error(mcp::protocol::ErrorCode::MethodNotFound,
+                                      "unexpected request"));
+      });
+
+  require(!server_transport.start_error().has_value(),
+          "server transport should start");
+  require(wait_for_http_initialize(kPort, kPath),
+          "server transport should become reachable");
+  const auto session_id = initialize_http_session(kPort, kPath, 2);
+
+  httplib::Headers tools_headers{
+      {"Accept", "application/json, text/event-stream"},
+      {"Content-Type", "application/json"},
+      {"MCP-Protocol-Version", std::string(mcp::protocol::McpProtocolVersion)},
+      {"Mcp-Session-Id", session_id},
+      {"Mcp-Method", std::string(mcp::protocol::ToolsListMethod)},
+  };
+  const auto tools_request =
+      serialize_test_request(mcp::protocol::JsonRpcRequest{
+          .method = std::string(mcp::protocol::ToolsListMethod),
+          .params = Json::object(),
+          .id = std::int64_t{3},
+      });
+
+  httplib::Client http_client("127.0.0.1", kPort);
+  const auto rejected =
+      http_client.Post(kPath, tools_headers, tools_request, "application/json");
+  require(static_cast<bool>(rejected),
+          "business request before initialized should return");
+  require(rejected->status == 400,
+          "business request before initialized should be rejected");
+  const auto rejected_response = mcp::protocol::parse_response(rejected->body);
+  require(rejected_response.has_value(),
+          "business request rejection should parse");
+  require(rejected_response->error.has_value(),
+          "business request rejection should be an error response");
+  require(rejected_response->error->message ==
+              "http transport session is not initialized",
+          "business request rejection message mismatch");
+  require(tools_list_count.load() == 0,
+          "business request before initialized should not reach handler");
+
+  require_initialized_notification(kPort, kPath, session_id);
+  const auto accepted =
+      http_client.Post(kPath, tools_headers, tools_request, "application/json");
+  require(static_cast<bool>(accepted),
+          "business request after initialized should return");
+  require(accepted->status == 200,
+          "business request after initialized should be accepted");
+  const auto accepted_response = mcp::protocol::parse_response(accepted->body);
+  require(accepted_response.has_value(),
+          "business request accepted response should parse");
+  require(accepted_response->result.has_value(),
+          "business request after initialized should succeed");
+  require(tools_list_count.load() == 1,
+          "business request after initialized should reach handler");
 
   server_transport.transport().stop();
 }
@@ -1659,7 +2173,7 @@ void test_server_http_transport_emits_sse_retry_priming() {
   const auto initialize_response = http_client.Post(
       kPath,
       httplib::Headers{
-          {"Accept", "application/json"},
+          {"Accept", "application/json, text/event-stream"},
           {"Content-Type", "application/json"},
           {"Mcp-Method", std::string(mcp::protocol::InitializeMethod)},
       },
@@ -1699,6 +2213,7 @@ void test_server_http_transport_accepts_client_notification_with_202() {
   constexpr int kPort = 40176;
   const std::string kPath = "/mcp";
   std::string observed_session_id;
+  std::string observed_method;
 
   RunningServerTransportFixture server_transport(
       std::make_unique<mcp::server::HttpTransport>(
@@ -1727,9 +2242,10 @@ void test_server_http_transport_accepts_client_notification_with_202() {
             mcp::protocol::make_error(mcp::protocol::ErrorCode::MethodNotFound,
                                       "unexpected request"));
       },
-      [&](const mcp::protocol::JsonRpcNotification&,
+      [&](const mcp::protocol::JsonRpcNotification& notification,
           const mcp::server::SessionContext& context) {
         observed_session_id = context.session_id;
+        observed_method = notification.method;
         return mcp::core::Unit{};
       });
 
@@ -1742,7 +2258,7 @@ void test_server_http_transport_accepts_client_notification_with_202() {
   const auto rejected_without_session = http_client.Post(
       kPath,
       httplib::Headers{
-          {"Accept", "application/json"},
+          {"Accept", "application/json, text/event-stream"},
           {"Content-Type", "application/json"},
           {"MCP-Protocol-Version",
            std::string(mcp::protocol::McpProtocolVersion)},
@@ -1763,7 +2279,7 @@ void test_server_http_transport_accepts_client_notification_with_202() {
   const auto initialize_response = http_client.Post(
       kPath,
       httplib::Headers{
-          {"Accept", "application/json"},
+          {"Accept", "application/json, text/event-stream"},
           {"Content-Type", "application/json"},
           {"Mcp-Method", std::string(mcp::protocol::InitializeMethod)},
       },
@@ -1779,10 +2295,41 @@ void test_server_http_transport_accepts_client_notification_with_202() {
   const auto session_id =
       initialize_response->get_header_value("Mcp-Session-Id");
 
+  const auto rejected_before_initialized = http_client.Post(
+      kPath,
+      httplib::Headers{
+          {"Accept", "application/json, text/event-stream"},
+          {"Content-Type", "application/json"},
+          {"MCP-Protocol-Version",
+           std::string(mcp::protocol::McpProtocolVersion)},
+          {"Mcp-Session-Id", session_id},
+          {"Mcp-Method",
+           std::string(mcp::protocol::ToolsListChangedNotificationMethod)},
+      },
+      serialize_test_notification(mcp::protocol::JsonRpcNotification{
+          .method =
+              std::string(mcp::protocol::ToolsListChangedNotificationMethod),
+          .params = Json::object(),
+      }),
+      "application/json");
+  require(static_cast<bool>(rejected_before_initialized),
+          "notification before initialized should return");
+  require(rejected_before_initialized->status == 400,
+          "notification before initialized should be rejected");
+  require(observed_method.empty(),
+          "notification before initialized should not reach handler");
+
+  require_initialized_notification(kPort, kPath, session_id);
+  require(
+      observed_session_id == session_id,
+      "initialized notification session id should match negotiated session");
+  require(observed_method == mcp::protocol::InitializedMethod,
+          "initialized notification should reach handler");
+
   const auto notification_response = http_client.Post(
       kPath,
       httplib::Headers{
-          {"Accept", "application/json"},
+          {"Accept", "application/json, text/event-stream"},
           {"Content-Type", "application/json"},
           {"MCP-Protocol-Version",
            std::string(mcp::protocol::McpProtocolVersion)},
@@ -1802,13 +2349,15 @@ void test_server_http_transport_accepts_client_notification_with_202() {
           "notification status should be 202 Accepted");
   require(observed_session_id == session_id,
           "notification session id should match negotiated session");
+  require(observed_method == mcp::protocol::ToolsListChangedNotificationMethod,
+          "notification method should reach handler after initialized");
 
-  const auto rejected =
-      http_client.Delete(kPath, httplib::Headers{
-                                    {"Accept", "application/json"},
-                                    {"MCP-Protocol-Version", "0.0.0"},
-                                    {"Mcp-Session-Id", session_id},
-                                });
+  const auto rejected = http_client.Delete(
+      kPath, httplib::Headers{
+                 {"Accept", "application/json, text/event-stream"},
+                 {"MCP-Protocol-Version", "0.0.0"},
+                 {"Mcp-Session-Id", session_id},
+             });
   require(rejected != nullptr,
           "delete with wrong protocol version should return a response");
   require(rejected->status == 400,
@@ -1862,7 +2411,7 @@ void test_server_http_transport_copies_headers_to_session_context() {
     response = http_client.Post(
         kPath,
         httplib::Headers{
-            {"Accept", "application/json"},
+            {"Accept", "application/json, text/event-stream"},
             {"Content-Type", "application/json"},
             {"Mcp-Method", std::string(mcp::protocol::InitializeMethod)},
             {"Authorization", "Bearer header-token"},
@@ -1894,7 +2443,7 @@ void test_server_http_transport_unauthorized_uses_bearer_challenge() {
    public:
     mcp::core::Result<mcp::server::AuthIdentity> authenticate(
         const mcp::server::AuthRequest&) override {
-      return std::unexpected(mcp::server::make_auth_error(
+      return mcp::core::unexpected(mcp::server::make_auth_error(
           "authentication failed", "missing bearer token"));
     }
   };
@@ -1923,7 +2472,7 @@ void test_server_http_transport_unauthorized_uses_bearer_challenge() {
     response = http_client.Post(
         kPath,
         httplib::Headers{
-            {"Accept", "application/json"},
+            {"Accept", "application/json, text/event-stream"},
             {"Content-Type", "application/json"},
             {"Mcp-Method", std::string(mcp::protocol::InitializeMethod)},
         },
@@ -1971,20 +2520,27 @@ void test_server_http_transport_authorized_request_sets_auth_identity() {
       const auto authorization = request.headers.find("Authorization");
       if (authorization == request.headers.end() ||
           authorization->second != "Bearer valid-token") {
-        return std::unexpected(mcp::server::make_auth_error(
+        return mcp::core::unexpected(mcp::server::make_auth_error(
             "authentication failed", "invalid bearer token"));
       }
+      observed_http_methods.push_back(request.http_method.value_or(""));
+      observed_http_urls.push_back(request.http_url.value_or(""));
       mcp::server::AuthIdentity identity;
       identity.subject = "http-subject";
       identity.claims.emplace("scope", "tools:call");
       return identity;
     }
+
+    std::vector<std::string> observed_http_methods;
+    std::vector<std::string> observed_http_urls;
   };
 
   constexpr int kPort = 40222;
   const std::string kPath = "/mcp";
   mcp::server::Server server(mcp::server::ServerOptions{});
-  server.set_auth_provider(std::make_unique<TokenAuthProvider>());
+  auto provider = std::make_unique<TokenAuthProvider>();
+  auto* provider_ptr = provider.get();
+  server.set_auth_provider(std::move(provider));
   const auto added = server.tools().add(
       mcp::protocol::ToolDefinition{
           .name = "whoami",
@@ -2019,7 +2575,7 @@ void test_server_http_transport_authorized_request_sets_auth_identity() {
     initialize_response = http_client.Post(
         kPath,
         httplib::Headers{
-            {"Accept", "application/json"},
+            {"Accept", "application/json, text/event-stream"},
             {"Content-Type", "application/json"},
             {"Mcp-Method", std::string(mcp::protocol::InitializeMethod)},
             {"Authorization", "Bearer valid-token"},
@@ -2050,11 +2606,12 @@ void test_server_http_transport_authorized_request_sets_auth_identity() {
           "authorized initialize should create a session");
   const auto session_id =
       initialize_response->get_header_value("Mcp-Session-Id");
+  require_initialized_notification(kPort, kPath, session_id);
 
   const auto tool_response = http_client.Post(
       kPath,
       httplib::Headers{
-          {"Accept", "application/json"},
+          {"Accept", "application/json, text/event-stream"},
           {"Content-Type", "application/json"},
           {"MCP-Protocol-Version",
            std::string(mcp::protocol::McpProtocolVersion)},
@@ -2083,6 +2640,17 @@ void test_server_http_transport_authorized_request_sets_auth_identity() {
           "authorized tool response should succeed");
   require(parsed->result->at("content").at(0).at("text") == "http-subject",
           "authorized tool subject mismatch");
+  require(provider_ptr->observed_http_methods.size() >= 2,
+          "auth provider should receive HTTP method for each request");
+  require(provider_ptr->observed_http_urls.size() >= 2,
+          "auth provider should receive HTTP URL for each request");
+  for (const auto& method : provider_ptr->observed_http_methods) {
+    require(method == "POST", "auth provider HTTP method mismatch");
+  }
+  for (const auto& url : provider_ptr->observed_http_urls) {
+    require(url == "http://127.0.0.1:40222/mcp",
+            "auth provider HTTP URL mismatch");
+  }
 
   server_transport.transport().stop();
 }
@@ -2128,7 +2696,7 @@ void test_server_http_transport_rejects_mismatched_origin_when_allowlisted() {
   httplib::Client http_client("127.0.0.1", kPort);
   const auto rejected = http_client.Delete(
       kPath, httplib::Headers{
-                 {"Accept", "application/json"},
+                 {"Accept", "application/json, text/event-stream"},
                  {"Origin", "https://evil.example"},
                  {"MCP-Protocol-Version",
                   std::string(mcp::protocol::McpProtocolVersion)},
@@ -2138,6 +2706,236 @@ void test_server_http_transport_rejects_mismatched_origin_when_allowlisted() {
           "delete with mismatched origin should return a response");
   require(rejected->status == 400,
           "delete with mismatched origin should be rejected");
+
+  server_transport.transport().stop();
+}
+
+void test_server_http_transport_rejects_disallowed_host() {
+  constexpr int kPort = 40235;
+  const std::string kPath = "/mcp";
+  std::atomic<int> initialize_count{0};
+
+  RunningServerTransportFixture server_transport(
+      std::make_unique<mcp::server::HttpTransport>(
+          mcp::server::HttpTransportOptions{
+              .listen_host = "127.0.0.1",
+              .listen_port = kPort,
+              .path = kPath,
+          }),
+      [&](const mcp::protocol::JsonRpcRequest& request,
+          const mcp::server::SessionContext&) {
+        if (request.method == mcp::protocol::InitializeMethod) {
+          initialize_count.fetch_add(1);
+          return mcp::protocol::JsonRpcResponse{
+              .id = request.id,
+              .result =
+                  Json{
+                      {"protocolVersion",
+                       std::string(mcp::protocol::McpProtocolVersion)},
+                      {"capabilities", Json::object()},
+                      {"serverInfo",
+                       Json{{"name", "server-http-test"}, {"version", "1"}}},
+                  },
+          };
+        }
+        return mcp::protocol::make_error_response(
+            std::optional<mcp::protocol::RequestId>{request.id},
+            mcp::protocol::make_error(mcp::protocol::ErrorCode::MethodNotFound,
+                                      "unexpected request"));
+      });
+
+  require(!server_transport.start_error().has_value(),
+          "server transport should start");
+  require(wait_for_http_initialize(kPort, kPath),
+          "server transport should become reachable");
+  const auto successful_initializes = initialize_count.load();
+
+  httplib::Client http_client("127.0.0.1", kPort);
+  const auto rejected = http_client.Post(
+      kPath,
+      httplib::Headers{
+          {"Host", "evil.example"},
+          {"Accept", "application/json, text/event-stream"},
+          {"Content-Type", "application/json"},
+          {"Mcp-Method", std::string(mcp::protocol::InitializeMethod)},
+      },
+      serialize_test_request(mcp::protocol::JsonRpcRequest{
+          .method = std::string(mcp::protocol::InitializeMethod),
+          .params = Json::object(),
+          .id = std::int64_t{61},
+      }),
+      "application/json");
+  require(rejected != nullptr,
+          "initialize with disallowed host should return a response");
+  require(rejected->status == 403,
+          "initialize with disallowed host should be forbidden");
+  require(initialize_count.load() == successful_initializes,
+          "disallowed host should not reach request handler");
+
+  server_transport.transport().stop();
+}
+
+void test_server_http_transport_accepts_standard_post_without_custom_headers() {
+  constexpr int kPort = 40237;
+  const std::string kPath = "/mcp";
+
+  std::atomic<int> handled{0};
+  RunningServerTransportFixture server_transport(
+      std::make_unique<mcp::server::HttpTransport>(
+          mcp::server::HttpTransportOptions{
+              .listen_host = "127.0.0.1",
+              .listen_port = kPort,
+              .path = kPath,
+          }),
+      [&](const mcp::protocol::JsonRpcRequest& request,
+          const mcp::server::SessionContext&) {
+        require(request.method == mcp::protocol::InitializeMethod,
+                "server should receive initialize without custom headers");
+        handled.fetch_add(1);
+        return mcp::protocol::JsonRpcResponse{
+            .id = request.id,
+            .result =
+                Json{
+                    {"protocolVersion",
+                     std::string(mcp::protocol::McpProtocolVersion)},
+                    {"capabilities", Json::object()},
+                    {"serverInfo",
+                     Json{{"name", "server-http-test"}, {"version", "1"}}},
+                },
+        };
+      });
+
+  require(!server_transport.start_error().has_value(),
+          "server transport should start");
+  require(wait_for_http_initialize(kPort, kPath),
+          "server transport should become reachable");
+  handled.store(0);
+
+  httplib::Client http_client("127.0.0.1", kPort);
+  const auto initialize = serialize_test_request(mcp::protocol::JsonRpcRequest{
+      .method = std::string(mcp::protocol::InitializeMethod),
+      .params = Json::object(),
+      .id = std::int64_t{73},
+  });
+  const auto response =
+      http_client.Post(kPath,
+                       httplib::Headers{
+                           {"Accept", "application/json, text/event-stream"},
+                           {"Content-Type", "application/json"},
+                       },
+                       initialize, "application/json");
+
+  require(response != nullptr,
+          "standard Streamable HTTP POST should return a response");
+  require(response->status == 200,
+          "standard Streamable HTTP POST should be accepted");
+  require(response->has_header("Mcp-Session-Id"),
+          "standard initialize should issue a session id");
+  require(handled.load() == 1,
+          "standard Streamable HTTP POST should reach handler");
+
+  const auto parsed = mcp::protocol::parse_response(response->body);
+  require(parsed.has_value(),
+          "standard Streamable HTTP POST response should parse");
+  require(parsed->result.has_value(),
+          "standard Streamable HTTP POST should return a result");
+
+  server_transport.transport().stop();
+}
+
+void test_server_http_transport_rejects_invalid_required_headers() {
+  constexpr int kPort = 40236;
+  const std::string kPath = "/mcp";
+
+  RunningServerTransportFixture server_transport(
+      std::make_unique<mcp::server::HttpTransport>(
+          mcp::server::HttpTransportOptions{
+              .listen_host = "127.0.0.1",
+              .listen_port = kPort,
+              .path = kPath,
+          }),
+      [](const mcp::protocol::JsonRpcRequest& request,
+         const mcp::server::SessionContext&) {
+        if (request.method == mcp::protocol::InitializeMethod) {
+          return mcp::protocol::JsonRpcResponse{
+              .id = request.id,
+              .result =
+                  Json{
+                      {"protocolVersion",
+                       std::string(mcp::protocol::McpProtocolVersion)},
+                      {"capabilities", Json::object()},
+                      {"serverInfo",
+                       Json{{"name", "server-http-test"}, {"version", "1"}}},
+                  },
+          };
+        }
+        return mcp::protocol::make_response(request.id, Json::object());
+      });
+
+  require(!server_transport.start_error().has_value(),
+          "server transport should start");
+  require(wait_for_http_initialize(kPort, kPath),
+          "server transport should become reachable");
+
+  httplib::Client http_client("127.0.0.1", kPort);
+  const auto initialize = serialize_test_request(mcp::protocol::JsonRpcRequest{
+      .method = std::string(mcp::protocol::InitializeMethod),
+      .params = Json::object(),
+      .id = std::int64_t{71},
+  });
+
+  const auto bad_accept = http_client.Post(
+      kPath,
+      httplib::Headers{
+          {"Accept", "application/json"},
+          {"Content-Type", "application/json"},
+          {"Mcp-Method", std::string(mcp::protocol::InitializeMethod)},
+      },
+      initialize, "application/json");
+  require(bad_accept != nullptr, "bad POST Accept should return");
+  require(bad_accept->status == 406, "bad POST Accept should be rejected");
+  const auto bad_accept_body = mcp::protocol::parse_response(bad_accept->body);
+  require(bad_accept_body.has_value(),
+          "bad POST Accept response should be JSON-RPC");
+  require(bad_accept_body->error.has_value(),
+          "bad POST Accept response should contain an error");
+
+  const auto bad_content_type = http_client.Post(
+      kPath,
+      httplib::Headers{
+          {"Accept", "application/json, text/event-stream"},
+          {"Content-Type", "text/plain"},
+          {"Mcp-Method", std::string(mcp::protocol::InitializeMethod)},
+      },
+      initialize, "text/plain");
+  require(bad_content_type != nullptr, "bad POST Content-Type should return");
+  require(bad_content_type->status == 415,
+          "bad POST Content-Type should be rejected");
+  const auto bad_content_type_body =
+      mcp::protocol::parse_response(bad_content_type->body);
+  require(bad_content_type_body.has_value(),
+          "bad POST Content-Type response should be JSON-RPC");
+  require(bad_content_type_body->error.has_value(),
+          "bad POST Content-Type response should contain an error");
+
+  const auto session_id = initialize_http_session(kPort, kPath, 72);
+  httplib::Client sse_client("127.0.0.1", kPort);
+  sse_client.set_read_timeout(std::chrono::seconds(1));
+  const auto bad_get_accept = sse_client.Get(
+      kPath, httplib::Headers{
+                 {"Accept", "application/json"},
+                 {"MCP-Protocol-Version",
+                  std::string(mcp::protocol::McpProtocolVersion)},
+                 {"Mcp-Session-Id", session_id},
+             });
+  require(bad_get_accept != nullptr, "bad GET Accept should return");
+  require(bad_get_accept->status == 406, "bad GET Accept should be rejected");
+  const auto bad_get_accept_body =
+      mcp::protocol::parse_response(bad_get_accept->body);
+  require(bad_get_accept_body.has_value(),
+          "bad GET Accept response should be JSON-RPC");
+  require(bad_get_accept_body->error.has_value(),
+          "bad GET Accept response should contain an error");
 
   server_transport.transport().stop();
 }
@@ -2373,7 +3171,7 @@ void test_server_http_transport_can_request_client() {
 
   httplib::Client admin_client("127.0.0.1", kPort);
   httplib::Headers delete_headers{
-      {"Accept", "application/json"},
+      {"Accept", "application/json, text/event-stream"},
       {"MCP-Protocol-Version", std::string(mcp::protocol::McpProtocolVersion)},
       {"Mcp-Session-Id", session_id},
   };
@@ -2936,7 +3734,7 @@ void test_client_http_transport_bearer_helper_applies_to_session_requests() {
   const auto started =
       transport.start([](const mcp::protocol::JsonRpcRequest&)
                           -> mcp::core::Result<mcp::protocol::JsonRpcResponse> {
-        return std::unexpected(mcp::core::Error{
+        return mcp::core::unexpected(mcp::core::Error{
             static_cast<int>(mcp::protocol::ErrorCode::MethodNotFound),
             "unexpected request",
         });
@@ -3084,7 +3882,7 @@ void test_http_transport_load_smoke_concurrent_sessions() {
     const auto started = transports.back()->start(
         [](const mcp::protocol::JsonRpcRequest&)
             -> mcp::core::Result<mcp::protocol::JsonRpcResponse> {
-          return std::unexpected(mcp::core::Error{
+          return mcp::core::unexpected(mcp::core::Error{
               static_cast<int>(mcp::protocol::ErrorCode::MethodNotFound),
               "unexpected request",
           });
@@ -3182,7 +3980,7 @@ void test_http_transport_load_smoke_many_in_flight_requests() {
   const auto started =
       transport.start([](const mcp::protocol::JsonRpcRequest&)
                           -> mcp::core::Result<mcp::protocol::JsonRpcResponse> {
-        return std::unexpected(mcp::core::Error{
+        return mcp::core::unexpected(mcp::core::Error{
             static_cast<int>(mcp::protocol::ErrorCode::MethodNotFound),
             "unexpected request",
         });
@@ -3307,7 +4105,7 @@ void test_http_transport_load_smoke_high_volume_notifications() {
   const auto started = transport.start(
       [](const mcp::protocol::JsonRpcRequest&)
           -> mcp::core::Result<mcp::protocol::JsonRpcResponse> {
-        return std::unexpected(mcp::core::Error{
+        return mcp::core::unexpected(mcp::core::Error{
             static_cast<int>(mcp::protocol::ErrorCode::MethodNotFound),
             "unexpected request",
         });
@@ -3407,7 +4205,7 @@ void test_http_transport_stop_returns_with_active_sse_stream() {
   const auto started = transport.start(
       [](const mcp::protocol::JsonRpcRequest&)
           -> mcp::core::Result<mcp::protocol::JsonRpcResponse> {
-        return std::unexpected(mcp::core::Error{
+        return mcp::core::unexpected(mcp::core::Error{
             static_cast<int>(mcp::protocol::ErrorCode::MethodNotFound),
             "unexpected request",
         });
@@ -3525,6 +4323,9 @@ void test_native_streamable_http_transport_exposes_client_contract() {
           "native http initialize should receive response");
   require(initialize_response->result.has_value(),
           "native http initialize should have result");
+
+  sent = transport.send(mcp::protocol::make_initialized_notification());
+  require(sent.has_value(), "native http initialized notification send failed");
 
   sent = transport.send(mcp::protocol::JsonRpcRequest{
       .method = std::string(mcp::protocol::ToolsListMethod),
@@ -4263,6 +5064,16 @@ int main() {
        test_server_http_transport_rejects_initialize_protocol_version_mismatch},
       {"server http transport rejects malformed post body",
        test_server_http_transport_rejects_malformed_post_body},
+      {"server http transport rejects oversized post body",
+       test_server_http_transport_rejects_oversized_post_body},
+      {"server http transport slow client body does not reach handler",
+       test_server_http_transport_slow_client_body_does_not_reach_handler},
+      {"server http transport closed client during response does not hang",
+       test_server_http_transport_closed_client_during_response_does_not_hang},
+      {"server http transport limits active sessions",
+       test_server_http_transport_limits_active_sessions},
+      {"server http transport requires initialized before business request",
+       test_server_http_transport_requires_initialized_before_business_request},
       {"server http transport emits sse retry priming",
        test_server_http_transport_emits_sse_retry_priming},
       {"server http transport accepts client notification with 202",
@@ -4275,6 +5086,12 @@ int main() {
        test_server_http_transport_authorized_request_sets_auth_identity},
       {"server http transport rejects mismatched origin when allowlisted",
        test_server_http_transport_rejects_mismatched_origin_when_allowlisted},
+      {"server http transport rejects disallowed host",
+       test_server_http_transport_rejects_disallowed_host},
+      {"server http transport accepts standard post without custom headers",
+       test_server_http_transport_accepts_standard_post_without_custom_headers},
+      {"server http transport rejects invalid required headers",
+       test_server_http_transport_rejects_invalid_required_headers},
       {"server http transport can request client",
        test_server_http_transport_can_request_client},
       {"server http transport request timeout sends cancelled over sse",

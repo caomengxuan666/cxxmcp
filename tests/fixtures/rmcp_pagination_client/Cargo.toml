@@ -1,0 +1,9 @@
+[package]
+name = "rmcp_pagination_client"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+anyhow = "1"
+rmcp = { path = "../../../reference/rmcp/crates/rmcp", default-features = false, features = ["client", "transport-streamable-http-client-reqwest"] }
+tokio = { version = "1", features = ["macros", "rt-multi-thread"] }

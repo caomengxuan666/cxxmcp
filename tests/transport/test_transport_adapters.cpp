@@ -605,7 +605,7 @@ void test_client_contract_transport_adapter_failure_paths() {
     const auto started =
         adapter.start([](const mcp::protocol::JsonRpcRequest&)
                           -> mcp::core::Result<mcp::protocol::JsonRpcResponse> {
-          return std::unexpected(mcp::core::Error{
+          return mcp::core::unexpected(mcp::core::Error{
               static_cast<int>(mcp::protocol::ErrorCode::InternalError),
               "client handler boom",
               {},
@@ -766,7 +766,7 @@ void test_server_contract_transport_adapter_failure_paths() {
         adapter.start([](const mcp::protocol::JsonRpcRequest&,
                          const mcp::server::SessionContext&)
                           -> mcp::core::Result<mcp::protocol::JsonRpcResponse> {
-          return std::unexpected(mcp::core::Error{
+          return mcp::core::unexpected(mcp::core::Error{
               static_cast<int>(mcp::protocol::ErrorCode::InternalError),
               "server handler boom",
               {},
@@ -817,6 +817,110 @@ void test_server_contract_transport_adapter_failure_paths() {
   }
 }
 
+void test_transport_adapters_move_owned_transports() {
+  {
+    auto legacy = std::make_unique<RecordingClientTransport>();
+    auto* legacy_ptr = legacy.get();
+    mcp::client::TransportContractAdapter adapter(std::move(legacy));
+    mcp::client::TransportContractAdapter moved(std::move(adapter));
+
+    const auto sent = moved.send(mcp::protocol::JsonRpcRequest{
+        .method = "tools/list",
+        .params = Json::object(),
+        .id = std::int64_t{31},
+    });
+    require(sent.has_value(), "moved client transport adapter send failed");
+    require(legacy_ptr->requests.size() == 1,
+            "moved client transport adapter did not use owned transport");
+    require(!adapter
+                 .send(mcp::protocol::JsonRpcNotification{
+                     .method = "notifications/initialized",
+                     .params = Json::object(),
+                 })
+                 .has_value(),
+            "moved-from client transport adapter should be inert");
+  }
+
+  {
+    auto contract = std::make_unique<ScriptedClientContractTransport>();
+    auto* contract_ptr = contract.get();
+    contract_ptr->push(mcp::protocol::JsonRpcResponse{
+        .id = mcp::protocol::RequestId{std::int64_t{32}},
+        .result = Json{{"ok", true}},
+    });
+    mcp::client::ContractTransportAdapter adapter(std::move(contract));
+    mcp::client::ContractTransportAdapter moved(std::move(adapter));
+
+    const auto response = moved.send(mcp::protocol::JsonRpcRequest{
+        .method = "tools/list",
+        .params = Json::object(),
+        .id = std::int64_t{32},
+    });
+    require(response.has_value(),
+            "moved client contract adapter request failed");
+    require(contract_ptr->sent.size() == 1,
+            "moved client contract adapter did not use owned transport");
+    require(!adapter
+                 .send_notification(mcp::protocol::JsonRpcNotification{
+                     .method = "notifications/initialized",
+                     .params = Json::object(),
+                 })
+                 .has_value(),
+            "moved-from client contract adapter should be inert");
+  }
+
+  {
+    auto legacy = std::make_unique<RecordingServerTransport>();
+    auto* legacy_ptr = legacy.get();
+    mcp::server::TransportContractAdapter adapter(std::move(legacy));
+    mcp::server::TransportContractAdapter moved(std::move(adapter));
+
+    const auto sent = moved.send(mcp::protocol::JsonRpcRequest{
+        .method = "roots/list",
+        .params = Json::object(),
+        .id = std::int64_t{33},
+    });
+    require(sent.has_value(), "moved server transport adapter send failed");
+    require(legacy_ptr->requests.size() == 1,
+            "moved server transport adapter did not use owned transport");
+    require(!adapter
+                 .send(mcp::protocol::JsonRpcNotification{
+                     .method = "notifications/tools/list_changed",
+                     .params = Json::object(),
+                 })
+                 .has_value(),
+            "moved-from server transport adapter should be inert");
+  }
+
+  {
+    auto contract = std::make_unique<ScriptedServerContractTransport>();
+    auto* contract_ptr = contract.get();
+    contract_ptr->push(mcp::protocol::JsonRpcResponse{
+        .id = mcp::protocol::RequestId{std::int64_t{34}},
+        .result = Json{{"ok", true}},
+    });
+    mcp::server::ContractTransportAdapter adapter(std::move(contract));
+    mcp::server::ContractTransportAdapter moved(std::move(adapter));
+
+    const auto response = moved.send_request(mcp::protocol::JsonRpcRequest{
+        .method = "roots/list",
+        .params = Json::object(),
+        .id = std::int64_t{34},
+    });
+    require(response.has_value(),
+            "moved server contract adapter request failed");
+    require(contract_ptr->sent.size() == 1,
+            "moved server contract adapter did not use owned transport");
+    require(!adapter
+                 .send_notification(mcp::protocol::JsonRpcNotification{
+                     .method = "notifications/tools/list_changed",
+                     .params = Json::object(),
+                 })
+                 .has_value(),
+            "moved-from server contract adapter should be inert");
+  }
+}
+
 }  // namespace
 
 int main() {
@@ -829,6 +933,7 @@ int main() {
     test_contract_transport_adapters_bidirectional_stress();
     test_client_contract_transport_adapter_failure_paths();
     test_server_contract_transport_adapter_failure_paths();
+    test_transport_adapters_move_owned_transports();
     std::cout << "transport adapter tests passed\n";
     return 0;
   } catch (const std::exception& ex) {

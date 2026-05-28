@@ -198,7 +198,7 @@ void test_process_stdio_transport_returns_handler_error_to_child_request() {
   const auto started = transport.start(
       [](const mcp::protocol::JsonRpcRequest&)
           -> mcp::core::Result<mcp::protocol::JsonRpcResponse> {
-        return std::unexpected(mcp::errors::handler_failed(
+        return mcp::core::unexpected(mcp::errors::handler_failed(
             "process stdio handler rejected request"));
       },
       [](const mcp::protocol::JsonRpcNotification&)
@@ -252,7 +252,7 @@ void test_process_stdio_transport_stop_unblocks_pending_request() {
   const auto started = transport.start(
       [](const mcp::protocol::JsonRpcRequest&)
           -> mcp::core::Result<mcp::protocol::JsonRpcResponse> {
-        return std::unexpected(mcp::core::Error{
+        return mcp::core::unexpected(mcp::core::Error{
             static_cast<int>(mcp::protocol::ErrorCode::MethodNotFound),
             "unexpected child request",
         });
@@ -305,7 +305,7 @@ void test_process_stdio_transport_sends_cancelled_notification_while_pending() {
   const auto started = transport.start(
       [](const mcp::protocol::JsonRpcRequest&)
           -> mcp::core::Result<mcp::protocol::JsonRpcResponse> {
-        return std::unexpected(mcp::core::Error{
+        return mcp::core::unexpected(mcp::core::Error{
             static_cast<int>(mcp::protocol::ErrorCode::MethodNotFound),
             "unexpected child request",
         });
@@ -485,7 +485,7 @@ void test_posix_process_stdio_write_after_child_exit_returns_error() {
   const auto started = transport.start(
       [](const mcp::protocol::JsonRpcRequest&)
           -> mcp::core::Result<mcp::protocol::JsonRpcResponse> {
-        return std::unexpected(mcp::core::Error{
+        return mcp::core::unexpected(mcp::core::Error{
             static_cast<int>(mcp::protocol::ErrorCode::MethodNotFound),
             "unexpected child request",
         });

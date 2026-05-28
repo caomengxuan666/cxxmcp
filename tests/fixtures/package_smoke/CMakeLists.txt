@@ -1,7 +1,34 @@
 cmake_minimum_required(VERSION 3.23)
 project(cxxmcp_package_smoke_consumer LANGUAGES CXX)
 
-find_package(cxxmcp CONFIG REQUIRED)
+set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+set(CMAKE_CXX_EXTENSIONS OFF)
+
+set(cxxmcp_package_smoke_components
+    protocol
+    client
+    server
+    transport
+    peer
+    handler
+    service
+    sdk)
+if(CXXMCP_PACKAGE_SMOKE_AUTH_ENABLED)
+    list(APPEND cxxmcp_package_smoke_components auth)
+endif()
+if(CXXMCP_PACKAGE_SMOKE_AUTH_OPENSSL_ENABLED)
+    list(APPEND cxxmcp_package_smoke_components auth_openssl)
+endif()
+if(CXXMCP_PACKAGE_SMOKE_PLUGIN_SDK_ENABLED)
+    list(APPEND cxxmcp_package_smoke_components plugin_sdk)
+endif()
+if(CXXMCP_PACKAGE_SMOKE_ADAPTERS_ENABLED)
+    list(APPEND cxxmcp_package_smoke_components adapters)
+endif()
+
+find_package(cxxmcp CONFIG REQUIRED
+    COMPONENTS ${cxxmcp_package_smoke_components})
 
 function(assert_sdk_target_has_no_runtime_or_gateway_dependency target_name)
     foreach(property_name
@@ -60,15 +87,26 @@ add_cxxmcp_package_smoke_target(
 add_cxxmcp_package_smoke_target(
     cxxmcp_package_service service.cpp cxxmcp::service)
 add_cxxmcp_package_smoke_target(
+    cxxmcp_package_canonical canonical.cpp cxxmcp::sdk)
+add_cxxmcp_package_smoke_target(
     cxxmcp_package_sdk sdk.cpp cxxmcp::sdk)
 add_cxxmcp_package_smoke_target(
     cxxmcp_package_request request.cpp cxxmcp::sdk)
-add_cxxmcp_package_smoke_target(
-    cxxmcp_package_plugin_sdk plugin_sdk.cpp cxxmcp::plugin_sdk)
-add_cxxmcp_package_smoke_target(
-    cxxmcp_package_adapters adapters.cpp cxxmcp::adapters)
+
+if(TARGET cxxmcp::plugin_sdk)
+    add_cxxmcp_package_smoke_target(
+        cxxmcp_package_plugin_sdk plugin_sdk.cpp cxxmcp::plugin_sdk)
+endif()
+if(TARGET cxxmcp::adapters)
+    add_cxxmcp_package_smoke_target(
+        cxxmcp_package_adapters adapters.cpp cxxmcp::adapters)
+endif()
 
 if(TARGET cxxmcp::auth)
     add_cxxmcp_package_smoke_target(
         cxxmcp_package_auth auth.cpp cxxmcp::auth)
+endif()
+if(TARGET cxxmcp::auth_openssl)
+    add_cxxmcp_package_smoke_target(
+        cxxmcp_package_auth_openssl auth_openssl.cpp cxxmcp::auth_openssl)
 endif()

@@ -1,7 +1,9 @@
 // Copyright (c) 2025 [caomengxuan666]
 
+#include <algorithm>
 #include <atomic>
 #include <chrono>
+#include <condition_variable>
 #include <cstdint>
 #include <cstdlib>
 #include <filesystem>
@@ -16,6 +18,7 @@
 #include <vector>
 
 #include "cxxmcp/client/client.hpp"
+#include "cxxmcp/peer.hpp"
 #include "cxxmcp/protocol/completion.hpp"
 #include "cxxmcp/protocol/elicitation.hpp"
 #include "cxxmcp/protocol/logging.hpp"
@@ -27,10 +30,16 @@
 #include "cxxmcp/protocol/task.hpp"
 #include "cxxmcp/protocol/tool.hpp"
 #include "cxxmcp/server/http_transport.hpp"
+#include "cxxmcp/service.hpp"
+#include "cxxmcp/transport.hpp"
 #include "httplib.h"
 
 #ifdef _WIN32
 #include <windows.h>
+#else
+#include <signal.h>
+#include <sys/wait.h>
+#include <unistd.h>
 #endif
 
 namespace {
@@ -39,6 +48,11 @@ using mcp::protocol::Json;
 
 constexpr std::string_view kRmcpReferenceVersion = "1.7.0";
 constexpr std::string_view kRmcpConformanceVersion = "0.1.0";
+constexpr std::string_view kElicitationDefaultsRequestId =
+    "cxxmcp-elicitation-defaults-1";
+constexpr std::string_view kRootsRoundTripRequestId = "cxxmcp-roots-list-1";
+constexpr std::string_view kSamplingRoundTripRequestId =
+    "cxxmcp-sampling-create-1";
 
 void require(bool condition, std::string_view message) {
   if (!condition) {
@@ -50,6 +64,7 @@ void set_process_env(std::string_view key, const std::string& value) {
   const std::string key_string(key);
 #ifdef _WIN32
   _putenv_s(key_string.c_str(), value.c_str());
+  SetEnvironmentVariableA(key_string.c_str(), value.c_str());
 #else
   setenv(key_string.c_str(), value.c_str(), 1);
 #endif
@@ -59,6 +74,7 @@ void unset_process_env(std::string_view key) {
   const std::string key_string(key);
 #ifdef _WIN32
   _putenv_s(key_string.c_str(), "");
+  SetEnvironmentVariableA(key_string.c_str(), nullptr);
 #else
   unsetenv(key_string.c_str());
 #endif
@@ -92,12 +108,109 @@ std::filesystem::path conformance_manifest() {
   return repo_root() / "reference" / "rmcp" / "conformance" / "Cargo.toml";
 }
 
+std::filesystem::path pagination_client_manifest() {
+  return repo_root() / "tests" / "fixtures" / "rmcp_pagination_client" /
+         "Cargo.toml";
+}
+
+std::filesystem::path completion_client_manifest() {
+  return repo_root() / "tests" / "fixtures" / "rmcp_completion_client" /
+         "Cargo.toml";
+}
+
+std::filesystem::path roots_sampling_client_manifest() {
+  return repo_root() / "tests" / "fixtures" / "rmcp_roots_sampling_client" /
+         "Cargo.toml";
+}
+
+std::filesystem::path task_lifecycle_client_manifest() {
+  return repo_root() / "tests" / "fixtures" / "rmcp_task_lifecycle_client" /
+         "Cargo.toml";
+}
+
+std::filesystem::path reverse_server_manifest() {
+  return repo_root() / "tests" / "fixtures" / "rmcp_reverse_server" /
+         "Cargo.toml";
+}
+
 std::filesystem::path conformance_target_dir() {
   return repo_root() / "build" / "rmcp-conformance-target";
 }
 
+std::filesystem::path pagination_client_target_dir() {
+  return repo_root() / "build" / "rmcp-pagination-client-target";
+}
+
+std::filesystem::path completion_client_target_dir() {
+  return repo_root() / "build" / "rmcp-completion-client-target";
+}
+
+std::filesystem::path roots_sampling_client_target_dir() {
+  return repo_root() / "build" / "rmcp-roots-sampling-client-target";
+}
+
+std::filesystem::path task_lifecycle_client_target_dir() {
+  return repo_root() / "build" / "rmcp-task-lifecycle-client-target";
+}
+
+std::filesystem::path reverse_server_target_dir() {
+  return repo_root() / "build" / "rmcp-reverse-server-target";
+}
+
 std::filesystem::path conformance_client_executable() {
   auto path = conformance_target_dir() / "debug" / "conformance-client";
+#ifdef _WIN32
+  path += ".exe";
+#endif
+  return path;
+}
+
+std::filesystem::path conformance_server_executable() {
+  auto path = conformance_target_dir() / "debug" / "conformance-server";
+#ifdef _WIN32
+  path += ".exe";
+#endif
+  return path;
+}
+
+std::filesystem::path pagination_client_executable() {
+  auto path =
+      pagination_client_target_dir() / "debug" / "rmcp_pagination_client";
+#ifdef _WIN32
+  path += ".exe";
+#endif
+  return path;
+}
+
+std::filesystem::path completion_client_executable() {
+  auto path =
+      completion_client_target_dir() / "debug" / "rmcp_completion_client";
+#ifdef _WIN32
+  path += ".exe";
+#endif
+  return path;
+}
+
+std::filesystem::path roots_sampling_client_executable() {
+  auto path = roots_sampling_client_target_dir() / "debug" /
+              "rmcp_roots_sampling_client";
+#ifdef _WIN32
+  path += ".exe";
+#endif
+  return path;
+}
+
+std::filesystem::path task_lifecycle_client_executable() {
+  auto path = task_lifecycle_client_target_dir() / "debug" /
+              "rmcp_task_lifecycle_client";
+#ifdef _WIN32
+  path += ".exe";
+#endif
+  return path;
+}
+
+std::filesystem::path reverse_server_executable() {
+  auto path = reverse_server_target_dir() / "debug" / "rmcp_reverse_server";
 #ifdef _WIN32
   path += ".exe";
 #endif
@@ -109,6 +222,45 @@ std::string quote_path(const std::filesystem::path& path) {
 }
 
 std::string quote_text(const std::string& value) { return "\"" + value + "\""; }
+
+bool is_pagination_scenario() {
+  return get_process_env("MCP_CONFORMANCE_SCENARIO").value_or(std::string()) ==
+         "rmcp-pagination";
+}
+
+std::optional<std::string> pagination_cursor(const Json& params) {
+  if (!params.is_object() || !params.contains("cursor") ||
+      params.at("cursor").is_null()) {
+    return std::nullopt;
+  }
+  return params.at("cursor").get<std::string>();
+}
+
+void write_invalid_cursor_response(
+    const std::optional<mcp::protocol::RequestId>& id,
+    httplib::Response& response) {
+  const auto error_response = mcp::protocol::make_error_response(
+      id, mcp::protocol::make_error(mcp::protocol::ErrorCode::InvalidParams,
+                                    "invalid pagination cursor"));
+  const auto serialized = mcp::protocol::serialize_response(error_response);
+  require(serialized.has_value(),
+          "invalid pagination cursor response should serialize");
+  response.set_content(*serialized, "application/json");
+}
+
+std::string make_sse_message_event(std::uint64_t event_id,
+                                   const std::string& payload) {
+  return "id: " + std::to_string(event_id) + "\n" + "data: " + payload + "\n\n";
+}
+
+bool request_id_matches(const std::optional<mcp::protocol::RequestId>& id,
+                        std::string_view expected) {
+  if (!id.has_value()) {
+    return false;
+  }
+  const auto* value = std::get_if<std::string>(&*id);
+  return value != nullptr && *value == expected;
+}
 
 bool run_command_with_timeout(const std::string& command,
                               std::chrono::milliseconds timeout,
@@ -247,6 +399,291 @@ void build_conformance_client() {
           "RMCP conformance client build should succeed");
 }
 
+void build_conformance_server() {
+  if (std::filesystem::exists(conformance_server_executable())) {
+    return;
+  }
+
+  configure_cargo_proxy();
+  set_process_env("CARGO_TARGET_DIR", conformance_target_dir().string());
+
+  const std::string command = "cargo build --manifest-path " +
+                              quote_path(conformance_manifest()) +
+                              " --bin conformance-server";
+  require(std::system(command.c_str()) == 0,
+          "RMCP conformance server build should succeed");
+}
+
+void build_pagination_client() {
+  if (std::filesystem::exists(pagination_client_executable())) {
+    return;
+  }
+
+  configure_cargo_proxy();
+  set_process_env("CARGO_TARGET_DIR", pagination_client_target_dir().string());
+
+  const std::string command =
+      "cargo build --manifest-path " + quote_path(pagination_client_manifest());
+  require(std::system(command.c_str()) == 0,
+          "RMCP pagination client build should succeed");
+}
+
+void build_completion_client() {
+  if (std::filesystem::exists(completion_client_executable())) {
+    return;
+  }
+
+  configure_cargo_proxy();
+  set_process_env("CARGO_TARGET_DIR", completion_client_target_dir().string());
+
+  const std::string command =
+      "cargo build --manifest-path " + quote_path(completion_client_manifest());
+  require(std::system(command.c_str()) == 0,
+          "RMCP completion client build should succeed");
+}
+
+void build_roots_sampling_client() {
+  if (std::filesystem::exists(roots_sampling_client_executable())) {
+    return;
+  }
+
+  configure_cargo_proxy();
+  set_process_env("CARGO_TARGET_DIR",
+                  roots_sampling_client_target_dir().string());
+
+  const std::string command = "cargo build --manifest-path " +
+                              quote_path(roots_sampling_client_manifest());
+  require(std::system(command.c_str()) == 0,
+          "RMCP roots/sampling client build should succeed");
+}
+
+void build_task_lifecycle_client() {
+  if (std::filesystem::exists(task_lifecycle_client_executable())) {
+    return;
+  }
+
+  configure_cargo_proxy();
+  set_process_env("CARGO_TARGET_DIR",
+                  task_lifecycle_client_target_dir().string());
+
+  const std::string command = "cargo build --manifest-path " +
+                              quote_path(task_lifecycle_client_manifest());
+  require(std::system(command.c_str()) == 0,
+          "RMCP task lifecycle client build should succeed");
+}
+
+void build_reverse_server() {
+  configure_cargo_proxy();
+  set_process_env("CARGO_TARGET_DIR", reverse_server_target_dir().string());
+
+  const std::string command =
+      "cargo build --manifest-path " + quote_path(reverse_server_manifest());
+  require(std::system(command.c_str()) == 0,
+          "RMCP reverse server build should succeed");
+}
+
+std::uint16_t choose_loopback_port() {
+#ifdef _WIN32
+  const auto process_id = static_cast<unsigned>(GetCurrentProcessId());
+#else
+  const auto process_id = static_cast<unsigned>(::getpid());
+#endif
+  return static_cast<std::uint16_t>(45000 + (process_id % 10000));
+}
+
+bool wait_for_http_endpoint(std::uint16_t port) {
+  for (int attempt = 0; attempt < 200; ++attempt) {
+    httplib::Client client("127.0.0.1", port);
+    client.set_connection_timeout(0, 100000);
+    client.set_read_timeout(1, 0);
+    client.set_write_timeout(0, 200000);
+    const auto body =
+        Json{{"jsonrpc", "2.0"},
+             {"id", 1},
+             {"method", std::string(mcp::protocol::InitializeMethod)},
+             {"params", Json{{"protocolVersion",
+                              std::string(mcp::protocol::McpProtocolVersion)},
+                             {"capabilities", Json::object()},
+                             {"clientInfo", Json{{"name", "cxxmcp-ready-probe"},
+                                                 {"version", "1"}}}}}}
+            .dump();
+    if (client.Post("/mcp", body, "application/json") != nullptr) {
+      return true;
+    }
+    std::this_thread::sleep_for(std::chrono::milliseconds(50));
+  }
+  return false;
+}
+
+class RunningRmcpConformanceServer {
+ public:
+  explicit RunningRmcpConformanceServer(std::uint16_t port) : port_(port) {
+    build_conformance_server();
+    set_process_env("PORT", std::to_string(port_));
+    set_process_env("RUST_LOG", "warn");
+
+#ifdef _WIN32
+    const auto command = quote_path(conformance_server_executable());
+    std::wstring wide_command(command.begin(), command.end());
+    std::vector<wchar_t> buffer(wide_command.begin(), wide_command.end());
+    buffer.push_back(L'\0');
+
+    STARTUPINFOW startup{};
+    startup.cb = sizeof(startup);
+    startup.dwFlags = STARTF_USESHOWWINDOW;
+    startup.wShowWindow = SW_HIDE;
+    if (!CreateProcessW(nullptr, buffer.data(), nullptr, nullptr, FALSE,
+                        CREATE_NO_WINDOW, nullptr, nullptr, &startup,
+                        &process_)) {
+      throw std::runtime_error("failed to start RMCP conformance server");
+    }
+#else
+    pid_ = ::fork();
+    if (pid_ < 0) {
+      throw std::runtime_error("failed to fork RMCP conformance server");
+    }
+    if (pid_ == 0) {
+      const auto executable = conformance_server_executable().string();
+      ::execl(executable.c_str(), executable.c_str(), nullptr);
+      _exit(127);
+    }
+#endif
+
+    require(wait_for_http_endpoint(port_),
+            "RMCP conformance server should become ready");
+  }
+
+  ~RunningRmcpConformanceServer() { stop(); }
+
+  RunningRmcpConformanceServer(const RunningRmcpConformanceServer&) = delete;
+  RunningRmcpConformanceServer& operator=(const RunningRmcpConformanceServer&) =
+      delete;
+
+  std::uint16_t port() const noexcept { return port_; }
+
+ private:
+  void stop() noexcept {
+#ifdef _WIN32
+    if (process_.hProcess != nullptr) {
+      TerminateProcess(process_.hProcess, 0);
+      WaitForSingleObject(process_.hProcess, 5000);
+      CloseHandle(process_.hThread);
+      CloseHandle(process_.hProcess);
+      process_.hThread = nullptr;
+      process_.hProcess = nullptr;
+    }
+#else
+    if (pid_ > 0) {
+      ::kill(pid_, SIGTERM);
+      for (int attempt = 0; attempt < 50; ++attempt) {
+        int status = 0;
+        const auto waited = ::waitpid(pid_, &status, WNOHANG);
+        if (waited == pid_) {
+          pid_ = -1;
+          return;
+        }
+        std::this_thread::sleep_for(std::chrono::milliseconds(100));
+      }
+      ::kill(pid_, SIGKILL);
+      int status = 0;
+      ::waitpid(pid_, &status, 0);
+      pid_ = -1;
+    }
+#endif
+  }
+
+  std::uint16_t port_ = 0;
+#ifdef _WIN32
+  PROCESS_INFORMATION process_{};
+#else
+  pid_t pid_ = -1;
+#endif
+};
+
+class RunningRmcpReverseServer {
+ public:
+  explicit RunningRmcpReverseServer(std::uint16_t port) : port_(port) {
+    build_reverse_server();
+    set_process_env("PORT", std::to_string(port_));
+    set_process_env("RUST_LOG", "warn");
+
+#ifdef _WIN32
+    const auto command = quote_path(reverse_server_executable());
+    std::wstring wide_command(command.begin(), command.end());
+    std::vector<wchar_t> buffer(wide_command.begin(), wide_command.end());
+    buffer.push_back(L'\0');
+
+    STARTUPINFOW startup{};
+    startup.cb = sizeof(startup);
+    startup.dwFlags = STARTF_USESHOWWINDOW;
+    startup.wShowWindow = SW_HIDE;
+    if (!CreateProcessW(nullptr, buffer.data(), nullptr, nullptr, FALSE,
+                        CREATE_NO_WINDOW, nullptr, nullptr, &startup,
+                        &process_)) {
+      throw std::runtime_error("failed to start RMCP reverse server");
+    }
+#else
+    pid_ = ::fork();
+    if (pid_ < 0) {
+      throw std::runtime_error("failed to fork RMCP reverse server");
+    }
+    if (pid_ == 0) {
+      const auto executable = reverse_server_executable().string();
+      ::execl(executable.c_str(), executable.c_str(), nullptr);
+      _exit(127);
+    }
+#endif
+
+    require(wait_for_http_endpoint(port_),
+            "RMCP reverse server should become ready");
+  }
+
+  ~RunningRmcpReverseServer() { stop(); }
+
+  RunningRmcpReverseServer(const RunningRmcpReverseServer&) = delete;
+  RunningRmcpReverseServer& operator=(const RunningRmcpReverseServer&) = delete;
+
+  std::uint16_t port() const noexcept { return port_; }
+
+ private:
+  void stop() noexcept {
+#ifdef _WIN32
+    if (process_.hProcess != nullptr) {
+      TerminateProcess(process_.hProcess, 0);
+      WaitForSingleObject(process_.hProcess, 5000);
+      CloseHandle(process_.hThread);
+      CloseHandle(process_.hProcess);
+      process_.hThread = nullptr;
+      process_.hProcess = nullptr;
+    }
+#else
+    if (pid_ > 0) {
+      ::kill(pid_, SIGTERM);
+      for (int attempt = 0; attempt < 50; ++attempt) {
+        int status = 0;
+        const auto waited = ::waitpid(pid_, &status, WNOHANG);
+        if (waited == pid_) {
+          pid_ = -1;
+          return;
+        }
+        std::this_thread::sleep_for(std::chrono::milliseconds(100));
+      }
+      ::kill(pid_, SIGKILL);
+      int status = 0;
+      ::waitpid(pid_, &status, 0);
+      pid_ = -1;
+    }
+#endif
+  }
+
+  std::uint16_t port_ = 0;
+#ifdef _WIN32
+  PROCESS_INFORMATION process_{};
+#else
+  pid_t pid_ = -1;
+#endif
+};
+
 class RunningInteropServer {
  public:
   RunningInteropServer() {
@@ -319,6 +756,34 @@ class RunningInteropServer {
         return;
       }
 
+      if (const auto* rpc_response =
+              std::get_if<mcp::protocol::JsonRpcResponse>(&*message)) {
+        if (request_id_matches(rpc_response->id,
+                               kElicitationDefaultsRequestId)) {
+          {
+            std::lock_guard lock(mutex_);
+            elicitation_defaults_response_ = *rpc_response;
+          }
+          cv_.notify_all();
+        }
+        if (request_id_matches(rpc_response->id, kRootsRoundTripRequestId)) {
+          {
+            std::lock_guard lock(mutex_);
+            roots_roundtrip_response_ = *rpc_response;
+          }
+          cv_.notify_all();
+        }
+        if (request_id_matches(rpc_response->id, kSamplingRoundTripRequestId)) {
+          {
+            std::lock_guard lock(mutex_);
+            sampling_roundtrip_response_ = *rpc_response;
+          }
+          cv_.notify_all();
+        }
+        response.status = 202;
+        return;
+      }
+
       const auto* rpc_request =
           std::get_if<mcp::protocol::JsonRpcRequest>(&*message);
       if (rpc_request == nullptr) {
@@ -358,6 +823,19 @@ class RunningInteropServer {
         }
         const auto requested_version =
             rpc_request->params.at("protocolVersion").get<std::string>();
+        if (!mcp::protocol::is_supported_protocol_version(requested_version)) {
+          const auto error_response = mcp::protocol::make_error_response(
+              rpc_request->id,
+              mcp::protocol::make_error(mcp::protocol::ErrorCode::InvalidParams,
+                                        "unsupported MCP protocol version(\"" +
+                                            requested_version + "\")"));
+          const auto serialized =
+              mcp::protocol::serialize_response(error_response);
+          require(serialized.has_value(),
+                  "initialize error response should serialize");
+          response.set_content(*serialized, "application/json");
+          return;
+        }
 
         {
           std::lock_guard lock(mutex_);
@@ -365,12 +843,15 @@ class RunningInteropServer {
         }
 
         response.set_header("Mcp-Session-Id", session_id_);
+        const auto negotiated_version =
+            mcp::protocol::negotiate_protocol_version(requested_version);
+        require(negotiated_version.has_value(),
+                "interop server should validate protocol version before "
+                "negotiating");
         const auto initialize_response = mcp::protocol::make_response(
             rpc_request->id,
             Json{
-                {"protocolVersion",
-                 std::string(mcp::protocol::negotiate_protocol_version(
-                     requested_version))},
+                {"protocolVersion", std::string(*negotiated_version)},
                 {"capabilities",
                  Json{
                      {"tools", Json::object()},
@@ -390,36 +871,114 @@ class RunningInteropServer {
       }
 
       if (rpc_request->method == mcp::protocol::ToolsListMethod) {
+        if (is_pagination_scenario()) {
+          const auto cursor = pagination_cursor(rpc_request->params);
+          Json tools = Json::array();
+          Json result;
+          if (!cursor.has_value()) {
+            tools.push_back(mcp::protocol::tool_definition_to_json(
+                mcp::protocol::ToolDefinition{
+                    .name = "page-tool-one",
+                    .description = "First paginated tool",
+                    .input_schema = Json{{"type", "object"}},
+                }));
+            result = Json{{"tools", std::move(tools)},
+                          {"nextCursor", "tools-page-2"}};
+          } else if (*cursor == "tools-page-2") {
+            tools.push_back(mcp::protocol::tool_definition_to_json(
+                mcp::protocol::ToolDefinition{
+                    .name = "page-tool-two",
+                    .description = "Second paginated tool",
+                    .input_schema = Json{{"type", "object"}},
+                }));
+            result = Json{{"tools", std::move(tools)}};
+          } else {
+            write_invalid_cursor_response(rpc_request->id, response);
+            return;
+          }
+          const auto tool_response =
+              mcp::protocol::make_response(rpc_request->id, std::move(result));
+          const auto serialized =
+              mcp::protocol::serialize_response(tool_response);
+          require(serialized.has_value(),
+                  "paginated tools/list response should serialize");
+          response.set_content(*serialized, "application/json");
+          return;
+        }
+
+        Json tools = Json::array(
+            {mcp::protocol::tool_definition_to_json(
+                 mcp::protocol::ToolDefinition{
+                     .name = "test_simple_text",
+                     .description = "Returns simple text content",
+                     .input_schema =
+                         Json{
+                             {"type", "object"},
+                             {"properties", Json::object()},
+                         },
+                     .streaming = false,
+                 }),
+             mcp::protocol::tool_definition_to_json(
+                 mcp::protocol::ToolDefinition{
+                     .name = "test_reconnection",
+                     .description = "Exercises the RMCP SSE retry scenario",
+                     .input_schema =
+                         Json{
+                             {"type", "object"},
+                             {"properties", Json::object()},
+                         },
+                     .streaming = false,
+                 })});
+        if (get_process_env("MCP_CONFORMANCE_SCENARIO")
+                .value_or(std::string()) ==
+            "elicitation-sep1034-client-defaults") {
+          tools.push_back(mcp::protocol::tool_definition_to_json(
+              mcp::protocol::ToolDefinition{
+                  .name = "test_elicitation_sep1034_defaults",
+                  .description =
+                      "Exercises the RMCP elicitation defaults client scenario",
+                  .input_schema =
+                      Json{
+                          {"type", "object"},
+                          {"properties", Json::object()},
+                      },
+                  .streaming = false,
+              }));
+        }
+        if (get_process_env("MCP_CONFORMANCE_SCENARIO")
+                .value_or(std::string()) == "rmcp-roots-sampling") {
+          tools.push_back(mcp::protocol::tool_definition_to_json(
+              mcp::protocol::ToolDefinition{
+                  .name = "test_roots_roundtrip",
+                  .description = "Exercises roots/list with an RMCP client",
+                  .input_schema =
+                      Json{{"type", "object"}, {"properties", Json::object()}},
+                  .streaming = false,
+              }));
+          tools.push_back(mcp::protocol::tool_definition_to_json(
+              mcp::protocol::ToolDefinition{
+                  .name = "test_sampling_roundtrip",
+                  .description =
+                      "Exercises sampling/createMessage with an RMCP client",
+                  .input_schema =
+                      Json{{"type", "object"}, {"properties", Json::object()}},
+                  .streaming = false,
+              }));
+        }
+        if (get_process_env("MCP_CONFORMANCE_SCENARIO")
+                .value_or(std::string()) == "rmcp-task-lifecycle") {
+          tools.push_back(mcp::protocol::tool_definition_to_json(
+              mcp::protocol::ToolDefinition{
+                  .name = "test_progress_roundtrip",
+                  .description =
+                      "Exercises notifications/progress with an RMCP client",
+                  .input_schema =
+                      Json{{"type", "object"}, {"properties", Json::object()}},
+                  .streaming = false,
+              }));
+        }
         const auto tool_response = mcp::protocol::make_response(
-            rpc_request->id,
-            Json{
-                {"tools",
-                 Json::array({
-                     mcp::protocol::tool_definition_to_json(
-                         mcp::protocol::ToolDefinition{
-                             .name = "test_simple_text",
-                             .description = "Returns simple text content",
-                             .input_schema =
-                                 Json{
-                                     {"type", "object"},
-                                     {"properties", Json::object()},
-                                 },
-                             .streaming = false,
-                         }),
-                     mcp::protocol::tool_definition_to_json(
-                         mcp::protocol::ToolDefinition{
-                             .name = "test_reconnection",
-                             .description =
-                                 "Exercises the RMCP SSE retry scenario",
-                             .input_schema =
-                                 Json{
-                                     {"type", "object"},
-                                     {"properties", Json::object()},
-                                 },
-                             .streaming = false,
-                         }),
-                 })},
-            });
+            rpc_request->id, Json{{"tools", std::move(tools)}});
         const auto serialized =
             mcp::protocol::serialize_response(tool_response);
         require(serialized.has_value(), "tools/list response should serialize");
@@ -431,7 +990,11 @@ class RunningInteropServer {
         const auto tool_name =
             rpc_request->params.at("name").get<std::string>();
         if (tool_name != "test_simple_text" &&
-            tool_name != "test_reconnection") {
+            tool_name != "test_reconnection" &&
+            tool_name != "test_elicitation_sep1034_defaults" &&
+            tool_name != "test_roots_roundtrip" &&
+            tool_name != "test_sampling_roundtrip" &&
+            tool_name != "test_progress_roundtrip") {
           const auto error_response = mcp::protocol::make_error_response(
               rpc_request->id,
               mcp::protocol::make_error(mcp::protocol::ErrorCode::ToolNotFound,
@@ -477,12 +1040,31 @@ class RunningInteropServer {
           return;
         }
 
+        if (tool_name == "test_elicitation_sep1034_defaults") {
+          write_elicitation_defaults_sse_response(rpc_request->id, response);
+          return;
+        }
+        if (tool_name == "test_roots_roundtrip") {
+          write_roots_roundtrip_sse_response(rpc_request->id, response);
+          return;
+        }
+        if (tool_name == "test_sampling_roundtrip") {
+          write_sampling_roundtrip_sse_response(rpc_request->id, response);
+          return;
+        }
+        if (tool_name == "test_progress_roundtrip") {
+          write_progress_roundtrip_sse_response(rpc_request->id, response);
+          return;
+        }
+
+        const auto result_text =
+            tool_name == "test_reconnection"
+                ? std::string("Reconnection scenario completed.")
+                : std::string("This is a simple text response for testing.");
         mcp::protocol::ToolResult result;
         result.content.push_back(mcp::protocol::ContentBlock{
             .type = "text",
-            .text = tool_name == "test_reconnection"
-                        ? "Reconnection scenario completed."
-                        : "This is a simple text response for testing.",
+            .text = result_text,
             .data = Json::object(),
         });
         const auto call_response = mcp::protocol::make_response(
@@ -495,6 +1077,39 @@ class RunningInteropServer {
       }
 
       if (rpc_request->method == mcp::protocol::PromptsListMethod) {
+        if (is_pagination_scenario()) {
+          const auto cursor = pagination_cursor(rpc_request->params);
+          Json prompts = Json::array();
+          Json result;
+          if (!cursor.has_value()) {
+            prompts.push_back(
+                mcp::protocol::prompt_to_json(mcp::protocol::Prompt{
+                    .name = "page-prompt-one",
+                    .description = "First paginated prompt",
+                }));
+            result = Json{{"prompts", std::move(prompts)},
+                          {"nextCursor", "prompts-page-2"}};
+          } else if (*cursor == "prompts-page-2") {
+            prompts.push_back(
+                mcp::protocol::prompt_to_json(mcp::protocol::Prompt{
+                    .name = "page-prompt-two",
+                    .description = "Second paginated prompt",
+                }));
+            result = Json{{"prompts", std::move(prompts)}};
+          } else {
+            write_invalid_cursor_response(rpc_request->id, response);
+            return;
+          }
+          const auto prompt_response =
+              mcp::protocol::make_response(rpc_request->id, std::move(result));
+          const auto serialized =
+              mcp::protocol::serialize_response(prompt_response);
+          require(serialized.has_value(),
+                  "paginated prompts/list response should serialize");
+          response.set_content(*serialized, "application/json");
+          return;
+        }
+
         const auto list_response = mcp::protocol::make_response(
             rpc_request->id,
             mcp::protocol::prompts_list_result_to_json(
@@ -564,6 +1179,43 @@ class RunningInteropServer {
       }
 
       if (rpc_request->method == mcp::protocol::ResourcesListMethod) {
+        if (is_pagination_scenario()) {
+          const auto cursor = pagination_cursor(rpc_request->params);
+          Json resources = Json::array();
+          Json result;
+          if (!cursor.has_value()) {
+            resources.push_back(
+                mcp::protocol::resource_to_json(mcp::protocol::Resource{
+                    .uri = "file:///page-one",
+                    .name = "page-one",
+                    .description = "First paginated resource",
+                    .mime_type = "text/plain",
+                }));
+            result = Json{{"resources", std::move(resources)},
+                          {"nextCursor", "resources-page-2"}};
+          } else if (*cursor == "resources-page-2") {
+            resources.push_back(
+                mcp::protocol::resource_to_json(mcp::protocol::Resource{
+                    .uri = "file:///page-two",
+                    .name = "page-two",
+                    .description = "Second paginated resource",
+                    .mime_type = "text/plain",
+                }));
+            result = Json{{"resources", std::move(resources)}};
+          } else {
+            write_invalid_cursor_response(rpc_request->id, response);
+            return;
+          }
+          const auto resource_response =
+              mcp::protocol::make_response(rpc_request->id, std::move(result));
+          const auto serialized =
+              mcp::protocol::serialize_response(resource_response);
+          require(serialized.has_value(),
+                  "paginated resources/list response should serialize");
+          response.set_content(*serialized, "application/json");
+          return;
+        }
+
         const auto list_response = mcp::protocol::make_response(
             rpc_request->id,
             mcp::protocol::resources_list_result_to_json(
@@ -625,6 +1277,43 @@ class RunningInteropServer {
       }
 
       if (rpc_request->method == mcp::protocol::ResourcesTemplatesListMethod) {
+        if (is_pagination_scenario()) {
+          const auto cursor = pagination_cursor(rpc_request->params);
+          Json templates = Json::array();
+          Json result;
+          if (!cursor.has_value()) {
+            templates.push_back(mcp::protocol::resource_template_to_json(
+                mcp::protocol::ResourceTemplate{
+                    .uri_template = "file:///page-one/{name}",
+                    .name = "page-template-one",
+                    .description = "First paginated resource template",
+                    .mime_type = "text/plain",
+                }));
+            result = Json{{"resourceTemplates", std::move(templates)},
+                          {"nextCursor", "templates-page-2"}};
+          } else if (*cursor == "templates-page-2") {
+            templates.push_back(mcp::protocol::resource_template_to_json(
+                mcp::protocol::ResourceTemplate{
+                    .uri_template = "file:///page-two/{name}",
+                    .name = "page-template-two",
+                    .description = "Second paginated resource template",
+                    .mime_type = "text/plain",
+                }));
+            result = Json{{"resourceTemplates", std::move(templates)}};
+          } else {
+            write_invalid_cursor_response(rpc_request->id, response);
+            return;
+          }
+          const auto template_response =
+              mcp::protocol::make_response(rpc_request->id, std::move(result));
+          const auto serialized =
+              mcp::protocol::serialize_response(template_response);
+          require(serialized.has_value(),
+                  "paginated resource templates response should serialize");
+          response.set_content(*serialized, "application/json");
+          return;
+        }
+
         const auto templates_response = mcp::protocol::make_response(
             rpc_request->id,
             mcp::protocol::resource_templates_list_result_to_json(
@@ -829,6 +1518,36 @@ class RunningInteropServer {
       }
 
       if (rpc_request->method == mcp::protocol::TasksListMethod) {
+        if (is_pagination_scenario()) {
+          const auto cursor = pagination_cursor(rpc_request->params);
+          Json tasks = Json::array();
+          Json result;
+          if (!cursor.has_value()) {
+            tasks.push_back(mcp::protocol::task_to_json(
+                make_task("page-task-one", mcp::protocol::TaskStatus::Working,
+                          "first paginated task")));
+            result = Json{{"tasks", std::move(tasks)},
+                          {"nextCursor", "tasks-page-2"},
+                          {"total", 2}};
+          } else if (*cursor == "tasks-page-2") {
+            tasks.push_back(mcp::protocol::task_to_json(
+                make_task("page-task-two", mcp::protocol::TaskStatus::Completed,
+                          "second paginated task")));
+            result = Json{{"tasks", std::move(tasks)}, {"total", 2}};
+          } else {
+            write_invalid_cursor_response(rpc_request->id, response);
+            return;
+          }
+          const auto task_response =
+              mcp::protocol::make_response(rpc_request->id, std::move(result));
+          const auto serialized =
+              mcp::protocol::serialize_response(task_response);
+          require(serialized.has_value(),
+                  "paginated tasks/list response should serialize");
+          response.set_content(*serialized, "application/json");
+          return;
+        }
+
         const auto task_list_params_json = rpc_request->params.is_null()
                                                ? Json::object()
                                                : rpc_request->params;
@@ -1042,6 +1761,7 @@ class RunningInteropServer {
                 sink.done();
                 return false;
               }
+
               std::this_thread::sleep_for(std::chrono::milliseconds(100));
             }
             sink.done();
@@ -1073,6 +1793,7 @@ class RunningInteropServer {
 
   ~RunningInteropServer() {
     stopped_.store(true);
+    cv_.notify_all();
     server_.stop();
     if (thread_.joinable()) {
       thread_.join();
@@ -1082,13 +1803,556 @@ class RunningInteropServer {
   std::uint16_t port() const { return port_; }
 
  private:
+  std::string make_elicitation_defaults_request_payload() {
+    const auto request = mcp::protocol::make_request(
+        std::string(mcp::protocol::ElicitationCreateMethod),
+        std::string(kElicitationDefaultsRequestId),
+        Json{
+            {"mode", "form"},
+            {"message", "Please provide values (all have defaults)"},
+            {"requestedSchema",
+             Json{
+                 {"type", "object"},
+                 {"properties",
+                  Json{
+                      {"name", Json{{"type", "string"},
+                                    {"description", "User's name"},
+                                    {"default", "John Doe"}}},
+                      {"age", Json{{"type", "integer"},
+                                   {"description", "User's age"},
+                                   {"default", 30}}},
+                      {"score", Json{{"type", "number"},
+                                     {"description", "User's score"},
+                                     {"default", 95.5}}},
+                      {"status",
+                       Json{{"type", "string"},
+                            {"description", "User's status"},
+                            {"enum",
+                             Json::array({"active", "inactive", "pending"})},
+                            {"default", "active"}}},
+                      {"verified",
+                       Json{{"type", "boolean"},
+                            {"description", "Whether user is verified"},
+                            {"default", true}}},
+                  }},
+             }},
+        });
+    const auto serialized = mcp::protocol::serialize_request(request);
+    require(serialized.has_value(),
+            "elicitation/create request should serialize");
+    return *serialized;
+  }
+
+  std::string wait_for_elicitation_defaults_content() {
+    std::optional<mcp::protocol::JsonRpcResponse> response;
+    {
+      std::unique_lock lock(mutex_);
+      const bool received =
+          cv_.wait_for(lock, std::chrono::seconds(10), [this]() {
+            return stopped_.load() ||
+                   elicitation_defaults_response_.has_value();
+          });
+      require(received && elicitation_defaults_response_.has_value(),
+              "RMCP client should respond to elicitation/create");
+      response = elicitation_defaults_response_;
+      elicitation_defaults_response_.reset();
+    }
+
+    require(response->has_result(),
+            "elicitation/create response should contain a result");
+    const auto result =
+        mcp::protocol::create_elicitation_result_from_json(*response->result);
+    require(result.has_value(),
+            "elicitation/create response result should parse");
+    require(result->action == mcp::protocol::ElicitationAction::Accept,
+            "elicitation/create response should accept defaults");
+    require(result->content.has_value() && result->content->is_object(),
+            "elicitation/create response should include content");
+    const auto& content = *result->content;
+    require(content.value("name", std::string()) == "John Doe",
+            "elicitation default name mismatch");
+    require(content.value("age", 0) == 30, "elicitation default age mismatch");
+    require(content.value("score", 0.0) == 95.5,
+            "elicitation default score mismatch");
+    require(content.value("status", std::string()) == "active",
+            "elicitation default status mismatch");
+    require(content.value("verified", false),
+            "elicitation default verified mismatch");
+
+    return "Elicitation defaults scenario completed with content: " +
+           content.dump();
+  }
+
+  std::string make_roots_roundtrip_request_payload() {
+    const auto request =
+        mcp::protocol::make_request(std::string(mcp::protocol::RootsListMethod),
+                                    std::string(kRootsRoundTripRequestId));
+    const auto serialized = mcp::protocol::serialize_request(request);
+    require(serialized.has_value(), "roots/list request should serialize");
+    return *serialized;
+  }
+
+  std::string wait_for_roots_roundtrip_content() {
+    std::optional<mcp::protocol::JsonRpcResponse> response;
+    {
+      std::unique_lock lock(mutex_);
+      const bool received =
+          cv_.wait_for(lock, std::chrono::seconds(10), [this]() {
+            return stopped_.load() || roots_roundtrip_response_.has_value();
+          });
+      require(received && roots_roundtrip_response_.has_value(),
+              "RMCP client should respond to roots/list");
+      response = roots_roundtrip_response_;
+      roots_roundtrip_response_.reset();
+    }
+
+    require(response->has_result(),
+            "roots/list response should contain a result");
+    const auto result =
+        mcp::protocol::roots_list_result_from_json(*response->result);
+    require(result.has_value(), "roots/list response result should parse");
+    require(result->roots.size() == 1, "roots/list should return one root");
+    require(result->roots.front().uri == "file:///rmcp-root",
+            "roots/list RMCP root uri mismatch");
+    require(result->roots.front().name == "rmcp-root",
+            "roots/list RMCP root name mismatch");
+
+    return "Roots round-trip completed for " + result->roots.front().uri;
+  }
+
+  std::string make_sampling_roundtrip_request_payload() {
+    mcp::protocol::CreateMessageParams params;
+    params.messages.push_back(mcp::protocol::SamplingMessage::text(
+        "user", "Describe the RMCP roots fixture"));
+    params.max_tokens = 64;
+    const auto request = mcp::protocol::make_request(
+        std::string(mcp::protocol::SamplingCreateMessageMethod),
+        std::string(kSamplingRoundTripRequestId),
+        mcp::protocol::create_message_params_to_json(params));
+    const auto serialized = mcp::protocol::serialize_request(request);
+    require(serialized.has_value(),
+            "sampling/createMessage request should serialize");
+    return *serialized;
+  }
+
+  std::string wait_for_sampling_roundtrip_content() {
+    std::optional<mcp::protocol::JsonRpcResponse> response;
+    {
+      std::unique_lock lock(mutex_);
+      const bool received =
+          cv_.wait_for(lock, std::chrono::seconds(10), [this]() {
+            return stopped_.load() || sampling_roundtrip_response_.has_value();
+          });
+      require(received && sampling_roundtrip_response_.has_value(),
+              "RMCP client should respond to sampling/createMessage");
+      response = sampling_roundtrip_response_;
+      sampling_roundtrip_response_.reset();
+    }
+
+    require(response->has_result(),
+            "sampling/createMessage response should contain a result");
+    const auto result =
+        mcp::protocol::create_message_result_from_json(*response->result);
+    require(result.has_value(),
+            "sampling/createMessage response result should parse");
+    require(result->model == "rmcp-fixture-model",
+            "sampling/createMessage RMCP model mismatch");
+    require(
+        result->content.text == "RMCP sampled: Describe the RMCP roots fixture",
+        "sampling/createMessage RMCP text mismatch");
+
+    return "Sampling round-trip completed with model " + result->model;
+  }
+
+  void write_server_request_tool_response(
+      mcp::protocol::RequestId tool_call_id, std::string request_payload,
+      std::function<std::string()> wait_for_result,
+      httplib::Response& response) {
+    response.set_chunked_content_provider(
+        "text/event-stream",
+        [tool_call_id = std::move(tool_call_id),
+         request_payload = std::move(request_payload),
+         wait_for_result = std::move(wait_for_result), sent_request = false,
+         sent_response = false](std::size_t, httplib::DataSink& sink) mutable {
+          if (!sent_request) {
+            const auto event = make_sse_message_event(1, request_payload);
+            if (!sink.write(event.data(), event.size())) {
+              sink.done();
+              return false;
+            }
+            sent_request = true;
+            return true;
+          }
+
+          if (!sent_response) {
+            mcp::protocol::ToolResult result;
+            result.content.push_back(mcp::protocol::ContentBlock{
+                .type = "text",
+                .text = wait_for_result(),
+                .data = Json::object(),
+            });
+            const auto tool_response = mcp::protocol::make_response(
+                tool_call_id, mcp::protocol::tool_result_to_json(result));
+            const auto serialized =
+                mcp::protocol::serialize_response(tool_response);
+            require(serialized.has_value(),
+                    "server-request tools/call response should serialize");
+            const auto event = make_sse_message_event(2, *serialized);
+            if (!sink.write(event.data(), event.size())) {
+              sink.done();
+              return false;
+            }
+            sent_response = true;
+          }
+
+          sink.done();
+          return false;
+        });
+  }
+
+  void write_roots_roundtrip_sse_response(mcp::protocol::RequestId tool_call_id,
+                                          httplib::Response& response) {
+    {
+      std::lock_guard lock(mutex_);
+      roots_roundtrip_response_.reset();
+    }
+    write_server_request_tool_response(
+        std::move(tool_call_id), make_roots_roundtrip_request_payload(),
+        [this]() { return wait_for_roots_roundtrip_content(); }, response);
+  }
+
+  void write_sampling_roundtrip_sse_response(
+      mcp::protocol::RequestId tool_call_id, httplib::Response& response) {
+    {
+      std::lock_guard lock(mutex_);
+      sampling_roundtrip_response_.reset();
+    }
+    write_server_request_tool_response(
+        std::move(tool_call_id), make_sampling_roundtrip_request_payload(),
+        [this]() { return wait_for_sampling_roundtrip_content(); }, response);
+  }
+
+  void write_progress_roundtrip_sse_response(
+      mcp::protocol::RequestId tool_call_id, httplib::Response& response) {
+    response.set_chunked_content_provider(
+        "text/event-stream",
+        [tool_call_id = std::move(tool_call_id), sent_progress = false,
+         sent_response = false](std::size_t, httplib::DataSink& sink) mutable {
+          if (!sent_progress) {
+            const auto notification = mcp::protocol::make_notification(
+                std::string(mcp::protocol::ProgressNotificationMethod),
+                mcp::protocol::progress_notification_params_to_json(
+                    mcp::protocol::ProgressNotificationParams{
+                        .progress_token = std::string("rmcp-progress-token"),
+                        .progress = 0.5,
+                        .total = 1.0,
+                        .message = "rmcp progress",
+                    }));
+            const auto serialized =
+                mcp::protocol::serialize_notification(notification);
+            require(serialized.has_value(),
+                    "progress notification should serialize");
+            const auto event = make_sse_message_event(1, *serialized);
+            if (!sink.write(event.data(), event.size())) {
+              sink.done();
+              return false;
+            }
+            sent_progress = true;
+            return true;
+          }
+
+          if (!sent_response) {
+            mcp::protocol::ToolResult result;
+            result.content.push_back(mcp::protocol::ContentBlock{
+                .type = "text",
+                .text = "Progress round-trip completed",
+                .data = Json::object(),
+            });
+            const auto tool_response = mcp::protocol::make_response(
+                tool_call_id, mcp::protocol::tool_result_to_json(result));
+            const auto serialized =
+                mcp::protocol::serialize_response(tool_response);
+            require(serialized.has_value(),
+                    "progress tools/call response should serialize");
+            const auto event = make_sse_message_event(2, *serialized);
+            if (!sink.write(event.data(), event.size())) {
+              sink.done();
+              return false;
+            }
+            sent_response = true;
+          }
+
+          sink.done();
+          return false;
+        });
+  }
+
+  void write_elicitation_defaults_sse_response(
+      mcp::protocol::RequestId tool_call_id, httplib::Response& response) {
+    const auto request_payload = make_elicitation_defaults_request_payload();
+    {
+      std::lock_guard lock(mutex_);
+      elicitation_defaults_response_.reset();
+    }
+    response.set_chunked_content_provider(
+        "text/event-stream",
+        [this, tool_call_id = std::move(tool_call_id), request_payload,
+         sent_request = false,
+         sent_response = false](std::size_t, httplib::DataSink& sink) mutable {
+          if (!sent_request) {
+            const auto event = make_sse_message_event(1, request_payload);
+            if (!sink.write(event.data(), event.size())) {
+              sink.done();
+              return false;
+            }
+            sent_request = true;
+            return true;
+          }
+
+          if (!sent_response) {
+            const auto result_text = wait_for_elicitation_defaults_content();
+            mcp::protocol::ToolResult result;
+            result.content.push_back(mcp::protocol::ContentBlock{
+                .type = "text",
+                .text = result_text,
+                .data = Json::object(),
+            });
+            const auto tool_response = mcp::protocol::make_response(
+                tool_call_id, mcp::protocol::tool_result_to_json(result));
+            const auto serialized =
+                mcp::protocol::serialize_response(tool_response);
+            require(serialized.has_value(),
+                    "elicitation tools/call response should serialize");
+            const auto event = make_sse_message_event(2, *serialized);
+            if (!sink.write(event.data(), event.size())) {
+              sink.done();
+              return false;
+            }
+            sent_response = true;
+          }
+
+          sink.done();
+          return false;
+        });
+  }
+
   httplib::Server server_;
   std::thread thread_;
   std::atomic<bool> stopped_{false};
+  std::condition_variable cv_;
   mutable std::mutex mutex_;
   std::string session_id_;
+  std::optional<mcp::protocol::JsonRpcResponse> elicitation_defaults_response_;
+  std::optional<mcp::protocol::JsonRpcResponse> roots_roundtrip_response_;
+  std::optional<mcp::protocol::JsonRpcResponse> sampling_roundtrip_response_;
   bool task_cancelled_ = false;
   std::uint16_t port_ = 0;
+};
+
+mcp::core::Error canonical_invalid_cursor_error(std::string family) {
+  return mcp::core::Error{
+      static_cast<int>(mcp::protocol::ErrorCode::InvalidParams),
+      "invalid canonical pagination cursor", std::move(family), "protocol"};
+}
+
+mcp::protocol::ToolDefinition canonical_tool(std::string name,
+                                             std::string description) {
+  return mcp::protocol::ToolDefinition{
+      .name = std::move(name),
+      .description = std::move(description),
+      .input_schema = Json{{"type", "object"}, {"properties", Json::object()}},
+  };
+}
+
+bool wait_for_canonical_http_server(std::uint16_t port) {
+  for (int attempt = 0; attempt < 200; ++attempt) {
+    httplib::Client client("127.0.0.1", port);
+    client.set_connection_timeout(0, 100000);
+    client.set_read_timeout(1, 0);
+    const auto response =
+        client.Get("/mcp", httplib::Headers{{"Accept", "text/event-stream"}});
+    if (response != nullptr) {
+      return true;
+    }
+    std::this_thread::sleep_for(std::chrono::milliseconds(50));
+  }
+  return false;
+}
+
+class RunningCanonicalServerPeerHttpServer {
+ public:
+  RunningCanonicalServerPeerHttpServer()
+      : port_(static_cast<std::uint16_t>(choose_loopback_port() + 37)) {
+    auto peer =
+        mcp::ServerPeer::builder()
+            .name("cxxmcp-canonical-rmcp-interop")
+            .version("1")
+            .tool(canonical_tool("page-tool-one", "First paginated tool"),
+                  [](const mcp::server::ToolContext&) {
+                    mcp::protocol::ToolResult result;
+                    result.content.push_back(mcp::protocol::ContentBlock{
+                        .type = "text",
+                        .text = "canonical page tool one",
+                        .data = Json::object(),
+                    });
+                    return result;
+                  })
+            .on_tools_list(
+                [](const mcp::protocol::PaginatedRequestParams& params,
+                   const mcp::server::SessionContext&)
+                    -> mcp::core::Result<mcp::protocol::ToolsListResult> {
+                  mcp::protocol::ToolsListResult result;
+                  if (!params.cursor.has_value()) {
+                    result.tools.push_back(canonical_tool(
+                        "page-tool-one", "First paginated tool"));
+                    result.next_cursor = "tools-page-2";
+                    return mcp::core::Result<mcp::protocol::ToolsListResult>{
+                        result};
+                  }
+                  if (*params.cursor == "tools-page-2") {
+                    result.tools.push_back(canonical_tool(
+                        "page-tool-two", "Second paginated tool"));
+                    return mcp::core::Result<mcp::protocol::ToolsListResult>{
+                        result};
+                  }
+                  return mcp::core::unexpected(
+                      canonical_invalid_cursor_error("tools"));
+                })
+            .on_prompts_list(
+                [](const mcp::protocol::PaginatedRequestParams& params,
+                   const mcp::server::SessionContext&)
+                    -> mcp::core::Result<mcp::protocol::PromptsListResult> {
+                  mcp::protocol::PromptsListResult result;
+                  if (!params.cursor.has_value()) {
+                    result.prompts.push_back(mcp::protocol::Prompt{
+                        .name = "page-prompt-one",
+                        .description = "First paginated prompt",
+                    });
+                    result.next_cursor = "prompts-page-2";
+                    return mcp::core::Result<mcp::protocol::PromptsListResult>{
+                        result};
+                  }
+                  if (*params.cursor == "prompts-page-2") {
+                    result.prompts.push_back(mcp::protocol::Prompt{
+                        .name = "page-prompt-two",
+                        .description = "Second paginated prompt",
+                    });
+                    return mcp::core::Result<mcp::protocol::PromptsListResult>{
+                        result};
+                  }
+                  return mcp::core::unexpected(
+                      canonical_invalid_cursor_error("prompts"));
+                })
+            .on_resources_list([](const mcp::protocol::PaginatedRequestParams&
+                                      params,
+                                  const mcp::server::SessionContext&)
+                                   -> mcp::core::Result<
+                                       mcp::protocol::ResourcesListResult> {
+              mcp::protocol::ResourcesListResult result;
+              if (!params.cursor.has_value()) {
+                result.resources.push_back(mcp::protocol::Resource{
+                    .uri = "file:///page-one",
+                    .name = "page-resource-one",
+                    .description = "First paginated resource",
+                });
+                result.next_cursor = "resources-page-2";
+                return mcp::core::Result<mcp::protocol::ResourcesListResult>{
+                    result};
+              }
+              if (*params.cursor == "resources-page-2") {
+                result.resources.push_back(mcp::protocol::Resource{
+                    .uri = "file:///page-two",
+                    .name = "page-resource-two",
+                    .description = "Second paginated resource",
+                });
+                return mcp::core::Result<mcp::protocol::ResourcesListResult>{
+                    result};
+              }
+              return mcp::core::unexpected(
+                  canonical_invalid_cursor_error("resources"));
+            })
+            .on_resource_templates_list(
+                [](const mcp::protocol::PaginatedRequestParams& params,
+                   const mcp::server::SessionContext&)
+                    -> mcp::core::Result<
+                        mcp::protocol::ResourceTemplatesListResult> {
+                  mcp::protocol::ResourceTemplatesListResult result;
+                  if (!params.cursor.has_value()) {
+                    result.resource_templates.push_back(
+                        mcp::protocol::ResourceTemplate{
+                            .uri_template = "file:///page-one/{id}",
+                            .name = "page-template-one",
+                            .description = "First paginated resource template",
+                        });
+                    result.next_cursor = "templates-page-2";
+                    return mcp::core::Result<
+                        mcp::protocol::ResourceTemplatesListResult>{result};
+                  }
+                  if (*params.cursor == "templates-page-2") {
+                    result.resource_templates.push_back(
+                        mcp::protocol::ResourceTemplate{
+                            .uri_template = "file:///page-two/{id}",
+                            .name = "page-template-two",
+                            .description = "Second paginated resource template",
+                        });
+                    return mcp::core::Result<
+                        mcp::protocol::ResourceTemplatesListResult>{result};
+                  }
+                  return mcp::core::unexpected(
+                      canonical_invalid_cursor_error("templates"));
+                })
+            .on_task_list(
+                [](const mcp::protocol::TaskListParams& params,
+                   const mcp::server::SessionContext&)
+                    -> mcp::core::Result<mcp::protocol::TaskListResult> {
+                  mcp::protocol::TaskListResult result;
+                  if (!params.cursor.has_value()) {
+                    result.tasks.push_back(make_task(
+                        "page-task-one", mcp::protocol::TaskStatus::Working,
+                        "canonical task page one"));
+                    result.next_cursor = "tasks-page-2";
+                    return mcp::core::Result<mcp::protocol::TaskListResult>{
+                        result};
+                  }
+                  if (*params.cursor == "tasks-page-2") {
+                    result.tasks.push_back(make_task(
+                        "page-task-two", mcp::protocol::TaskStatus::Completed,
+                        "canonical task page two"));
+                    result.total = 2;
+                    return mcp::core::Result<mcp::protocol::TaskListResult>{
+                        result};
+                  }
+                  return mcp::core::unexpected(
+                      canonical_invalid_cursor_error("tasks"));
+                })
+            .build();
+    require(peer.has_value(), "canonical ServerPeer should build");
+
+    auto transport =
+        std::make_unique<mcp::transport::StreamableHttpServerTransport>(
+            mcp::transport::StreamableHttpServerTransportOptions{
+                .listen_host = "127.0.0.1",
+                .listen_port = port_,
+                .path = "/mcp",
+            });
+    auto running = mcp::serve(std::move(*peer), std::move(transport));
+    require(running.has_value(), "canonical ServerPeer service should start");
+    running_.emplace(std::move(*running));
+    require(wait_for_canonical_http_server(port_),
+            "canonical ServerPeer HTTP endpoint should become reachable");
+  }
+
+  ~RunningCanonicalServerPeerHttpServer() {
+    if (running_.has_value()) {
+      (void)running_->stop();
+    }
+  }
+
+  std::uint16_t port() const { return port_; }
+
+ private:
+  std::uint16_t port_ = 0;
+  std::optional<mcp::RunningService<mcp::RoleServer>> running_;
 };
 
 Json rpc_request(std::int64_t id, std::string method,
@@ -1125,13 +2389,17 @@ httplib::Result post_json_rpc_with_session(std::uint16_t port,
                                            const Json& request,
                                            const std::string& session_id) {
   httplib::Client client("127.0.0.1", port);
-  return client.Post("/mcp",
-                     httplib::Headers{
-                         {"Accept", "application/json"},
-                         {"Content-Type", "application/json"},
-                         {"Mcp-Session-Id", session_id},
-                     },
-                     request.dump(), "application/json");
+  httplib::Headers headers{
+      {"Accept", "application/json"},
+      {"Content-Type", "application/json"},
+      {"MCP-Protocol-Version", std::string(mcp::protocol::McpProtocolVersion)},
+      {"Mcp-Session-Id", session_id},
+  };
+  if (request.contains("method") && request.at("method").is_string()) {
+    headers.emplace("Mcp-Method", request.at("method").get<std::string>());
+  }
+  return client.Post("/mcp", std::move(headers), request.dump(),
+                     "application/json");
 }
 
 void post_json_rpc_notification(std::uint16_t port, const Json& notification) {
@@ -1141,6 +2409,17 @@ void post_json_rpc_notification(std::uint16_t port, const Json& notification) {
   require(response != nullptr, "HTTP JSON-RPC notification should respond");
   require(response->status == 202,
           "HTTP JSON-RPC notification response status mismatch");
+}
+
+void post_json_rpc_initialized_notification(std::uint16_t port,
+                                            const std::string& session_id) {
+  const auto initialized = post_json_rpc_with_session(
+      port, rpc_notification(std::string(mcp::protocol::InitializedMethod)),
+      session_id);
+  require(initialized != nullptr,
+          "HTTP initialized notification should receive a response");
+  require(initialized->status == 202,
+          "HTTP initialized notification response status mismatch");
 }
 
 Json expect_result(const Json& response) {
@@ -1188,6 +2467,7 @@ void test_cxxmcp_streamable_http_session_stale_matrix() {
           "initialize should issue a session id");
   const auto session_id = initialized->get_header_value("Mcp-Session-Id");
   require(!session_id.empty(), "session id must not be empty");
+  post_json_rpc_initialized_notification(port, session_id);
 
   httplib::Client wrong_get("127.0.0.1", port);
   wrong_get.set_read_timeout(std::chrono::milliseconds(100));
@@ -1259,7 +2539,7 @@ void test_cxxmcp_streamable_http_interop_matrix_core_methods() {
               port,
               rpc_request(2, std::string(mcp::protocol::ToolsListMethod))))
           .at("tools");
-  require(tools.size() == 2, "tools/list should expose two tools");
+  require(tools.size() == 2, "tools/list should expose two default tools");
   require(tools.at(0).at("name") == "test_simple_text",
           "tools/list tool name mismatch");
 
@@ -1521,20 +2801,388 @@ void test_cxxmcp_streamable_http_interop_matrix_core_methods() {
   expect_error(post_json_rpc(port, rpc_request(26, "experimental/unknown",
                                                Json::object())),
                static_cast<int>(mcp::protocol::ErrorCode::MethodNotFound));
-  const auto fallback_init = expect_result(post_json_rpc(
-      port, rpc_request(27, std::string(mcp::protocol::InitializeMethod),
-                        Json{{"protocolVersion", "1900-01-01"},
-                             {"capabilities", Json::object()},
-                             {"clientInfo", Json{{"name", "old-client"},
-                                                 {"version", "1"}}}})));
-  require(fallback_init.at("protocolVersion") ==
-              std::string(mcp::protocol::McpProtocolVersion),
-          "unknown initialize protocolVersion should negotiate to latest");
+  expect_error(
+      post_json_rpc(
+          port, rpc_request(27, std::string(mcp::protocol::InitializeMethod),
+                            Json{{"protocolVersion", "1900-01-01"},
+                                 {"capabilities", Json::object()},
+                                 {"clientInfo", Json{{"name", "old-client"},
+                                                     {"version", "1"}}}})),
+      static_cast<int>(mcp::protocol::ErrorCode::InvalidParams));
 
   httplib::Client client("127.0.0.1", port);
   const auto malformed = client.Post("/mcp", "{not json", "application/json");
   require(malformed != nullptr, "malformed POST should receive a response");
   require(malformed->status == 400, "malformed POST should fail with HTTP 400");
+}
+
+void test_cxxmcp_client_against_rmcp_conformance_http_server() {
+  const auto port = choose_loopback_port();
+  RunningRmcpConformanceServer server(port);
+
+  mcp::client::Client::StreamableHttpEndpoint endpoint;
+  endpoint.uri = "http://127.0.0.1:" + std::to_string(server.port()) + "/mcp";
+  endpoint.timeout = std::chrono::seconds(5);
+
+  auto client =
+      mcp::client::Client::connect_streamable_http(std::move(endpoint));
+  const auto initialized =
+      client.initialize("cxxmcp-rmcp-conformance-client", "1");
+  require(initialized.has_value(),
+          "cxxmcp client should initialize RMCP conformance server");
+  require(initialized->at("serverInfo").at("name") == "rust-conformance-server",
+          "RMCP serverInfo name mismatch");
+  require(client.notify_initialized().has_value(),
+          "cxxmcp client should send initialized notification");
+
+  const auto tools = client.list_tools();
+  require(tools.has_value(), "cxxmcp client should list RMCP tools");
+  require(std::any_of(tools->begin(), tools->end(),
+                      [](const mcp::protocol::ToolDefinition& tool) {
+                        return tool.name == "test_simple_text";
+                      }),
+          "RMCP tools should include test_simple_text");
+  require(std::any_of(tools->begin(), tools->end(),
+                      [](const mcp::protocol::ToolDefinition& tool) {
+                        return tool.name == "test_elicitation_sep1034_defaults";
+                      }),
+          "RMCP tools should include elicitation defaults tool");
+
+  mcp::protocol::ToolCall simple_call;
+  simple_call.name = "test_simple_text";
+  const auto simple_result = client.call_tool(simple_call);
+  require(simple_result.has_value(),
+          "cxxmcp client should call RMCP simple tool");
+  require(!simple_result->content.empty(),
+          "RMCP simple tool should return content");
+  require(simple_result->content.front().text ==
+              "This is a simple text response for testing.",
+          "RMCP simple tool text mismatch");
+
+  const auto resources = client.list_resources();
+  require(resources.has_value(), "cxxmcp client should list RMCP resources");
+  require(std::any_of(resources->begin(), resources->end(),
+                      [](const mcp::protocol::Resource& resource) {
+                        return resource.uri == "test://static-text";
+                      }),
+          "RMCP resources should include static text resource");
+  const auto resource = client.read_resource("test://static-text");
+  require(resource.has_value(), "cxxmcp client should read RMCP resource");
+  require(!resource->contents.empty(),
+          "RMCP resource read should return content");
+  require(resource->contents.front().text ==
+              "This is the content of the static text resource.",
+          "RMCP resource text mismatch");
+
+  const auto templates = client.list_resource_templates();
+  require(templates.has_value(),
+          "cxxmcp client should list RMCP resource templates");
+  require(!templates->empty(), "RMCP should expose resource templates");
+
+  const auto prompts = client.list_prompts();
+  require(prompts.has_value(), "cxxmcp client should list RMCP prompts");
+  require(std::any_of(prompts->begin(), prompts->end(),
+                      [](const mcp::protocol::Prompt& prompt) {
+                        return prompt.name == "test_prompt_with_arguments";
+                      }),
+          "RMCP prompts should include argument prompt");
+  const auto prompt =
+      client.get_prompt("test_prompt_with_arguments",
+                        Json{{"name", "Alice"}, {"style", "formal"}});
+  require(prompt.has_value(), "cxxmcp client should get RMCP prompt");
+  require(!prompt->messages.empty(), "RMCP prompt should return messages");
+  require(
+      prompt->messages.front().content.text.find("Alice") != std::string::npos,
+      "RMCP prompt should include rendered argument");
+
+  mcp::protocol::ToolCall image_call;
+  image_call.name = "test_image_content";
+  const auto image_result = client.call_tool(image_call);
+  require(image_result.has_value(),
+          "cxxmcp client should call RMCP image tool");
+  require(image_result->content.size() == 1 &&
+              image_result->content.front().type == "image",
+          "RMCP image tool should return image content");
+  require(image_result->content.front().mime_type == "image/png",
+          "RMCP image content mime mismatch");
+
+  mcp::protocol::ToolCall audio_call;
+  audio_call.name = "test_audio_content";
+  const auto audio_result = client.call_tool(audio_call);
+  require(audio_result.has_value(),
+          "cxxmcp client should call RMCP audio tool");
+  require(audio_result->content.size() == 1 &&
+              audio_result->content.front().type == "audio",
+          "RMCP audio tool should return audio content");
+  require(audio_result->content.front().mime_type == "audio/wav",
+          "RMCP audio content mime mismatch");
+
+  mcp::protocol::ToolCall embedded_resource_call;
+  embedded_resource_call.name = "test_embedded_resource";
+  const auto embedded_resource_result =
+      client.call_tool(embedded_resource_call);
+  require(embedded_resource_result.has_value(),
+          "cxxmcp client should call RMCP embedded resource tool");
+  require(embedded_resource_result->content.size() == 1 &&
+              embedded_resource_result->content.front().resource.has_value(),
+          "RMCP embedded resource tool should return resource content");
+  require(embedded_resource_result->content.front().resource->uri ==
+              "test://embedded-resource",
+          "RMCP embedded resource uri mismatch");
+
+  mcp::protocol::ToolCall multiple_content_call;
+  multiple_content_call.name = "test_multiple_content_types";
+  const auto multiple_content_result = client.call_tool(multiple_content_call);
+  require(multiple_content_result.has_value(),
+          "cxxmcp client should call RMCP multiple-content tool");
+  require(multiple_content_result->content.size() == 3,
+          "RMCP multiple-content tool should return all content blocks");
+
+  mcp::protocol::ToolCall error_call;
+  error_call.name = "test_error_handling";
+  const auto error_result = client.call_tool(error_call);
+  require(error_result.has_value(),
+          "cxxmcp client should receive RMCP error tool result");
+  require(error_result->is_error.value_or(false),
+          "RMCP error tool should be represented as tool result is_error");
+
+  std::atomic<int> progress_notifications{0};
+  client.on_progress(
+      [&progress_notifications](
+          const mcp::protocol::ProgressNotificationParams& params) {
+        if (params.progress_token ==
+            mcp::protocol::ProgressToken{std::string("cxxmcp-progress")}) {
+          progress_notifications.fetch_add(1, std::memory_order_relaxed);
+        }
+      });
+  mcp::protocol::ToolCall progress_call;
+  progress_call.name = "test_tool_with_progress";
+  progress_call.meta =
+      mcp::protocol::meta_with_progress_token(std::string("cxxmcp-progress"));
+  const auto progress_result = client.call_tool(progress_call);
+  require(progress_result.has_value(),
+          "cxxmcp client should call RMCP progress tool");
+  require(progress_notifications.load(std::memory_order_relaxed) >= 1,
+          "cxxmcp client should observe RMCP progress notifications");
+
+  client.on_create_message_request(
+      [](const mcp::protocol::CreateMessageParams& params)
+          -> mcp::core::Result<mcp::protocol::CreateMessageResult> {
+        require(!params.messages.empty(),
+                "RMCP sampling request should include messages");
+        return mcp::protocol::CreateMessageResult::text(
+            "assistant", "cxxmcp sampled response", "cxxmcp-test-model");
+      });
+  mcp::protocol::ToolCall sampling_call;
+  sampling_call.name = "test_sampling";
+  sampling_call.arguments = Json{{"prompt", "sample this"}};
+  const auto sampling_tool_result = client.call_tool(sampling_call);
+  require(sampling_tool_result.has_value(),
+          "cxxmcp client should handle RMCP sampling request");
+  require(!sampling_tool_result->is_error.value_or(false),
+          sampling_tool_result->content.empty()
+              ? "RMCP sampling tool should not return an error"
+              : sampling_tool_result->content.front().text);
+  require(sampling_tool_result->content.front().text.find(
+              "cxxmcp sampled response") != std::string::npos,
+          "RMCP sampling tool should include cxxmcp sampling response");
+
+  require(client.set_level("info").has_value(),
+          "cxxmcp client should set RMCP logging level");
+
+  const auto raw_completion = client.raw_request(mcp::protocol::make_request(
+      std::string(mcp::protocol::CompletionCompleteMethod), std::int64_t{9001},
+      Json{{"ref", Json{{"type", "ref/prompt"},
+                        {"name", "test_prompt_with_arguments"}}},
+           {"argument", Json{{"name", "name"}, {"value", "A"}}}}));
+  require(raw_completion.has_value(),
+          "cxxmcp client raw completion should reach RMCP server");
+  const auto parsed_completion =
+      mcp::protocol::complete_result_from_json(*raw_completion);
+  require(parsed_completion.has_value(),
+          "RMCP raw completion result should parse");
+  require(!parsed_completion->completion.values.empty() &&
+              parsed_completion->completion.values.front() == "Alice",
+          "RMCP completion result mismatch");
+
+  require(client
+              .raw_request(mcp::protocol::make_request(
+                  std::string(mcp::protocol::ResourcesSubscribeMethod),
+                  std::int64_t{9002}, Json{{"uri", "test://static-text"}}))
+              .has_value(),
+          "cxxmcp client raw subscribe should reach RMCP server");
+  require(client
+              .raw_request(mcp::protocol::make_request(
+                  std::string(mcp::protocol::ResourcesUnsubscribeMethod),
+                  std::int64_t{9003}, Json{{"uri", "test://static-text"}}))
+              .has_value(),
+          "cxxmcp client raw unsubscribe should reach RMCP server");
+
+  client.stop();
+}
+
+void test_cxxmcp_client_against_rmcp_reverse_http_server() {
+  const auto port = choose_loopback_port() + 31;
+  RunningRmcpReverseServer server(port);
+
+  mcp::client::Client::StreamableHttpEndpoint endpoint;
+  endpoint.uri = "http://127.0.0.1:" + std::to_string(server.port()) + "/mcp";
+  endpoint.timeout = std::chrono::seconds(5);
+
+  auto client =
+      mcp::client::Client::connect_streamable_http(std::move(endpoint));
+  const auto initialized = client.initialize("cxxmcp-rmcp-reverse-client", "1");
+  require(initialized.has_value(),
+          "cxxmcp client should initialize RMCP reverse server");
+  require(initialized->at("serverInfo").at("name") == "rmcp-reverse-server",
+          "RMCP reverse serverInfo name mismatch");
+  require(initialized->at("capabilities").contains("completions"),
+          "RMCP reverse server should advertise completions");
+  require(initialized->at("capabilities").contains("tasks"),
+          "RMCP reverse server should advertise tasks");
+  require(client.notify_initialized().has_value(),
+          "cxxmcp client should notify initialized for RMCP reverse server");
+
+  const auto all_tools = client.list_all_tools();
+  require(all_tools.has_value(),
+          "cxxmcp client should page through RMCP reverse tools");
+  require(all_tools->size() == 7, "RMCP reverse paginated tool count mismatch");
+
+  client.set_roots({mcp::client::Client::Root{
+      "file:///cxxmcp-rmcp-reverse-root", "cxxmcp-rmcp-reverse-root"}});
+  mcp::protocol::ToolCall roots_call;
+  roots_call.name = "reverse_roots";
+  const auto roots_result = client.call_tool(roots_call);
+  require(roots_result.has_value(),
+          "cxxmcp should answer RMCP reverse roots/list request");
+  require(!roots_result->content.empty() &&
+              roots_result->content.front().text.find(
+                  "file:///cxxmcp-rmcp-reverse-root") != std::string::npos,
+          "RMCP reverse roots/list result should include cxxmcp root uri");
+
+  const auto completion =
+      client.complete_prompt_simple("reverse_prompt", "name", "A");
+  require(completion.has_value(),
+          "cxxmcp completion helper should work against RMCP reverse server");
+  require(completion->size() == 2 && completion->front() == "Alice",
+          "RMCP reverse completion values mismatch");
+
+  require(client.subscribe("test://reverse/static").has_value(),
+          "cxxmcp subscribe helper should work against RMCP reverse server");
+  require(client.unsubscribe("test://reverse/static").has_value(),
+          "cxxmcp unsubscribe helper should work against RMCP reverse server");
+
+  const auto resource = client.read_resource("test://reverse/static");
+  require(resource.has_value(),
+          "cxxmcp client should read RMCP reverse resource");
+  require(resource->contents.size() == 1 &&
+              resource->contents.front().text == "reverse static resource",
+          "RMCP reverse resource content mismatch");
+
+  const auto tasks = client.list_tasks();
+  require(tasks.has_value(), tasks.has_value()
+                                 ? "cxxmcp list_tasks helper should work "
+                                   "against RMCP reverse server"
+                                 : tasks.error().message);
+  require(tasks->size() == 2, "RMCP reverse tasks/list count mismatch");
+
+  const auto completed_task = client.get_task("reverse-completed");
+  require(completed_task.has_value(),
+          "cxxmcp get_task helper should work against RMCP reverse server");
+  require(completed_task->status == mcp::protocol::TaskStatus::Completed,
+          "RMCP reverse tasks/get status mismatch");
+
+  const auto cancelled_task = client.cancel_task("reverse-working");
+  require(cancelled_task.has_value(),
+          "cxxmcp cancel_task helper should work against RMCP reverse server");
+  require(cancelled_task->status == mcp::protocol::TaskStatus::Cancelled,
+          "RMCP reverse tasks/cancel status mismatch");
+
+  std::atomic<int> progress_notifications{0};
+  client.on_progress(
+      [&progress_notifications](
+          const mcp::protocol::ProgressNotificationParams& params) {
+        if (params.progress_token ==
+            mcp::protocol::ProgressToken{std::string("reverse-progress")}) {
+          progress_notifications.fetch_add(1, std::memory_order_relaxed);
+        }
+      });
+  mcp::protocol::ToolCall progress_call;
+  progress_call.name = "reverse_progress";
+  progress_call.meta =
+      mcp::protocol::meta_with_progress_token(std::string("reverse-progress"));
+  const auto progress_result = client.call_tool(progress_call);
+  require(progress_result.has_value(),
+          "cxxmcp should call RMCP reverse progress tool");
+  require(progress_notifications.load(std::memory_order_relaxed) == 1,
+          "cxxmcp should observe RMCP reverse progress notification");
+
+  mcp::CancellationSource cancellation;
+  mcp::RequestOptions cancellation_options;
+  cancellation_options.cancellation_token = cancellation.token();
+  mcp::protocol::ToolCall cancellable_call;
+  cancellable_call.name = "reverse_cancellable";
+  auto cancellable_handle =
+      client.call_tool_async(cancellable_call, std::move(cancellation_options));
+  std::this_thread::sleep_for(std::chrono::milliseconds(100));
+  cancellation.cancel();
+  const auto cancelled_result = cancellable_handle.await_response();
+  require(!cancelled_result.has_value(),
+          "cxxmcp async RMCP reverse tool call should observe cancellation");
+  require(cancelled_result.error().category == "cancellation",
+          "cxxmcp async RMCP reverse cancellation should use cancellation "
+          "error category");
+
+  bool cancellation_observed = false;
+  for (int attempt = 0; attempt < 50 && !cancellation_observed; ++attempt) {
+    mcp::protocol::ToolCall status_call;
+    status_call.name = "reverse_cancellable";
+    status_call.arguments = Json{{"mode", "status"}};
+    const auto status_result = client.call_tool(status_call);
+    require(status_result.has_value(),
+            "cxxmcp should query RMCP reverse cancellation status");
+    require(!status_result->content.empty(),
+            "RMCP reverse cancellation status should return content");
+    const auto& status = status_result->content.front().text;
+    cancellation_observed =
+        status.find("notifications=0") == std::string::npos &&
+        status.find("cancelled=0") == std::string::npos;
+    if (!cancellation_observed) {
+      std::this_thread::sleep_for(std::chrono::milliseconds(100));
+    }
+  }
+  require(cancellation_observed,
+          "RMCP reverse server should observe notifications/cancelled and "
+          "cancel the in-flight tool context");
+
+  client.on_create_message_request(
+      [](const mcp::protocol::CreateMessageParams& params)
+          -> mcp::core::Result<mcp::protocol::CreateMessageResult> {
+        require(!params.messages.empty(),
+                "RMCP reverse sampling should include a message");
+        return mcp::protocol::CreateMessageResult::text(
+            "assistant", "reverse sampled by cxxmcp", "cxxmcp-test-model");
+      });
+  mcp::protocol::ToolCall sampling_call;
+  sampling_call.name = "reverse_sampling";
+  const auto sampling_result = client.call_tool(sampling_call);
+  require(sampling_result.has_value(),
+          "cxxmcp should satisfy RMCP reverse sampling request");
+  require(!sampling_result->is_error.value_or(false),
+          "RMCP reverse sampling tool should not return isError");
+  require(sampling_result->content.front().text.find(
+              "reverse sampled by cxxmcp") != std::string::npos,
+          "RMCP reverse sampling result mismatch");
+
+  mcp::protocol::ToolCall error_call;
+  error_call.name = "reverse_error";
+  const auto error_result = client.call_tool(error_call);
+  require(error_result.has_value(),
+          "cxxmcp should receive RMCP reverse error tool result");
+  require(error_result->is_error.value_or(false),
+          "RMCP reverse error tool should set isError");
+
+  client.stop();
 }
 
 void run_rmcp_conformance_scenario(std::string_view scenario) {
@@ -1558,6 +3206,135 @@ void run_rmcp_conformance_scenario(std::string_view scenario) {
   }
 }
 
+void run_rmcp_pagination_client_scenario() {
+  build_pagination_client();
+
+  RunningInteropServer server;
+  const auto port = server.port();
+
+  set_process_env("MCP_CONFORMANCE_SCENARIO", "rmcp-pagination");
+  set_process_env("NO_PROXY", "127.0.0.1,localhost");
+  set_process_env("no_proxy", "127.0.0.1,localhost");
+  set_process_env("RUST_BACKTRACE", "1");
+  set_process_env("RUST_LOG", "debug");
+  const auto command =
+      quote_path(pagination_client_executable()) + " " +
+      quote_text("http://127.0.0.1:" + std::to_string(port) + "/mcp");
+  std::string output;
+  if (!run_command_with_timeout(command, std::chrono::seconds(60), &output)) {
+    throw std::runtime_error(
+        "RMCP pagination client scenario should succeed\n"
+        "Output:\n" +
+        output);
+  }
+}
+
+void run_rmcp_canonical_server_peer_http_scenario() {
+  build_conformance_client();
+  build_pagination_client();
+
+  RunningCanonicalServerPeerHttpServer server;
+  const auto endpoint =
+      "http://127.0.0.1:" + std::to_string(server.port()) + "/mcp";
+
+  set_process_env("NO_PROXY", "127.0.0.1,localhost");
+  set_process_env("no_proxy", "127.0.0.1,localhost");
+  set_process_env("RUST_BACKTRACE", "1");
+  set_process_env("RUST_LOG", "debug");
+
+  set_process_env("MCP_CONFORMANCE_SCENARIO", "tools_call");
+  std::string tools_output;
+  const auto tools_command =
+      quote_path(conformance_client_executable()) + " " + quote_text(endpoint);
+  if (!run_command_with_timeout(tools_command, std::chrono::seconds(60),
+                                &tools_output)) {
+    throw std::runtime_error(
+        "RMCP conformance tools_call should succeed against canonical "
+        "ServerPeer HTTP stack\nOutput:\n" +
+        tools_output);
+  }
+
+  std::string pagination_output;
+  const auto pagination_command =
+      quote_path(pagination_client_executable()) + " " + quote_text(endpoint);
+  if (!run_command_with_timeout(pagination_command, std::chrono::seconds(60),
+                                &pagination_output)) {
+    throw std::runtime_error(
+        "RMCP pagination client should succeed against canonical ServerPeer "
+        "HTTP stack\nOutput:\n" +
+        pagination_output);
+  }
+}
+
+void run_rmcp_completion_client_scenario() {
+  build_completion_client();
+
+  RunningInteropServer server;
+  const auto port = server.port();
+
+  set_process_env("MCP_CONFORMANCE_SCENARIO", "rmcp-completion");
+  set_process_env("NO_PROXY", "127.0.0.1,localhost");
+  set_process_env("no_proxy", "127.0.0.1,localhost");
+  set_process_env("RUST_BACKTRACE", "1");
+  set_process_env("RUST_LOG", "debug");
+  const auto command =
+      quote_path(completion_client_executable()) + " " +
+      quote_text("http://127.0.0.1:" + std::to_string(port) + "/mcp");
+  std::string output;
+  if (!run_command_with_timeout(command, std::chrono::seconds(60), &output)) {
+    throw std::runtime_error(
+        "RMCP completion client scenario should succeed\n"
+        "Output:\n" +
+        output);
+  }
+}
+
+void run_rmcp_roots_sampling_client_scenario() {
+  build_roots_sampling_client();
+
+  RunningInteropServer server;
+  const auto port = server.port();
+
+  set_process_env("MCP_CONFORMANCE_SCENARIO", "rmcp-roots-sampling");
+  set_process_env("NO_PROXY", "127.0.0.1,localhost");
+  set_process_env("no_proxy", "127.0.0.1,localhost");
+  set_process_env("RUST_BACKTRACE", "1");
+  set_process_env("RUST_LOG", "debug");
+  const auto command =
+      quote_path(roots_sampling_client_executable()) + " " +
+      quote_text("http://127.0.0.1:" + std::to_string(port) + "/mcp");
+  std::string output;
+  if (!run_command_with_timeout(command, std::chrono::seconds(60), &output)) {
+    throw std::runtime_error(
+        "RMCP roots/sampling client scenario should succeed\n"
+        "Output:\n" +
+        output);
+  }
+}
+
+void run_rmcp_task_lifecycle_client_scenario() {
+  build_task_lifecycle_client();
+
+  RunningInteropServer server;
+  const auto port = server.port();
+
+  set_process_env("MCP_CONFORMANCE_SCENARIO", "rmcp-task-lifecycle");
+  set_process_env("NO_PROXY", "127.0.0.1,localhost");
+  set_process_env("no_proxy", "127.0.0.1,localhost");
+  set_process_env("RUST_BACKTRACE", "1");
+  set_process_env("RUST_LOG", "debug");
+  const auto command =
+      quote_path(task_lifecycle_client_executable()) + " " +
+      quote_text("http://127.0.0.1:" + std::to_string(port) + "/mcp");
+  std::string output;
+  if (!run_command_with_timeout(command, std::chrono::seconds(60), &output)) {
+    throw std::runtime_error(
+        "RMCP task lifecycle client scenario should succeed\n"
+        "Output:\n" +
+        output);
+  }
+}
+
 }  // namespace
 
 int main() {
@@ -1565,11 +3342,23 @@ int main() {
     std::cout << "[INFO] cxxmcp protocol " << mcp::protocol::McpProtocolVersion
               << ", RMCP reference " << kRmcpReferenceVersion
               << ", RMCP conformance " << kRmcpConformanceVersion
-              << ", scenarios: initialize, tools_call, sse-retry\n";
+              << ", scenarios: initialize, tools_call, "
+                 "elicitation-sep1034-client-defaults, sse-retry, "
+                 "rmcp-pagination, rmcp-completion, rmcp-roots-sampling, "
+                 "rmcp-task-lifecycle, rmcp-canonical-server-peer-http, "
+                 "rmcp-reverse-server\n";
     test_cxxmcp_streamable_http_session_stale_matrix();
     test_cxxmcp_streamable_http_interop_matrix_core_methods();
+    test_cxxmcp_client_against_rmcp_conformance_http_server();
+    test_cxxmcp_client_against_rmcp_reverse_http_server();
+    run_rmcp_pagination_client_scenario();
+    run_rmcp_canonical_server_peer_http_scenario();
+    run_rmcp_completion_client_scenario();
+    run_rmcp_roots_sampling_client_scenario();
+    run_rmcp_task_lifecycle_client_scenario();
     run_rmcp_conformance_scenario("initialize");
     run_rmcp_conformance_scenario("tools_call");
+    run_rmcp_conformance_scenario("elicitation-sep1034-client-defaults");
     run_rmcp_conformance_scenario("sse-retry");
   } catch (const std::exception& ex) {
     std::cerr << "[FAIL] rmcp conformance interop: " << ex.what() << '\n';

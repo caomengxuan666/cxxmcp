@@ -3,6 +3,7 @@
 #include <filesystem>
 #include <fstream>
 #include <iostream>
+#include <limits>
 #include <stdexcept>
 #include <string>
 #include <string_view>
@@ -283,18 +284,23 @@ void test_supported_protocol_versions_are_explicit() {
           "2025-11-25 should be supported");
   require(mcp::protocol::McpSupportedProtocolVersions.size() == 4,
           "supported MCP protocol version set mismatch");
-  require(mcp::protocol::negotiate_protocol_version("2025-06-18") ==
-              mcp::protocol::McpProtocolVersion2025_06_18,
+  const auto negotiated_2025_06_18 =
+      mcp::protocol::negotiate_protocol_version("2025-06-18");
+  require(negotiated_2025_06_18.has_value(),
+          "known MCP protocol version should negotiate");
+  require(*negotiated_2025_06_18 == mcp::protocol::McpProtocolVersion2025_06_18,
           "known MCP protocol version should negotiate to itself");
-  require(mcp::protocol::negotiate_protocol_version("2025-11-25") ==
-              mcp::protocol::McpProtocolVersion2025_11_25,
+  const auto negotiated_2025_11_25 =
+      mcp::protocol::negotiate_protocol_version("2025-11-25");
+  require(negotiated_2025_11_25.has_value(),
+          "latest MCP protocol version should negotiate");
+  require(*negotiated_2025_11_25 == mcp::protocol::McpProtocolVersion2025_11_25,
           "latest MCP protocol version should negotiate to itself");
   require(mcp::protocol::McpSupportedProtocolVersions.back() ==
               mcp::protocol::McpProtocolVersion,
           "latest MCP protocol version should be the final supported entry");
-  require(mcp::protocol::negotiate_protocol_version("1900-01-01") ==
-              mcp::protocol::McpProtocolVersion,
-          "unknown MCP protocol version should negotiate to latest fallback");
+  require(!mcp::protocol::negotiate_protocol_version("1900-01-01").has_value(),
+          "unknown MCP protocol version should not silently fall back");
   require(!mcp::protocol::is_supported_protocol_version("1900-01-01"),
           "unknown MCP protocol version should not be supported");
 }
@@ -342,6 +348,20 @@ void test_json_rpc_request_notification_meta_is_in_params() {
   require(reparsed_request->meta->at("traceId") == "request-1",
           "parsed request _meta mismatch");
 
+  auto request_with_existing_meta = request;
+  request_with_existing_meta.params =
+      Json{{"_meta", Json{{"traceId", "old"}}}, {"value", true}};
+  const auto direct_request_json =
+      mcp::protocol::serialize_request(request_with_existing_meta);
+  require(direct_request_json.has_value(),
+          "direct request serialization should succeed");
+  const auto direct_request_document = Json::parse(*direct_request_json);
+  require(direct_request_document.at("params").at("value") == true,
+          "direct request params value should remain");
+  require(direct_request_document.at("params").at("_meta").at("traceId") ==
+              "request-1",
+          "direct request envelope meta should override params _meta");
+
   const mcp::protocol::JsonRpcNotification notification{
       .method = std::string(mcp::protocol::InitializedMethod),
       .params = Json::object(),
@@ -371,6 +391,16 @@ void test_json_rpc_request_notification_meta_is_in_params() {
           "parsed notification _meta should be exposed");
   require(reparsed_notification->meta->at("traceId") == "notification-1",
           "parsed notification _meta mismatch");
+
+  const auto direct_notification_json =
+      mcp::protocol::serialize_notification(notification);
+  require(direct_notification_json.has_value(),
+          "direct notification serialization should succeed");
+  const auto direct_notification_document =
+      Json::parse(*direct_notification_json);
+  require(direct_notification_document.at("params").at("_meta").at("traceId") ==
+              "notification-1",
+          "direct notification params _meta mismatch");
 
   require_parse_failure(
       mcp::protocol::serialize_message(
@@ -759,8 +789,8 @@ void test_content_block_variants_round_trip() {
         block.meta = Json{{"trace", "text-1"}};
         return block;
       }(),
-      mcp::protocol::ContentBlock::image("base64-image", "image/png"),
-      mcp::protocol::ContentBlock::audio("base64-audio", "audio/wav"),
+      mcp::protocol::ContentBlock::image("aW1hZ2U=", "image/png"),
+      mcp::protocol::ContentBlock::audio("YXVkaW8=", "audio/wav"),
       mcp::protocol::ContentBlock::embedded_resource(
           mcp::protocol::ResourceContents{
               .uri = "file:///tmp/readme.txt",
@@ -780,9 +810,9 @@ void test_content_block_variants_round_trip() {
 
   require(blocks.at(0).as_text().value() == "hello",
           "text content accessor mismatch");
-  require(blocks.at(1).as_image_data().value() == "base64-image",
+  require(blocks.at(1).as_image_data().value() == "aW1hZ2U=",
           "image content accessor mismatch");
-  require(blocks.at(2).as_audio_data().value() == "base64-audio",
+  require(blocks.at(2).as_audio_data().value() == "YXVkaW8=",
           "audio content accessor mismatch");
   require(blocks.at(3).as_embedded_resource()->text.value() == "hello resource",
           "embedded resource accessor mismatch");
@@ -797,15 +827,13 @@ void test_content_block_variants_round_trip() {
 
   const auto image_json = mcp::protocol::content_block_to_json(blocks.at(1));
   require(image_json.at("type") == "image", "image content type mismatch");
-  require(image_json.at("data") == "base64-image",
-          "image content data mismatch");
+  require(image_json.at("data") == "aW1hZ2U=", "image content data mismatch");
   require(image_json.at("mimeType") == "image/png",
           "image content mimeType mismatch");
 
   const auto audio_json = mcp::protocol::content_block_to_json(blocks.at(2));
   require(audio_json.at("type") == "audio", "audio content type mismatch");
-  require(audio_json.at("data") == "base64-audio",
-          "audio content data mismatch");
+  require(audio_json.at("data") == "YXVkaW8=", "audio content data mismatch");
   require(audio_json.at("mimeType") == "audio/wav",
           "audio content mimeType mismatch");
 
@@ -832,6 +860,36 @@ void test_content_block_variants_round_trip() {
     require(mcp::protocol::content_block_to_json(*parsed) == json,
             "content block variant should round trip");
   }
+}
+
+void test_content_block_base64_validation() {
+  const auto empty_image = mcp::protocol::content_block_from_json(
+      Json{{"type", "image"}, {"data", ""}, {"mimeType", "image/png"}});
+  require(empty_image.has_value(), "empty image base64 should parse");
+  require(empty_image->as_image_data().value().empty(),
+          "empty image base64 should be preserved");
+  require(mcp::protocol::content_block_to_json(*empty_image).at("data") == "",
+          "empty image base64 should serialize");
+
+  const auto padded_audio = mcp::protocol::content_block_from_json(
+      Json{{"type", "audio"}, {"data", "TWE="}, {"mimeType", "audio/wav"}});
+  require(padded_audio.has_value(), "padded audio base64 should parse");
+  require(padded_audio->as_audio_data().value() == "TWE=",
+          "padded audio base64 should be preserved");
+
+  require_parse_failure(
+      mcp::protocol::content_block_from_json(Json{{"type", "image"},
+                                                  {"data", "not base64"},
+                                                  {"mimeType", "image/png"}}),
+      "image content invalid base64 characters should fail");
+  require_parse_failure(
+      mcp::protocol::content_block_from_json(Json{
+          {"type", "audio"}, {"data", "TWFu="}, {"mimeType", "audio/wav"}}),
+      "audio content invalid base64 length should fail");
+  require_parse_failure(
+      mcp::protocol::content_block_from_json(
+          Json{{"type", "image"}, {"data", "T=Fu"}, {"mimeType", "image/png"}}),
+      "image content misplaced base64 padding should fail");
 }
 
 void test_text_helper_constructors_round_trip() {
@@ -2297,6 +2355,41 @@ void test_roots_completion_logging_sampling_round_trips() {
           "sampling message mismatch");
   require(parsed_sample->model_preferences->hints.front().name == "fast-model",
           "sampling model hint mismatch");
+  require(parsed_sample->temperature.has_value() &&
+              *parsed_sample->temperature == 0.2,
+          "sampling temperature mismatch");
+
+  auto explicit_zero_sample = sample;
+  explicit_zero_sample.temperature = 0.0;
+  const auto explicit_zero_json =
+      mcp::protocol::create_message_params_to_json(explicit_zero_sample);
+  require(explicit_zero_json.contains("temperature"),
+          "explicit zero sampling temperature should serialize");
+  require(explicit_zero_json.at("temperature") == 0.0,
+          "explicit zero sampling temperature mismatch");
+  const auto parsed_explicit_zero =
+      mcp::protocol::create_message_params_from_json(explicit_zero_json);
+  require(parsed_explicit_zero.has_value(),
+          "explicit zero sampling temperature should parse");
+  require(parsed_explicit_zero->temperature.has_value() &&
+              *parsed_explicit_zero->temperature == 0.0,
+          "explicit zero sampling temperature should round-trip");
+
+  auto omitted_temperature_sample = sample;
+  omitted_temperature_sample.temperature.reset();
+  const auto omitted_temperature_json =
+      mcp::protocol::create_message_params_to_json(omitted_temperature_sample);
+  require(!omitted_temperature_json.contains("temperature"),
+          "omitted sampling temperature should remain absent");
+  require_parse_failure(
+      mcp::protocol::create_message_params_from_json(Json{
+          {"messages",
+           Json::array({Json{
+               {"role", "user"},
+               {"content", Json{{"type", "text"}, {"text", "sample me"}}}}})},
+          {"maxTokens", 64},
+          {"temperature", std::numeric_limits<double>::infinity()}}),
+      "non-finite sampling temperature should fail");
 
   const mcp::protocol::CreateMessageResult sample_result{
       .role = "assistant",
@@ -2488,6 +2581,12 @@ void test_elicitation_content_validation() {
           *schema,
           Json{{"email", "user@example.test"}, {"age", 42}, {"score", 1.5}}),
       "elicitation number maximum should fail");
+  require_parse_failure(
+      mcp::protocol::validate_elicitation_content(
+          *schema, Json{{"email", "user@example.test"},
+                        {"age", 42},
+                        {"score", std::numeric_limits<double>::infinity()}}),
+      "elicitation non-finite number content should fail");
   require_parse_failure(mcp::protocol::validate_elicitation_content(
                             *schema, Json{{"email", "user@example.test"},
                                           {"age", 42},
@@ -2670,7 +2769,7 @@ void test_sampling_tool_use_round_trips() {
                       {
                           mcp::protocol::SamplingMessageContent::text("hello"),
                           mcp::protocol::SamplingMessageContent::from_content(
-                              mcp::protocol::ContentBlock::image("base64-image",
+                              mcp::protocol::ContentBlock::image("aW1hZ2U=",
                                                                  "image/png")),
                       },
               },
@@ -3376,6 +3475,11 @@ void test_invalid_messages_are_rejected() {
       "true",
       "42",
       R"("request")",
+      R"([{"jsonrpc":"2.0","method":"ping","id":1}])",
+      R"({"method":"ping","id":1})",
+      R"({"jsonrpc":2,"method":"ping","id":1})",
+      R"({"jsonrpc":"1.0","method":"ping","id":1})",
+      R"({"jsonrpc":"2.0.1","method":"ping","id":1})",
       R"({"jsonrpc":"2.0","id":1})",
       R"({"jsonrpc":"2.0","params":{},"id":1})",
       R"({"jsonrpc":"2.0","method":"","id":1})",
@@ -3442,6 +3546,56 @@ void test_bounded_invalid_protocol_payloads_do_not_crash() {
   require_error_code(mcp::protocol::parse_message(large_invalid_meta),
                      ErrorCode::InvalidRequest,
                      "bounded non-object params _meta should be rejected");
+
+  std::string deeply_nested =
+      R"({"jsonrpc":"2.0","method":"ping","id":1,"params":)";
+  for (int index = 0; index < 140; ++index) {
+    deeply_nested.append(R"({"x":)");
+  }
+  deeply_nested.append("0");
+  for (int index = 0; index < 140; ++index) {
+    deeply_nested.append("}");
+  }
+  deeply_nested.append("}");
+  require_error_code(mcp::protocol::parse_message(deeply_nested),
+                     ErrorCode::InvalidRequest,
+                     "deep JSON-RPC payload should be rejected");
+
+  std::string oversized_string =
+      R"({"jsonrpc":"2.0","method":"ping","id":1,"params":{"blob":")";
+  oversized_string.append(16 * 1024 * 1024 + 1, 'x');
+  oversized_string.append(R"("}})");
+  require_error_code(mcp::protocol::parse_message(oversized_string),
+                     ErrorCode::InvalidRequest,
+                     "oversized aggregate string payload should be rejected");
+
+  Json oversized_array = Json::array();
+  for (int index = 0; index < 100001; ++index) {
+    oversized_array.push_back(index);
+  }
+  const std::string oversized_array_payload =
+      Json{{"jsonrpc", "2.0"},
+           {"method", "ping"},
+           {"id", 1},
+           {"params", Json{{"items", std::move(oversized_array)}}}}
+          .dump();
+  require_error_code(mcp::protocol::parse_message(oversized_array_payload),
+                     ErrorCode::InvalidRequest,
+                     "oversized aggregate array payload should be rejected");
+
+  Json oversized_object = Json::object();
+  for (int index = 0; index < 100001; ++index) {
+    oversized_object["key" + std::to_string(index)] = index;
+  }
+  const std::string oversized_object_payload =
+      Json{{"jsonrpc", "2.0"},
+           {"method", "ping"},
+           {"id", 1},
+           {"params", Json{{"items", std::move(oversized_object)}}}}
+          .dump();
+  require_error_code(mcp::protocol::parse_message(oversized_object_payload),
+                     ErrorCode::InvalidRequest,
+                     "oversized aggregate object payload should be rejected");
 
   require_error_code(
       mcp::protocol::initialize_params_from_json(
@@ -4067,6 +4221,18 @@ void test_protocol_type_constraints_are_rejected() {
   require_parse_failure(mcp::protocol::model_preferences_from_json(
                             Json{{"costPriority", "high"}}),
                         "model preferences non-number priority should fail");
+  require_parse_failure(
+      mcp::protocol::model_preferences_from_json(
+          Json{{"costPriority", std::numeric_limits<double>::infinity()}}),
+      "model preferences non-finite cost priority should fail");
+  require_parse_failure(
+      mcp::protocol::model_preferences_from_json(
+          Json{{"speedPriority", -std::numeric_limits<double>::infinity()}}),
+      "model preferences non-finite speed priority should fail");
+  require_parse_failure(
+      mcp::protocol::model_preferences_from_json(Json{
+          {"intelligencePriority", std::numeric_limits<double>::quiet_NaN()}}),
+      "model preferences non-finite intelligence priority should fail");
   require_parse_failure(mcp::protocol::tool_choice_from_json(Json{{"mode", 7}}),
                         "tool choice non-string mode should fail");
   require_parse_failure(
@@ -4209,6 +4375,21 @@ void test_protocol_type_constraints_are_rejected() {
   require_parse_failure(mcp::protocol::primitive_schema_from_json(
                             Json{{"type", "number"}, {"minimum", "low"}}),
                         "elicitation number minimum type should fail");
+  require_parse_failure(
+      mcp::protocol::primitive_schema_from_json(
+          Json{{"type", "number"},
+               {"minimum", std::numeric_limits<double>::infinity()}}),
+      "elicitation number non-finite minimum should fail");
+  require_parse_failure(
+      mcp::protocol::primitive_schema_from_json(
+          Json{{"type", "number"},
+               {"maximum", -std::numeric_limits<double>::infinity()}}),
+      "elicitation number non-finite maximum should fail");
+  require_parse_failure(
+      mcp::protocol::primitive_schema_from_json(
+          Json{{"type", "number"},
+               {"default", std::numeric_limits<double>::quiet_NaN()}}),
+      "elicitation number non-finite default should fail");
   require_parse_failure(mcp::protocol::primitive_schema_from_json(
                             Json{{"type", "integer"}, {"default", 1.5}}),
                         "elicitation integer default type should fail");
@@ -4279,12 +4460,23 @@ void test_protocol_type_constraints_are_rejected() {
                Json{{"progressToken", "token-1"}, {"progress", "1"}})
                .has_value(),
           "progress notification non-number progress should fail");
+  require(!mcp::protocol::progress_notification_params_from_json(
+               Json{{"progressToken", "token-1"},
+                    {"progress", std::numeric_limits<double>::infinity()}})
+               .has_value(),
+          "progress notification non-finite progress should fail");
   require(
       !mcp::protocol::progress_notification_params_from_json(
            Json{
                {"progressToken", "token-1"}, {"progress", 1.0}, {"total", "2"}})
            .has_value(),
       "progress notification non-number total should fail");
+  require(!mcp::protocol::progress_notification_params_from_json(
+               Json{{"progressToken", "token-1"},
+                    {"progress", 1.0},
+                    {"total", -std::numeric_limits<double>::infinity()}})
+               .has_value(),
+          "progress notification non-finite total should fail");
   require(
       !mcp::protocol::progress_notification_params_from_json(
            Json{
@@ -4315,6 +4507,7 @@ int main() {
        test_schema_and_tool_definition_builders},
       {"content block variants round trip",
        test_content_block_variants_round_trip},
+      {"content block base64 validation", test_content_block_base64_validation},
       {"text helper constructors round trip",
        test_text_helper_constructors_round_trip},
       {"protocol direct helper round trips",

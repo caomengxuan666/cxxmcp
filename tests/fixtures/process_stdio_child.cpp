@@ -10,6 +10,7 @@
 #include "cxxmcp/protocol/prompt.hpp"
 #include "cxxmcp/protocol/resource.hpp"
 #include "cxxmcp/protocol/serialization.hpp"
+#include "cxxmcp/protocol/task.hpp"
 #include "cxxmcp/protocol/tool.hpp"
 
 namespace {
@@ -55,13 +56,35 @@ void write_error(const mcp::protocol::JsonRpcRequest& request,
       mcp::protocol::make_error(code, std::move(message))));
 }
 
+mcp::protocol::Task make_task(std::string task_id,
+                              mcp::protocol::TaskStatus status,
+                              std::string status_message) {
+  mcp::protocol::Task task;
+  task.task_id = std::move(task_id);
+  task.status = status;
+  task.status_message = std::move(status_message);
+  task.created_at = "2026-05-25T00:00:00Z";
+  task.last_updated_at = "2026-05-25T00:00:01Z";
+  task.ttl = static_cast<std::int64_t>(300);
+  task.poll_interval = static_cast<std::int64_t>(1);
+  return task;
+}
+
 void handle_request(const mcp::protocol::JsonRpcRequest& request) {
   if (request.method == mcp::protocol::InitializeMethod) {
     write_response(mcp::protocol::make_response(
         request.id,
         Json{
             {"protocolVersion", std::string(mcp::protocol::McpProtocolVersion)},
-            {"capabilities", Json{{"tools", Json::object()}}},
+            {"capabilities",
+             Json{{"tools", Json::object()},
+                  {"prompts", Json::object()},
+                  {"resources", Json::object()},
+                  {"tasks",
+                   Json{{"list", Json::object()},
+                        {"cancel", Json::object()},
+                        {"requests",
+                         Json{{"tools", Json{{"call", Json::object()}}}}}}}}},
             {"serverInfo",
              Json{{"name", "process-stdio-child"}, {"version", "1"}}},
         }));
@@ -104,6 +127,11 @@ void handle_request(const mcp::protocol::JsonRpcRequest& request) {
   }
 
   if (request.method == "prompts/get") {
+    if (request.params.value("name", "") != "summarize") {
+      write_error(request, mcp::protocol::ErrorCode::InvalidParams,
+                  "unknown prompt");
+      return;
+    }
     write_response(mcp::protocol::make_response(
         request.id,
         mcp::protocol::prompts_get_result_to_json(
@@ -142,6 +170,11 @@ void handle_request(const mcp::protocol::JsonRpcRequest& request) {
   }
 
   if (request.method == "resources/read") {
+    if (request.params.value("uri", "") != "file:///workspace/README.md") {
+      write_error(request, mcp::protocol::ErrorCode::InvalidParams,
+                  "unknown resource");
+      return;
+    }
     write_response(mcp::protocol::make_response(
         request.id, mcp::protocol::resources_read_result_to_json(
                         mcp::protocol::ResourcesReadResult{
@@ -152,6 +185,67 @@ void handle_request(const mcp::protocol::JsonRpcRequest& request) {
                                 .blob = std::nullopt,
                             }},
                         })));
+    return;
+  }
+
+  if (request.method == "tasks/list") {
+    write_response(mcp::protocol::make_response(
+        request.id,
+        mcp::protocol::task_list_result_to_json(mcp::protocol::TaskListResult{
+            .tasks =
+                {
+                    make_task("task-working",
+                              mcp::protocol::TaskStatus::Working, "running"),
+                    make_task("task-completed",
+                              mcp::protocol::TaskStatus::Completed,
+                              "completed"),
+                    make_task("task-failed", mcp::protocol::TaskStatus::Failed,
+                              "failed"),
+                },
+            .total = std::int64_t{3},
+        })));
+    return;
+  }
+
+  if (request.method == "tasks/get") {
+    const auto task_id = request.params.value("taskId", "");
+    if (task_id != "task-completed" && task_id != "task-working" &&
+        task_id != "task-failed") {
+      write_error(request, mcp::protocol::ErrorCode::InvalidParams,
+                  "unknown task");
+      return;
+    }
+    auto status = mcp::protocol::TaskStatus::Working;
+    std::string message = "running";
+    if (task_id == "task-completed") {
+      status = mcp::protocol::TaskStatus::Completed;
+      message = "completed";
+    } else if (task_id == "task-failed") {
+      status = mcp::protocol::TaskStatus::Failed;
+      message = "failed";
+    }
+    write_response(mcp::protocol::make_response(
+        request.id,
+        mcp::protocol::task_get_result_to_json(mcp::protocol::TaskGetResult{
+            .task = make_task(task_id, status, message),
+        })));
+    return;
+  }
+
+  if (request.method == "tasks/cancel") {
+    const auto task_id = request.params.value("taskId", "");
+    if (task_id.empty()) {
+      write_error(request, mcp::protocol::ErrorCode::InvalidParams,
+                  "missing task");
+      return;
+    }
+    write_response(mcp::protocol::make_response(
+        request.id,
+        mcp::protocol::task_cancel_result_to_json(
+            mcp::protocol::TaskCancelResult{
+                .task = make_task(task_id, mcp::protocol::TaskStatus::Cancelled,
+                                  "cancelled"),
+            })));
     return;
   }
 

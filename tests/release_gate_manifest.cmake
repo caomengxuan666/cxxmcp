@@ -13,6 +13,7 @@ set(required_release_blocking_tests
     protocol
     sdk_boundary
     auth
+    auth_openssl
     transport_contract
     transport_stdio_contract
     client_server

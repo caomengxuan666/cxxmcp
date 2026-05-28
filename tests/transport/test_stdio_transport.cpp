@@ -29,6 +29,59 @@ std::string serialize_request_line(
   return *serialized + '\n';
 }
 
+std::string serialize_notification_line(
+    const mcp::protocol::JsonRpcNotification& notification) {
+  const auto serialized = mcp::protocol::serialize_notification(notification);
+  require(serialized.has_value(), "notification should serialize");
+  return *serialized + '\n';
+}
+
+mcp::protocol::JsonRpcResponse make_initialize_response(
+    const mcp::protocol::RequestId& id) {
+  return mcp::protocol::make_response(
+      id,
+      Json{
+          {"protocolVersion", std::string(mcp::protocol::McpProtocolVersion)},
+          {"capabilities", Json::object()},
+          {"serverInfo", Json{{"name", "stdio-test"}, {"version", "1"}}},
+      });
+}
+
+std::string initialized_stdio_prefix() {
+  return serialize_request_line(mcp::protocol::JsonRpcRequest{
+             .method = std::string(mcp::protocol::InitializeMethod),
+             .params =
+                 Json{
+                     {"protocolVersion",
+                      std::string(mcp::protocol::McpProtocolVersion)},
+                     {"capabilities", Json::object()},
+                     {"clientInfo",
+                      Json{{"name", "stdio-test"}, {"version", "1"}}},
+                 },
+             .id = std::int64_t{0},
+         }) +
+         serialize_notification_line(
+             mcp::protocol::make_initialized_notification());
+}
+
+std::vector<std::string> non_empty_lines(const std::string& text) {
+  std::vector<std::string> lines;
+  std::size_t start = 0;
+  while (start < text.size()) {
+    const auto end = text.find('\n', start);
+    const auto line = text.substr(
+        start, end == std::string::npos ? std::string::npos : end - start);
+    if (!line.empty()) {
+      lines.push_back(line);
+    }
+    if (end == std::string::npos) {
+      break;
+    }
+    start = end + 1;
+  }
+  return lines;
+}
+
 void test_client_handles_incoming_request_while_waiting_for_response() {
   const auto incoming_request_text =
       serialize_request_line(mcp::protocol::JsonRpcRequest{
@@ -244,11 +297,12 @@ void test_client_writes_error_for_throwing_incoming_stdio_request_handler() {
 }
 
 void test_server_reads_request_and_writes_response() {
-  const auto input_text = serialize_request_line(mcp::protocol::JsonRpcRequest{
-      .method = "echo",
-      .params = Json{{"value", 42}},
-      .id = std::string("req-1"),
-  });
+  const auto input_text = initialized_stdio_prefix() +
+                          serialize_request_line(mcp::protocol::JsonRpcRequest{
+                              .method = "echo",
+                              .params = Json{{"value", 42}},
+                              .id = std::string("req-1"),
+                          });
   std::istringstream input(input_text);
   std::ostringstream output;
   mcp::server::StdioTransport transport(input, output);
@@ -256,6 +310,9 @@ void test_server_reads_request_and_writes_response() {
   const auto started =
       transport.start([](const mcp::protocol::JsonRpcRequest& request,
                          const mcp::server::SessionContext& context) {
+        if (request.method == mcp::protocol::InitializeMethod) {
+          return make_initialize_response(request.id);
+        }
         require(request.method == "echo", "server request method mismatch");
         require(request.params.at("value") == 42,
                 "server request params mismatch");
@@ -267,12 +324,50 @@ void test_server_reads_request_and_writes_response() {
       });
 
   require(started.has_value(), "server start should complete at EOF");
-  const auto parsed_response = mcp::protocol::parse_response(output.str());
+  const auto lines = non_empty_lines(output.str());
+  require(lines.size() == 2,
+          "server should write initialize and echo response");
+  const auto parsed_response = mcp::protocol::parse_response(lines.back());
   require(parsed_response.has_value(), "server response should parse");
   require(parsed_response->result.has_value(),
           "server response should contain result");
   require(parsed_response->result->at("echoed").at("value") == 42,
           "server response payload mismatch");
+}
+
+void test_server_rejects_request_before_initialized_notification() {
+  const auto input_text = serialize_request_line(mcp::protocol::JsonRpcRequest{
+      .method = "echo",
+      .params = Json::object(),
+      .id = std::string("req-before-init"),
+  });
+  std::istringstream input(input_text);
+  std::ostringstream output;
+  mcp::server::StdioTransport transport(input, output);
+
+  bool called = false;
+  const auto started =
+      transport.start([&called](const mcp::protocol::JsonRpcRequest& request,
+                                const mcp::server::SessionContext&) {
+        called = true;
+        return make_initialize_response(request.id);
+      });
+
+  require(started.has_value(),
+          "server should keep running after pre-initialized request rejection");
+  require(!called, "pre-initialized request should not reach handler");
+  const auto parsed_response = mcp::protocol::parse_response(output.str());
+  require(parsed_response.has_value(),
+          "pre-initialized request rejection should parse");
+  require(parsed_response->error.has_value(),
+          "pre-initialized request should be an error response");
+  require(parsed_response->error->message ==
+              "stdio transport session is not initialized",
+          "pre-initialized request error message mismatch");
+  require(parsed_response->id.has_value() &&
+              *parsed_response->id ==
+                  mcp::protocol::RequestId{std::string("req-before-init")},
+          "pre-initialized request id mismatch");
 }
 
 void test_server_writes_error_for_unexpected_stdio_response() {
@@ -314,25 +409,32 @@ void test_server_writes_error_for_unexpected_stdio_response() {
 }
 
 void test_server_writes_error_for_throwing_stdio_request_handler() {
-  const auto input_text = serialize_request_line(mcp::protocol::JsonRpcRequest{
-      .method = "custom/throw",
-      .params = Json::object(),
-      .id = std::string("req-throw"),
-  });
+  const auto input_text = initialized_stdio_prefix() +
+                          serialize_request_line(mcp::protocol::JsonRpcRequest{
+                              .method = "custom/throw",
+                              .params = Json::object(),
+                              .id = std::string("req-throw"),
+                          });
   std::istringstream input(input_text);
   std::ostringstream output;
   mcp::server::StdioTransport transport(input, output);
 
   const auto started =
-      transport.start([](const mcp::protocol::JsonRpcRequest&,
+      transport.start([](const mcp::protocol::JsonRpcRequest& request,
                          const mcp::server::SessionContext&)
                           -> mcp::core::Result<mcp::protocol::JsonRpcResponse> {
+        if (request.method == mcp::protocol::InitializeMethod) {
+          return make_initialize_response(request.id);
+        }
         throw std::runtime_error("server stdio handler threw");
       });
 
   require(started.has_value(),
           "server should convert throwing handler to error response");
-  const auto parsed_response = mcp::protocol::parse_response(output.str());
+  const auto lines = non_empty_lines(output.str());
+  require(lines.size() == 2,
+          "server should write initialize and handler error response");
+  const auto parsed_response = mcp::protocol::parse_response(lines.back());
   require(parsed_response.has_value(),
           "server handler error response should parse");
   require(parsed_response->error.has_value(),
@@ -379,18 +481,23 @@ void test_server_handles_notifications() {
   const auto serialized = mcp::protocol::serialize_notification(notification);
   require(serialized.has_value(), "notification should serialize");
 
-  std::istringstream input(*serialized + '\n');
+  std::istringstream input(initialized_stdio_prefix() + *serialized + '\n');
   std::ostringstream output;
   mcp::server::StdioTransport transport(input, output);
 
   bool notification_called = false;
   const auto started = transport.start(
-      [](const mcp::protocol::JsonRpcRequest&,
+      [](const mcp::protocol::JsonRpcRequest& request,
          const mcp::server::SessionContext&) {
-        return mcp::protocol::make_response(std::int64_t{1}, Json::object());
+        require(request.method == mcp::protocol::InitializeMethod,
+                "server notification test should only receive initialize");
+        return make_initialize_response(request.id);
       },
       [&notification_called](const mcp::protocol::JsonRpcNotification& received,
                              const mcp::server::SessionContext& context) {
+        if (received.method == mcp::protocol::InitializedMethod) {
+          return mcp::core::Unit{};
+        }
         notification_called = true;
         require(received.method ==
                     mcp::protocol::RootsListChangedNotificationMethod,
@@ -402,8 +509,9 @@ void test_server_handles_notifications() {
 
   require(started.has_value(), "server should complete after notification EOF");
   require(notification_called, "server notification handler should run");
-  require(output.str().empty(),
-          "server should not write a response for notifications");
+  const auto lines = non_empty_lines(output.str());
+  require(lines.size() == 1,
+          "server should only write an initialize response for notifications");
 }
 
 void test_server_handles_cancelled_notification() {
@@ -414,18 +522,23 @@ void test_server_handles_cancelled_notification() {
   const auto serialized = mcp::protocol::serialize_notification(notification);
   require(serialized.has_value(), "cancelled notification should serialize");
 
-  std::istringstream input(*serialized + '\n');
+  std::istringstream input(initialized_stdio_prefix() + *serialized + '\n');
   std::ostringstream output;
   mcp::server::StdioTransport transport(input, output);
 
   bool notification_called = false;
   const auto started = transport.start(
-      [](const mcp::protocol::JsonRpcRequest&,
+      [](const mcp::protocol::JsonRpcRequest& request,
          const mcp::server::SessionContext&) {
-        return mcp::protocol::make_response(std::int64_t{1}, Json::object());
+        require(request.method == mcp::protocol::InitializeMethod,
+                "server cancellation test should only receive initialize");
+        return make_initialize_response(request.id);
       },
       [&notification_called](const mcp::protocol::JsonRpcNotification& received,
                              const mcp::server::SessionContext&) {
+        if (received.method == mcp::protocol::InitializedMethod) {
+          return mcp::core::Unit{};
+        }
         notification_called = true;
         require(received.method == mcp::protocol::CancelledNotificationMethod,
                 "server cancellation notification method mismatch");
@@ -445,8 +558,9 @@ void test_server_handles_cancelled_notification() {
           "server should complete after cancelled notification EOF");
   require(notification_called,
           "server cancellation notification handler should run");
-  require(output.str().empty(),
-          "server should not write a response for cancelled notifications");
+  const auto lines = non_empty_lines(output.str());
+  require(lines.size() == 1,
+          "server should only write an initialize response for cancellation");
 }
 
 void test_client_writes_cancelled_notification_to_stdio() {
@@ -515,6 +629,8 @@ int main() {
        test_client_writes_error_for_throwing_incoming_stdio_request_handler},
       {"server reads request and writes response",
        test_server_reads_request_and_writes_response},
+      {"server rejects request before initialized notification",
+       test_server_rejects_request_before_initialized_notification},
       {"server writes error for unexpected stdio response",
        test_server_writes_error_for_unexpected_stdio_response},
       {"server writes error for throwing stdio request handler",

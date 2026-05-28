@@ -24,6 +24,57 @@ namespace {
 
 using Json = mcp::protocol::Json;
 
+struct AmbiguousToolDefaultHandler {
+  Json operator()(Json, const mcp::server::ToolContext& = {}) const {
+    return Json::object();
+  }
+};
+
+struct GenericToolHandler {
+  template <class T>
+  Json operator()(T&&) const {
+    return Json::object();
+  }
+};
+
+struct ExactToolHandler {
+  Json operator()(Json, const mcp::server::ToolContext&) const {
+    return Json::object();
+  }
+};
+
+struct GenericPromptHandler {
+  template <class T>
+  Json operator()(const T&) const {
+    return Json::object();
+  }
+};
+
+struct ExactPromptJsonHandler {
+  Json operator()(Json) const { return Json::object(); }
+};
+
+static_assert(
+    mcp::server::detail::tool_handler_match_count_v<ExactToolHandler, Json> ==
+        1,
+    "exact tool handler should have one callable shape");
+static_assert(mcp::server::detail::tool_handler_match_count_v<
+                  AmbiguousToolDefaultHandler, Json> > 1,
+              "default-argument tool handler should be diagnosed as ambiguous");
+static_assert(
+    mcp::server::detail::tool_handler_match_count_v<GenericToolHandler, Json> >
+        1,
+    "generic tool handler should be diagnosed as ambiguous");
+static_assert(
+    mcp::server::detail::prompt_handler_match_count_v<ExactPromptJsonHandler> ==
+        1,
+    "exact prompt handler should have one callable shape");
+static_assert(std::is_invocable_v<GenericPromptHandler&, Json>,
+              "generic prompt handler should accept Json");
+static_assert(
+    mcp::server::detail::prompt_handler_match_count_v<GenericPromptHandler> > 1,
+    "generic prompt handler should be diagnosed as ambiguous");
+
 void require(bool condition, std::string_view message) {
   if (!condition) {
     throw std::runtime_error(std::string(message));
@@ -69,6 +120,22 @@ class RecordingClientTransport final : public mcp::client::Transport {
       };
     }
     if (request.method == "tools/list") {
+      if (request.params.is_object() && request.params.contains("cursor")) {
+        return mcp::protocol::JsonRpcResponse{
+            .id = request.id,
+            .result =
+                Json{
+                    {"tools", Json::array({
+                                  Json{
+                                      {"name", "paged-tool-2"},
+                                      {"description", "Second page tool"},
+                                      {"inputSchema", Json{{"type", "object"}}},
+                                      {"streaming", false},
+                                  },
+                              })},
+                },
+        };
+      }
       return mcp::protocol::JsonRpcResponse{
           .id = request.id,
           .result =
@@ -199,14 +266,13 @@ class RecordingClientContractTransport final
     if (request->method == "initialize") {
       received.push_back(mcp::protocol::JsonRpcResponse{
           .id = request->id,
-          .result =
-              Json{
-                  {"protocolVersion",
-                   std::string(mcp::protocol::McpProtocolVersion)},
-                  {"capabilities", server_capabilities},
-                  {"serverInfo",
-                   Json{{"name", "sdk-test-server"}, {"version", "1"}}},
-              },
+          .result = initialize_result_override.value_or(Json{
+              {"protocolVersion",
+               std::string(mcp::protocol::McpProtocolVersion)},
+              {"capabilities", server_capabilities},
+              {"serverInfo",
+               Json{{"name", "sdk-test-server"}, {"version", "1"}}},
+          }),
       });
     } else if (request->method == "ping") {
       received.push_back(mcp::protocol::JsonRpcResponse{
@@ -385,8 +451,98 @@ class RecordingClientContractTransport final
   std::vector<TxMessage> sent;
   std::deque<RxMessage> received;
   Json server_capabilities = full_server_capabilities_json();
+  std::optional<Json> initialize_result_override;
   int receive_count = 0;
   bool stopped = false;
+};
+
+class BlockingClientContractTransport final
+    : public mcp::transport::ClientTransport {
+ public:
+  std::string_view name() const noexcept override {
+    return "blocking-client-contract";
+  }
+
+  mcp::core::Result<mcp::core::Unit> send(TxMessage message) override {
+    {
+      std::lock_guard<std::mutex> lock(mutex_);
+      sent_.push_back(std::move(message));
+    }
+    cv_.notify_all();
+    return mcp::core::Unit{};
+  }
+
+  mcp::core::Result<std::optional<RxMessage>> receive() override {
+    std::unique_lock<std::mutex> lock(mutex_);
+    ++active_receives_;
+    if (active_receives_ > max_active_receives_) {
+      max_active_receives_ = active_receives_;
+    }
+    cv_.notify_all();
+
+    cv_.wait(lock, [&] { return closed_ || !responses_.empty(); });
+    --active_receives_;
+    if (closed_ && responses_.empty()) {
+      cv_.notify_all();
+      return std::nullopt;
+    }
+    auto message = std::move(responses_.front());
+    responses_.pop_front();
+    cv_.notify_all();
+    return message;
+  }
+
+  mcp::core::Result<mcp::core::Unit> close() override {
+    {
+      std::lock_guard<std::mutex> lock(mutex_);
+      closed_ = true;
+    }
+    cv_.notify_all();
+    return mcp::core::Unit{};
+  }
+
+  bool wait_for_sent_count(std::size_t count,
+                           std::chrono::milliseconds timeout) {
+    std::unique_lock<std::mutex> lock(mutex_);
+    return cv_.wait_for(lock, timeout, [&] { return sent_.size() >= count; });
+  }
+
+  bool wait_for_active_receives(std::size_t count,
+                                std::chrono::milliseconds timeout) {
+    std::unique_lock<std::mutex> lock(mutex_);
+    return cv_.wait_for(lock, timeout,
+                        [&] { return active_receives_ >= count; });
+  }
+
+  std::size_t sent_count() const {
+    std::lock_guard<std::mutex> lock(mutex_);
+    return sent_.size();
+  }
+
+  std::size_t max_active_receives() const {
+    std::lock_guard<std::mutex> lock(mutex_);
+    return max_active_receives_;
+  }
+
+  void push_response(mcp::protocol::RequestId id, Json result) {
+    {
+      std::lock_guard<std::mutex> lock(mutex_);
+      responses_.push_back(mcp::protocol::JsonRpcResponse{
+          .id = std::move(id),
+          .result = std::move(result),
+      });
+    }
+    cv_.notify_all();
+  }
+
+ private:
+  mutable std::mutex mutex_;
+  std::condition_variable cv_;
+  std::vector<TxMessage> sent_;
+  std::deque<RxMessage> responses_;
+  std::size_t active_receives_ = 0;
+  std::size_t max_active_receives_ = 0;
+  bool closed_ = false;
 };
 
 class RecordingServerContractTransport final
@@ -421,6 +577,27 @@ class RecordingServerContractTransport final
   int receive_count = 0;
   bool stopped = false;
 };
+
+mcp::protocol::JsonRpcRequest make_server_transport_initialize_request() {
+  return mcp::protocol::JsonRpcRequest{
+      .method = std::string(mcp::protocol::InitializeMethod),
+      .params =
+          Json{
+              {"protocolVersion",
+               std::string(mcp::protocol::McpProtocolVersion)},
+              {"clientInfo",
+               Json{{"name", "sdk-test-client"}, {"version", "1"}}},
+              {"capabilities", Json::object()},
+          },
+      .id = mcp::protocol::RequestId{std::int64_t{9000}},
+  };
+}
+
+void enqueue_server_transport_lifecycle(
+    RecordingServerContractTransport& transport) {
+  transport.received.push_back(make_server_transport_initialize_request());
+  transport.received.push_back(mcp::protocol::make_initialized_notification());
+}
 
 class BlockingServerContractTransport final
     : public mcp::transport::ServerTransport {
@@ -494,8 +671,22 @@ class CapabilityClientPeerTransport final : public mcp::server::Transport {
     } else if (request.method ==
                std::string(mcp::protocol::ElicitationCreateMethod)) {
       mcp::protocol::CreateElicitationResult elicitation;
-      elicitation.action = mcp::protocol::ElicitationAction::Accept;
-      elicitation.content = Json{{"ok", true}};
+      if (request.params.value("message", "") == "decline") {
+        elicitation.action = mcp::protocol::ElicitationAction::Decline;
+      } else if (request.params.value("message", "") == "cancel") {
+        elicitation.action = mcp::protocol::ElicitationAction::Cancel;
+      } else {
+        elicitation.action = mcp::protocol::ElicitationAction::Accept;
+        if (request.params.contains("requestedSchema") &&
+            request.params.at("requestedSchema").contains("properties") &&
+            request.params.at("requestedSchema")
+                .at("properties")
+                .contains("value")) {
+          elicitation.content = Json{{"value", true}};
+        } else {
+          elicitation.content = Json{{"ok", true}};
+        }
+      }
       result = mcp::protocol::create_elicitation_result_to_json(elicitation);
     } else if (request.method == std::string(mcp::protocol::TasksListMethod)) {
       result = Json{{"tasks", Json::array({Json{
@@ -548,6 +739,29 @@ class CapabilityClientPeerTransport final : public mcp::server::Transport {
   mutable std::string last_capability_session;
 };
 
+class RecordingNotificationTransport final : public mcp::server::Transport {
+ public:
+  mcp::core::Result<mcp::core::Unit> start(
+      mcp::server::RequestHandler,
+      mcp::server::NotificationHandler = {}) override {
+    return mcp::core::Unit{};
+  }
+
+  mcp::core::Result<mcp::core::Unit> send_notification(
+      const mcp::protocol::JsonRpcNotification& notification) override {
+    notifications.push_back(notification);
+    return mcp::core::Unit{};
+  }
+
+  void stop() noexcept override {}
+
+  std::string_view name() const noexcept override {
+    return "recording-notification";
+  }
+
+  std::vector<mcp::protocol::JsonRpcNotification> notifications;
+};
+
 void test_sdk_peer_and_service_surface() {
   mcp::CancellationSource cancellation_source;
   const auto cancellation_token = cancellation_source.token();
@@ -557,7 +771,16 @@ void test_sdk_peer_and_service_surface() {
   require(cancellation_token.cancelled(),
           "cancellation token should observe cancel");
 
+  auto make_task_call = [] {
+    mcp::protocol::ToolCall call;
+    call.name = "echo";
+    call.arguments = Json{{"value", "task"}};
+    call.task = mcp::protocol::TaskRequestParameters{};
+    return call;
+  };
+
   auto transport = std::make_unique<RecordingClientTransport>();
+  transport->server_capabilities = full_server_capabilities_json();
   auto* transport_ptr = transport.get();
   mcp::ClientPeer client_peer(std::move(transport));
 
@@ -571,6 +794,13 @@ void test_sdk_peer_and_service_surface() {
   const auto tools = running_client->peer().list_tools();
   require(tools.has_value() && tools->size() == 1, "client tools list failed");
   require(tools->front().name == "echo", "client tool name mismatch");
+  mcp::protocol::PaginatedRequestParams client_page_params;
+  client_page_params.cursor = "page-2";
+  const auto client_tool_page =
+      running_client->peer().list_tools_page(client_page_params);
+  require(client_tool_page.has_value() && client_tool_page->tools.size() == 1 &&
+              client_tool_page->tools.front().name == "paged-tool-2",
+          "client peer concrete list_tools_page failed");
 
   const auto call =
       running_client->peer().call_tool("echo", Json{{"value", "client"}});
@@ -578,6 +808,47 @@ void test_sdk_peer_and_service_surface() {
   require(!call->content.empty(), "client tool call content missing");
   require(call->content.front().text == "{\"value\":\"client\"}",
           "client tool call result mismatch");
+
+  auto task_handle =
+      running_client->peer().call_tool_task_handle(make_task_call());
+  require(task_handle.has_value(), "client task handle creation failed");
+  require(task_handle->id() == "recorded-task",
+          "client task handle id mismatch");
+  require(task_handle->status() == mcp::protocol::TaskStatus::Working,
+          "client task handle initial status mismatch");
+  require(task_handle->snapshot().task_id == "recorded-task",
+          "client task handle initial snapshot mismatch");
+  const auto task_poll = task_handle->poll();
+  require(task_poll.has_value() &&
+              task_poll->status == mcp::protocol::TaskStatus::Completed,
+          "client task handle poll failed");
+  require(task_handle->status() == mcp::protocol::TaskStatus::Completed,
+          "client task handle poll should update status");
+  const auto task_result = task_handle->result();
+  require(task_result.has_value() && task_result->at("value") == 99,
+          "client task handle result failed");
+  const auto typed_task_result = task_handle->result_as<int>();
+  require(typed_task_result.has_value() && *typed_task_result == 99,
+          "client task handle typed result failed");
+
+  auto cancel_task_handle =
+      running_client->peer().call_tool_task_handle(make_task_call());
+  require(cancel_task_handle.has_value(),
+          "client cancel task handle creation failed");
+  const auto task_cancel = cancel_task_handle->cancel();
+  require(task_cancel.has_value() &&
+              task_cancel->status == mcp::protocol::TaskStatus::Cancelled,
+          "client task handle cancel failed");
+
+  auto wait_task_handle =
+      running_client->peer().call_tool_task_handle(make_task_call());
+  require(wait_task_handle.has_value(),
+          "client wait task handle creation failed");
+  const auto task_wait = wait_task_handle->wait(std::chrono::milliseconds(50),
+                                                std::chrono::milliseconds(1));
+  require(task_wait.has_value() &&
+              task_wait->status == mcp::protocol::TaskStatus::Completed,
+          "client task handle wait failed");
 
   const auto client_service_token = running_client->cancellation_token();
   require(!client_service_token.cancelled(),
@@ -614,6 +885,14 @@ void test_sdk_peer_and_service_surface() {
   require(contract_all_tools.has_value() && contract_all_tools->size() == 2 &&
               contract_all_tools->back().name == "native-next",
           "client peer generic transport list_all_tools failed");
+  mcp::protocol::PaginatedRequestParams native_page_params;
+  native_page_params.cursor = "page-2";
+  const auto contract_tool_page =
+      contract_client_peer.list_tools_page(native_page_params);
+  require(contract_tool_page.has_value() &&
+              contract_tool_page->tools.size() == 1 &&
+              contract_tool_page->tools.front().name == "native-next",
+          "client peer generic transport list_tools_page failed");
   const auto contract_all_prompts = contract_client_peer.list_all_prompts();
   require(contract_all_prompts.has_value() &&
               contract_all_prompts->size() == 2 &&
@@ -634,9 +913,90 @@ void test_sdk_peer_and_service_surface() {
   require(contract_all_tasks.has_value() && contract_all_tasks->size() == 2 &&
               contract_all_tasks->back().task_id == "task-next",
           "client peer generic transport list_all_tasks failed");
+  mcp::protocol::TaskListParams native_task_page_params;
+  native_task_page_params.cursor = "page-2";
+  const auto contract_task_page =
+      contract_client_peer.list_tasks_page(native_task_page_params);
+  require(contract_task_page.has_value() &&
+              contract_task_page->tasks.size() == 1 &&
+              contract_task_page->tasks.front().task_id == "task-next",
+          "client peer generic transport list_tasks_page failed");
+  auto native_task_handle =
+      contract_client_peer.call_tool_task_handle(make_task_call());
+  require(native_task_handle.has_value(),
+          "client peer generic transport task handle creation failed");
+  require(native_task_handle->id() == "native-task",
+          "client peer generic transport task handle id mismatch");
+  const auto native_task_wait = native_task_handle->wait(
+      std::chrono::milliseconds(50), std::chrono::milliseconds(1));
+  require(native_task_wait.has_value() &&
+              native_task_wait->status == mcp::protocol::TaskStatus::Completed,
+          "client peer generic transport task handle wait failed");
+  const auto native_task_result = native_task_handle->result_as<int>();
+  require(native_task_result.has_value() && *native_task_result == 100,
+          "client peer generic transport task handle typed result failed");
   contract_client_peer.stop();
   require(contract_transport_ptr->stopped,
           "client peer generic transport should close");
+
+  auto missing_client_peer = mcp::ClientPeer::builder().build();
+  require(!missing_client_peer.has_value(),
+          "client peer builder should reject missing transport");
+
+  auto builder_transport = std::make_unique<RecordingClientContractTransport>();
+  auto* builder_transport_ptr = builder_transport.get();
+  int builder_initialized_count = 0;
+  auto built_client_peer =
+      mcp::ClientPeer::builder()
+          .transport(std::move(builder_transport))
+          .capabilities(mcp::protocol::client_capabilities()
+                            .roots(true)
+                            .sampling()
+                            .build())
+          .roots({mcp::protocol::Root{.uri = "file:///builder-root"}})
+          .on_initialized([&] { ++builder_initialized_count; })
+          .build();
+  require(built_client_peer.has_value(),
+          "client peer builder should build role-generic transport");
+  require(built_client_peer->initialize("builder-client", "1.2.3").has_value(),
+          "client peer builder initialize failed");
+  require(!builder_transport_ptr->sent.empty(),
+          "client peer builder should send initialize");
+  const auto* initialize_request = std::get_if<mcp::protocol::JsonRpcRequest>(
+      &builder_transport_ptr->sent.front());
+  require(initialize_request != nullptr,
+          "client peer builder initialize request missing");
+  require(initialize_request->params.at("clientInfo").at("name") ==
+              "builder-client",
+          "client peer builder initialize name mismatch");
+  require(initialize_request->params.at("capabilities").contains("roots"),
+          "client peer builder capabilities missing roots");
+  const auto roots_response =
+      built_client_peer->dispatch_message(mcp::protocol::JsonRpcRequest{
+          .method = std::string(mcp::protocol::RootsListMethod),
+          .params = Json::object(),
+          .id = std::int64_t{700},
+      });
+  require(roots_response.has_value() && roots_response->has_value(),
+          "client peer builder roots request failed");
+  const auto* roots_rpc_response =
+      std::get_if<mcp::protocol::JsonRpcResponse>(&roots_response->value());
+  require(roots_rpc_response != nullptr,
+          "client peer builder roots response missing");
+  require(roots_rpc_response->result->at("roots").at(0).at("uri") ==
+              "file:///builder-root",
+          "client peer builder roots mismatch");
+  const auto initialized_notification =
+      built_client_peer->dispatch_message(mcp::protocol::JsonRpcNotification{
+          .method = std::string(mcp::protocol::InitializedMethod),
+          .params = Json::object(),
+      });
+  require(initialized_notification.has_value(),
+          "client peer builder initialized notification failed");
+  require(!initialized_notification->has_value(),
+          "client peer builder initialized notification should not respond");
+  require(builder_initialized_count == 1,
+          "client peer builder initialized handler mismatch");
 
   mcp::server::ServerBuilder builder;
   builder.name("sdk-test-server")
@@ -673,6 +1033,37 @@ void test_sdk_peer_and_service_surface() {
   require(!server_call->content.empty(), "server tool content missing");
   require(server_call->content.front().text == "{\"value\":\"server\"}",
           "server tool call result mismatch");
+
+  auto builder_server_transport =
+      std::make_unique<BlockingServerContractTransport>();
+  auto* builder_server_transport_ptr = builder_server_transport.get();
+  auto built_server_peer =
+      mcp::ServerPeer::builder()
+          .name("sdk-builder-server")
+          .version("2.0.0")
+          .instructions("builder path")
+          .transport(std::move(builder_server_transport))
+          .add_tool(
+              mcp::protocol::ToolDefinition{
+                  .name = "builder.echo",
+                  .description = "Echo payload from builder",
+                  .input_schema = Json{{"type", "object"}},
+              },
+              [](const mcp::server::ToolContext& context)
+                  -> mcp::core::Result<mcp::protocol::ToolResult> {
+                return mcp::protocol::ToolResult::text(
+                    context.arguments.dump());
+              })
+          .build();
+  require(built_server_peer.has_value(), "server peer builder failed");
+  require(built_server_peer->get_info().name == "sdk-builder-server",
+          "server peer builder name mismatch");
+  require(built_server_peer->list_tools().front().name == "builder.echo",
+          "server peer builder tool mismatch");
+  require(built_server_peer->notify_tool_list_changed().has_value(),
+          "server peer builder should notify role-generic transports");
+  require(!builder_server_transport_ptr->sent.empty(),
+          "server peer builder transport should receive notifications");
 
   const auto invalid_server_peer_call = server_peer.handle_request(
       mcp::protocol::JsonRpcRequest{
@@ -730,6 +1121,46 @@ void test_sdk_peer_and_service_surface() {
           "server peer generic transport service should wait");
   require(server_contract_transport_ptr->stopped,
           "server peer generic transport should close");
+}
+
+void test_client_peer_initialize_rejects_invalid_result_shape() {
+  auto initialize_with = [](Json result) {
+    auto transport = std::make_unique<RecordingClientContractTransport>();
+    transport->initialize_result_override = std::move(result);
+    mcp::ClientPeer peer(std::move(transport));
+    return peer.initialize("sdk-client", "1");
+  };
+
+  const auto missing_capabilities = initialize_with(Json{
+      {"protocolVersion", std::string(mcp::protocol::McpProtocolVersion)},
+      {"serverInfo", Json{{"name", "sdk-test-server"}, {"version", "1"}}},
+  });
+  require(!missing_capabilities.has_value(),
+          "client peer should reject missing initialize capabilities");
+  require(missing_capabilities.error().message ==
+              "initialize result requires object capabilities",
+          "client peer missing capabilities error mismatch");
+
+  const auto missing_server_info = initialize_with(Json{
+      {"protocolVersion", std::string(mcp::protocol::McpProtocolVersion)},
+      {"capabilities", Json::object()},
+  });
+  require(!missing_server_info.has_value(),
+          "client peer should reject missing initialize serverInfo");
+  require(missing_server_info.error().message ==
+              "initialize result requires serverInfo",
+          "client peer missing serverInfo error mismatch");
+
+  const auto unsupported_version = initialize_with(Json{
+      {"protocolVersion", "1900-01-01"},
+      {"capabilities", Json::object()},
+      {"serverInfo", Json{{"name", "sdk-test-server"}, {"version", "1"}}},
+  });
+  require(!unsupported_version.has_value(),
+          "client peer should reject unsupported initialize protocolVersion");
+  require(unsupported_version.error().message ==
+              "unsupported MCP protocol version(\"1900-01-01\")",
+          "client peer unsupported protocolVersion error mismatch");
 }
 
 void test_running_service_moved_from_is_inert() {
@@ -850,8 +1281,8 @@ void test_server_peer_initialize_dispatches_on_peer_boundary() {
   require(response->result->at("capabilities").contains("logging"),
           "server peer initialize should advertise logging");
 
-  RecordingServerContractTransport fallback_transport;
-  fallback_transport.received.push_back(mcp::protocol::JsonRpcRequest{
+  RecordingServerContractTransport unsupported_transport;
+  unsupported_transport.received.push_back(mcp::protocol::JsonRpcRequest{
       .method = std::string(mcp::protocol::InitializeMethod),
       .params =
           Json{
@@ -863,20 +1294,53 @@ void test_server_peer_initialize_dispatches_on_peer_boundary() {
       .id = mcp::protocol::RequestId{std::int64_t{2}},
   });
 
-  const auto fallback_served = peer.serve_transport(fallback_transport);
-  require(fallback_served.has_value(),
-          "server peer fallback initialize dispatch should succeed");
-  require(fallback_transport.sent.size() == 1,
-          "server peer fallback initialize should send one response");
-  const auto* fallback_response = std::get_if<mcp::protocol::JsonRpcResponse>(
-      &fallback_transport.sent.front());
-  require(fallback_response != nullptr,
-          "server peer fallback initialize response missing");
-  require(fallback_response->result.has_value(),
-          "server peer fallback initialize should return result");
-  require(fallback_response->result->at("protocolVersion") ==
-              std::string(mcp::protocol::McpProtocolVersion),
-          "server peer unknown protocol version should negotiate to latest");
+  const auto unsupported_served = peer.serve_transport(unsupported_transport);
+  require(unsupported_served.has_value(),
+          "server peer unsupported initialize dispatch should succeed");
+  require(unsupported_transport.sent.size() == 1,
+          "server peer unsupported initialize should send one response");
+  const auto* unsupported_response =
+      std::get_if<mcp::protocol::JsonRpcResponse>(
+          &unsupported_transport.sent.front());
+  require(unsupported_response != nullptr,
+          "server peer unsupported initialize response missing");
+  require(unsupported_response->error.has_value(),
+          "server peer unsupported initialize should return an error");
+  require(unsupported_response->error->code ==
+              static_cast<int>(mcp::protocol::ErrorCode::InvalidParams),
+          "server peer unsupported initialize error code mismatch");
+  require(unsupported_response->error->message ==
+              "unsupported MCP protocol version(\"1900-01-01\")",
+          "server peer unsupported initialize error message mismatch");
+}
+
+void test_server_peer_serve_transport_requires_initialized_notification() {
+  mcp::ServerPeer peer;
+
+  RecordingServerContractTransport transport;
+  transport.received.push_back(mcp::protocol::JsonRpcRequest{
+      .method = std::string(mcp::protocol::ToolsListMethod),
+      .params = Json::object(),
+      .id = mcp::protocol::RequestId{std::int64_t{3}},
+  });
+
+  const auto served = peer.serve_transport(transport);
+  require(served.has_value(),
+          "server peer pre-initialized request rejection should not stop loop");
+  require(transport.sent.size() == 1,
+          "server peer pre-initialized request should send one error");
+  const auto* response =
+      std::get_if<mcp::protocol::JsonRpcResponse>(&transport.sent.front());
+  require(response != nullptr,
+          "server peer pre-initialized rejection response missing");
+  require(response->error.has_value(),
+          "server peer pre-initialized request should be an error");
+  require(response->error->message ==
+              "server peer transport session is not initialized",
+          "server peer pre-initialized error message mismatch");
+  require(response->id.has_value() &&
+              *response->id == mcp::protocol::RequestId{std::int64_t{3}},
+          "server peer pre-initialized request id mismatch");
 }
 
 void test_server_peer_tool_discovery_dispatches_on_peer_boundary() {
@@ -902,6 +1366,7 @@ void test_server_peer_tool_discovery_dispatches_on_peer_boundary() {
   mcp::ServerPeer peer(std::move(*server));
 
   RecordingServerContractTransport transport;
+  enqueue_server_transport_lifecycle(transport);
   transport.received.push_back(mcp::protocol::JsonRpcRequest{
       .method = std::string(mcp::protocol::ToolsListMethod),
       .params = Json::object(),
@@ -916,11 +1381,12 @@ void test_server_peer_tool_discovery_dispatches_on_peer_boundary() {
   const auto served = peer.serve_transport(transport);
   require(served.has_value(),
           "server peer tool discovery dispatch should succeed");
-  require(transport.sent.size() == 2,
-          "server peer tool discovery should send two responses");
+  require(
+      transport.sent.size() == 3,
+      "server peer tool discovery should send initialize plus two responses");
 
   const auto* list_response =
-      std::get_if<mcp::protocol::JsonRpcResponse>(&transport.sent.at(0));
+      std::get_if<mcp::protocol::JsonRpcResponse>(&transport.sent.at(1));
   require(list_response != nullptr, "tools/list response missing");
   require(list_response->result.has_value(), "tools/list result missing");
   require(list_response->result->at("tools").size() == 1,
@@ -929,7 +1395,7 @@ void test_server_peer_tool_discovery_dispatches_on_peer_boundary() {
           "tools/list tool name mismatch");
 
   const auto* get_response =
-      std::get_if<mcp::protocol::JsonRpcResponse>(&transport.sent.at(1));
+      std::get_if<mcp::protocol::JsonRpcResponse>(&transport.sent.at(2));
   require(get_response != nullptr, "tools/get response missing");
   require(get_response->result.has_value(), "tools/get result missing");
   require(get_response->result->at("name") == "echo",
@@ -948,6 +1414,7 @@ void test_server_peer_tool_discovery_dispatches_on_peer_boundary() {
       });
 
   RecordingServerContractTransport raw_transport;
+  enqueue_server_transport_lifecycle(raw_transport);
   raw_transport.received.push_back(mcp::protocol::JsonRpcRequest{
       .method = std::string(mcp::protocol::ToolsListMethod),
       .params = Json::object(),
@@ -956,10 +1423,10 @@ void test_server_peer_tool_discovery_dispatches_on_peer_boundary() {
   const auto raw_served = raw_peer.serve_transport(raw_transport);
   require(raw_served.has_value(),
           "server peer raw override dispatch should succeed");
-  require(raw_transport.sent.size() == 1,
-          "server peer raw override should send one response");
+  require(raw_transport.sent.size() == 2,
+          "server peer raw override should send initialize plus one response");
   const auto* raw_response =
-      std::get_if<mcp::protocol::JsonRpcResponse>(&raw_transport.sent.front());
+      std::get_if<mcp::protocol::JsonRpcResponse>(&raw_transport.sent.at(1));
   require(raw_response != nullptr, "raw override response missing");
   require(raw_response->result.has_value(), "raw override result missing");
   require(raw_response->result->at("rawOverride") == true,
@@ -1074,6 +1541,7 @@ void test_server_peer_task_aware_tool_call_dispatches_on_peer_boundary() {
   mcp::ServerPeer peer(std::move(server));
 
   RecordingServerContractTransport transport;
+  enqueue_server_transport_lifecycle(transport);
   transport.received.push_back(mcp::protocol::JsonRpcRequest{
       .method = std::string(mcp::protocol::ToolsCallMethod),
       .params = Json{{"name", "task-tool"},
@@ -1085,10 +1553,10 @@ void test_server_peer_task_aware_tool_call_dispatches_on_peer_boundary() {
       transport, mcp::server::SessionContext{.session_id = "task-session"});
   require(served.has_value(),
           "server peer task-aware tool call dispatch should succeed");
-  require(transport.sent.size() == 1,
-          "task-aware tool call should send one response");
+  require(transport.sent.size() == 2,
+          "task-aware tool call should send initialize plus one response");
   const auto* response =
-      std::get_if<mcp::protocol::JsonRpcResponse>(&transport.sent.front());
+      std::get_if<mcp::protocol::JsonRpcResponse>(&transport.sent.at(1));
   require(response != nullptr, "task-aware tool response missing");
   require(response->result.has_value(), "task-aware tool result missing");
   require(response->result->contains("task"),
@@ -1120,6 +1588,7 @@ void test_server_peer_prompt_resource_dispatches_on_peer_boundary() {
   mcp::ServerPeer peer(std::move(*server));
 
   RecordingServerContractTransport transport;
+  enqueue_server_transport_lifecycle(transport);
   transport.received.push_back(mcp::protocol::JsonRpcRequest{
       .method = std::string(mcp::protocol::PromptsListMethod),
       .params = Json::object(),
@@ -1152,39 +1621,39 @@ void test_server_peer_prompt_resource_dispatches_on_peer_boundary() {
   const auto served = peer.serve_transport(transport, context);
   require(served.has_value(),
           "server peer prompt/resource dispatch should succeed");
-  require(transport.sent.size() == 5,
+  require(transport.sent.size() == 6,
           "server peer prompt/resource dispatch response count mismatch");
 
   const auto* prompts_list =
-      std::get_if<mcp::protocol::JsonRpcResponse>(&transport.sent.at(0));
+      std::get_if<mcp::protocol::JsonRpcResponse>(&transport.sent.at(1));
   require(prompts_list != nullptr, "prompts/list response missing");
   require(
       prompts_list->result->at("prompts").at(0).at("name") == "session-summary",
       "prompts/list prompt name mismatch");
 
   const auto* prompt_get =
-      std::get_if<mcp::protocol::JsonRpcResponse>(&transport.sent.at(1));
+      std::get_if<mcp::protocol::JsonRpcResponse>(&transport.sent.at(2));
   require(prompt_get != nullptr, "prompts/get response missing");
   require(prompt_get->result->at("messages").at(0).at("content").at("text") ==
               "peer-session:hello",
           "prompts/get should preserve session context");
 
   const auto* resources_list =
-      std::get_if<mcp::protocol::JsonRpcResponse>(&transport.sent.at(2));
+      std::get_if<mcp::protocol::JsonRpcResponse>(&transport.sent.at(3));
   require(resources_list != nullptr, "resources/list response missing");
   require(resources_list->result->at("resources").at(0).at("uri") ==
               "file:///tmp/session.txt",
           "resources/list uri mismatch");
 
   const auto* resources_read =
-      std::get_if<mcp::protocol::JsonRpcResponse>(&transport.sent.at(3));
+      std::get_if<mcp::protocol::JsonRpcResponse>(&transport.sent.at(4));
   require(resources_read != nullptr, "resources/read response missing");
   require(resources_read->result->at("contents").at(0).at("text") ==
               "peer-session:file:///tmp/session.txt:intro",
           "resources/read should preserve session context and params");
 
   const auto* templates_list =
-      std::get_if<mcp::protocol::JsonRpcResponse>(&transport.sent.at(4));
+      std::get_if<mcp::protocol::JsonRpcResponse>(&transport.sent.at(5));
   require(templates_list != nullptr,
           "resources/templates/list response missing");
   require(
@@ -1204,6 +1673,7 @@ void test_server_peer_resource_subscriptions_use_native_transport_identity() {
   require(peer.add_transport(std::move(transport)).has_value(),
           "server peer should accept subscription transport");
 
+  enqueue_server_transport_lifecycle(*transport_ptr);
   transport_ptr->received.push_back(mcp::protocol::JsonRpcRequest{
       .method = std::string(mcp::protocol::ResourcesSubscribeMethod),
       .params = Json{{"uri", "file:///tmp/data.txt"}},
@@ -1212,10 +1682,10 @@ void test_server_peer_resource_subscriptions_use_native_transport_identity() {
   const auto subscribed = peer.serve_transport(*transport_ptr);
   require(subscribed.has_value(),
           "server peer resource subscribe dispatch should succeed");
-  require(transport_ptr->sent.size() == 1,
-          "resource subscribe should send one response");
+  require(transport_ptr->sent.size() == 2,
+          "resource subscribe should send initialize plus one response");
   const auto* subscribe_response =
-      std::get_if<mcp::protocol::JsonRpcResponse>(&transport_ptr->sent.front());
+      std::get_if<mcp::protocol::JsonRpcResponse>(&transport_ptr->sent.at(1));
   require(subscribe_response != nullptr, "resource subscribe response missing");
   require(subscribe_response->result.has_value(),
           "resource subscribe result missing");
@@ -1260,6 +1730,7 @@ void test_server_peer_handler_requests_dispatch_on_peer_boundary() {
           });
 
   RecordingServerContractTransport transport;
+  enqueue_server_transport_lifecycle(transport);
   transport.received.push_back(mcp::protocol::JsonRpcRequest{
       .method = std::string(mcp::protocol::CompletionCompleteMethod),
       .params = Json{{"prefix", "he"}},
@@ -1280,27 +1751,185 @@ void test_server_peer_handler_requests_dispatch_on_peer_boundary() {
       transport, mcp::server::SessionContext{.session_id = "peer-session"});
   require(served.has_value(),
           "server peer handler request dispatch should succeed");
-  require(transport.sent.size() == 3,
+  require(transport.sent.size() == 4,
           "server peer handler request response count mismatch");
 
   const auto* completion =
-      std::get_if<mcp::protocol::JsonRpcResponse>(&transport.sent.at(0));
+      std::get_if<mcp::protocol::JsonRpcResponse>(&transport.sent.at(1));
   require(completion != nullptr, "completion response missing");
   require(completion->result->at("completion") == "peer-session:hello",
           "completion result mismatch");
 
   const auto* sampling =
-      std::get_if<mcp::protocol::JsonRpcResponse>(&transport.sent.at(1));
+      std::get_if<mcp::protocol::JsonRpcResponse>(&transport.sent.at(2));
   require(sampling != nullptr, "sampling response missing");
   require(sampling->result->at("sampled") == "peer-session:1",
           "sampling result mismatch");
 
   const auto* logging =
-      std::get_if<mcp::protocol::JsonRpcResponse>(&transport.sent.at(2));
+      std::get_if<mcp::protocol::JsonRpcResponse>(&transport.sent.at(3));
   require(logging != nullptr, "logging response missing");
   require(logging->result.has_value(), "logging result missing");
   require(logged_level == "debug:logging level changed",
           "logging handler should run at peer boundary");
+}
+
+void test_server_handler_registration_is_snapshot_and_reentrant() {
+  mcp::server::Server server(mcp::server::ServerOptions{});
+  std::atomic<int> entered{0};
+  std::atomic<int> completed{0};
+
+  server.set_completion_handler(
+      [&](const Json&, const mcp::server::SessionContext&,
+          mcp::server::CancellationToken) -> mcp::core::Result<Json> {
+        entered.fetch_add(1, std::memory_order_acq_rel);
+        server.set_completion_handler(
+            [](const Json&, const mcp::server::SessionContext&,
+               mcp::server::CancellationToken) -> mcp::core::Result<Json> {
+              return Json{{"value", 2}};
+            });
+        completed.fetch_add(1, std::memory_order_acq_rel);
+        return Json{{"value", 1}};
+      });
+
+  const auto first = server.handle_request(
+      mcp::protocol::JsonRpcRequest{
+          .method = std::string(mcp::protocol::CompletionCompleteMethod),
+          .params = Json::object(),
+          .id = mcp::protocol::RequestId{std::int64_t{1}},
+      },
+      mcp::server::SessionContext{});
+  require(first.has_value(), "reentrant completion request should succeed");
+  require(first->result.has_value(), "reentrant completion result missing");
+  require(first->result->at("value") == 1,
+          "in-flight request should use snapshotted handler");
+  require(entered.load(std::memory_order_acquire) == 1,
+          "initial completion handler did not run");
+  require(completed.load(std::memory_order_acquire) == 1,
+          "initial completion handler did not complete");
+
+  const auto second = server.handle_request(
+      mcp::protocol::JsonRpcRequest{
+          .method = std::string(mcp::protocol::CompletionCompleteMethod),
+          .params = Json::object(),
+          .id = mcp::protocol::RequestId{std::int64_t{2}},
+      },
+      mcp::server::SessionContext{});
+  require(second.has_value(), "replacement completion request should succeed");
+  require(second->result.has_value(), "replacement completion result missing");
+  require(second->result->at("value") == 2,
+          "subsequent request should use replacement handler");
+}
+
+void test_server_handler_interface_shared_registration_owns_handler() {
+  struct OwnedHandler final : mcp::server::ServerHandlerInterface {
+    std::optional<mcp::protocol::JsonRpcResponse> on_custom_request(
+        const mcp::protocol::JsonRpcRequest& request,
+        const mcp::server::SessionContext&) const override {
+      return mcp::protocol::JsonRpcResponse{
+          .id = request.id,
+          .result = Json{{"owned", true}},
+      };
+    }
+  };
+
+  std::weak_ptr<OwnedHandler> weak;
+  {
+    mcp::server::Server server(mcp::server::ServerOptions{});
+    auto handler = std::make_shared<OwnedHandler>();
+    weak = handler;
+    server.set_handler(
+        std::static_pointer_cast<const mcp::server::ServerHandlerInterface>(
+            handler));
+    handler.reset();
+    require(!weak.expired(),
+            "server should retain shared ServerHandlerInterface callbacks");
+
+    const auto response = server.handle_request(
+        mcp::protocol::JsonRpcRequest{
+            .method = "example/owned-handler",
+            .params = Json::object(),
+            .id = mcp::protocol::RequestId{std::int64_t{42}},
+        },
+        mcp::server::SessionContext{});
+    require(response.has_value(), "owned interface handler request failed");
+    require(response->result.has_value(),
+            "owned interface handler result missing");
+    require(response->result->at("owned") == true,
+            "owned interface handler result mismatch");
+  }
+  require(weak.expired(),
+          "server should release owned ServerHandlerInterface on destruction");
+
+  mcp::server::ServerBuilder builder;
+  builder.with_handler(
+      std::shared_ptr<const mcp::server::ServerHandlerInterface>{});
+  const auto built = builder.build();
+  require(!built, "builder should reject null shared ServerHandlerInterface");
+  require(built.error().code ==
+              static_cast<int>(mcp::protocol::ErrorCode::InvalidRequest),
+          "null shared ServerHandlerInterface should be InvalidRequest");
+}
+
+void test_client_handler_registration_is_snapshot_and_reentrant() {
+  mcp::client::Client client(std::make_unique<RecordingClientTransport>());
+  std::vector<std::string> log_messages;
+
+  client.on_logging_message([&](std::string_view, std::string_view message) {
+    log_messages.emplace_back(message);
+    client.on_logging_message(
+        [&](std::string_view, std::string_view replacement_message) {
+          log_messages.emplace_back(std::string("replacement:") +
+                                    std::string(replacement_message));
+        });
+  });
+
+  auto handled = client.handle_notification(mcp::protocol::JsonRpcNotification{
+      .method = "notifications/message",
+      .params = Json{{"level", "info"}, {"data", "first"}},
+  });
+  require(handled.has_value(), "initial client notification should succeed");
+  handled = client.handle_notification(mcp::protocol::JsonRpcNotification{
+      .method = "notifications/message",
+      .params = Json{{"level", "info"}, {"data", "second"}},
+  });
+  require(handled.has_value(),
+          "replacement client notification should succeed");
+  require(log_messages.size() == 2,
+          "client notification handler count mismatch");
+  require(log_messages.at(0) == "first",
+          "in-flight client notification should use snapshotted handler");
+  require(log_messages.at(1) == "replacement:second",
+          "subsequent client notification should use replacement handler");
+
+  client.on_list_roots_request([&]() {
+    client.on_list_roots_request([]() {
+      return mcp::core::Result<mcp::protocol::RootsListResult>{
+          mcp::protocol::RootsListResult{
+              .roots = {mcp::protocol::Root{.uri = "file:///second"}}}};
+    });
+    return mcp::core::Result<mcp::protocol::RootsListResult>{
+        mcp::protocol::RootsListResult{
+            .roots = {mcp::protocol::Root{.uri = "file:///first"}}}};
+  });
+
+  const auto first = client.handle_request(mcp::protocol::JsonRpcRequest{
+      .method = std::string(mcp::protocol::RootsListMethod),
+      .params = Json::object(),
+      .id = mcp::protocol::RequestId{std::int64_t{10}},
+  });
+  require(first.has_value(), "initial client request should succeed");
+  require(first->result->at("roots").at(0).at("uri") == "file:///first",
+          "in-flight client request should use snapshotted handler");
+
+  const auto second = client.handle_request(mcp::protocol::JsonRpcRequest{
+      .method = std::string(mcp::protocol::RootsListMethod),
+      .params = Json::object(),
+      .id = mcp::protocol::RequestId{std::int64_t{11}},
+  });
+  require(second.has_value(), "replacement client request should succeed");
+  require(second->result->at("roots").at(0).at("uri") == "file:///second",
+          "subsequent client request should use replacement handler");
 }
 
 void test_server_peer_task_handlers_dispatch_on_peer_boundary() {
@@ -1342,6 +1971,7 @@ void test_server_peer_task_handlers_dispatch_on_peer_boundary() {
           });
 
   RecordingServerContractTransport transport;
+  enqueue_server_transport_lifecycle(transport);
   transport.received.push_back(mcp::protocol::JsonRpcRequest{
       .method = std::string(mcp::protocol::TasksListMethod),
       .params = Json::object(),
@@ -1368,18 +1998,18 @@ void test_server_peer_task_handlers_dispatch_on_peer_boundary() {
   const auto served = peer.serve_transport(transport, context);
   require(served.has_value(),
           "server peer task handler dispatch should succeed");
-  require(transport.sent.size() == 4,
+  require(transport.sent.size() == 5,
           "server peer task handler response count mismatch");
 
   const auto* list_response =
-      std::get_if<mcp::protocol::JsonRpcResponse>(&transport.sent.at(0));
+      std::get_if<mcp::protocol::JsonRpcResponse>(&transport.sent.at(1));
   require(list_response != nullptr, "tasks/list response missing");
   require(list_response->result->at("tasks").at(0).at("taskId") ==
               "peer-task-session-listed",
           "tasks/list result mismatch");
 
   const auto* get_response =
-      std::get_if<mcp::protocol::JsonRpcResponse>(&transport.sent.at(1));
+      std::get_if<mcp::protocol::JsonRpcResponse>(&transport.sent.at(2));
   require(get_response != nullptr, "tasks/get response missing");
   require(get_response->result->at("taskId") == "peer-task-session-task-a",
           "tasks/get should preserve session context");
@@ -1387,7 +2017,7 @@ void test_server_peer_task_handlers_dispatch_on_peer_boundary() {
           "tasks/get status mismatch");
 
   const auto* cancel_response =
-      std::get_if<mcp::protocol::JsonRpcResponse>(&transport.sent.at(2));
+      std::get_if<mcp::protocol::JsonRpcResponse>(&transport.sent.at(3));
   require(cancel_response != nullptr, "tasks/cancel response missing");
   require(cancel_response->result->at("taskId") == "task-b",
           "tasks/cancel task id mismatch");
@@ -1395,7 +2025,7 @@ void test_server_peer_task_handlers_dispatch_on_peer_boundary() {
           "tasks/cancel status mismatch");
 
   const auto* result_response =
-      std::get_if<mcp::protocol::JsonRpcResponse>(&transport.sent.at(3));
+      std::get_if<mcp::protocol::JsonRpcResponse>(&transport.sent.at(4));
   require(result_response != nullptr, "tasks/result response missing");
   require(result_response->result->at("taskId") == "task-c",
           "tasks/result task id mismatch");
@@ -1673,6 +2303,8 @@ void test_server_client_peer_gates_helpers_on_client_capabilities() {
                .await_response()
                .has_value(),
           "async form elicitation helper should reject missing capability");
+  require(!unsupported_peer.elicit<bool>("Need value").has_value(),
+          "typed elicitation helper should reject missing capability");
 
   mcp::protocol::CreateElicitationRequestParam url_elicitation;
   url_elicitation.message = "Open URL";
@@ -1687,6 +2319,10 @@ void test_server_client_peer_gates_helpers_on_client_capabilities() {
       rejected_url.error().code ==
           static_cast<int>(mcp::protocol::ErrorCode::UrlElicitationRequired),
       "url elicitation rejection should use protocol url-required error");
+  require(!unsupported_peer
+               .elicit_url("Open URL", "elicit-1", "https://example.test")
+               .has_value(),
+          "url elicitation facade should reject missing url capability");
 
   require(!unsupported_peer.list_tasks().has_value(),
           "task list helper should reject missing task capability");
@@ -1728,6 +2364,46 @@ void test_server_client_peer_gates_helpers_on_client_capabilities() {
   require(url_result.has_value(),
           "url elicitation helper should send when url capability is present");
 
+  const auto typed_elicited = supported_peer.elicit<bool>("Need value");
+  require(typed_elicited.has_value() && *typed_elicited,
+          "typed elicitation helper should decode primitive value");
+  const auto typed_request = supported_transport.requests.back();
+  require(typed_request.method ==
+              std::string(mcp::protocol::ElicitationCreateMethod),
+          "typed elicitation should use elicitation/create");
+  require(typed_request.params.at("requestedSchema")
+                  .at("properties")
+                  .at("value")
+                  .at("type") == "boolean",
+          "typed elicitation should wrap primitive schemas as value");
+
+  const auto object_schema =
+      mcp::protocol::ElicitationSchema::Builder().required_bool("ok").build();
+  require(object_schema.has_value(), "explicit elicitation schema failed");
+  const auto object_elicited =
+      supported_peer.elicit<Json>("Need object", *object_schema);
+  require(object_elicited.has_value() && object_elicited->at("ok") == true,
+          "explicit schema elicitation should decode object content");
+
+  const auto declined = supported_peer.elicit<bool>("decline");
+  require(!declined.has_value() && declined.error().category == "elicitation" &&
+              declined.error().message == "elicitation declined",
+          "typed elicitation should map decline to elicitation error");
+  const auto cancelled_elicitation = supported_peer.elicit<bool>("cancel");
+  require(!cancelled_elicitation.has_value() &&
+              cancelled_elicitation.error().category == "elicitation" &&
+              cancelled_elicitation.error().message == "elicitation cancelled",
+          "typed elicitation should map cancel to elicitation error");
+
+  const auto url_facade = supported_peer.elicit_url(
+      "Open URL", "elicit-2", "https://example.test/typed-url");
+  require(url_facade.has_value(), "url elicitation facade should accept");
+  require(supported_transport.requests.back().params.at("mode") == "url",
+          "url elicitation facade should send url mode");
+  require(supported_transport.requests.back().params.at("elicitationId") ==
+              "elicit-2",
+          "url elicitation facade should include elicitation id");
+
   const auto tasks = supported_peer.list_tasks();
   require(tasks.has_value() && tasks->size() == 1 &&
               tasks->front().task_id == "cap-task",
@@ -1745,6 +2421,30 @@ void test_server_client_peer_gates_helpers_on_client_capabilities() {
           "supported capability helpers should send requests");
   require(supported_transport.session_ids.front() == "session-b",
           "client peer helper should route through the requested session");
+}
+
+void test_session_context_client_peer_expires_with_transport_lifetime() {
+  mcp::server::ClientPeer peer;
+  {
+    auto capabilities =
+        mcp::protocol::client_capabilities().roots(true).build();
+    auto transport =
+        std::make_unique<CapabilityClientPeerTransport>(capabilities);
+    mcp::server::SessionContext context;
+    context.session_id = "expired-session";
+    context.transport = transport.get();
+    context.transport_lifetime = transport->lifetime_token();
+    peer = context.client();
+    require(peer.available(),
+            "session client peer should be available while transport lives");
+  }
+
+  require(!peer.available(),
+          "session client peer should expire after transport destruction");
+  const auto request = peer.request("roots/list");
+  require(!request.has_value(), "expired client peer request should fail");
+  require(request.error().message == "client peer is not available",
+          "expired client peer error message mismatch");
 }
 
 void test_client_helpers_gate_on_server_capabilities() {
@@ -1932,25 +2632,88 @@ void test_client_peer_native_raw_request_dispatches_interleaved_messages() {
           "native client peer list_tools_async result mismatch");
 }
 
-void test_client_peer_native_raw_request_reports_transport_failures() {
-  auto unexpected_transport =
-      std::make_unique<RecordingClientContractTransport>();
-  unexpected_transport->received.push_back(mcp::protocol::JsonRpcResponse{
-      .id = mcp::protocol::RequestId{std::int64_t{999}},
-      .result = Json::object(),
+void test_client_peer_native_raw_request_serializes_receive_loop() {
+  auto transport = std::make_unique<BlockingClientContractTransport>();
+  auto* transport_ptr = transport.get();
+  mcp::ClientPeer peer(std::move(transport));
+
+  std::optional<mcp::core::Result<Json>> first;
+  std::optional<mcp::core::Result<Json>> second;
+
+  std::thread first_thread([&] {
+    first = peer.raw_request(mcp::protocol::JsonRpcRequest{
+        .method = "custom/first",
+        .params = Json::object(),
+        .id = std::int64_t{701},
+    });
   });
-  mcp::ClientPeer unexpected_peer(std::move(unexpected_transport));
-  const auto unexpected = unexpected_peer.raw_request(
+  require(transport_ptr->wait_for_sent_count(1, std::chrono::seconds(1)),
+          "first native client peer request should send");
+  require(transport_ptr->wait_for_active_receives(1, std::chrono::seconds(1)),
+          "first native client peer request should wait for response");
+
+  std::thread second_thread([&] {
+    second = peer.raw_request(mcp::protocol::JsonRpcRequest{
+        .method = "custom/second",
+        .params = Json::object(),
+        .id = std::int64_t{702},
+    });
+  });
+  std::this_thread::sleep_for(std::chrono::milliseconds(50));
+  require(
+      transport_ptr->sent_count() == 1,
+      "second native client peer request should wait for serialized access");
+  require(transport_ptr->max_active_receives() == 1,
+          "native client peer should not run concurrent receive loops");
+
+  transport_ptr->push_response(std::int64_t{701}, Json{{"value", 1}});
+  first_thread.join();
+  require(first.has_value() && first->has_value(),
+          "first native client peer request should complete");
+  require((*first)->at("value") == 1,
+          "first native client peer response mismatch");
+
+  require(transport_ptr->wait_for_sent_count(2, std::chrono::seconds(1)),
+          "second native client peer request should send after first response");
+  transport_ptr->push_response(std::int64_t{702}, Json{{"value", 2}});
+  second_thread.join();
+  require(second.has_value() && second->has_value(),
+          "second native client peer request should complete");
+  require((*second)->at("value") == 2,
+          "second native client peer response mismatch");
+  require(transport_ptr->max_active_receives() == 1,
+          "native client peer receive loop should stay serialized");
+}
+
+void test_client_peer_native_raw_request_reports_transport_failures() {
+  auto out_of_order_transport =
+      std::make_unique<RecordingClientContractTransport>();
+  out_of_order_transport->received.push_back(mcp::protocol::JsonRpcResponse{
+      .id = mcp::protocol::RequestId{std::int64_t{999}},
+      .result = Json{{"buffered", true}},
+  });
+  out_of_order_transport->received.push_back(mcp::protocol::JsonRpcResponse{
+      .id = mcp::protocol::RequestId{std::int64_t{77}},
+      .result = Json{{"ok", true}},
+  });
+  mcp::ClientPeer out_of_order_peer(std::move(out_of_order_transport));
+  const auto current = out_of_order_peer.raw_request(
       mcp::protocol::JsonRpcRequest{.method = "custom/unexpected",
                                     .params = Json::object(),
                                     .id = std::int64_t{77}});
-  require(!unexpected.has_value(),
-          "native client peer should reject unexpected response ids");
-  require(unexpected.error().message ==
-              "client peer transport received unexpected response id",
-          "native client peer unexpected response message mismatch");
-  require(unexpected.error().category == "transport",
-          "native client peer unexpected response category mismatch");
+  require(current.has_value(),
+          "native client peer should tolerate out-of-order response ids");
+  require(current->at("ok") == true,
+          "native client peer current response mismatch");
+
+  const auto buffered = out_of_order_peer.raw_request(
+      mcp::protocol::JsonRpcRequest{.method = "custom/buffered",
+                                    .params = Json::object(),
+                                    .id = std::int64_t{999}});
+  require(buffered.has_value(),
+          "native client peer should return buffered out-of-order response");
+  require(buffered->at("buffered") == true,
+          "native client peer buffered response mismatch");
 
   auto closed_transport = std::make_unique<RecordingClientContractTransport>();
   mcp::ClientPeer closed_peer(std::move(closed_transport));
@@ -2302,6 +3065,220 @@ void test_app_builder_rejects_empty_std_function_handlers() {
   require(threw, "empty sampling function pointer should be rejected");
 }
 
+void test_registries_validate_names_and_keys() {
+  auto require_invalid_request = [](const auto& result,
+                                    std::string_view message) {
+    require(!result.has_value(), message);
+    require(result.error().code ==
+                static_cast<int>(mcp::protocol::ErrorCode::InvalidRequest),
+            "registry invalid name error code mismatch");
+  };
+
+  const mcp::server::ToolHandler tool_handler =
+      [](const mcp::server::ToolContext&)
+      -> mcp::core::Result<mcp::protocol::ToolResult> {
+    return mcp::protocol::ToolResult::text("ok");
+  };
+  const mcp::server::PromptHandler prompt_handler =
+      [](const mcp::server::PromptContext&)
+      -> mcp::core::Result<mcp::protocol::PromptsGetResult> {
+    return mcp::protocol::PromptsGetResult{};
+  };
+  const mcp::server::ResourceReadHandler resource_handler =
+      [](const mcp::server::ResourceContext& context)
+      -> mcp::core::Result<mcp::protocol::ResourcesReadResult> {
+    mcp::protocol::ResourcesReadResult result;
+    result.contents.push_back(mcp::protocol::ResourceContents{
+        .uri = context.uri,
+        .text = "ok",
+    });
+    return result;
+  };
+
+  mcp::server::ToolRegistry tools;
+  require(tools
+              .add(
+                  mcp::protocol::ToolDefinition{
+                      .name = "workspace.search/v1 - dry_run",
+                      .input_schema = Json{{"type", "object"}},
+                  },
+                  tool_handler)
+              .has_value(),
+          "tool registry should accept punctuation and spaces");
+  require_invalid_request(tools.add(
+                              mcp::protocol::ToolDefinition{
+                                  .name = std::string(1025, 't'),
+                                  .input_schema = Json{{"type", "object"}},
+                              },
+                              tool_handler),
+                          "tool registry should reject overlong names");
+
+  mcp::server::PromptRegistry prompts;
+  require(prompts
+              .add(
+                  mcp::protocol::Prompt{
+                      .name = "session.summary/v1",
+                  },
+                  prompt_handler)
+              .has_value(),
+          "prompt registry should accept dotted names");
+  require_invalid_request(prompts.add(
+                              mcp::protocol::Prompt{
+                                  .name = std::string("bad\nprompt"),
+                              },
+                              prompt_handler),
+                          "prompt registry should reject control characters");
+
+  mcp::server::ResourceRegistry resources;
+  require(resources
+              .add(
+                  mcp::protocol::Resource{
+                      .uri = "file:///workspace/readme.md?rev=1",
+                      .name = "Workspace README",
+                  },
+                  resource_handler)
+              .has_value(),
+          "resource registry should accept URI punctuation");
+  require_invalid_request(resources.add(
+                              mcp::protocol::Resource{
+                                  .uri = std::string(4097, 'r'),
+                                  .name = "resource",
+                              },
+                              resource_handler),
+                          "resource registry should reject overlong URIs");
+  require_invalid_request(
+      resources.add(
+          mcp::protocol::Resource{
+              .uri = "file:///bad-name.txt",
+              .name = std::string("bad\rresource"),
+          },
+          resource_handler),
+      "resource registry should reject invalid resource names");
+
+  mcp::server::ResourceTemplateRegistry templates;
+  require(templates
+              .add(mcp::protocol::ResourceTemplate{
+                  .uri_template = "file:///workspace/{path}.txt",
+                  .name = "Workspace template",
+              })
+              .has_value(),
+          "template registry should accept URI template punctuation");
+  require_invalid_request(
+      templates.add(mcp::protocol::ResourceTemplate{
+          .uri_template = std::string("file:///{bad\tpath}.txt"),
+          .name = "bad template",
+      }),
+      "template registry should reject control characters in URI templates");
+  require_invalid_request(
+      templates.add(mcp::protocol::ResourceTemplate{
+          .uri_template = "file:///bad-template/{path}.txt",
+          .name = std::string(1025, 'n'),
+      }),
+      "template registry should reject overlong template names");
+}
+
+void test_registries_invoke_handlers_outside_internal_locks() {
+  mcp::server::ToolRegistry tools;
+  require(tools
+              .add(
+                  mcp::protocol::ToolDefinition{
+                      .name = "install.generated.tool",
+                      .input_schema = Json{{"type", "object"}},
+                  },
+                  [&](const mcp::server::ToolContext&)
+                      -> mcp::core::Result<mcp::protocol::ToolResult> {
+                    const auto added = tools.add(
+                        mcp::protocol::ToolDefinition{
+                            .name = "generated.tool",
+                            .input_schema = Json{{"type", "object"}},
+                        },
+                        [](const mcp::server::ToolContext&)
+                            -> mcp::core::Result<mcp::protocol::ToolResult> {
+                          return mcp::protocol::ToolResult::text("generated");
+                        });
+                    if (!added) {
+                      return mcp::core::unexpected(added.error());
+                    }
+                    return mcp::protocol::ToolResult::text("installed");
+                  })
+              .has_value(),
+          "tool registry setup should succeed");
+  require(tools.call("install.generated.tool", Json::object()).has_value(),
+          "tool handler should reenter registry without deadlock");
+  require(tools.get("generated.tool").has_value(),
+          "reentrant tool registration should be visible");
+
+  mcp::server::PromptRegistry prompts;
+  require(
+      prompts
+          .add(mcp::protocol::Prompt{.name = "install.generated.prompt"},
+               [&](const mcp::server::PromptContext&)
+                   -> mcp::core::Result<mcp::protocol::PromptsGetResult> {
+                 const auto added = prompts.add(
+                     mcp::protocol::Prompt{.name = "generated.prompt"},
+                     [](const mcp::server::PromptContext&)
+                         -> mcp::core::Result<mcp::protocol::PromptsGetResult> {
+                       return mcp::protocol::PromptsGetResult{};
+                     });
+                 if (!added) {
+                   return mcp::core::unexpected(added.error());
+                 }
+                 return mcp::protocol::PromptsGetResult{};
+               })
+          .has_value(),
+      "prompt registry setup should succeed");
+  require(
+      prompts.get("install.generated.prompt", Json::object(), "s").has_value(),
+      "prompt handler should reenter registry without deadlock");
+  require(prompts.list().size() == 2,
+          "reentrant prompt registration should be visible");
+
+  mcp::server::ResourceRegistry resources;
+  require(
+      resources
+          .add(
+              mcp::protocol::Resource{
+                  .uri = "file:///install-generated-resource",
+                  .name = "Install generated resource",
+              },
+              [&](const mcp::server::ResourceContext& context)
+                  -> mcp::core::Result<mcp::protocol::ResourcesReadResult> {
+                const auto added = resources.add(
+                    mcp::protocol::Resource{
+                        .uri = "file:///generated-resource",
+                        .name = "Generated resource",
+                    },
+                    [](const mcp::server::ResourceContext& generated_context)
+                        -> mcp::core::Result<
+                            mcp::protocol::ResourcesReadResult> {
+                      mcp::protocol::ResourcesReadResult generated;
+                      generated.contents.push_back(
+                          mcp::protocol::ResourceContents{
+                              .uri = generated_context.uri,
+                              .text = "generated",
+                          });
+                      return generated;
+                    });
+                if (!added) {
+                  return mcp::core::unexpected(added.error());
+                }
+                mcp::protocol::ResourcesReadResult result;
+                result.contents.push_back(mcp::protocol::ResourceContents{
+                    .uri = context.uri,
+                    .text = "installed",
+                });
+                return result;
+              })
+          .has_value(),
+      "resource registry setup should succeed");
+  require(
+      resources.read("file:///install-generated-resource", Json::object(), "s")
+          .has_value(),
+      "resource handler should reenter registry without deadlock");
+  require(resources.list().size() == 2,
+          "reentrant resource registration should be visible");
+}
+
 void test_executor_rejects_empty_task() {
   mcp::core::BoundedExecutor executor(1, 4);
   std::function<void()> empty_task;
@@ -2309,6 +3286,304 @@ void test_executor_rejects_empty_task() {
   require(!queued.has_value(), "empty executor task should be rejected");
   require(queued.error().message == "executor task must be callable",
           "empty executor task error mismatch");
+}
+
+void test_executor_reports_task_exceptions() {
+  std::mutex mutex;
+  std::condition_variable cv;
+  std::string reported;
+
+  mcp::core::BoundedExecutor executor(1, 4, [&](std::exception_ptr exception) {
+    std::string message = "unknown";
+    try {
+      if (exception) {
+        std::rethrow_exception(exception);
+      }
+    } catch (const std::exception& ex) {
+      message = ex.what();
+    }
+    {
+      std::lock_guard<std::mutex> lock(mutex);
+      reported = std::move(message);
+    }
+    cv.notify_all();
+  });
+
+  const auto queued = executor.enqueue(
+      [] { throw std::runtime_error("executor task failed"); });
+  require(queued.has_value(), "throwing executor task should enqueue");
+
+  {
+    std::unique_lock<std::mutex> lock(mutex);
+    require(cv.wait_for(lock, std::chrono::seconds(1),
+                        [&] { return !reported.empty(); }),
+            "executor exception handler should be called");
+  }
+  executor.stop();
+  require(reported == "executor task failed",
+          "executor exception handler message mismatch");
+}
+
+void test_server_routers_apply_to_builders() {
+  int router_changes = 0;
+  mcp::server::ToolRouter base_tools;
+  base_tools.on_changed([&] { ++router_changes; })
+      .add(
+          mcp::protocol::ToolDefinition{
+              .name = "router.echo",
+              .description = "Router echo",
+              .input_schema = Json{{"type", "object"}},
+          },
+          [](const mcp::server::ToolContext& context)
+              -> mcp::core::Result<mcp::protocol::ToolResult> {
+            return mcp::protocol::ToolResult::text(context.arguments.dump());
+          })
+      .add(
+          mcp::protocol::ToolDefinition{
+              .name = "router.disabled",
+              .input_schema = Json{{"type", "object"}},
+          },
+          [](const mcp::server::ToolContext&)
+              -> mcp::core::Result<mcp::protocol::ToolResult> {
+            return mcp::protocol::ToolResult::text("disabled");
+          })
+      .disable("router.disabled");
+
+  mcp::server::ToolRouter extra_tools;
+  extra_tools.tool(
+      mcp::server::tool<Json, Json>("router.typed").handler([](Json args) {
+        return args;
+      }));
+  base_tools.merge(extra_tools);
+  require(router_changes == 4, "tool router change hook mismatch");
+
+  mcp::server::PromptRouter prompts;
+  prompts
+      .add(mcp::protocol::Prompt{.name = "router.prompt"},
+           [](const mcp::server::PromptContext&)
+               -> mcp::core::Result<mcp::protocol::PromptsGetResult> {
+             mcp::protocol::PromptsGetResult result;
+             result.messages.push_back(
+                 mcp::protocol::PromptMessage::text("assistant", "prompt"));
+             return result;
+           })
+      .add(mcp::protocol::Prompt{.name = "router.disabled_prompt"},
+           [](const mcp::server::PromptContext&)
+               -> mcp::core::Result<mcp::protocol::PromptsGetResult> {
+             return mcp::protocol::PromptsGetResult{};
+           })
+      .disable("router.disabled_prompt");
+
+  mcp::server::ResourceRouter resources;
+  resources
+      .add(
+          mcp::protocol::Resource{
+              .uri = "file:///router.txt",
+              .name = "router-resource",
+          },
+          [](const mcp::server::ResourceContext& context)
+              -> mcp::core::Result<mcp::protocol::ResourcesReadResult> {
+            mcp::protocol::ResourcesReadResult result;
+            result.contents.push_back(mcp::protocol::ResourceContents{
+                .uri = context.uri,
+                .text = "resource",
+            });
+            return result;
+          })
+      .add(
+          mcp::protocol::Resource{
+              .uri = "file:///disabled.txt",
+              .name = "disabled-resource",
+          },
+          [](const mcp::server::ResourceContext&)
+              -> mcp::core::Result<mcp::protocol::ResourcesReadResult> {
+            return mcp::protocol::ResourcesReadResult{};
+          })
+      .disable_resource("file:///disabled.txt")
+      .add_template(mcp::protocol::ResourceTemplate{
+          .uri_template = "file:///{name}.txt",
+          .name = "router-template",
+      });
+
+  auto peer = mcp::ServerPeer::builder()
+                  .name("router-server")
+                  .version("1")
+                  .router(base_tools)
+                  .router(prompts)
+                  .router(resources)
+                  .build();
+  require(peer.has_value(), "router server peer build failed");
+
+  const auto tools = peer->list_tools();
+  require(tools.size() == 2, "router enabled tool count mismatch");
+  require(peer->get_tool("router.echo").has_value(),
+          "router echo tool missing");
+  require(!peer->get_tool("router.disabled").has_value(),
+          "router disabled tool should not be registered");
+  const auto typed_call =
+      peer->call_tool("router.typed", Json{{"value", "typed"}});
+  require(typed_call.has_value(), "router typed tool call failed");
+  require(typed_call->structured_content.has_value(),
+          "router typed tool structured content missing");
+  require(typed_call->structured_content->at("value") == "typed",
+          "router typed tool result mismatch");
+
+  const auto prompt = peer->get_prompt("router.prompt");
+  require(prompt.has_value(), "router prompt get failed");
+  require(prompt->messages.front().content.text == "prompt",
+          "router prompt result mismatch");
+  const auto resources_list = peer->list_resources();
+  require(resources_list.size() == 1, "router resource count mismatch");
+  const auto read = peer->read_resource("file:///router.txt");
+  require(read.has_value(), "router resource read failed");
+  require(read->contents.front().text == "resource",
+          "router resource result mismatch");
+  require(peer->list_resource_templates().size() == 1,
+          "router template count mismatch");
+
+  auto typed_peer =
+      mcp::ServerPeer::builder()
+          .name("typed-metadata-server")
+          .version("1")
+          .prompt(mcp::server::prompt<Json>(
+                      mcp::protocol::prompt_definition("typed.prompt")
+                          .title("Typed Prompt")
+                          .argument("topic", true, "Prompt topic")
+                          .build())
+                      .handler([](Json args) {
+                        return std::string("topic=") +
+                               args.at("topic").get<std::string>();
+                      }))
+          .resource(mcp::server::resource<Json>(
+                        mcp::protocol::resource_definition(
+                            "file:///typed-resource.txt", "typed-resource")
+                            .mime_type("text/plain")
+                            .description("Typed resource")
+                            .build())
+                        .handler([](Json) { return "typed resource"; }))
+          .resource_template(mcp::server::resource_template(
+                                 "file:///{name}.txt", "typed-template")
+                                 .mime_type("text/plain")
+                                 .build())
+          .build();
+  require(typed_peer.has_value(), "typed prompt/resource peer build failed");
+  const auto typed_prompt =
+      typed_peer->get_prompt("typed.prompt", Json{{"topic", "sdk"}});
+  require(typed_prompt.has_value(), "typed prompt get failed");
+  require(typed_prompt->messages.front().content.text == "topic=sdk",
+          "typed prompt result mismatch");
+  require(typed_peer->list_prompts().front().arguments.front().required,
+          "typed prompt argument metadata mismatch");
+  const auto typed_resource =
+      typed_peer->read_resource("file:///typed-resource.txt");
+  require(typed_resource.has_value(), "typed resource read failed");
+  require(typed_resource->contents.front().text == "typed resource",
+          "typed resource result mismatch");
+  require(typed_peer->list_resources().front().mime_type == "text/plain",
+          "typed resource metadata mismatch");
+  require(typed_peer->list_resource_templates().front().uri_template ==
+              "file:///{name}.txt",
+          "typed resource-template metadata mismatch");
+}
+
+void test_server_routers_emit_bound_list_changed_notifications() {
+  mcp::server::ToolRouter memory_tools;
+  int memory_changes = 0;
+  memory_tools.on_changed([&] { ++memory_changes; })
+      .add(
+          mcp::protocol::ToolDefinition{
+              .name = "memory.tool",
+              .input_schema = Json{{"type", "object"}},
+          },
+          [](const mcp::server::ToolContext&)
+              -> mcp::core::Result<mcp::protocol::ToolResult> {
+            return mcp::protocol::ToolResult::text("ok");
+          })
+      .remove("memory.tool")
+      .clear();
+  require(memory_changes == 2,
+          "unbound router should remain a pure memory change source");
+  require(memory_tools.routes().empty(), "tool router remove should erase");
+
+  mcp::server::Server server(mcp::server::ServerOptions{});
+  RecordingNotificationTransport server_transport;
+  require(server.add_session_transport(server_transport).has_value(),
+          "server session transport registration failed");
+
+  mcp::server::ToolRouter tools;
+  mcp::server::PromptRouter prompts;
+  mcp::server::ResourceRouter resources;
+  int bound_tool_changes = 0;
+  tools.on_changed([&] { ++bound_tool_changes; });
+  tools.bind(server);
+  prompts.bind(server);
+  resources.bind(server);
+
+  tools.add(
+      mcp::protocol::ToolDefinition{
+          .name = "bound.tool",
+          .input_schema = Json{{"type", "object"}},
+      },
+      [](const mcp::server::ToolContext&)
+          -> mcp::core::Result<mcp::protocol::ToolResult> {
+        return mcp::protocol::ToolResult::text("ok");
+      });
+  prompts.add(mcp::protocol::Prompt{.name = "bound.prompt"},
+              [](const mcp::server::PromptContext&)
+                  -> mcp::core::Result<mcp::protocol::PromptsGetResult> {
+                return mcp::protocol::PromptsGetResult{};
+              });
+  resources.add(
+      mcp::protocol::Resource{
+          .uri = "file:///bound.txt",
+          .name = "bound-resource",
+      },
+      [](const mcp::server::ResourceContext&)
+          -> mcp::core::Result<mcp::protocol::ResourcesReadResult> {
+        return mcp::protocol::ResourcesReadResult{};
+      });
+
+  require(server_transport.notifications.size() == 3,
+          "bound server router notification count mismatch");
+  require(bound_tool_changes == 1,
+          "bound router should preserve existing change hook");
+  require(server_transport.notifications[0].method ==
+              std::string(mcp::protocol::ToolsListChangedNotificationMethod),
+          "tool router notification method mismatch");
+  require(server_transport.notifications[1].method ==
+              std::string(mcp::protocol::PromptsListChangedNotificationMethod),
+          "prompt router notification method mismatch");
+  require(
+      server_transport.notifications[2].method ==
+          std::string(mcp::protocol::ResourcesListChangedNotificationMethod),
+      "resource router notification method mismatch");
+
+  auto peer_server =
+      std::make_unique<mcp::server::Server>(mcp::server::ServerOptions{});
+  RecordingNotificationTransport peer_transport;
+  require(peer_server->add_session_transport(peer_transport).has_value(),
+          "peer session transport registration failed");
+  mcp::ServerPeer peer(std::move(peer_server));
+
+  mcp::server::ToolRouter peer_tools;
+  peer_tools.bind(peer);
+  peer_tools
+      .add(
+          mcp::protocol::ToolDefinition{
+              .name = "peer.tool",
+              .input_schema = Json{{"type", "object"}},
+          },
+          [](const mcp::server::ToolContext&)
+              -> mcp::core::Result<mcp::protocol::ToolResult> {
+            return mcp::protocol::ToolResult::text("ok");
+          })
+      .clear();
+
+  require(peer_transport.notifications.size() == 2,
+          "bound server peer router notification count mismatch");
+  require(peer_transport.notifications[0].method ==
+              std::string(mcp::protocol::ToolsListChangedNotificationMethod),
+          "server peer router notification method mismatch");
 }
 
 void test_public_error_helpers_assign_stable_categories() {
@@ -2416,20 +3691,27 @@ void test_public_error_helpers_assign_stable_categories() {
 int main() {
   try {
     test_sdk_peer_and_service_surface();
+    test_client_peer_initialize_rejects_invalid_result_shape();
     test_running_service_moved_from_is_inert();
     test_peer_serve_transport_observes_precancelled_token();
     test_server_peer_initialize_dispatches_on_peer_boundary();
+    test_server_peer_serve_transport_requires_initialized_notification();
     test_server_peer_tool_discovery_dispatches_on_peer_boundary();
     test_server_peer_tool_call_dispatches_on_peer_boundary();
     test_server_peer_task_aware_tool_call_dispatches_on_peer_boundary();
     test_server_peer_prompt_resource_dispatches_on_peer_boundary();
     test_server_peer_resource_subscriptions_use_native_transport_identity();
     test_server_peer_handler_requests_dispatch_on_peer_boundary();
+    test_server_handler_registration_is_snapshot_and_reentrant();
+    test_server_handler_interface_shared_registration_owns_handler();
+    test_client_handler_registration_is_snapshot_and_reentrant();
     test_server_peer_task_handlers_dispatch_on_peer_boundary();
     test_server_builder_peer_canonical_authoring_surface();
     test_server_client_peer_gates_helpers_on_client_capabilities();
+    test_session_context_client_peer_expires_with_transport_lifetime();
     test_client_helpers_gate_on_server_capabilities();
     test_client_peer_native_raw_request_dispatches_interleaved_messages();
+    test_client_peer_native_raw_request_serializes_receive_loop();
     test_client_peer_native_raw_request_reports_transport_failures();
     test_request_handle_rejects_invalid_state();
     test_public_dispatch_boundaries_translate_handler_exceptions();
@@ -2438,7 +3720,12 @@ int main() {
     test_request_handle_cancellation_race_stress();
     test_request_handle_timeout_race_stress();
     test_app_builder_rejects_empty_std_function_handlers();
+    test_registries_validate_names_and_keys();
+    test_registries_invoke_handlers_outside_internal_locks();
     test_executor_rejects_empty_task();
+    test_executor_reports_task_exceptions();
+    test_server_routers_apply_to_builders();
+    test_server_routers_emit_bound_list_changed_notifications();
     test_public_error_helpers_assign_stable_categories();
     std::cout << "sdk peer/service test passed\n";
     return 0;
