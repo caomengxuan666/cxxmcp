@@ -824,7 +824,7 @@ jobs:
               text,
           )
           text, version_count = re.subn(
-              r'add_versions\("v2\.0\.2",\s*".*?"\)',
+              r'add_versions\("v1\.0\.0",\s*".*?"\)',
               f'add_versions("v1.0.0", "{digest}")',
               text,
           )
