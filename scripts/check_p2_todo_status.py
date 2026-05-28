@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Ensure P2 local work is closed except documented external maturity gates."""
+"""Ensure local TODO work is closed except documented external evidence gates."""
 
 from __future__ import annotations
 
@@ -8,9 +8,26 @@ import re
 from pathlib import Path
 
 
-ALLOWED_UNCHECKED_P2_PREFIXES = (
+ALLOWED_UNCHECKED_PREFIXES = (
+    "The SDK-first public surface is stable across releases.",
+    "Core MCP capability parity is complete enough for most C++ consumers.",
+    "Installed-package consumption works on every supported compiler,",
+    "Public docs, examples, changelog, release artifacts, and compatibility",
     "Accumulate maturity evidence before resubmitting to the vcpkg curated",
+    "Maintain an adoption ledger with real downstream repositories,",
     "Resubmit to the vcpkg curated registry only after the maturity evidence is",
+    "Publish generated docs from an exact tagged release candidate run.",
+    "Publish and review versioned release artifacts plus compatibility notes",
+)
+
+REQUIRED_EXTERNAL_GATE_MARKERS = (
+    "Status notes that must stay true until exact release evidence says otherwise:",
+    "Do not claim fact-standard status yet.",
+    "Current open checkboxes are intentionally external-evidence gates.",
+    "local source edits alone",
+    "exact-commit GitHub",
+    "tagged release artifacts",
+    "downstream adoption",
 )
 
 REQUIRED_EVIDENCE_DOCS = (
@@ -50,6 +67,16 @@ def check_required_evidence_docs(source: Path) -> None:
             fail(f"todo.md does not reference required evidence doc: {display}")
 
 
+def check_external_gate_boundary(source: Path) -> None:
+    todo_text = read_text(source, Path("todo.md"))
+    for marker in REQUIRED_EXTERNAL_GATE_MARKERS:
+        if marker not in todo_text:
+            fail(f"todo.md is missing external-evidence gate marker: {marker!r}")
+
+    if "- [ ] Do not claim fact-standard status yet." in todo_text:
+        fail("fact-standard warning must be a status note, not an open checkbox")
+
+
 def check_readme_first_screen(source: Path) -> None:
     for relative, marker in README_FIRST_SCREEN_MARKERS.items():
         text = read_text(source, relative)
@@ -74,24 +101,22 @@ def main() -> None:
     source = Path(args.source).resolve()
     check_required_evidence_docs(source)
     check_readme_first_screen(source)
+    check_external_gate_boundary(source)
 
     todo = source / "todo.md"
     lines = todo.read_text(encoding="utf-8").splitlines()
 
-    in_p2 = False
     failures: list[str] = []
     allowed_seen: set[str] = set()
 
     for number, line in enumerate(lines, start=1):
-        if line.startswith("## "):
-            in_p2 = line.startswith("## P2:")
-            continue
-        if not in_p2 or not line.startswith("- [ ] "):
+        stripped = line.lstrip()
+        if not stripped.startswith("- [ ] "):
             continue
 
-        item = line[len("- [ ] ") :]
+        item = stripped[len("- [ ] ") :]
         allowed = False
-        for prefix in ALLOWED_UNCHECKED_P2_PREFIXES:
+        for prefix in ALLOWED_UNCHECKED_PREFIXES:
             if item.startswith(prefix):
                 allowed = True
                 allowed_seen.add(prefix)
@@ -100,12 +125,12 @@ def main() -> None:
             failures.append(f"{number}: {line}")
 
     if failures:
-        fail("unexpected unchecked P2 item(s):\n" + "\n".join(failures))
+        fail("unexpected unchecked TODO item(s):\n" + "\n".join(failures))
 
-    missing = set(ALLOWED_UNCHECKED_P2_PREFIXES) - allowed_seen
+    missing = set(ALLOWED_UNCHECKED_PREFIXES) - allowed_seen
     if missing:
         fail(
-            "expected external P2 maturity gate(s) to remain explicit: "
+            "expected external evidence gate(s) to remain explicit: "
             + ", ".join(sorted(missing))
         )
 

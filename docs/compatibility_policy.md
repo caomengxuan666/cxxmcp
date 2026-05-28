@@ -11,6 +11,12 @@ The canonical SDK path is `Peer` / `Service` over the public CMake targets and
 headers under `cxxmcp/...`. `Peer` / `Service` are the first-choice application
 entry points for new code.
 
+The project and package name is `cxxmcp`, and public CMake targets use the
+`cxxmcp::` prefix. The stable C++ namespace remains `mcp` by design. This keeps
+source examples concise while the package and include paths avoid collisions.
+Renaming the C++ namespace is a breaking API change, not a cosmetic cleanup, and
+must follow the public rename policy below if it is ever proposed.
+
 Concrete `client::Client`, `server::Server`, and `server::App` surfaces are
 compatibility or convenience APIs. They may remain available for migration,
 tests, and low-boilerplate examples, but public docs and release artifacts must
@@ -99,6 +105,16 @@ The intended public matrix is:
 The `.github/workflows/release-gates.yml` workflow is the canonical evidence
 producer for this matrix. Release notes must not claim unsupported matrix
 entries just because the source is expected to work there.
+
+MinGW is tracked separately as scheduled compiler compatibility evidence, not
+as a release-supported target. The
+`.github/workflows/compiler-compat.yml` workflow runs the
+`windows-mingw-ucrt64-gcc` and `windows-mingw-clang64-clang` jobs as
+provisional, best-effort checks while the `mingw-sdk` job remains
+`continue-on-error: true`. Release notes and README compatibility claims must
+describe MinGW UCRT64 GCC and MinGW CLANG64 Clang as provisional best-effort
+compatibility evidence, not release-supported targets, until those jobs become
+release-blocking.
 
 ## Release Evidence
 

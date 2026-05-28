@@ -21,11 +21,13 @@ void require(bool condition, std::string_view message) {
 
 int main(int argc, char** argv) {
   try {
-    mcp::client::Client::StreamableHttpEndpoint endpoint;
-    endpoint.uri = argc > 1 ? argv[1] : "http://127.0.0.1:3000/mcp";
+    auto peer =
+        mcp::ClientPeer::builder()
+            .streamable_http(argc > 1 ? argv[1] : "http://127.0.0.1:3000/mcp")
+            .build();
+    require(peer.has_value(), "streamable HTTP client peer build failed");
 
-    auto running = mcp::serve(
-        mcp::ClientPeer::connect_streamable_http(std::move(endpoint)));
+    auto running = mcp::serve(std::move(*peer));
     require(running.has_value(), "streamable HTTP service failed to start");
 
     require(running->peer().initialize().has_value(),

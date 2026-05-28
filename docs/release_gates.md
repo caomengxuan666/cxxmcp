@@ -32,14 +32,37 @@ registered through `cxxmcp_mark_release_blocking()`.
 - `check_package_auth_features.py`: package-manager metadata keeps auth
   opt-in for vcpkg, Conan, and xmake, and prevents OpenSSL-backed full auth
   from becoming part of the default package path prematurely.
+- `package-manager-vcpkg`: installs the repository overlay port through a real
+  vcpkg checkout for both the default SDK and `auth` feature, then builds the
+  clean CMake `package_smoke` consumer through the vcpkg toolchain. The
+  uploaded artifact must include non-empty vcpkg install log plus
+  clean-consumer CMake configure/build logs.
+- `package-manager-conan`: creates the Conan package for both default and
+  `with_auth=True` options, installs a clean downstream dependency graph, and
+  builds the same external CMake `package_smoke` consumer through Conan's
+  generated toolchain. The uploaded artifact must include non-empty Conan
+  create/install logs plus clean-consumer CMake configure/build logs.
+- `package-manager-xmake`: consumes the xmake-repo draft from a local xmake
+  repository for both default and auth configurations, but rewrites the CI
+  recipe to use a generated source archive from the exact workflow checkout,
+  including checked-out submodule contents, instead of the last published
+  GitHub Release archive. It then compiles a clean downstream C++17 consumer.
+  The uploaded artifact must include the temporary local xmake repository,
+  generated source archive, and non-empty xmake repo and build logs.
 
 ## Source Style Gates
 
 - `source-style`: the release-gates workflow runs `scripts/format.ps1 -Check`
   `scripts/check-cpplint.ps1`, and
   `scripts/check_protocol_model_coverage.py` on Ubuntu before release evidence
-  is treated as clean. clang-tidy is intentionally tracked separately because it
-  depends on a configured compile database and may need a narrower source
+  is treated as clean. It also runs
+  `scripts/check_source_markers.py`, which rejects unresolved
+  `FIXME`/`HACK`/`XXX` markers in first-party SDK, extension, example,
+  template, and test source paths, and
+  `scripts/selftest_release_artifacts.py`, which constructs synthetic
+  release-gates and release-sdk artifact trees and verifies the artifact
+  checker end to end. clang-tidy is intentionally tracked separately because
+  it depends on a configured compile database and may need a narrower source
   scope.
 
 ## Build Configuration Gates
@@ -49,11 +72,31 @@ registered through `cxxmcp_mark_release_blocking()`.
   runtime, gateway, CLI, tests, and docs disabled. This keeps release-mode
   compile coverage in CI without doubling the full cross-SDK conformance
   matrix.
+- `performance-evidence-linux-gcc-ninja`: the release-gates workflow builds
+  and runs `protocol_serialization_benchmark` in a Linux GCC Release
+  configuration and uploads the JUnit/log output. Treat this as scoped
+  serialization evidence, not as a cross-platform performance claim. The
+  artifact supports review of the performance debt tracked from
+  `docs/technical_audit.md`; it does not by itself justify a fact-standard or
+  general SDK performance claim.
+- `public-header-compile-evidence-linux-gcc-ninja`: the release-gates workflow
+  builds SDK dependencies once, then builds each canonical public-header
+  fixture serially and records elapsed time in
+  `public-header-compile-evidence.json`. Treat this as Linux GCC evidence for
+  `json_fwd` / `extern template` decisions, not as a cross-platform
+  compile-time claim. Local public-header timings may guide work, but only the
+  exact release-candidate artifact can be cited in release notes.
 - `clang-tidy-public-headers`: the release-gates workflow configures an
   auth-enabled compile database, builds the public-header compile fixtures, and
   runs clang-tidy over those fixtures. The scope is intentionally the public SDK
   entry headers first; broader implementation clang-tidy can be added after its
   noise level is managed.
+- `public-api-surface.json`: the release evidence job records stable targets,
+  optional targets, public include roots, and public header paths through
+  `scripts/collect_public_api_surface.py`. Reviewers compare this manifest
+  against previous release evidence with
+  `scripts/compare_public_api_surface.py` before claiming public SDK surface
+  stability.
 - `sanitizer-asan-ubsan` and `sanitizer-tsan`: the release-gates workflow runs
   dedicated Linux/Clang Ninja builds with ASan/UBSan and TSan enabled through
   `CMakePresets.json`, after checking out the pinned RMCP reference required by
@@ -69,6 +112,9 @@ registered through `cxxmcp_mark_release_blocking()`.
   `*_from_json` and `*_to_json` helpers paired, with only documented internal
   helper exceptions. This guards protocol model symmetry as new MCP families or
   fields are added.
+- `check_rmcp_source_drift.py`: the pinned RMCP checkout, model source mapping,
+  and protocol-model audit table must stay synchronized with the recorded RMCP
+  reference commit.
 - `protocol`: JSON-RPC and MCP protocol serialization, parsing, version policy,
   and typed model basics.
 - `transport_contract` and `transport_stdio_contract`: role-generic transport
@@ -103,15 +149,41 @@ matrix is:
 The `.github/workflows/release-gates.yml` workflow is the canonical public
 evidence producer for this matrix. It runs the `release-blocking` CTest label
 set on Linux/GCC, Linux/Clang, macOS/AppleClang, Windows/MSVC Ninja with static
-runtime, and Windows/MSVC Visual Studio with dynamic runtime. The same workflow
-also builds the Doxygen HTML artifact that must be attached to release
-candidates when API docs are advertised.
+runtime, Windows/ClangCL Ninja with static runtime, and Windows/MSVC Visual
+Studio with dynamic runtime. The same workflow also builds the Doxygen HTML
+artifact that must be attached to release candidates when API docs are
+advertised.
+
+MinGW coverage is intentionally outside the release-supported matrix today.
+The scheduled `.github/workflows/compiler-compat.yml` workflow runs
+`windows-mingw-ucrt64-gcc` and `windows-mingw-clang64-clang` as provisional,
+best-effort compatibility evidence under the `mingw-sdk` job. Because that job
+is still `continue-on-error: true`, MinGW UCRT64 GCC and MinGW CLANG64 Clang
+must not be presented as release-supported targets in release notes, README
+compatibility claims, package-manager claims, or ecosystem maturity evidence.
 
 Each matrix leg uploads a `cxxmcp-release-gates-*` artifact containing the
 `CMakeCache.txt`, CTest JUnit XML, and CTest log files. Release candidates must
 link or attach those artifacts so package-smoke, public-header, transport,
 conformance, and interoperability results are auditable after the workflow run
 expires from the Actions UI.
+`scripts/check_release_artifacts.py` validates more than file presence: it
+parses the uploaded JUnit XML and requires the expected release-blocking,
+public-header, auth, OpenSSL auth, package-smoke, and interop testcase names to
+be present in the corresponding artifacts. It also opens the final SDK source
+archive and verifies that SDK sources, release verifier scripts, docs, package
+smoke tests, and external consumer templates are present while generated
+Doxygen output, runtime sources, and CLI sources stay out of the SDK source
+package. The same verifier opens the final release tarballs produced by
+`release-sdk.yml` and checks that release-gates, Doxygen, source, and release
+evidence archives contain their expected top-level artifacts.
+When the artifacts are from a release candidate, run the same verifier with
+`--review-output release-artifact-review.md` plus the exact tag, commit, run
+URL, and release URL. The generated markdown is the human review record that
+ties the downloaded artifact tree to the release decision; it must not be
+generated from local-only or stale workflow artifacts. When verifying an
+already assembled release artifact directory without `--review-output`, the
+verifier requires `release-artifact-review.md` to be present.
 
 The release evidence manifest records the pinned reference versions used by the
 interop matrix:
@@ -126,21 +198,60 @@ missing required documents, if SDK API docs accidentally include runtime or
 tooling headers, if pinned interop versions are absent, or if compatibility and
 runtime examples are not labelled as non-canonical SDK paths.
 
+`docs/technical_audit.md` travels in the release evidence bundle to preserve
+the code-defect audit trail. It is not a substitute for release-gates artifacts:
+fixed audit entries describe implementation closure, while package-manager
+proof, optional auth/OpenSSL package boundaries, generated docs, public API
+surface stability, and performance/compile-time evidence are established only
+by the exact-commit artifacts listed here and reviewed through the release
+candidate checklist.
+
 The same workflow uploads:
 
 - `cxxmcp-doxygen-html`: generated public API documentation.
 - `cxxmcp-auth-release-gate-*`: auth-enabled SDK/package-smoke evidence for
   the optional `cxxmcp::auth` target without making auth part of the default
   SDK package path.
+- `cxxmcp-auth-openssl-release-gate-linux-gcc-ninja`: Linux GCC evidence that
+  `CXXMCP_AUTH_CRYPTO=OpenSSL` builds, runs `auth_openssl`, and keeps the
+  OpenSSL-backed package smoke opt-in. This is not cross-platform OpenSSL
+  package evidence unless matching Windows/macOS artifacts are attached.
+- `cxxmcp-performance-evidence-linux-gcc-ninja`: Linux GCC Release output from
+  `protocol_serialization_benchmark`, used to keep serialization hot-path
+  claims attached to a concrete release artifact.
+- `cxxmcp-public-header-compile-evidence-linux-gcc-ninja`: Linux GCC Release
+  target-level timings for canonical public-header compile fixtures, used to
+  evaluate compile-time debt before changing the public JSON or template
+  boundary.
+- `cxxmcp-package-vcpkg-default` and `cxxmcp-package-vcpkg-auth`: real vcpkg
+  overlay package-consumption evidence for the default SDK package and optional
+  auth feature.
+- `cxxmcp-package-conan-default` and `cxxmcp-package-conan-auth`: real Conan
+  package-consumption evidence for the default SDK package and optional auth
+  option.
+- `cxxmcp-package-xmake-default` and `cxxmcp-package-xmake-auth`: real xmake
+  package-consumption evidence for the default SDK package and optional auth
+  option. Release-gates artifacts use a temporary local xmake repository whose
+  recipe points at a generated source archive from the same workflow checkout,
+  including checked-out submodule contents, so xmake verifies the exact
+  release-candidate source instead of a stale previously published release
+  archive. The release artifact verifier requires both the rewritten temporary
+  repository recipe and the generated source archive to be present.
+  These package-manager artifacts are Ubuntu Linux evidence unless the release
+  notes attach matching Windows or macOS package-manager artifacts for the same
+  release commit.
 - `cxxmcp-source`: a source archive with recursive submodule contents and a
   `SHA256SUMS.txt` file.
 - `cxxmcp-release-evidence`: the README, Chinese README, changelog,
   contribution guide, security policy, code of conduct, auth design and user
   guide, compatibility policy, public API stability policy, dependency policy,
-  ecosystem maturity ledger, protocol model audit, release process,
-  Peer/Service migration guide, release gates, release candidate checklist,
-  release notes template, request lifecycle notes, TODO, the external consumer
-  template, and example source files used for the release decision.
+  ecosystem maturity ledger, adoption ledger, protocol model audit, performance
+  debt ledger, public API surface manifest, RMCP source mapping, release
+  process, graceful shutdown guidance, Peer/Service migration guide, release
+  gates, release candidate checklist, release notes template, request lifecycle
+  notes, technical audit, TODO, the release evidence verifier scripts, the
+  external consumer template, and example source files used for the release
+  decision.
 
 Release candidates must attach the source, documentation, and release evidence
 artifacts, or replace them with equivalent versioned artifacts built from the

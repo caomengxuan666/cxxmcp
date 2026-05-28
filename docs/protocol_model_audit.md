@@ -51,11 +51,30 @@ MCP payload family.
 
 - `scripts/check_protocol_model_coverage.py` checks `*_from_json` and
   `*_to_json` helper pairing in public protocol headers.
+- `scripts/check_rmcp_source_drift.py` verifies that the pinned
+  `reference/rmcp` checkout is at commit
+  `c330fede90e4729c234f8e87fdbc5ea27a1dd10c`, that every mapped RMCP model
+  source file exists, that no new unmapped RMCP model source file has appeared
+  under `crates/rmcp/src/model`, and that this document matches the generated
+  source mapping in `docs/rmcp_source_mapping.json`.
 - `protocol` release-blocking tests cover protocol family round trips, required
   fields, type constraints, extension bags, `_meta`, optional bool presence,
   content variants, capabilities, tasks, elicitation, and version policy.
 - `rmcp_conformance` and cross-SDK interop gates exercise RMCP, TypeScript SDK,
   and Python SDK behavior against cxxmcp transports and peers.
+
+Regenerate the checked RMCP source mapping after a deliberate RMCP reference
+refresh with:
+
+```sh
+python scripts/check_rmcp_source_drift.py --write-mapping
+```
+
+Verify the mapping without modifying files with:
+
+```sh
+python scripts/check_rmcp_source_drift.py
+```
 
 Keep this document in sync when adding, renaming, or removing any public
 protocol model, parser, serializer, or pinned RMCP reference.

@@ -20,6 +20,19 @@ Raw JSON-RPC helpers follow the same lifecycle rules as typed helpers. They are
 the escape hatch for vendor methods and future MCP methods, not a separate
 transport path.
 
+## Initialization Boundary
+
+Standard server transports own MCP session initialization state. Before a
+session has completed `initialize` and sent `notifications/initialized`, the
+built-in stdio, process-stdio, role-generic server transport, and Streamable
+HTTP paths accept only lifecycle-safe requests such as `initialize` and `ping`;
+normal business requests fail with a stable protocol or transport error.
+
+Direct calls to `Server::handle_request()` are dispatcher calls, not a complete
+session boundary. Embedded callers that bypass the SDK transports must enforce
+the initialize / initialized sequence themselves or route requests through
+`ServerPeer` / `Service` with a role-generic transport.
+
 ## Timeouts
 
 Requests may carry `RequestOptions` with a timeout. When a timeout expires:
@@ -95,6 +108,10 @@ For server peers with multiple transports, shutdown is transport-wide: all
 attached transports are closed and pending receive loops observe the same
 service cancellation.
 
+Process-level `SIGINT` / `SIGTERM` or console-control handling remains an
+application responsibility. See [Graceful Shutdown](graceful_shutdown.md) for
+the recommended atomic-flag pattern and transport-specific shutdown notes.
+
 ## Transport Notes
 
 All built-in role-generic transports follow the same high-level lifecycle
@@ -109,3 +126,22 @@ contract:
 Streamable HTTP additionally scopes requests, progress, cancellation, and
 server-to-client callbacks to the active MCP session id. Stale or deleted
 sessions reject new requests and drain pending state.
+
+## Reconnect And Retry Boundary
+
+Reconnect is transport-specific, not a generic `Transport<Role>` contract.
+The public transport boundary intentionally stays narrow: `send`, `receive`,
+`close`, diagnostics, and documented concurrency behavior. Adding a generic
+`reconnect()` method would be a public contract change and needs a design note
+because different transports have different ownership models.
+
+Streamable HTTP and legacy SSE-compatible paths have scoped recovery behavior:
+HTTP session-terminated client requests can reinitialize and retry once when
+the client has cached initialize parameters, and SSE delivery can use its
+configured reconnect interval. This does not imply that stdio, process stdio,
+custom byte streams, or application-owned transports have automatic reconnect.
+
+Applications that need cross-transport reconnect orchestration should own that
+policy above `Peer` / `Service`: construct a new transport, perform a new
+initialize exchange, replay any application-owned subscriptions or roots, and
+decide which in-flight operations are safe to retry.

@@ -31,11 +31,10 @@
 #include <string>
 #include <vector>
 
-
-using Json = nlohmann::json;
-
 namespace jsonrpcpp
 {
+
+using Json = nlohmann::json;
 
 class Entity;
 class Request;

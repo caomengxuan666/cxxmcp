@@ -26,7 +26,9 @@ turning the SDK surface into a gateway/runtime product.
 - [x] P0 request lifecycle has focused regression entries for peer
   cancel/timeout races, HTTP cancellation over SSE, stdio cancellation
   notifications, and process-stdio cancellation while a request is pending.
-- [ ] Do not claim fact-standard status yet. Current readiness is a strong
+Status notes that must stay true until exact release evidence says otherwise:
+
+- Do not claim fact-standard status yet. Current readiness is a strong
   candidate, roughly `85-90%` against the pinned RMCP SDK shape.
 
 Remaining non-P1/P2 proof gates before claiming fact-standard status:
@@ -42,6 +44,11 @@ Remaining non-P1/P2 proof gates before claiming fact-standard status:
   `cxxmcp-release-evidence` artifact have to be audited together after the next
   successful release-blocking matrix run using
   `docs/release_candidate_checklist.md`.
+
+Current open checkboxes are intentionally external-evidence gates. Do not close
+them from local source edits alone: they require green exact-commit GitHub
+artifacts, tagged release artifacts, repeated release history, or independent
+public downstream adoption.
 
 ## Current P0 Executable Slices
 
@@ -754,6 +761,9 @@ true:
 - [x] Add vcpkg packaging or a documented vcpkg overlay.
 - [x] Add Conan packaging or a documented Conan recipe.
 - [x] Document FetchContent usage if supported.
+  - [x] Clarify that the concrete `v2.0.2` FetchContent/CPM examples document
+        the latest published default SDK source archive, not current-worktree
+        auth or release-candidate evidence.
 - [x] Document install-from-source usage.
 - [x] Document consuming only `cxxmcp::protocol`.
 - [x] Document consuming only `cxxmcp::client`.
@@ -810,6 +820,14 @@ true:
   - [x] Document `../cxxmcp-examples` as the external downstream example suite
         and list the minimum green scenarios required for release/vcpkg
         maturity evidence.
+  - [ ] Maintain an adoption ledger with real downstream repositories,
+        integration reports, issue links, or release-note references that can
+        be cited in future fact-standard and vcpkg curated-registry claims.
+        - [x] Add `docs/adoption_ledger.md` so release evidence distinguishes
+              project-owned package/examples evidence from independent public
+              downstream adoption.
+        - [x] Add dated public search audits to the adoption ledger; no
+              qualifying public downstream adoption is recorded yet.
 - [ ] Resubmit to the vcpkg curated registry only after the maturity evidence is
   strong enough to address `microsoft/vcpkg#51972` without relying on policy
   exceptions.
@@ -930,17 +948,34 @@ true:
 
 ## P3: Full OAuth / DPoP Auth Implementation
 
-- [ ] Next-stage auth: ship full OAuth/DPoP/JWKS only as an opt-in
+- [x] Next-stage auth: ship full OAuth/DPoP/JWKS only as an opt-in
   `cxxmcp::auth` implementation; default SDK/package builds must continue to
   avoid OpenSSL and optional auth headers.
-- [ ] Next-stage auth: add OpenSSL-backed DPoP proof signing/verification and
+- [x] Next-stage auth: add OpenSSL-backed DPoP proof signing/verification and
   JWT/JWKS validation without decode-only security shortcuts.
-- [ ] Next-stage auth: wire OAuth discovery, authorization-code + PKCE token
+  - [x] Add transport-neutral DPoP header builders, JWKS models/cache/fetch
+        boundaries, and OpenSSL-backed JOSE/JWK/JWS/JWT helpers behind
+        `CXXMCP_AUTH_CRYPTO=OpenSSL` / `cxxmcp::auth_openssl`.
+  - [x] Add `OpenSslDpopSigner`, `OpenSslDpopVerifier`,
+        `FetchingJwksJwtVerifier`, and DPoP-aware static/fetching server auth
+        provider presets with OpenSSL-focused tests.
+- [x] Next-stage auth: wire OAuth discovery, authorization-code + PKCE token
   exchange, refresh-on-401 orchestration, and one-shot HTTP retry into the
   optional auth lifecycle without requiring browser or loopback UX in SDK core.
-- [ ] Next-stage auth: provide a built-in bearer/DPoP `AuthProvider` for
+  - [x] Add `HttpOAuthMetadataEndpoint`, `HttpOAuthTokenEndpoint`, dynamic
+        client registration request builders, and `AuthorizationManager`
+        refresh/scope-upgrade orchestration over injected HTTP callbacks.
+- [x] Next-stage auth: provide a built-in bearer/DPoP `AuthProvider` for
   server deployments while keeping custom providers as the primary extension
   point.
+  - [x] Add `StaticBearerAuthProvider`, HTTP request-target propagation into
+        `AuthRequest`, and `DpopBearerAuthProvider` bridges while keeping
+        application-owned policy and storage injectable.
+  - [x] Re-ran local Windows/MSVC Debug focused auth evidence on 2026-05-28:
+        `ctest --test-dir build-auth-openssl -C Debug -R
+        "^(auth|auth_openssl|public_header_auth|package_smoke)$"
+        --output-on-failure --timeout 300` passed 4/4. This is local evidence
+        only and does not replace exact release-gates artifacts.
 
 ## P2: Performance, Load, And Reliability
 
@@ -1011,7 +1046,10 @@ true:
 ### Milestone 6: Release And Ecosystem
 
 - [x] Add public CI matrix.
-- [x] Publish generated docs.
+- [x] Add generated docs workflow and release artifact packaging.
+- [ ] Publish generated docs from an exact tagged release candidate run.
 - [x] Add vcpkg/Conan route.
 - [x] Add contribution/security/governance docs.
-- [x] Publish versioned release artifacts and compatibility notes.
+- [x] Add versioned release artifact and compatibility-note workflow support.
+- [ ] Publish and review versioned release artifacts plus compatibility notes
+  for the exact release candidate commit.

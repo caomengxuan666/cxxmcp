@@ -38,6 +38,16 @@ negotiated capabilities before sending:
 - URL requests rejected by capability gating use the protocol-level
   URL-elicitation-required error code.
 
+For common SDK authoring, `ClientPeer::elicit<T>()` and
+`ClientPeer::elicit_async<T>()` build form requests from `SchemaTraits<T>`.
+Primitive schemas are wrapped as a required `value` field; object schemas with
+`properties` are sent directly and decoded from the accepted content object.
+The explicit-schema overload lets applications supply an
+`ElicitationSchema` while still receiving typed content. `decline` and `cancel`
+results are mapped to stable `elicitation` errors. `ClientPeer::elicit_url()`
+and `elicit_url_async()` provide the same capability gating, timeout, and
+cancellation behavior for URL-mode requests.
+
 Raw JSON-RPC remains available for conformance probes, vendor extensions, and
 future protocol behavior, but raw calls bypass typed helper gating.
 
@@ -70,6 +80,7 @@ Unknown content members are allowed because the SDK schema model does not expose
 
 ## Stability
 
-The typed models, serializers, parsers, client request handler hook, server-side
-typed helper, and completion notification are stable SDK API. Content validation
-and richer application-level approval UX are optional follow-up work.
+The typed models, serializers, parsers, client request handler hook,
+server-side `create_elicitation()` / `elicit<T>()` / `elicit_url()` helpers,
+and completion notification are stable SDK API. Content validation and richer
+application-level approval UX are optional follow-up work.

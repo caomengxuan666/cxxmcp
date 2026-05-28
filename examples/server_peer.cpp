@@ -136,43 +136,41 @@ class LoopbackTransport final : public mcp::transport::ServerTransport {
 
 int main() {
   try {
-    mcp::server::ServerBuilder builder;
-    builder.name("cxxmcp-example-server-peer")
-        .version("1.0.0")
-        .instructions("Example server peer for the canonical SDK path.")
-        .add_tool(
-            mcp::protocol::ToolDefinition{
-                .name = "echo",
-                .description = "Echo the incoming payload",
-                .input_schema = Json{{"type", "object"}},
-                .output_schema = Json{{"type", "object"}},
-            },
-            [](const mcp::server::ToolContext& context)
-                -> mcp::core::Result<mcp::protocol::ToolResult> {
-              mcp::protocol::ToolResult result;
-              result.structured_content = context.arguments;
-              result.content.push_back(mcp::protocol::ContentBlock{
-                  .type = "text",
-                  .text = context.arguments.dump(),
-                  .data = Json::object(),
-              });
-              return result;
-            });
+    auto transport = std::make_unique<LoopbackTransport>();
+    auto* transport_ptr = transport.get();
 
-    auto server = builder.build();
-    require(server.has_value(), "failed to build example server");
+    auto peer =
+        mcp::ServerPeer::builder()
+            .name("cxxmcp-example-server-peer")
+            .version("1.0.0")
+            .instructions("Example server peer for the canonical SDK path.")
+            .transport(std::move(transport))
+            .add_tool(
+                mcp::protocol::ToolDefinition{
+                    .name = "echo",
+                    .description = "Echo the incoming payload",
+                    .input_schema = Json{{"type", "object"}},
+                    .output_schema = Json{{"type", "object"}},
+                },
+                [](const mcp::server::ToolContext& context)
+                    -> mcp::core::Result<mcp::protocol::ToolResult> {
+                  mcp::protocol::ToolResult result;
+                  result.structured_content = context.arguments;
+                  result.content.push_back(mcp::protocol::ContentBlock{
+                      .type = "text",
+                      .text = context.arguments.dump(),
+                      .data = Json::object(),
+                  });
+                  return result;
+                })
+            .build();
+    require(peer.has_value(), "failed to build example server peer");
 
-    mcp::ServerPeer peer(std::move(*server));
-    const auto tools = peer.list_tools();
+    const auto tools = peer->list_tools();
     require(tools.size() == 1, "server peer tool count mismatch");
     require(tools.front().name == "echo", "server peer tool name mismatch");
 
-    auto transport = std::make_unique<LoopbackTransport>();
-    auto* transport_ptr = transport.get();
-    require(peer.add_transport(std::move(transport)).has_value(),
-            "server peer add_transport failed");
-
-    auto running = mcp::serve(std::move(peer));
+    auto running = mcp::serve(std::move(*peer));
     require(running.has_value(), "server peer service failed to start");
     require(wait_until([&] { return transport_ptr->receiving(); },
                        std::chrono::milliseconds(1000)),

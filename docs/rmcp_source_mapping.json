@@ -1,0 +1,105 @@
+{
+  "cxxmcp_model_source_root": "sdk/protocol/include/cxxmcp/protocol",
+  "ignored_rmcp_model_files": [
+    "serde_impl.rs"
+  ],
+  "mappings": [
+    {
+      "cxxmcp_headers": [
+        "types.hpp",
+        "initialize.hpp",
+        "resource.hpp",
+        "prompt.hpp",
+        "logging.hpp",
+        "sampling.hpp",
+        "completion.hpp",
+        "roots.hpp",
+        "elicitation.hpp",
+        "task.hpp",
+        "tool.hpp"
+      ],
+      "rmcp_path": "reference/rmcp/crates/rmcp/src/model.rs",
+      "rmcp_source": "model.rs"
+    },
+    {
+      "cxxmcp_headers": [
+        "tool.hpp",
+        "prompt.hpp",
+        "resource.hpp"
+      ],
+      "rmcp_path": "reference/rmcp/crates/rmcp/src/model/annotated.rs",
+      "rmcp_source": "annotated.rs"
+    },
+    {
+      "cxxmcp_headers": [
+        "capabilities.hpp"
+      ],
+      "rmcp_path": "reference/rmcp/crates/rmcp/src/model/capabilities.rs",
+      "rmcp_source": "capabilities.rs"
+    },
+    {
+      "cxxmcp_headers": [
+        "tool.hpp",
+        "resource.hpp",
+        "sampling.hpp"
+      ],
+      "rmcp_path": "reference/rmcp/crates/rmcp/src/model/content.rs",
+      "rmcp_source": "content.rs"
+    },
+    {
+      "cxxmcp_headers": [
+        "elicitation.hpp"
+      ],
+      "rmcp_path": "reference/rmcp/crates/rmcp/src/model/elicitation_schema.rs",
+      "rmcp_source": "elicitation_schema.rs"
+    },
+    {
+      "cxxmcp_headers": [
+        "all protocol family headers"
+      ],
+      "rmcp_path": "reference/rmcp/crates/rmcp/src/model/extension.rs",
+      "rmcp_source": "extension.rs"
+    },
+    {
+      "cxxmcp_headers": [
+        "all protocol family headers"
+      ],
+      "rmcp_path": "reference/rmcp/crates/rmcp/src/model/meta.rs",
+      "rmcp_source": "meta.rs"
+    },
+    {
+      "cxxmcp_headers": [
+        "prompt.hpp",
+        "tool.hpp"
+      ],
+      "rmcp_path": "reference/rmcp/crates/rmcp/src/model/prompt.rs",
+      "rmcp_source": "prompt.rs"
+    },
+    {
+      "cxxmcp_headers": [
+        "resource.hpp",
+        "tool.hpp"
+      ],
+      "rmcp_path": "reference/rmcp/crates/rmcp/src/model/resource.rs",
+      "rmcp_source": "resource.rs"
+    },
+    {
+      "cxxmcp_headers": [
+        "task.hpp"
+      ],
+      "rmcp_path": "reference/rmcp/crates/rmcp/src/model/task.rs",
+      "rmcp_source": "task.rs"
+    },
+    {
+      "cxxmcp_headers": [
+        "tool.hpp",
+        "task.hpp"
+      ],
+      "rmcp_path": "reference/rmcp/crates/rmcp/src/model/tool.rs",
+      "rmcp_source": "tool.rs"
+    }
+  ],
+  "mcp_protocol_snapshot": "2025-11-25",
+  "rmcp_model_source_root": "reference/rmcp/crates/rmcp/src/model",
+  "rmcp_reference_commit": "c330fede90e4729c234f8e87fdbc5ea27a1dd10c"
+}

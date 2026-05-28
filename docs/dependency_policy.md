@@ -62,9 +62,35 @@ Before each public release candidate:
 - check whether MCP has published a newer protocol snapshot;
 - refresh RMCP, TypeScript SDK, and Python SDK references deliberately, not as
   drive-by churn;
+- run `python scripts/check_rmcp_source_drift.py` after any RMCP refresh to
+  confirm the pinned checkout, RMCP model source files, and protocol-model audit
+  mapping are still synchronized; regenerate `docs/rmcp_source_mapping.json`
+  with `--write-mapping` only as part of a deliberate mapping update;
 - run the release-blocking interop matrix after any reference update;
 - review package-manager dependency versions and changelog/security notes;
 - record reference or dependency changes in release notes.
 
 Dependency updates that affect public headers, generated CMake package files, or
 wire behavior require a public API review.
+
+## Time-Sensitive Dependency Claims
+
+Dependency status statements are release-candidate evidence, not permanent
+facts. In particular, any claim that a vendored fallback matches the latest
+upstream release must be rechecked during the dependency review for the exact
+release commit and recorded in release notes.
+
+For the current SDK surface:
+
+- `tl::expected` may remain a vendored fallback only after the release review
+  confirms the fallback version and the package-manager `tl-expected` route are
+  both acceptable for the advertised package paths.
+- `jsonrpcpp` remains private and bundled until an accepted package-manager
+  route exists; release notes must not present it as a public dependency or
+  exported target.
+- `cpp-httplib` remains hidden behind transport interfaces; replacement claims
+  require the load/reliability evidence tracked in
+  `docs/http_transport_backend_evidence.md`.
+
+The release candidate checklist must cite this dependency review before
+publishing stable, curated-registry, or fact-standard claims.

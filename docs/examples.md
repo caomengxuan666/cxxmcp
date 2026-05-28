@@ -6,7 +6,11 @@ requirements into the default SDK path.
 
 ## First-Choice SDK Examples
 
-- `server_peer.cpp`: server-side `Peer` / `Service` authoring.
+- `cxx17_consumer.cpp`: minimal C++17 installed-SDK-shaped consumer path.
+- `auth_bearer_http.cpp`: HTTP bearer-token auth wiring for
+  `ServerPeer` / `ClientPeer`.
+- `server_stdio_peer.cpp`: copyable server-side `Peer` / `Service` over stdio.
+- `server_peer.cpp`: server-side `Peer` / `Service` loopback coverage.
 - `client_peer.cpp`: client-side `Peer` / `Service` requests.
 - `process_stdio_client.cpp`: launching and talking to a local MCP server.
 - `timeout_cancellation.cpp`: request timeout and cooperative cancellation.
@@ -15,6 +19,7 @@ requirements into the default SDK path.
 ## Focused Capability Examples
 
 - `handler_contracts.cpp`: durable handler interfaces.
+- `auth_dpop_openssl.cpp`: opt-in OpenSSL DPoP/JWKS auth-provider wiring.
 - `task_async_client_server.cpp`: task-aware tool lifecycle.
 - `typed_stdio_server.cpp`: typed tool registration.
 - `streamable_http_client.cpp`: Streamable HTTP client construction.
@@ -32,6 +37,10 @@ requirements into the default SDK path.
 `ctest --preset examples` runs self-contained smoke examples. Long-running
 server samples and externally hosted HTTP samples are build-checked but are not
 registered as standalone CTest cases.
+
+`cxx17_consumer.cpp` is compiled as `cxx_std_17` in-tree. The richer examples
+may use newer C++ syntax for readability, but they are not allowed to raise the
+public SDK or installed-package baseline.
 
 ## Downstream Example Repository
 
@@ -54,10 +63,15 @@ For release/vcpkg evidence, keep at least these downstream scenarios green:
   compatibility, and HTTP auth-lite bearer-token propagation.
 - Request lifecycle coverage for async requests, timeouts, cancellation,
   cancellation-aware inbound callbacks, pagination helpers, subscriptions, and
-  task cancellation.
+  task cancellation. Application-level signal handling should follow
+  [Graceful Shutdown](graceful_shutdown.md) so examples and downstream services
+  call `stop()` / `close()` from normal control flow instead of from a signal
+  handler.
 - Authoring ergonomics coverage for typed tools, handler interfaces,
   server-to-client context calls, rich content blocks, custom role-generic
-  transports, and transport adapters.
+  transports, and transport adapters. See
+  [Transport Adapter Ergonomics](transport_adapters.md) for the stable helper
+  layer used by custom source/sink and queue integrations.
 - Optional runtime/gateway examples when the consumed package exposes those
   targets; installed SDK-only package checks may skip them without weakening
   the core SDK evidence.

@@ -11,6 +11,7 @@
 #include "cxxmcp/client.hpp"
 #include "cxxmcp/protocol/serialization.hpp"
 #include "cxxmcp/server.hpp"
+#include "cxxmcp/server/handler.hpp"
 
 namespace {
 

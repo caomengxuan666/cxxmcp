@@ -148,6 +148,12 @@ The SDK archive includes the header-only SDK dependencies needed by the default
 bundled build, while GitHub generated archives do not include submodule
 contents.
 
+The concrete `v2.0.2` URL below is the latest published SDK source archive
+known to these docs. It is valid for consumers that want the published default
+SDK surface. Do not use it as evidence for the current worktree's optional auth
+header surface; current-source or release-candidate validation must use the
+exact source archive and checksum produced by that release-gates run.
+
 ```cmake
 include(FetchContent)
 
@@ -177,6 +183,15 @@ target_link_libraries(my_server PRIVATE cxxmcp::server)
 `CPM.cmake` can consume the same SDK source archive. Keep the SDK options
 explicit so downstream builds do not accidentally pull runtime or tools.
 
+Use the URL and hash from the release you intentionally pin. For release
+candidate validation, use the exact source artifact produced by that candidate
+run rather than copying the published `v2.0.2` example unchanged.
+
+cxxmcp does not install or export a `CPM.cmake` helper. The consuming project
+must provide it, for example by vendoring `cmake/CPM.cmake` in its own source
+tree or by bootstrapping it before the `include()` call. The path below is a
+consumer-owned file path, not a file supplied by cxxmcp.
+
 ```cmake
 include(cmake/CPM.cmake)
 
@@ -201,11 +216,17 @@ target_link_libraries(my_client PRIVATE cxxmcp::client)
 
 ## Conan
 
-The root `conanfile.py` keeps auth disabled by default. Consumers that need the
-optional auth scaffold must opt in explicitly:
+The root `conanfile.py` keeps auth disabled by default. The default package is
+the SDK-only route:
 
 ```powershell
-conan create . -o cxxmcp/*:with_auth=True
+conan create . -o cxxmcp/*:with_auth=False -o cxxmcp/*:with_examples=False -o cxxmcp/*:with_tests=False -s build_type=Release
+```
+
+Consumers that need the optional auth scaffold must opt in explicitly:
+
+```powershell
+conan create . -o cxxmcp/*:with_auth=True -o cxxmcp/*:with_examples=False -o cxxmcp/*:with_tests=False -s build_type=Release
 ```
 
 `with_auth=True` maps to `CXXMCP_ENABLE_AUTH=ON` and exposes the

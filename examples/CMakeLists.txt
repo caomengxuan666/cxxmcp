@@ -15,6 +15,14 @@ function(cxxmcp_example_smoke_test test_name target_name)
     endif()
 endfunction()
 
+if(TARGET mcp_sdk)
+    add_executable(mcp_example_cxx17_consumer cxx17_consumer.cpp)
+    target_link_libraries(mcp_example_cxx17_consumer PRIVATE mcp_sdk)
+    target_compile_features(mcp_example_cxx17_consumer PRIVATE cxx_std_17)
+    cxxmcp_example_smoke_test(example_cxx17_consumer
+                              mcp_example_cxx17_consumer)
+endif()
+
 if(TARGET mcp_server)
     add_executable(mcp_example_stdio_server stdio_server.cpp)
     target_link_libraries(mcp_example_stdio_server PRIVATE mcp_server)
@@ -26,6 +34,18 @@ if(TARGET mcp_server)
 endif()
 
 if(TARGET mcp_client AND TARGET mcp_server)
+    add_executable(mcp_example_auth_bearer_http auth_bearer_http.cpp)
+    target_link_libraries(mcp_example_auth_bearer_http PRIVATE mcp_client
+                                                               mcp_server)
+    cxxmcp_example(mcp_example_auth_bearer_http)
+    cxxmcp_example_smoke_test(example_auth_bearer_http
+                              mcp_example_auth_bearer_http)
+
+    add_executable(mcp_example_server_stdio_peer server_stdio_peer.cpp)
+    target_link_libraries(mcp_example_server_stdio_peer PRIVATE mcp_client
+                                                                mcp_server)
+    cxxmcp_example(mcp_example_server_stdio_peer)
+
     add_executable(mcp_example_server_peer server_peer.cpp)
     target_link_libraries(mcp_example_server_peer PRIVATE mcp_client
                                                           mcp_server)
@@ -100,6 +120,15 @@ if(TARGET mcp_client AND TARGET mcp_server)
     target_link_libraries(mcp_example_streamable_http_client PRIVATE
                           mcp_client mcp_server)
     cxxmcp_example(mcp_example_streamable_http_client)
+endif()
+
+if(TARGET mcp_auth_openssl AND TARGET mcp_client AND TARGET mcp_server)
+    add_executable(mcp_example_auth_dpop_openssl auth_dpop_openssl.cpp)
+    target_link_libraries(mcp_example_auth_dpop_openssl PRIVATE
+                          mcp_auth_openssl mcp_client mcp_server)
+    cxxmcp_example(mcp_example_auth_dpop_openssl)
+    cxxmcp_example_smoke_test(example_auth_dpop_openssl
+                              mcp_example_auth_dpop_openssl)
 endif()
 
 if(TARGET mcp_app AND TARGET mcp_gateway)

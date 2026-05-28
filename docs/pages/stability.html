@@ -225,6 +225,12 @@
             </p>
           </article>
         </div>
+        <p>
+          The package, repository, installed include path, and CMake target
+          prefix use <code>cxxmcp</code>. The C++ namespace is intentionally
+          <code>mcp</code> and is part of the stable source API; changing it is
+          a breaking rename, not a cosmetic cleanup.
+        </p>
       </section>
 
       <section class="section">
@@ -279,6 +285,18 @@
           <li>RMCP, TypeScript SDK, and Python SDK interoperability evidence where advertised.</li>
           <li>Generated public API documentation, source archive, checksums, and release evidence bundle.</li>
         </ul>
+      </section>
+
+      <section class="section">
+        <h2>Ecosystem Evidence</h2>
+        <p>
+          Fact-standard or curated-registry claims require evidence beyond this
+          repository. Project-owned examples are useful smoke tests, but they do
+          not count as independent public downstream adoption.
+          <code>docs/adoption_ledger.md</code> records the current adoption
+          evidence and must stay conservative until real external users can be
+          cited.
+        </p>
       </section>
 
       <section class="section">

@@ -15,6 +15,7 @@ OAuth protocol scaffolding is an **optional feature**, gated by CMake options:
 option(CXXMCP_ENABLE_AUTH "OAuth 2.1 / DPoP authorization scaffolding" OFF)
 # Legacy alias accepted by the build:
 option(MCP_ENABLE_AUTH "OAuth 2.1 / DPoP authorization scaffolding" OFF)
+set(CXXMCP_AUTH_CRYPTO "NONE" CACHE STRING "NONE or OpenSSL")
 ```
 
 - `OFF` (default): no optional `cxxmcp::auth` OAuth target is exported and no
@@ -22,10 +23,13 @@ option(MCP_ENABLE_AUTH "OAuth 2.1 / DPoP authorization scaffolding" OFF)
   `cxxmcp::server` remain available because HTTP auth policy has to integrate
   with normal server dispatch. Client HTTP bearer helpers and refresh-on-401
   hooks also remain available through `cxxmcp::client` / `cxxmcp::transport`.
-- `ON`: compiles the `cxxmcp::auth` CMake target. The current scaffold exposes
-  transport-neutral auth contracts without requiring OpenSSL or MiniOAuth2.
-  The full OAuth implementation will add MiniOAuth2 and OpenSSL only behind
-  this opt-in feature gate.
+- `ON`: compiles the `cxxmcp::auth` CMake target. This exposes
+  transport-neutral auth contracts, metadata/token endpoint helpers, DPoP
+  request-header builders, and JWKS value/cache boundaries without requiring
+  OpenSSL or MiniOAuth2.
+- `CXXMCP_AUTH_CRYPTO=OpenSSL`: requires `CXXMCP_ENABLE_AUTH=ON`, resolves
+  OpenSSL through CMake/package-manager discovery, and exports
+  `cxxmcp::auth_openssl` for crypto-backed helpers.
 
 The feature gate is a packaging contract, not a runtime policy switch. Code
 that needs OAuth metadata, lifecycle, token, registration, or
@@ -124,8 +128,9 @@ The auth scaffold therefore keeps these requirements explicit:
 - `CXXMCP_ENABLE_AUTH=OFF` does not call `find_package(OpenSSL)` and does not
   compile crypto-backed auth code.
 - `CXXMCP_ENABLE_AUTH=ON` currently exposes transport-neutral auth contracts
-  only; it still does not require OpenSSL until the full OAuth/DPoP
-  implementation lands.
+  only; it still does not require OpenSSL.
+- `CXXMCP_AUTH_CRYPTO=OpenSSL` explicitly enables OpenSSL-backed auth helper
+  surfaces and is the only path that calls `find_package(OpenSSL)`.
 - OAuth/DPoP and first-party HTTPS support must add OpenSSL through normal
   package-manager resolution, not by vendoring OpenSSL into `third_party`.
 - Applications may place cxxmcp behind a reverse proxy that terminates TLS; in
@@ -141,6 +146,7 @@ include/cxxmcp/auth/          (pure protocol, no network I/O)
 ├── pkce.hpp                  PKCE code_verifier / code_challenge
 ├── dpop.hpp                  DPoP proof construction and verification
 ├── metadata.hpp              RFC 9728 + RFC 8414 models
+├── jwks.hpp                  JWKS parser, selector, cache, and fetch contracts
 ├── www_auth.hpp              WWW-Authenticate header parser
 ├── token.hpp                 Token model and refresh rotation logic
 ├── lifecycle.hpp             OAuth lifecycle stores, state machine, and
@@ -149,6 +155,8 @@ include/cxxmcp/auth/          (pure protocol, no network I/O)
 │                              client_id selection lifecycle boundaries
 └── http_metadata_endpoint.hpp
                                default metadata JSON parser over injected HTTP GET
+include/cxxmcp/auth/openssl/  (enabled by cxxmcp::auth_openssl)
+└── sha256.hpp                 OpenSSL-backed SHA-256/base64url helpers
 
 third_party/MiniOAuth2/       Planned vendored C++17 OAuth helper; private include
 
@@ -187,6 +195,10 @@ transport. The current `cxxmcp::auth` scaffold defines public contracts for:
 - Default `HttpOAuthMetadataEndpoint` implementation that parses RFC 9728 /
   RFC 8414 JSON over an injected HTTP GET callback without exposing a concrete
   HTTP library
+- Default `HttpOAuthTokenEndpoint` implementation that constructs
+  `application/x-www-form-urlencoded` authorization-code and refresh-token
+  requests, parses JSON token responses, and leaves concrete HTTP/TLS transport
+  ownership to the application or package-integrated adapter
 - Authorization URL construction from caller-supplied PKCE values
 - Authorization-code exchange and refresh-token endpoint interfaces
 - `AuthorizationManager` lifecycle state for
@@ -196,10 +208,9 @@ transport. The current `cxxmcp::auth` scaffold defines public contracts for:
 - Token refresh rotation boundaries (OAuth 2.1 requirement)
 - Token storage abstraction (`TokenStore` interface, default in-memory impl)
 
-PKCE generation, DPoP signing/verification, concrete token HTTP exchange, full
-OAuth refresh-on-401 orchestration, and OpenSSL-backed verifier implementations
-are still planned work. Public headers must keep these interfaces
-C++17-compatible while those implementations land.
+Browser/loopback UX, credential persistence, and concrete HTTP JWKS retrieval
+remain application-owned or future package-integration work. Public headers must
+keep these interfaces C++17-compatible while those integrations evolve.
 
 The current lightweight resource-metadata integration point is deliberately
 small and header-only: `cxxmcp/auth/www_auth.hpp` exposes stable parameter
@@ -207,10 +218,13 @@ constants, a default `WWW-Authenticate` parser, and helpers for extracting
 `resource_metadata` and `insufficient_scope` from parsed challenges, while
 `cxxmcp/auth/metadata.hpp` owns the RFC 9728 / RFC 8414 value models.
 `cxxmcp/auth/http_metadata_endpoint.hpp` provides the default SDK metadata
-endpoint parser over an injected HTTP GET function, so applications can reuse
-cxxmcp's discovery parsing without exposing cpp-httplib or another HTTP stack
-in public auth APIs. `cxxmcp/auth/token.hpp` exposes the token model plus an
-in-memory token store that separates entries by the full
+endpoint parser over an injected HTTP GET function, and
+`cxxmcp/auth/http_token_endpoint.hpp` provides the default token endpoint form
+encoder / JSON parser over an injected HTTP POST function, so applications can
+reuse cxxmcp's discovery and token lifecycle parsing without exposing
+cpp-httplib or another HTTP stack in public auth APIs.
+`cxxmcp/auth/token.hpp` exposes the token model plus an in-memory token store
+that separates entries by the full
 resource/issuer/client key. `cxxmcp/auth/lifecycle.hpp` exposes the public
 OAuth lifecycle scaffold: applications can plug in credential/state stores and
 a token endpoint or metadata endpoint implementation, while cxxmcp owns
@@ -235,6 +249,9 @@ execution:
 
 - Server applications install `mcp::server::AuthProvider` to authenticate
   transport headers and remote metadata.
+- `mcp::server::StaticBearerAuthProvider` covers static bearer-token validation
+  for small embedded deployments and tests without enabling the optional
+  `cxxmcp::auth` target.
 - Successful authentication writes `mcp::server::AuthIdentity` into
   `SessionContext::auth_identity` before handlers run.
 - Auth failures built with `mcp::server::make_auth_error()` use the auth error
@@ -251,11 +268,44 @@ execution:
 - With the optional auth target enabled, `DefaultWwwAuthenticateParser` parses
   challenges and exposes MCP OAuth helpers for `resource_metadata` and
   `insufficient_scope`.
+- With the optional auth target enabled, `HttpOAuthMetadataEndpoint` and
+  `HttpOAuthTokenEndpoint` provide SDK-owned metadata/token parsing over
+  injected HTTP callbacks without making auth depend on a specific HTTP stack.
+- With the optional auth target enabled,
+  `AuthorizationManager::refresh_after_unauthorized_response()` converts a
+  `401 WWW-Authenticate` response into a refreshed bearer token that an HTTP
+  transport hook can use for its one-shot retry.
+- With the optional auth target enabled,
+  `<cxxmcp/auth/server_auth_provider.hpp>` provides
+  `DpopBearerAuthProvider`, a server-side bridge over injected JWT/DPoP
+  verifiers, replay cache, and access-token hash function.
+- With the optional auth target enabled, DPoP request-header builders produce
+  `DPoP` and `Authorization: DPoP ...` headers over an injected `DpopSigner`
+  and transport-neutral HTTP method/URL target.
+- With the optional auth target enabled, JWKS models, parsing, selection,
+  fetch, and cache contracts are available without treating parsed keys as
+  verified tokens. JWT verification is supplied only by an explicit crypto
+  backend such as `cxxmcp::auth_openssl`.
+- With `CXXMCP_AUTH_CRYPTO=OpenSSL`, `cxxmcp::auth_openssl` exposes
+  OpenSSL-backed SHA-256/base64url helpers, JOSE compact JWS parsing
+  primitives, public JWK import, RS256/ES256 compact JWS signature
+  verification, trusted in-memory JWKS JWT validation, and DPoP access-token
+  hash construction for `ath`. `StaticJwksJwtVerifier` selects keys by
+  `kid`/`alg`, enforces `use=sig` and `key_ops=verify` when present, and
+  validates issuer, audience, expiry, not-before, issued-at, and required
+  claims. `OpenSslDpopSigner` and `OpenSslDpopVerifier` sign and verify
+  ES256/RS256 DPoP proof JWTs over PEM private keys and embedded public JWKs,
+  including `htm`/`htu`, `ath`, `nonce`, and replay-cache-compatible `jti`
+  extraction. `FetchingJwksJwtVerifier` adds transport-neutral JWKS fetch/cache
+  policy over injected endpoint/cache contracts, including one refresh on key
+  or signature failures for key rotation. `StaticJwksDpopBearerAuthProvider`
+  and `FetchingJwksDpopBearerAuthProvider` provide server-side presets in a
+  separate header so applications opt into the server dependency explicitly.
 
 These behaviors are stable enough for user documentation and package smoke
 coverage. They do not imply that cxxmcp owns token issuance, browser UX,
-persistent storage, DPoP proof generation, JWKS retrieval, or JWT validation
-today.
+persistent storage, concrete remote JWKS HTTP transport, OAuth discovery policy,
+or a fully automatic HTTP-client-owned OAuth orchestrator today.
 
 ### Intentional Non-Goals (belong in application code)
 
@@ -281,7 +331,9 @@ The concrete `server::Server` dispatcher and canonical `ServerPeer` native
 dispatch call `AuthProvider` before request dispatch and are compatible with
 both Bearer token validation and any custom auth scheme. OAuth token validation
 (DPoP proof verification, audience check, scope check) can be implemented as
-an `AuthProvider` subclass by the application or by a future built-in provider.
+an `AuthProvider` subclass by the application or by the optional
+`DpopBearerAuthProvider` bridge when concrete verifier implementations are
+supplied.
 
 OAuth-capable HTTP transports must also map authentication failures at the HTTP
 layer before JSON-RPC dispatch:
@@ -345,11 +397,13 @@ feature as a coherent deliverable:
 - Vendored MiniOAuth2 integration under `third_party/MiniOAuth2`, private to
   the auth implementation.
 - Protocol models and implementations for PKCE, DPoP, RFC 9728/8414 metadata,
-  client registration, token refresh, and JWKS-aware verification boundaries.
+  client registration, token refresh, JWKS discovery/cache, and JWKS-aware
+  verification boundaries.
 - HTTP transport natively integrates auth lifecycle:
   discovery -> authorize -> token exchange -> refresh-on-401 -> retry.
-- A default DPoP-aware Bearer token verifier is provided as an `AuthProvider`
-  implementation for server-side deployments.
+- OpenSSL/JWKS-backed verifier implementations are provided for the optional
+  DPoP-aware server `AuthProvider` bridge, building on the existing injected
+  verifier shape.
 - TokenStore abstraction with in-memory default (applications may provide
   persistent storage by implementing the interface).
 - OpenSSL-backed DPoP/JWT/JWKS code is compiled only when the auth feature is

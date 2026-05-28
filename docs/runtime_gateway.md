@@ -30,7 +30,30 @@ tooling dependencies such as spdlog or CLI11.
 
 Runtime and gateway targets can remain in this repository while they are useful
 for local development and examples, but they are documented as tools, not as the
-SDK's primary product surface.
+SDK's primary product surface. In the SDK package-manager routes, runtime,
+gateway, and CLI targets are not part of the default installed SDK contract.
+They are build-tree and source-checkout tooling targets until a separate tools
+package/export set is created. Release notes must not imply that
+`cxxmcp::runtime`, `cxxmcp::gateway`, or `cxxmcp::cli` are guaranteed by the
+SDK-only vcpkg, Conan, or xmake package routes.
+
+## Extension Surfaces
+
+`cxxmcp::plugin_sdk` is a stable optional SDK-adjacent package surface for
+declaring lightweight tool extensions over the protocol types. It is installed
+only when `CXXMCP_ENABLE_PLUGIN_SDK=ON`, covered by package smoke, and may
+evolve only under the public API compatibility rules.
+
+`cxxmcp::adapters` is a stable optional adapter-helper surface for connecting
+plugin-style declarations to the server SDK. It is installed only when
+`CXXMCP_ENABLE_ADAPTERS=ON`, depends on `cxxmcp::server` and
+`cxxmcp::plugin_sdk`, remains outside the core SDK narrative, and must not pull
+runtime, gateway, profile, policy, discovery, or CLI concepts into canonical
+SDK headers.
+
+Experimental adapter ideas that need runtime policy, discovery, registry, or
+managed gateway state must live outside these stable optional targets until a
+design note promotes them.
 
 ## Example Boundary
 

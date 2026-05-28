@@ -51,6 +51,28 @@ controlled error is retained and returned by `tasks/result`.
 as a background task and stores the serialized `ToolResult` JSON as the task
 result payload.
 
+## Notifications
+
+`TaskOperationProcessorOptions::task_status_hook` is called after task snapshots
+move through lifecycle states. Applications that expose an MCP server should
+connect this hook to `Server::notify_task_status()` when they want automatic
+`notifications/tasks/status` delivery instead of mirroring every state change
+manually.
+
+`TaskOperationProcessorOptions::task_progress_hook` is called when a task state
+change can be mapped to `notifications/progress`. `submit_tool_call()` reads
+`_meta.progressToken` from the original `tools/call` request and stores it on
+the task record. When a progress token exists and
+`emit_progress_for_task_state_changes` remains enabled, the processor emits
+state-derived progress notifications with `total = 1.0`, `progress = 0.0` for
+non-terminal states, and `progress = 1.0` for terminal states. The progress
+message is the task `statusMessage` when present, otherwise the task status
+string.
+
+Hooks are invoked after the processor releases its internal mutex. Hook
+implementations may call server notification APIs, record telemetry, or enqueue
+application work without risking task-processor lock reentrancy.
+
 ## Timeout
 
 The processor uses `TaskOperationProcessorOptions::default_timeout` when the

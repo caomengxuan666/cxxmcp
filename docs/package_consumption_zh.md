@@ -128,6 +128,11 @@ overlay port 存在就提交。
 源码包。SDK archive 包含默认 bundled 构建需要的 header-only SDK 依赖；GitHub
 自动源码包不包含 submodule 内容。
 
+下面具体的 `v2.0.2` URL 是本文档目前记录的最新已发布 SDK source archive。
+它适用于想固定到已发布默认 SDK surface 的 consumer。不要把它当成当前 worktree
+可选 auth header surface 的证据；当前源码或 release candidate 验证必须使用那次
+release-gates run 生成的精确 source archive 和 checksum。
+
 ```cmake
 include(FetchContent)
 
@@ -156,6 +161,13 @@ target_link_libraries(my_server PRIVATE cxxmcp::server)
 
 `CPM.cmake` 可以消费同一个 SDK source archive。显式关闭工具层选项，避免下游
 构建意外拉入 runtime 或 tools。
+
+URL 和 hash 应来自你有意 pin 的那个 release。release candidate 验证要使用候选
+run 生成的精确 source artifact，不要直接复制已发布的 `v2.0.2` 示例。
+
+cxxmcp 不会安装或导出 `CPM.cmake` helper。消费方项目必须自己提供它，例如把
+`cmake/CPM.cmake` vendor 到自己的源码树，或者在 `include()` 前自行 bootstrap。
+下面的路径是消费方自己的文件路径，不是 cxxmcp 发布包提供的文件。
 
 ```cmake
 include(cmake/CPM.cmake)

@@ -79,7 +79,8 @@ Package-manager work starts from the SDK-only contract:
 - vcpkg overlay port: `packaging/vcpkg/ports/cxxmcp`
 - xmake-repo recipe draft: `packaging/xmake/packages/c/cxxmcp/xmake.lua`
 - FetchContent / CPM.cmake snippets:
-  [Package consumption](docs/package_consumption.md)
+  [Package consumption](docs/package_consumption.md). CPM users provide or
+  bootstrap their own `CPM.cmake`; cxxmcp does not install that helper.
 
 These paths build the C++17 SDK targets and leave optional tooling disabled.
 The vcpkg port is an overlay port for this checkout:
@@ -158,6 +159,10 @@ target_link_libraries(my_server PRIVATE cxxmcp::server)
 Use `cxxmcp::sdk` when one target should pull in the public protocol, client,
 and server SDK layers.
 
+The package, repository, installed include path, and CMake targets use the
+`cxxmcp` name. The C++ namespace is intentionally `mcp` and is part of the
+stable source API; it should not be renamed inside a stable major release line.
+
 Common public headers:
 
 ```cpp
@@ -222,45 +227,31 @@ cmake --install build-smoke --config Debug --prefix out/install/cxxmcp
 
 ```cpp
 #include <iostream>
-#include <memory>
 #include <utility>
 
 #include <cxxmcp/peer.hpp>
-#include <cxxmcp/server.hpp>
 #include <cxxmcp/service.hpp>
-#include <cxxmcp/transport/stdio_transport.hpp>
 
 int main() {
-    mcp::server::ServerBuilder builder;
-    builder.name("demo-server")
+    auto peer = mcp::ServerPeer::builder()
+        .name("demo-server")
         .version("1.0.0")
-        .add_tool(
-            mcp::protocol::ToolDefinition{
-                .name = "echo",
-                .description = "Echo the incoming payload",
-                .input_schema = mcp::protocol::Json{{"type", "object"}},
-            },
-            [](const mcp::server::ToolContext& context) {
-                mcp::protocol::ToolResult result;
-                result.structured_content = context.arguments;
-                return result;
-            });
+        .stdio()
+        .tool(mcp::server::tool<mcp::protocol::Json, mcp::protocol::Json>("echo")
+            .description("Echo the incoming payload")
+            .handler([](const mcp::protocol::Json& input) {
+                return mcp::protocol::Json{{"echo", input}};
+            }))
+        .build();
 
-    auto server = builder.build();
-    if (!server) {
+    if (!peer) {
         return 1;
     }
 
-    mcp::ServerPeer peer(std::move(*server));
-    peer.add_transport(
-        std::make_unique<mcp::transport::ServerStdioTransport>(
-            std::cin, std::cout));
-
-    auto running = mcp::serve(std::move(peer));
+    auto running = mcp::serve(std::move(*peer));
     if (!running) {
         return 1;
     }
-
     return running->wait().has_value() ? 0 : 1;
 }
 ```
@@ -483,6 +474,9 @@ request semantics remain stable.
   macOS/AppleClang. A release may only claim support for matrix entries that
   passed the public-header, package-smoke, and conformance gates for that
   release.
+- MinGW UCRT64 GCC and MinGW CLANG64 Clang are provisional best-effort
+  compatibility evidence from the scheduled `compiler-compat` workflow, not
+  release-supported targets, while their jobs remain `continue-on-error`.
 - Public include paths stay under `cxxmcp/...`; public targets are
   `cxxmcp::protocol`, `cxxmcp::transport`, `cxxmcp::handler`,
   `cxxmcp::peer`, `cxxmcp::service`, `cxxmcp::client`, `cxxmcp::server`, and
@@ -505,10 +499,11 @@ request semantics remain stable.
 
 The in-tree examples preset builds compact SDK entry points:
 
-- First-choice Peer/Service examples: `server_peer`, `client_peer`,
-  `process_stdio_client`, `timeout_cancellation`, `elicitation_client`
-- Focused capability examples: `handler_contracts`, `task_async_client_server`,
-  `typed_stdio_server`, `streamable_http_client`
+- First-choice Peer/Service examples: `auth_bearer_http`,
+  `server_stdio_peer`, `server_peer`, `client_peer`, `process_stdio_client`,
+  `timeout_cancellation`, `elicitation_client`
+- Focused capability examples: `auth_dpop_openssl`, `handler_contracts`,
+  `task_async_client_server`, `typed_stdio_server`, `streamable_http_client`
 - Compatibility and low-level examples: `stdio_server`, `client_loopback`
 - Optional runtime tooling example: `gateway_runtime`
 

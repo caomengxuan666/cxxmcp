@@ -6,7 +6,7 @@
     <title>Auth | cxxmcp</title>
     <meta
       name="description"
-      content="Auth behavior, optional OAuth scaffold, and bearer-token helper contracts in cxxmcp.">
+      content="Auth feature gates, OpenSSL-backed helpers, and bearer-token contracts in cxxmcp.">
     <style>
       :root {
         color-scheme: light dark;
@@ -203,9 +203,10 @@
         <div class="eyebrow">Auth</div>
         <h1>Use lightweight bearer-token hooks today and opt into OAuth contracts deliberately.</h1>
         <p class="lede">
-          The default SDK package does not pull crypto dependencies. Server auth
-          extension points are available through <code>cxxmcp::server</code>,
-          while the optional OAuth/DPoP scaffold is behind an explicit feature.
+          The default SDK package does not enable optional auth or pull OpenSSL.
+          Server auth extension points are available through
+          <code>cxxmcp::server</code>, while OAuth/JWT/DPoP surfaces stay behind
+          explicit feature gates.
         </p>
       </section>
 
@@ -217,23 +218,39 @@
         </p>
         <ul>
           <li><code>CXXMCP_ENABLE_AUTH=OFF</code> is the default.</li>
-          <li>The default package does not export <code>cxxmcp::auth</code>.</li>
+          <li>The default package does not export <code>cxxmcp::auth</code> or <code>cxxmcp::auth_openssl</code>.</li>
           <li>The default package does not call <code>find_package(OpenSSL)</code>.</li>
           <li>HTTP server auth hooks remain available through <code>cxxmcp::server</code>.</li>
         </ul>
       </section>
 
       <section class="section">
-        <h2>Optional OAuth Scaffold</h2>
+        <h2>Optional Auth Contracts</h2>
         <p>
-          Enable the scaffold only when consumers need the transport-neutral
-          OAuth/DPoP contract headers and <code>cxxmcp::auth</code> target.
-          The current scaffold does not include full crypto-backed OAuth,
-          DPoP, JWT verification, token exchange, or browser loopback behavior.
+          Enable auth only when consumers need the transport-neutral OAuth,
+          metadata, lifecycle, token, registration, WWW-Authenticate, JWKS, JWT,
+          and DPoP contract headers exposed by the <code>cxxmcp::auth</code>
+          target. This option does not require OpenSSL by itself.
         </p>
         <pre><code>cmake -S . -B build-auth -DCXXMCP_ENABLE_AUTH=ON
 cmake --build build-auth</code></pre>
         <pre><code>vcpkg install "cxxmcp[auth]" --overlay-ports=C:\path\to\MCPServer.cpp\packaging\vcpkg\ports</code></pre>
+      </section>
+
+      <section class="section">
+        <h2>OpenSSL Crypto Option</h2>
+        <p>
+          Set <code>CXXMCP_AUTH_CRYPTO=OpenSSL</code> with
+          <code>CXXMCP_ENABLE_AUTH=ON</code> when consumers need first-party
+          crypto-backed helpers. This is the path that resolves OpenSSL and
+          exports <code>cxxmcp::auth_openssl</code>.
+        </p>
+        <ul>
+          <li>JOSE/JWK/JWS/JWT helpers cover compact JWS parsing, public JWK import, RS256/ES256 signature verification, and trusted JWKS JWT validation.</li>
+          <li><code>FetchingJwksJwtVerifier</code> adds transport-neutral JWKS fetch/cache integration for key rotation; applications still supply the HTTP fetcher.</li>
+          <li><code>OpenSslDpopSigner</code> and <code>OpenSslDpopVerifier</code> sign and verify ES256/RS256 DPoP proof JWTs.</li>
+          <li>Server auth provider presets wire the OpenSSL JWT verifier, DPoP verifier, access-token hash helper, replay cache, and required-claim checks.</li>
+        </ul>
       </section>
 
       <section class="section">
@@ -262,7 +279,7 @@ cmake --build build-auth</code></pre>
             <h3>AuthProvider</h3>
             <p>
               Application-owned interface for bearer-token validation, custom
-              schemes, or future OAuth verifier integration.
+              schemes, or OAuth verifier integration.
             </p>
           </article>
           <article class="card">
@@ -296,9 +313,19 @@ cmake --build build-auth</code></pre>
         <h2>HTTPS and Real Deployments</h2>
         <p>
           Streamable HTTP auth is intended for HTTPS in production. The SDK can
-          run behind a TLS-terminating reverse proxy, or a future HTTPS-enabled
-          transport build can use OpenSSL through the normal package manager
-          dependency graph. OpenSSL must not be vendored into the repository.
+          run behind a TLS-terminating reverse proxy, and OpenSSL-backed auth
+          helpers use the normal package manager dependency graph when
+          explicitly enabled. OpenSSL must not be vendored into the repository.
+        </p>
+      </section>
+
+      <section class="section">
+        <h2>Explicit Non-Goals</h2>
+        <p>
+          The SDK still does not provide a built-in HTTP JWKS client,
+          browser-opening or localhost loopback UX, persistent credential
+          storage, or an OAuth authorization server. Those remain application
+          responsibilities or future integration points.
         </p>
       </section>
     </main>
