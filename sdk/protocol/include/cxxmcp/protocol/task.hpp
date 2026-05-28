@@ -19,6 +19,7 @@
 #include <vector>
 
 #include "cxxmcp/core/result.hpp"
+#include "cxxmcp/protocol/reflect.hpp"
 #include "cxxmcp/protocol/types.hpp"
 
 namespace mcp::protocol {
@@ -76,6 +77,26 @@ inline std::optional<TaskStatus> task_status_from_string(
   return std::nullopt;
 }
 
+/// @brief JsonFieldTraits specialization for TaskStatus enum.
+template <>
+struct JsonFieldTraits<TaskStatus> {
+  static void serialize(Json& json, const char* key, TaskStatus value) {
+    json[key] = task_status_to_string(value);
+  }
+  static bool deserialize(const Json& json, const char* key,
+                          TaskStatus& target) {
+    if (!json.contains(key) || !json.at(key).is_string()) {
+      return false;
+    }
+    auto val = task_status_from_string(json.at(key).get<std::string>());
+    if (!val.has_value()) {
+      return false;
+    }
+    target = *val;
+    return true;
+  }
+};
+
 /// @brief Optional task parameters embedded in feature requests.
 struct TaskRequestParameters {
   /// Optional requested time-to-live for the created task.
@@ -104,6 +125,27 @@ struct Task {
   std::string last_updated_at;
   /// Unknown JSON members preserved for forward-compatible round trips.
   Json extensions = Json::object();
+};
+
+/// @brief Reflection trait for Task.
+template <>
+struct Reflect<Task> {
+  static auto fields() {
+    return std::make_tuple(
+        field("taskId", &Task::task_id), field("status", &Task::status),
+        field("statusMessage", &Task::status_message),
+        field("createdAt", &Task::created_at), field("ttl", &Task::ttl),
+        field("pollInterval", &Task::poll_interval),
+        field("lastUpdatedAt", &Task::last_updated_at),
+        field("_meta", &Task::meta),
+        extensions_field(&Task::extensions,
+                         {"taskId", "status", "statusMessage", "createdAt",
+                          "ttl", "pollInterval", "lastUpdatedAt", "_meta"}));
+  }
+  static std::vector<std::string> known_keys() {
+    return {"taskId", "status",       "statusMessage", "createdAt",
+            "ttl",    "pollInterval", "lastUpdatedAt", "_meta"};
+  }
 };
 
 /// @brief Parameters for `tasks/list`.
@@ -255,87 +297,12 @@ inline core::Result<TaskRequestParameters> task_request_parameters_from_json(
 }
 
 /// @brief Serializes a task snapshot.
-inline Json task_to_json(const Task& task) {
-  Json json = Json::object();
-  json["taskId"] = task.task_id;
-  json["status"] = task_status_to_string(task.status);
-  json["createdAt"] = task.created_at;
-  json["lastUpdatedAt"] = task.last_updated_at;
-  if (task.status_message.has_value()) {
-    json["statusMessage"] = *task.status_message;
-  }
-  if (std::holds_alternative<std::int64_t>(task.ttl)) {
-    json["ttl"] = std::get<std::int64_t>(task.ttl);
-  } else {
-    json["ttl"] = nullptr;
-  }
-  if (task.poll_interval.has_value()) {
-    json["pollInterval"] = *task.poll_interval;
-  }
-  append_json_extensions(json, task.extensions);
-  return json;
-}
+inline Json task_to_json(const Task& task) { return reflect_to_json(task); }
 
 /// @brief Parses a task snapshot.
 /// @return Parsed task or validation error.
 inline core::Result<Task> task_from_json(const Json& json) {
-  if (!json.is_object()) {
-    return mcp::core::unexpected(task_json_error("task must be an object"));
-  }
-  if (!json.contains("taskId") || !json.at("taskId").is_string()) {
-    return mcp::core::unexpected(
-        task_json_error("task requires a string taskId"));
-  }
-  if (!json.contains("status") || !json.at("status").is_string()) {
-    return mcp::core::unexpected(
-        task_json_error("task requires a string status"));
-  }
-  if (!json.contains("createdAt") || !json.at("createdAt").is_string()) {
-    return mcp::core::unexpected(task_json_error("task requires createdAt"));
-  }
-  if (!json.contains("lastUpdatedAt") ||
-      !json.at("lastUpdatedAt").is_string()) {
-    return mcp::core::unexpected(
-        task_json_error("task requires lastUpdatedAt"));
-  }
-
-  const auto status =
-      task_status_from_string(json.at("status").get<std::string>());
-  if (!status.has_value()) {
-    return mcp::core::unexpected(task_json_error("task status is invalid"));
-  }
-
-  Task task;
-  task.task_id = json.at("taskId").get<std::string>();
-  task.status = *status;
-  task.created_at = json.at("createdAt").get<std::string>();
-  task.last_updated_at = json.at("lastUpdatedAt").get<std::string>();
-  if (json.contains("statusMessage")) {
-    if (!json.at("statusMessage").is_string()) {
-      return mcp::core::unexpected(
-          task_json_error("task statusMessage must be a string"));
-    }
-    task.status_message = json.at("statusMessage").get<std::string>();
-  }
-  if (json.contains("ttl")) {
-    if (json.at("ttl").is_number_integer()) {
-      task.ttl = json.at("ttl").get<std::int64_t>();
-    } else if (!json.at("ttl").is_null()) {
-      return mcp::core::unexpected(
-          task_json_error("task ttl must be an integer or null"));
-    }
-  }
-  if (json.contains("pollInterval")) {
-    if (!json.at("pollInterval").is_number_integer()) {
-      return mcp::core::unexpected(
-          task_json_error("task pollInterval must be an integer"));
-    }
-    task.poll_interval = json.at("pollInterval").get<std::int64_t>();
-  }
-  task.extensions = collect_json_extensions(
-      json, {"taskId", "status", "statusMessage", "createdAt", "ttl",
-             "pollInterval", "lastUpdatedAt"});
-  return task;
+  return reflect_from_json<Task>(json);
 }
 
 /// @brief Serializes a flattened task result wrapper.
