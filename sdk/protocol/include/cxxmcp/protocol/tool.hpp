@@ -193,7 +193,9 @@ struct ToolDefinition {
   std::vector<Icon> icons;
   /// Optional execution configuration including task support mode.
   std::optional<ToolExecution> execution;
-  /// Optional annotations for model or client presentation.
+  /// Optional typed tool annotations for model or client presentation.
+  std::optional<ToolAnnotations> tool_annotations;
+  /// Optional raw annotations preserved for forward-compatible round trips.
   Json annotations = Json::object();
   /// Optional `_meta` extension object preserved on the wire.
   std::optional<Json> meta;
@@ -267,6 +269,11 @@ class ToolDefinitionBuilder {
 
   ToolDefinitionBuilder& annotations(Json value) {
     definition_.annotations = std::move(value);
+    return *this;
+  }
+
+  ToolDefinitionBuilder& tool_annotations(ToolAnnotations value) {
+    definition_.tool_annotations = std::move(value);
     return *this;
   }
 
@@ -602,7 +609,10 @@ inline Json tool_definition_to_json(const ToolDefinition& definition) {
   if (definition.execution.has_value()) {
     json["execution"] = tool_execution_to_json(*definition.execution);
   }
-  if (!definition.annotations.empty()) {
+  if (definition.tool_annotations.has_value()) {
+    json["annotations"] =
+        tool_annotations_to_json(*definition.tool_annotations);
+  } else if (!definition.annotations.empty()) {
     json["annotations"] = definition.annotations;
   }
   if (definition.meta.has_value()) {
@@ -693,6 +703,10 @@ inline core::Result<ToolDefinition> tool_definition_from_json(
     if (!json.at("annotations").is_object()) {
       return mcp::core::unexpected(
           tool_json_error("tool definition annotations must be an object"));
+    }
+    const auto parsed = tool_annotations_from_json(json.at("annotations"));
+    if (parsed) {
+      definition.tool_annotations = *parsed;
     }
     definition.annotations = json.at("annotations");
   }

@@ -12,6 +12,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <limits>
+#include <map>
 #include <optional>
 #include <string>
 #include <utility>
@@ -61,13 +62,25 @@ struct CompletionArgument {
   Json extensions = Json::object();
 };
 
+/// @brief Contextual argument values used to improve completions.
+///
+/// Maps to the `CompletionContext` struct in the MCP reference model
+/// (`rmcp::CompletionContext`).  The `arguments` field carries previously
+/// supplied argument name-value pairs that help the server narrow completions.
+struct CompletionContext {
+  /// Previously supplied argument name-value pairs.
+  std::optional<std::map<std::string, std::string>> arguments;
+};
+
 /// @brief Parameters for `completion/complete`.
 struct CompleteParams {
   /// Prompt or resource-template reference.
   CompletionReference ref;
   /// Argument being completed.
   CompletionArgument argument;
-  /// Optional contextual argument values used to improve completions.
+  /// Typed contextual argument values used to improve completions.
+  std::optional<CompletionContext> typed_context;
+  /// Optional contextual argument values used to improve completions (raw).
   Json context = Json::object();
   /// Optional `_meta` extension object preserved on the wire.
   std::optional<Json> meta;
@@ -210,12 +223,53 @@ inline core::Result<CompletionArgument> completion_argument_from_json(
   return argument;
 }
 
+/// @brief Serializes a CompletionContext struct to JSON.
+inline Json completion_context_to_json(const CompletionContext& context) {
+  Json json = Json::object();
+  if (context.arguments.has_value()) {
+    json["arguments"] = Json::object();
+    for (const auto& [key, value] : *context.arguments) {
+      json["arguments"][key] = value;
+    }
+  }
+  return json;
+}
+
+/// @brief Parses a CompletionContext struct from JSON.
+inline core::Result<CompletionContext> completion_context_from_json(
+    const Json& json) {
+  if (!json.is_object()) {
+    return mcp::core::unexpected(
+        completion_json_error("completion context must be an object"));
+  }
+
+  CompletionContext context;
+  if (json.contains("arguments")) {
+    if (!json.at("arguments").is_object()) {
+      return mcp::core::unexpected(completion_json_error(
+          "completion context arguments must be an object"));
+    }
+    std::map<std::string, std::string> arguments;
+    for (const auto& [key, value] : json.at("arguments").items()) {
+      if (!value.is_string()) {
+        return mcp::core::unexpected(completion_json_error(
+            "completion context argument values must be strings"));
+      }
+      arguments[key] = value.get<std::string>();
+    }
+    context.arguments = std::move(arguments);
+  }
+  return context;
+}
+
 /// @brief Serializes `completion/complete` params.
 inline Json complete_params_to_json(const CompleteParams& params) {
   Json json = Json::object();
   json["ref"] = completion_reference_to_json(params.ref);
   json["argument"] = completion_argument_to_json(params.argument);
-  if (!params.context.empty()) {
+  if (params.typed_context.has_value()) {
+    json["context"] = completion_context_to_json(*params.typed_context);
+  } else if (!params.context.empty()) {
     json["context"] = params.context;
   }
   if (params.meta.has_value()) {
@@ -260,6 +314,10 @@ inline core::Result<CompleteParams> complete_params_from_json(
           completion_json_error("completion context must be an object"));
     }
     params.context = json.at("context");
+    const auto typed = completion_context_from_json(json.at("context"));
+    if (typed) {
+      params.typed_context = *typed;
+    }
   }
   if (json.contains("_meta")) {
     if (!json.at("_meta").is_object()) {

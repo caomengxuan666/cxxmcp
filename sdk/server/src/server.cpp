@@ -1152,6 +1152,48 @@ core::Result<core::Unit> Server::notify_task_status(
       protocol::task_to_json(task)));
 }
 
+core::Result<protocol::CreateTaskResult> Server::enqueue_task(
+    const protocol::Task& task) {
+  protocol::Json params = protocol::Json::object();
+  params["task"] = protocol::task_to_json(task);
+
+  for (auto& transport : transports_) {
+    auto response = transport->send_request(protocol::make_request(
+        std::string(protocol::TasksCreateMethod), std::int64_t{0}, params));
+    if (response) {
+      if (response->has_error()) {
+        return mcp::core::unexpected(core::Error{
+            response->error->code, response->error->message,
+            response->error->data.value_or(protocol::Json::object())});
+      }
+      if (response->has_result()) {
+        return protocol::create_task_result_from_json(*response->result);
+      }
+    }
+  }
+  for (auto* transport : session_transports_) {
+    if (transport == nullptr) {
+      continue;
+    }
+    auto response = transport->send_request(protocol::make_request(
+        std::string(protocol::TasksCreateMethod), std::int64_t{0}, params));
+    if (response) {
+      if (response->has_error()) {
+        return mcp::core::unexpected(core::Error{
+            response->error->code, response->error->message,
+            response->error->data.value_or(protocol::Json::object())});
+      }
+      if (response->has_result()) {
+        return protocol::create_task_result_from_json(*response->result);
+      }
+    }
+  }
+  return mcp::core::unexpected(
+      core::Error{static_cast<int>(protocol::ErrorCode::InternalError),
+                  "no transport available for enqueue_task",
+                  {}});
+}
+
 core::Result<core::Unit> Server::notify_resource_subscribers(
     std::string_view uri, const protocol::JsonRpcNotification& notification) {
   std::vector<Transport*> recipients;
