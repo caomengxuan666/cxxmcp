@@ -2,10 +2,13 @@
 
 #pragma once
 
+#include <cctype>
+#include <optional>
 #include <string>
 #include <string_view>
 #include <unordered_map>
 #include <utility>
+#include <vector>
 
 #include "cxxmcp/core/result.hpp"
 #include "cxxmcp/protocol/types.hpp"
@@ -14,6 +17,65 @@
 /// @brief Authentication extension points for server transports.
 
 namespace mcp::server {
+
+namespace detail {
+
+inline bool ascii_iequals(std::string_view lhs, std::string_view rhs) {
+  if (lhs.size() != rhs.size()) {
+    return false;
+  }
+  for (std::size_t index = 0; index < lhs.size(); ++index) {
+    const auto left = static_cast<unsigned char>(lhs[index]);
+    const auto right = static_cast<unsigned char>(rhs[index]);
+    if (std::tolower(left) != std::tolower(right)) {
+      return false;
+    }
+  }
+  return true;
+}
+
+inline bool constant_time_string_equal(std::string_view lhs,
+                                       std::string_view rhs) {
+  const auto max_size = lhs.size() > rhs.size() ? lhs.size() : rhs.size();
+  unsigned char diff = static_cast<unsigned char>(lhs.size() ^ rhs.size());
+  for (std::size_t index = 0; index < max_size; ++index) {
+    const auto left =
+        index < lhs.size() ? static_cast<unsigned char>(lhs[index]) : 0;
+    const auto right =
+        index < rhs.size() ? static_cast<unsigned char>(rhs[index]) : 0;
+    diff = static_cast<unsigned char>(diff | (left ^ right));
+  }
+  return diff == 0;
+}
+
+inline std::string_view trim_ascii(std::string_view value) {
+  while (!value.empty() &&
+         std::isspace(static_cast<unsigned char>(value.front())) != 0) {
+    value.remove_prefix(1);
+  }
+  while (!value.empty() &&
+         std::isspace(static_cast<unsigned char>(value.back())) != 0) {
+    value.remove_suffix(1);
+  }
+  return value;
+}
+
+inline std::string_view bearer_token_from_authorization(
+    std::string_view authorization) {
+  authorization = trim_ascii(authorization);
+  constexpr std::string_view kBearer = "Bearer";
+  if (authorization.size() <= kBearer.size() ||
+      !ascii_iequals(authorization.substr(0, kBearer.size()), kBearer) ||
+      std::isspace(static_cast<unsigned char>(authorization[kBearer.size()])) ==
+          0) {
+    return {};
+  }
+  authorization.remove_prefix(kBearer.size());
+  authorization = trim_ascii(authorization);
+  return authorization;
+}
+
+}  // namespace detail
 
 /// @brief Stable core::Error category used for server authentication failures.
 inline constexpr std::string_view AuthErrorCategory = "auth";
@@ -31,6 +93,10 @@ struct AuthRequest {
   std::unordered_map<std::string, std::string> headers;
   /// Best-effort remote address for audit and policy decisions.
   std::string remote_address;
+  /// HTTP request method when supplied by an HTTP-based transport.
+  std::optional<std::string> http_method;
+  /// Absolute HTTP request URL when supplied by an HTTP-based transport.
+  std::optional<std::string> http_url;
 };
 
 /// @brief Authenticated principal and associated claims.
@@ -72,5 +138,56 @@ inline core::Error make_auth_error(std::string message,
       std::string(AuthErrorCategory),
   };
 }
+
+/// @brief Static bearer-token AuthProvider for small embedded deployments and
+/// tests.
+///
+/// This provider validates `Authorization: Bearer <token>` against an in-memory
+/// token table and returns the configured identity. It is intentionally narrow:
+/// production OAuth/DPoP deployments should use an application-specific
+/// provider or the future OpenSSL/JWKS-backed provider.
+class StaticBearerAuthProvider final : public AuthProvider {
+ public:
+  struct Entry {
+    std::string token;
+    AuthIdentity identity;
+  };
+
+  StaticBearerAuthProvider() = default;
+  explicit StaticBearerAuthProvider(std::vector<Entry> entries)
+      : entries_(std::move(entries)) {}
+
+  void add_token(std::string token, AuthIdentity identity) {
+    entries_.push_back(Entry{std::move(token), std::move(identity)});
+  }
+
+  core::Result<AuthIdentity> authenticate(const AuthRequest& request) override {
+    const auto token = bearer_token(request);
+    if (token.empty()) {
+      return mcp::core::unexpected(
+          make_auth_error("missing or invalid bearer token"));
+    }
+
+    for (const auto& entry : entries_) {
+      if (detail::constant_time_string_equal(token, entry.token)) {
+        return entry.identity;
+      }
+    }
+    return mcp::core::unexpected(
+        make_auth_error("missing or invalid bearer token"));
+  }
+
+ private:
+  static std::string_view bearer_token(const AuthRequest& request) {
+    for (const auto& header : request.headers) {
+      if (detail::ascii_iequals(header.first, "Authorization")) {
+        return detail::bearer_token_from_authorization(header.second);
+      }
+    }
+    return {};
+  }
+
+  std::vector<Entry> entries_;
+};
 
 }  // namespace mcp::server
