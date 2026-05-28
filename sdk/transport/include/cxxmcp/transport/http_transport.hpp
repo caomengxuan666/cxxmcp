@@ -109,6 +109,15 @@ struct StreamableHttpServerTransportOptions {
   /// Optional SSE retry interval hint for the priming event.
   std::optional<std::chrono::milliseconds> sse_retry;
 
+  /// Enable SEP-1699 SSE polling: always send a priming event with id on SSE
+  /// streams and allow server-initiated disconnect via
+  /// disconnect_session_sse().
+  bool enable_sse_polling = false;
+
+  /// Retry hint (ms) sent to the client before a server-initiated SSE
+  /// disconnect. Only used when enable_sse_polling is true.
+  std::chrono::milliseconds sse_disconnect_retry{5000};
+
   /// Optional Origin allow-list. Empty means Origin is not restricted.
   std::vector<std::string> allowed_origins;
 

@@ -67,6 +67,13 @@ struct HttpTransportOptions {
   std::string path = "/mcp";
   /// Optional SSE retry interval hint for the priming event.
   std::optional<std::chrono::milliseconds> sse_retry;
+  /// Enable SEP-1699 SSE polling: always send a priming event with id on SSE
+  /// streams and allow server-initiated disconnect via
+  /// disconnect_session_sse().
+  bool enable_sse_polling = false;
+  /// Retry hint (ms) sent to the client before a server-initiated SSE
+  /// disconnect. Only used when enable_sse_polling is true.
+  std::chrono::milliseconds sse_disconnect_retry{5000};
   /// Optional Origin allow-list. Empty means Origin is not restricted.
   std::vector<std::string> allowed_origins;
   /// Host allow-list used to reject DNS-rebinding attempts. Empty disables Host
@@ -201,6 +208,14 @@ class HttpTransport final : public Transport {
   /// @brief Stop the HTTP server and fail pending outbound requests.
   void stop() noexcept override;
 
+  /// @brief Request a server-initiated SSE stream disconnect for a session.
+  ///
+  /// When enable_sse_polling is true, this signals the active SSE stream to
+  /// close. The server sends a retry hint before closing. The client will
+  /// automatically reconnect with Last-Event-ID per the SSE spec.
+  /// @param session_id The session whose SSE stream should be disconnected.
+  void disconnect_session_sse(std::string_view session_id);
+
   /// @brief Return the diagnostic transport name "http".
   std::string_view name() const noexcept override;
 
@@ -231,6 +246,7 @@ class HttpTransport final : public Transport {
         pending_requests;
     std::uint64_t next_notification_event_id = 1;
     std::size_t active_sse_streams = 0;
+    bool sse_disconnect_requested = false;
   };
 
   void abort_pending_requests_locked(SessionState& session,

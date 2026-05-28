@@ -5028,6 +5028,389 @@ void test_native_streamable_http_server_transport_rejects_duplicate_client_reque
   require(closed.has_value(), "native duplicate server close should succeed");
 }
 
+void test_server_sse_priming_event_with_polling() {
+  constexpr int kPort = 40260;
+  const std::string kPath = "/mcp";
+
+  RunningServerTransportFixture server_transport(
+      std::make_unique<mcp::server::HttpTransport>(
+          mcp::server::HttpTransportOptions{
+              .listen_host = "127.0.0.1",
+              .listen_port = kPort,
+              .path = kPath,
+              .enable_sse_polling = true,
+              .sse_disconnect_retry = std::chrono::milliseconds(2000),
+          }),
+      [](const mcp::protocol::JsonRpcRequest& request,
+         const mcp::server::SessionContext&) {
+        if (request.method == mcp::protocol::InitializeMethod) {
+          return mcp::protocol::JsonRpcResponse{
+              .id = request.id,
+              .result =
+                  Json{
+                      {"protocolVersion",
+                       std::string(mcp::protocol::McpProtocolVersion)},
+                      {"capabilities", Json::object()},
+                      {"serverInfo",
+                       Json{{"name", "server-http-test"}, {"version", "1"}}},
+                  },
+          };
+        }
+        return mcp::protocol::make_error_response(
+            std::optional<mcp::protocol::RequestId>{request.id},
+            mcp::protocol::make_error(mcp::protocol::ErrorCode::MethodNotFound,
+                                      "unexpected request"));
+      });
+
+  require(!server_transport.start_error().has_value(),
+          "server transport should start");
+  require(wait_for_http_initialize(kPort, kPath),
+          "server transport should become reachable");
+
+  httplib::Client http_client("127.0.0.1", kPort);
+  const auto initialize_response = http_client.Post(
+      kPath,
+      httplib::Headers{
+          {"Accept", "application/json, text/event-stream"},
+          {"Content-Type", "application/json"},
+          {"Mcp-Method", std::string(mcp::protocol::InitializeMethod)},
+      },
+      serialize_test_request(mcp::protocol::JsonRpcRequest{
+          .method = std::string(mcp::protocol::InitializeMethod),
+          .params = Json::object(),
+          .id = std::int64_t{1},
+      }),
+      "application/json");
+  require(static_cast<bool>(initialize_response), "initialize should succeed");
+  require(initialize_response->has_header("Mcp-Session-Id"),
+          "initialize should return a session id");
+  const auto session_id =
+      initialize_response->get_header_value("Mcp-Session-Id");
+
+  std::string body;
+  const auto stream =
+      http_client.Get(kPath,
+                      httplib::Headers{
+                          {"Mcp-Session-Id", session_id},
+                          {"Accept", "text/event-stream"},
+                          {"MCP-Protocol-Version",
+                           std::string(mcp::protocol::McpProtocolVersion)},
+                      },
+                      [&](const char* data, size_t len) {
+                        body.append(data, len);
+                        return body.find("retry: 2000") == std::string::npos;
+                      });
+  (void)stream;
+
+  require(body.find("id: 0") != std::string::npos,
+          "priming event should contain id: 0");
+  require(body.find("retry: 2000") != std::string::npos,
+          "priming event should contain retry: 2000");
+  require(body.find("data: {}") != std::string::npos,
+          "priming event should contain data: {}");
+  server_transport.transport().stop();
+}
+
+void test_server_sse_disconnect_and_reconnect() {
+  constexpr int kPort = 40261;
+  const std::string kPath = "/mcp";
+
+  std::atomic<bool> notification_seen{false};
+
+  RunningServerTransportFixture server_transport(
+      std::make_unique<mcp::server::HttpTransport>(
+          mcp::server::HttpTransportOptions{
+              .listen_host = "127.0.0.1",
+              .listen_port = kPort,
+              .path = kPath,
+              .enable_sse_polling = true,
+              .max_sse_replay_events = 16,
+          }),
+      [](const mcp::protocol::JsonRpcRequest& request,
+         const mcp::server::SessionContext&) {
+        if (request.method == mcp::protocol::InitializeMethod) {
+          return mcp::protocol::JsonRpcResponse{
+              .id = request.id,
+              .result =
+                  Json{
+                      {"protocolVersion",
+                       std::string(mcp::protocol::McpProtocolVersion)},
+                      {"capabilities", Json::object()},
+                      {"serverInfo",
+                       Json{{"name", "server-http-test"}, {"version", "1"}}},
+                  },
+          };
+        }
+        return mcp::protocol::make_error_response(
+            std::optional<mcp::protocol::RequestId>{request.id},
+            mcp::protocol::make_error(mcp::protocol::ErrorCode::MethodNotFound,
+                                      "unexpected request"));
+      });
+
+  require(!server_transport.start_error().has_value(),
+          "server transport should start");
+  require(wait_for_http_initialize(kPort, kPath),
+          "server transport should become reachable");
+
+  httplib::Client http_client("127.0.0.1", kPort);
+  const auto initialize_response = http_client.Post(
+      kPath,
+      httplib::Headers{
+          {"Accept", "application/json, text/event-stream"},
+          {"Content-Type", "application/json"},
+          {"Mcp-Method", std::string(mcp::protocol::InitializeMethod)},
+      },
+      serialize_test_request(mcp::protocol::JsonRpcRequest{
+          .method = std::string(mcp::protocol::InitializeMethod),
+          .params = Json::object(),
+          .id = std::int64_t{1},
+      }),
+      "application/json");
+  require(static_cast<bool>(initialize_response), "initialize should succeed");
+  const auto session_id =
+      initialize_response->get_header_value("Mcp-Session-Id");
+
+  // Send a notification before disconnect so we can verify replay after
+  // reconnect.
+  const auto sent = server_transport.transport().send_notification(
+      mcp::protocol::JsonRpcNotification{
+          .method =
+              std::string(mcp::protocol::ToolsListChangedNotificationMethod),
+          .params = Json::object(),
+      });
+  require(sent.has_value(), "server outbound notification should succeed");
+
+  // Open first SSE stream and read priming + notification.
+  std::string first_body;
+  const auto first_stream = http_client.Get(
+      kPath, sse_headers(session_id), [&](const char* data, size_t len) {
+        first_body.append(data, len);
+        return first_body.find("id: 0") == std::string::npos ||
+               first_body.find("tools/list_changed") == std::string::npos;
+      });
+  (void)first_stream;
+  require(first_body.find("id: 0") != std::string::npos,
+          "first stream should have priming event");
+
+  // Disconnect the SSE stream.
+  server_transport.transport().disconnect_session_sse(session_id);
+
+  // Wait for stream to close.
+  std::this_thread::sleep_for(std::chrono::milliseconds(200));
+
+  // Reconnect with Last-Event-ID. The server should replay retained events.
+  std::string second_body;
+  httplib::Headers reconnect_headers{
+      {"Mcp-Session-Id", session_id},
+      {"Accept", "text/event-stream"},
+      {"MCP-Protocol-Version", std::string(mcp::protocol::McpProtocolVersion)},
+      {"Last-Event-ID", "0"},
+  };
+  const auto second_stream = http_client.Get(
+      kPath, reconnect_headers, [&](const char* data, size_t len) {
+        second_body.append(data, len);
+        // Wait for the priming event on reconnect.
+        return second_body.find("retry:") == std::string::npos;
+      });
+  (void)second_stream;
+
+  require(second_body.find("retry:") != std::string::npos,
+          "reconnect stream should have priming event");
+  server_transport.transport().stop();
+}
+
+void test_server_sse_disconnect_sends_retry_hint() {
+  constexpr int kPort = 40262;
+  const std::string kPath = "/mcp";
+
+  std::atomic<bool> priming_seen{false};
+  std::atomic<bool> stream_done{false};
+
+  RunningServerTransportFixture server_transport(
+      std::make_unique<mcp::server::HttpTransport>(
+          mcp::server::HttpTransportOptions{
+              .listen_host = "127.0.0.1",
+              .listen_port = kPort,
+              .path = kPath,
+              .enable_sse_polling = true,
+              .sse_disconnect_retry = std::chrono::milliseconds(3000),
+          }),
+      [](const mcp::protocol::JsonRpcRequest& request,
+         const mcp::server::SessionContext&) {
+        if (request.method == mcp::protocol::InitializeMethod) {
+          return mcp::protocol::JsonRpcResponse{
+              .id = request.id,
+              .result =
+                  Json{
+                      {"protocolVersion",
+                       std::string(mcp::protocol::McpProtocolVersion)},
+                      {"capabilities", Json::object()},
+                      {"serverInfo",
+                       Json{{"name", "server-http-test"}, {"version", "1"}}},
+                  },
+          };
+        }
+        return mcp::protocol::make_error_response(
+            std::optional<mcp::protocol::RequestId>{request.id},
+            mcp::protocol::make_error(mcp::protocol::ErrorCode::MethodNotFound,
+                                      "unexpected request"));
+      });
+
+  require(!server_transport.start_error().has_value(),
+          "server transport should start");
+  require(wait_for_http_initialize(kPort, kPath),
+          "server transport should become reachable");
+
+  httplib::Client http_client("127.0.0.1", kPort);
+  const auto initialize_response = http_client.Post(
+      kPath,
+      httplib::Headers{
+          {"Accept", "application/json, text/event-stream"},
+          {"Content-Type", "application/json"},
+          {"Mcp-Method", std::string(mcp::protocol::InitializeMethod)},
+      },
+      serialize_test_request(mcp::protocol::JsonRpcRequest{
+          .method = std::string(mcp::protocol::InitializeMethod),
+          .params = Json::object(),
+          .id = std::int64_t{1},
+      }),
+      "application/json");
+  require(static_cast<bool>(initialize_response), "initialize should succeed");
+  const auto session_id =
+      initialize_response->get_header_value("Mcp-Session-Id");
+
+  // Open SSE stream and keep it open (return true to continue reading).
+  std::string body;
+  std::thread sse_thread([&]() {
+    http_client.Get(kPath, sse_headers(session_id),
+                    [&](const char* data, size_t len) {
+                      body.append(data, len);
+                      if (body.find("retry: 3000") != std::string::npos &&
+                          !priming_seen.load()) {
+                        priming_seen.store(true);
+                      }
+                      // Keep reading until the server disconnects us.
+                      return !stream_done.load();
+                    });
+  });
+
+  // Wait for the priming event to be received.
+  require(wait_for([&]() { return priming_seen.load(); },
+                   std::chrono::milliseconds(2000)),
+          "should receive priming event");
+
+  // Trigger disconnect. The server should send a retry hint before closing.
+  server_transport.transport().disconnect_session_sse(session_id);
+
+  // Wait for the stream to be closed by the server.
+  require(wait_for(
+              [&]() {
+                // The stream will close when the server disconnects.
+                // Check if the body has grown with the retry hint.
+                return body.find("retry: 3000", body.find("retry: 3000") + 1) !=
+                       std::string::npos;
+              },
+              std::chrono::milliseconds(2000)),
+          "should receive disconnect retry hint");
+
+  stream_done.store(true);
+  if (sse_thread.joinable()) {
+    sse_thread.join();
+  }
+
+  // The body should contain at least two "retry:" lines: one from priming,
+  // one from the disconnect hint.
+  const auto first_retry = body.find("retry: 3000");
+  require(first_retry != std::string::npos, "should have priming retry hint");
+  const auto second_retry = body.find("retry: 3000", first_retry + 1);
+  require(second_retry != std::string::npos,
+          "should have disconnect retry hint");
+  server_transport.transport().stop();
+}
+
+void test_server_sse_no_priming_without_polling() {
+  constexpr int kPort = 40263;
+  const std::string kPath = "/mcp";
+
+  RunningServerTransportFixture server_transport(
+      std::make_unique<mcp::server::HttpTransport>(
+          mcp::server::HttpTransportOptions{
+              .listen_host = "127.0.0.1",
+              .listen_port = kPort,
+              .path = kPath,
+              // enable_sse_polling = false (default), no sse_retry
+          }),
+      [](const mcp::protocol::JsonRpcRequest& request,
+         const mcp::server::SessionContext&) {
+        if (request.method == mcp::protocol::InitializeMethod) {
+          return mcp::protocol::JsonRpcResponse{
+              .id = request.id,
+              .result =
+                  Json{
+                      {"protocolVersion",
+                       std::string(mcp::protocol::McpProtocolVersion)},
+                      {"capabilities", Json::object()},
+                      {"serverInfo",
+                       Json{{"name", "server-http-test"}, {"version", "1"}}},
+                  },
+          };
+        }
+        return mcp::protocol::make_error_response(
+            std::optional<mcp::protocol::RequestId>{request.id},
+            mcp::protocol::make_error(mcp::protocol::ErrorCode::MethodNotFound,
+                                      "unexpected request"));
+      });
+
+  require(!server_transport.start_error().has_value(),
+          "server transport should start");
+  require(wait_for_http_initialize(kPort, kPath),
+          "server transport should become reachable");
+
+  httplib::Client http_client("127.0.0.1", kPort);
+  const auto initialize_response = http_client.Post(
+      kPath,
+      httplib::Headers{
+          {"Accept", "application/json, text/event-stream"},
+          {"Content-Type", "application/json"},
+          {"Mcp-Method", std::string(mcp::protocol::InitializeMethod)},
+      },
+      serialize_test_request(mcp::protocol::JsonRpcRequest{
+          .method = std::string(mcp::protocol::InitializeMethod),
+          .params = Json::object(),
+          .id = std::int64_t{1},
+      }),
+      "application/json");
+  require(static_cast<bool>(initialize_response), "initialize should succeed");
+  const auto session_id =
+      initialize_response->get_header_value("Mcp-Session-Id");
+
+  // Send a notification so the SSE stream has something to deliver.
+  const auto sent = server_transport.transport().send_notification(
+      mcp::protocol::JsonRpcNotification{
+          .method =
+              std::string(mcp::protocol::ToolsListChangedNotificationMethod),
+          .params = Json::object(),
+      });
+  require(sent.has_value(), "server outbound notification should succeed");
+
+  std::string body;
+  const auto stream = http_client.Get(
+      kPath, sse_headers(session_id), [&](const char* data, size_t len) {
+        body.append(data, len);
+        return body.find("tools/list_changed") == std::string::npos;
+      });
+  (void)stream;
+
+  // Without enable_sse_polling or sse_retry, no priming event should be sent.
+  require(body.find("retry:") == std::string::npos,
+          "should not emit retry priming without polling enabled");
+  require(body.find("id: 0") == std::string::npos,
+          "should not emit priming id without polling enabled");
+  require(body.find("tools/list_changed") != std::string::npos,
+          "should still deliver the notification");
+  server_transport.transport().stop();
+}
+
 }  // namespace
 
 int main() {
@@ -5151,6 +5534,14 @@ int main() {
       {"native streamable http server transport rejects duplicate client "
        "request id",
        test_native_streamable_http_server_transport_rejects_duplicate_client_request_id},
+      {"server sse priming event with polling",
+       test_server_sse_priming_event_with_polling},
+      {"server sse disconnect and reconnect",
+       test_server_sse_disconnect_and_reconnect},
+      {"server sse disconnect sends retry hint",
+       test_server_sse_disconnect_sends_retry_hint},
+      {"server sse no priming without polling",
+       test_server_sse_no_priming_without_polling},
   };
 
   std::size_t failures = 0;

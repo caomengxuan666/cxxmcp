@@ -183,7 +183,8 @@ std::string sse_priming_event(std::chrono::milliseconds retry) {
   event.append("id: 0\n");
   event.append("retry: ");
   event.append(std::to_string(retry.count()));
-  event.append("\n\n");
+  event.append("\n");
+  event.append("data: {}\n\n");
   return event;
 }
 
@@ -1433,6 +1434,14 @@ core::Result<core::Unit> HttpTransport::start(
               sink.done();
               return false;
             }
+          } else if (options_.enable_sse_polling) {
+            const auto priming =
+                sse_priming_event(options_.sse_disconnect_retry);
+            if (!sink.write(priming.data(), priming.size())) {
+              close_stream();
+              sink.done();
+              return false;
+            }
           }
 
           while (true) {
@@ -1464,6 +1473,7 @@ core::Result<core::Unit> HttpTransport::start(
                   const auto* session = find_session_locked(stream_session_id);
                   return stopped_ || replay_index < replay_events.size() ||
                          session == nullptr ||
+                         session->sse_disconnect_requested ||
                          !session->pending_notifications.empty() ||
                          !sink.is_writable() || request.is_connection_closed();
                 });
@@ -1478,6 +1488,22 @@ core::Result<core::Unit> HttpTransport::start(
             auto* session = find_session_locked(stream_session_id);
             if (session == nullptr) {
               close_stream_locked();
+              sink.done();
+              return false;
+            }
+
+            if (session->sse_disconnect_requested) {
+              session->sse_disconnect_requested = false;
+              const auto retry_ms =
+                  options_.sse_retry.value_or(options_.sse_disconnect_retry)
+                      .count();
+              const std::string retry_hint =
+                  "retry: " + std::to_string(retry_ms) + "\n\n";
+              close_stream_locked();
+              lock.unlock();
+              if (sink.is_writable()) {
+                sink.write(retry_hint.data(), retry_hint.size());
+              }
               sink.done();
               return false;
             }
@@ -1828,6 +1854,15 @@ void HttpTransport::close_sse_stream(std::string_view session_id) noexcept {
   }
 }
 
+void HttpTransport::disconnect_session_sse(std::string_view session_id) {
+  std::lock_guard lock(mutex_);
+  auto* session = find_session_locked(session_id);
+  if (session != nullptr) {
+    session->sse_disconnect_requested = true;
+  }
+  notification_cv_.notify_all();
+}
+
 void HttpTransport::abort_pending_requests_locked(SessionState& session,
                                                   std::string message) {
   std::unordered_map<std::string, std::shared_ptr<PendingRequest>>
@@ -1882,6 +1917,8 @@ server::HttpTransportOptions to_legacy_options(
   legacy.read_timeout = options.read_timeout;
   legacy.write_timeout = options.write_timeout;
   legacy.max_sessions = options.max_sessions;
+  legacy.enable_sse_polling = options.enable_sse_polling;
+  legacy.sse_disconnect_retry = options.sse_disconnect_retry;
   return legacy;
 }
 
