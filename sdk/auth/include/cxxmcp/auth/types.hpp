@@ -44,4 +44,16 @@ struct OAuthClientConfig {
   MetadataMap metadata;
 };
 
+/// @brief OAuth 2.0 Client Credentials flow configuration (SEP-1046).
+///
+/// Supports client_secret_post authentication for machine-to-machine flows.
+/// Private-key JWT (RFC 7523) is deferred to the optional OpenSSL-backed auth
+/// feature.
+struct ClientCredentialsConfig {
+  std::string client_id;
+  std::string client_secret;
+  ScopeList scopes;
+  std::string resource;
+};
+
 }  // namespace mcp::auth

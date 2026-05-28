@@ -110,6 +110,33 @@ class HttpOAuthTokenEndpoint final : public OAuthTokenEndpoint {
     return result;
   }
 
+  core::Result<TokenSet> exchange_client_credentials(
+      const TokenClientCredentialsRequest& request) override {
+    if (request.authorization_server.token_endpoint.empty()) {
+      return mcp::core::unexpected(
+          make_oauth_error(OAuthErrorCode::kClientCredentialsFailed,
+                           "token endpoint is required"));
+    }
+
+    auto form = FormBuilder{};
+    form.add("grant_type", "client_credentials");
+    form.add("client_id", request.credentials.client_id);
+    form.add("client_secret", request.credentials.client_secret);
+    form.add("resource", request.credentials.resource);
+    const auto scope = detail::join_scopes(request.credentials.scopes);
+    if (!scope.empty()) {
+      form.add("scope", scope);
+    }
+    append_additional_parameters(&form, request.additional_parameters);
+
+    auto response = post_form(request.authorization_server.token_endpoint,
+                              std::move(form).body());
+    if (!response.has_value()) {
+      return mcp::core::unexpected(response.error());
+    }
+    return parse_token_set(*response, OAuthErrorCode::kClientCredentialsFailed);
+  }
+
  private:
   using Json = nlohmann::json;
 

@@ -420,8 +420,11 @@ class RecordingTokenEndpoint final : public mcp::auth::OAuthTokenEndpoint {
  public:
   mcp::auth::TokenSet exchange_result;
   mcp::auth::TokenRefreshResult refresh_result;
+  mcp::auth::TokenSet client_credentials_result;
   std::optional<mcp::auth::TokenExchangeRequest> exchange_request;
   std::optional<mcp::auth::TokenRefreshRequest> refresh_request;
+  std::optional<mcp::auth::TokenClientCredentialsRequest>
+      client_credentials_request;
 
   mcp::core::Result<mcp::auth::TokenSet> exchange_authorization_code(
       const mcp::auth::TokenExchangeRequest& request) override {
@@ -433,6 +436,12 @@ class RecordingTokenEndpoint final : public mcp::auth::OAuthTokenEndpoint {
       const mcp::auth::TokenRefreshRequest& request) override {
     refresh_request = request;
     return refresh_result;
+  }
+
+  mcp::core::Result<mcp::auth::TokenSet> exchange_client_credentials(
+      const mcp::auth::TokenClientCredentialsRequest& request) override {
+    client_credentials_request = request;
+    return client_credentials_result;
   }
 };
 
@@ -1164,6 +1173,80 @@ void test_offline_access_scope_append_is_advertisement_gated() {
   require(scopes.empty(), "empty scope requests should remain empty");
 }
 
+void test_client_credentials_metadata_validation() {
+  auto metadata = test_authorization_metadata();
+  metadata.grant_types_supported = {"client_credentials"};
+  metadata.token_endpoint_auth_methods_supported = {"client_secret_post"};
+
+  auto valid = mcp::auth::validate_client_credentials_metadata(metadata);
+  require(valid.has_value(), "client credentials metadata should validate");
+
+  metadata.grant_types_supported = {"authorization_code"};
+  auto missing_grant =
+      mcp::auth::validate_client_credentials_metadata(metadata);
+  require(!missing_grant.has_value(),
+          "client credentials validation should require advertised grant");
+  require(missing_grant.error().message.find("client_credentials") !=
+              std::string::npos,
+          "missing grant error should name client_credentials");
+
+  metadata.grant_types_supported = {"client_credentials"};
+  metadata.token_endpoint_auth_methods_supported = {"client_secret_basic"};
+  auto unsupported_method =
+      mcp::auth::validate_client_credentials_metadata(metadata);
+  require(
+      !unsupported_method.has_value(),
+      "client credentials validation should reject unsupported auth method");
+  require(unsupported_method.error().message.find("client_secret_post") !=
+              std::string::npos,
+          "unsupported auth method error should name client_secret_post");
+}
+
+void test_authorization_manager_authenticates_client_credentials() {
+  auto metadata = test_authorization_metadata();
+  metadata.grant_types_supported = {"client_credentials"};
+  metadata.token_endpoint_auth_methods_supported = {"client_secret_post"};
+
+  auto credential_store =
+      std::make_shared<mcp::auth::InMemoryCredentialStore>();
+  auto endpoint = std::make_shared<RecordingTokenEndpoint>();
+  endpoint->client_credentials_result.access_token = "machine-access";
+  endpoint->client_credentials_result.scopes = {"tools:read"};
+
+  mcp::auth::AuthorizationManager manager("https://resource.example/mcp",
+                                          metadata, {});
+  manager.set_credential_store(credential_store);
+  manager.set_token_endpoint(endpoint);
+
+  mcp::auth::ClientCredentialsConfig config;
+  config.client_id = "machine-client";
+  config.client_secret = "machine-secret";
+  config.resource = "https://resource.example/mcp";
+  config.scopes = {"tools:read"};
+
+  auto tokens = manager.authenticate_client_credentials(config);
+  require(tokens.has_value(),
+          "client credentials authentication should return tokens");
+  require(tokens->access_token == "machine-access",
+          "client credentials access token mismatch");
+  require(endpoint->client_credentials_request.has_value(),
+          "token endpoint should receive client credentials request");
+  require(endpoint->client_credentials_request->credentials.client_id ==
+              "machine-client",
+          "client credentials request client_id mismatch");
+  require(
+      manager.lifecycle_state() == mcp::auth::OAuthLifecycleState::kAuthorized,
+      "client credentials flow should authorize manager");
+  require(manager.current_scopes() == mcp::auth::ScopeList{"tools:read"},
+          "client credentials granted scopes mismatch");
+
+  const auto stored = credential_store->load(manager.credential_key());
+  require(stored.has_value() && stored->has_value(),
+          "client credentials should be stored");
+  require((*stored)->token_set->access_token == "machine-access",
+          "stored client credentials access token mismatch");
+}
+
 void test_metadata_discovery_executor_uses_rmcp_order() {
   RecordingMetadataEndpoint endpoint;
   mcp::auth::ProtectedResourceMetadata resource;
@@ -1373,6 +1456,59 @@ void test_http_token_endpoint_exchanges_code_and_parses_token_response() {
           "token expiry should be derived from expires_in");
   require(token->metadata.at("extra") == "true",
           "token extension metadata mismatch");
+}
+
+void test_http_token_endpoint_exchanges_client_credentials() {
+  std::optional<mcp::auth::OAuthHttpRequest> observed;
+  mcp::auth::HttpOAuthTokenEndpoint endpoint([&observed](
+                                                 const mcp::auth::
+                                                     OAuthHttpRequest& request)
+                                                 -> mcp::core::Result<
+                                                     mcp::auth::
+                                                         OAuthHttpResponse> {
+    observed = request;
+    return mcp::auth::OAuthHttpResponse{
+        200,
+        {},
+        R"({"access_token":"machine-access","expires_in":60,"scope":"tools:read"})"};
+  });
+
+  mcp::auth::TokenClientCredentialsRequest request;
+  request.authorization_server = test_authorization_metadata();
+  request.credentials.client_id = "machine client";
+  request.credentials.client_secret = "machine secret";
+  request.credentials.resource = "https://resource.example/mcp";
+  request.credentials.scopes = {"tools:read"};
+  request.additional_parameters.emplace("audience", "mcp api");
+
+  auto token = endpoint.exchange_client_credentials(request);
+  require(token.has_value(),
+          "HTTP token endpoint should exchange client credentials");
+  require(observed.has_value(),
+          "HTTP token endpoint should issue client credentials POST");
+  require(observed->method == "POST",
+          "client credentials request method mismatch");
+  require(observed->url == request.authorization_server.token_endpoint,
+          "client credentials request URL mismatch");
+  require(
+      observed->body.find("grant_type=client_credentials") != std::string::npos,
+      "client credentials body should include grant type");
+  require(
+      observed->body.find("client_id=machine%20client") != std::string::npos,
+      "client credentials body should encode client_id");
+  require(observed->body.find("client_secret=machine%20secret") !=
+              std::string::npos,
+          "client credentials body should encode client_secret");
+  require(
+      observed->body.find("resource=https%3A%2F%2Fresource.example%2Fmcp") !=
+          std::string::npos,
+      "client credentials body should encode resource");
+  require(observed->body.find("scope=tools%3Aread") != std::string::npos,
+          "client credentials body should include scopes");
+  require(observed->body.find("audience=mcp%20api") != std::string::npos,
+          "client credentials body should include additional parameters");
+  require(token->access_token == "machine-access",
+          "client credentials parsed access token mismatch");
 }
 
 void test_http_token_endpoint_refreshes_and_reports_errors() {
@@ -1667,11 +1803,14 @@ int main() {
       test_authorization_server_metadata_url_candidates,
       test_scope_selection_uses_rmcp_priority_order,
       test_offline_access_scope_append_is_advertisement_gated,
+      test_client_credentials_metadata_validation,
+      test_authorization_manager_authenticates_client_credentials,
       test_metadata_discovery_executor_uses_rmcp_order,
       test_metadata_discovery_executor_reports_failures,
       test_http_metadata_endpoint_parses_oauth_metadata,
       test_http_metadata_endpoint_reports_http_and_json_errors,
       test_http_token_endpoint_exchanges_code_and_parses_token_response,
+      test_http_token_endpoint_exchanges_client_credentials,
       test_http_token_endpoint_refreshes_and_reports_errors,
       test_client_registration_request_uses_public_client_defaults,
       test_authorization_manager_registers_dynamic_client,

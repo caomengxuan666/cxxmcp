@@ -43,6 +43,7 @@ enum class OAuthErrorCode {
   kClientRegistrationFailed = 10,
   kClientMetadataDocumentUnsupported = 11,
   kClientMetadataDocumentInvalid = 12,
+  kClientCredentialsFailed = 13,
 };
 
 /// @brief Build an auth-category lifecycle error.
@@ -278,6 +279,13 @@ struct TokenRefreshRequest {
   MetadataMap additional_parameters;
 };
 
+/// @brief Token endpoint client credentials input (SEP-1046).
+struct TokenClientCredentialsRequest {
+  ClientCredentialsConfig credentials;
+  AuthorizationServerMetadata authorization_server;
+  MetadataMap additional_parameters;
+};
+
 /// @brief Token exchange and refresh network boundary.
 ///
 /// The SDK scaffold owns lifecycle state, but does not provide fake HTTP or
@@ -290,6 +298,8 @@ class OAuthTokenEndpoint {
       const TokenExchangeRequest& request) = 0;
   virtual core::Result<TokenRefreshResult> refresh_access_token(
       const TokenRefreshRequest& request) = 0;
+  virtual core::Result<TokenSet> exchange_client_credentials(
+      const TokenClientCredentialsRequest& request) = 0;
 };
 
 /// @brief Runtime state for the interactive OAuth lifecycle.
@@ -785,6 +795,44 @@ inline void add_offline_access_if_supported(
   if (supports_offline) {
     scopes.push_back("offline_access");
   }
+}
+
+/// @brief SEP-1046: validate that the authorization server supports client
+/// credentials authentication.
+///
+/// Checks metadata for the client credentials grant and the
+/// `client_secret_post` authentication method used by the built-in endpoint.
+inline core::Result<core::Unit> validate_client_credentials_metadata(
+    const AuthorizationServerMetadata& metadata) {
+  if (metadata.token_endpoint.empty()) {
+    return mcp::core::unexpected(
+        make_oauth_error(OAuthErrorCode::kClientCredentialsFailed,
+                         "authorization server has no token endpoint"));
+  }
+
+  const auto& grants = metadata.grant_types_supported;
+  if (!grants.empty() && std::find(grants.begin(), grants.end(),
+                                   "client_credentials") == grants.end()) {
+    return mcp::core::unexpected(make_oauth_error(
+        OAuthErrorCode::kClientCredentialsFailed,
+        "authorization server does not advertise client_credentials grant"));
+  }
+
+  const auto& methods = metadata.token_endpoint_auth_methods_supported;
+  if (methods.empty()) {
+    return core::Unit{};
+  }
+
+  const auto has_post = std::find(methods.begin(), methods.end(),
+                                  "client_secret_post") != methods.end();
+  if (!has_post) {
+    return mcp::core::unexpected(make_oauth_error(
+        OAuthErrorCode::kClientCredentialsFailed,
+        "authorization server does not support client_secret_post "
+        "authentication"));
+  }
+
+  return core::Unit{};
 }
 
 /// @brief User-facing authorization session for an active code flow.
@@ -1310,6 +1358,69 @@ class AuthorizationManager {
     retry.should_retry = true;
     retry.bearer_token = refreshed->token_set.access_token;
     return retry;
+  }
+
+  /// @brief SEP-1046: authenticate using the Client Credentials grant.
+  ///
+  /// Performs metadata validation, token exchange, and credential storage in
+  /// one call. Skips the interactive authorization-code flow entirely.
+  core::Result<TokenSet> authenticate_client_credentials(
+      ClientCredentialsConfig config) {
+    if (!token_endpoint_) {
+      return mcp::core::unexpected(
+          make_oauth_error(OAuthErrorCode::kTokenExchangeUnavailable,
+                           "OAuth token endpoint is not configured"));
+    }
+    if (config.client_id.empty()) {
+      return mcp::core::unexpected(make_oauth_error(
+          OAuthErrorCode::kInvalidRequest, "client_id is required"));
+    }
+    if (config.client_secret.empty()) {
+      return mcp::core::unexpected(make_oauth_error(
+          OAuthErrorCode::kInvalidRequest, "client_secret is required"));
+    }
+    if (config.resource.empty()) {
+      return mcp::core::unexpected(make_oauth_error(
+          OAuthErrorCode::kInvalidRequest, "resource is required"));
+    }
+
+    auto validation = validate_client_credentials_metadata(metadata_);
+    if (!validation.has_value()) {
+      return mcp::core::unexpected(validation.error());
+    }
+
+    add_offline_access_if_supported(config.scopes, metadata_);
+
+    TokenClientCredentialsRequest request;
+    request.credentials = std::move(config);
+    request.authorization_server = metadata_;
+
+    auto token_result = token_endpoint_->exchange_client_credentials(request);
+    if (!token_result.has_value()) {
+      return mcp::core::unexpected(token_result.error());
+    }
+
+    client_.client_id = request.credentials.client_id;
+    client_.client_secret = request.credentials.client_secret;
+    resource_ = request.credentials.resource;
+
+    current_scopes_ = token_result->scopes.empty() ? request.credentials.scopes
+                                                   : token_result->scopes;
+    scope_upgrade_attempts_ = 0;
+
+    StoredCredentials credentials;
+    credentials.client_id = request.credentials.client_id;
+    credentials.token_set = *token_result;
+    credentials.granted_scopes = current_scopes_;
+    credentials.token_received_at = SystemClock::now();
+    auto save_result =
+        credential_store().save(credential_key(), std::move(credentials));
+    if (!save_result.has_value()) {
+      return mcp::core::unexpected(save_result.error());
+    }
+
+    state_ = OAuthLifecycleState::kAuthorized;
+    return *token_result;
   }
 
   bool can_attempt_scope_upgrade() const {
