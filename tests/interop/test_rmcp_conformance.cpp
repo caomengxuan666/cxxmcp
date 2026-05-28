@@ -848,9 +848,8 @@ class RunningInteropServer {
         {
           std::lock_guard lock(mutex_);
           session_id_ = "mcp-session-1";
+          response.set_header("Mcp-Session-Id", session_id_);
         }
-
-        response.set_header("Mcp-Session-Id", session_id_);
         const auto negotiated_version =
             mcp::protocol::negotiate_protocol_version(requested_version);
         require(negotiated_version.has_value(),

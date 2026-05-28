@@ -8,7 +8,7 @@ SEPs are accepted when their GitHub issue is closed on the
 repository with the `SEP` label. Open issues are proposals, not accepted spec
 changes.
 
-Last updated: 2026-05-28
+Last updated: 2026-05-28 (SEP-1699)
 
 ## Legend
 
@@ -83,7 +83,7 @@ Last updated: 2026-05-28
 | [SEP-1352](https://github.com/modelcontextprotocol/modelcontextprotocol/issues/1352) | gRPC transport | **Open** | Add gRPC as an MCP transport option. |
 | [SEP-1359](https://github.com/modelcontextprotocol/modelcontextprotocol/issues/1359) | Protocol-level sessions | **Open** | Session management at the protocol layer. |
 | [SEP-1612](https://github.com/modelcontextprotocol/modelcontextprotocol/issues/1612) | Pure HTTP transport (fully compliant, backward-compatible) | **Open** | Simplified HTTP transport without SSE. |
-| [SEP-1699](https://github.com/modelcontextprotocol/modelcontextprotocol/issues/1699) | SSE polling via server-side disconnect | **Open** | Server disconnects SSE to signal client to re-poll. |
+| [SEP-1699](https://github.com/modelcontextprotocol/modelcontextprotocol/issues/1699) | SSE polling via server-side disconnect | **Done** | `enable_sse_polling`, `sse_disconnect_retry`, `disconnect_session_sse()`. Priming event with `id` + `data: {}`. |
 
 ## Schema and Validation
 
@@ -146,11 +146,11 @@ Last updated: 2026-05-28
 | Protocol Features | 5 | 0 | 10 | 1 |
 | Elicitation | 3 | 0 | 1 | 0 |
 | Auth and Security | 5 | 1 | 9 | 0 |
-| Transport | 1 | 0 | 5 | 0 |
+| Transport | 2 | 0 | 4 | 0 |
 | Schema and Validation | 0 | 0 | 6 | 0 |
 | SDK and Ecosystem | 0 | 0 | 11 | 2 |
 | Governance and Process | -- | -- | -- | 14 |
-| **Total** | **14** | **1** | **42** | **17** |
+| **Total** | **15** | **1** | **41** | **17** |
 
 ## Open SEPs by Priority
 
@@ -165,7 +165,6 @@ Last updated: 2026-05-28
 
 - **SEP-1046**: OAuth client credentials flow hardening
 - **SEP-988**: High security profile
-- **SEP-1699**: SSE polling via server-side disconnect
 - **SEP-1700**: Multi-turn SSE
 
 ### Low (nice-to-have)

@@ -4719,6 +4719,7 @@ void test_native_streamable_http_server_transport_exposes_server_contract() {
           kPath,
           httplib::Headers{
               {"Accept", "application/json, text/event-stream"},
+              {"Authorization", "Bearer native-token"},
               {"Content-Type", "application/json"},
               {"Mcp-Method", std::string(mcp::protocol::InitializeMethod)},
           },
@@ -4740,6 +4741,17 @@ void test_native_streamable_http_server_transport_exposes_server_contract() {
           "native server should receive request message");
   require(initialize_request->method == mcp::protocol::InitializeMethod,
           "native server request method mismatch");
+  const auto received_context = transport.last_received_context();
+  require(received_context.has_value(),
+          "native server should expose received HTTP context");
+  require(received_context->headers.count("Authorization") == 1,
+          "native server HTTP context should include authorization header");
+  require(
+      received_context->headers.at("Authorization") == "Bearer native-token",
+      "native server HTTP context authorization mismatch");
+  require(received_context->http_method.has_value() &&
+              *received_context->http_method == "POST",
+          "native server HTTP context method mismatch");
 
   const auto sent = transport.send(mcp::protocol::make_response(
       initialize_request->id,

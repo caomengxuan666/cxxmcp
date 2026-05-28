@@ -156,6 +156,31 @@ inline void keep_first_service_error(std::optional<core::Error>& first_error,
   }
 }
 
+inline server::SessionContext context_for_received_server_message(
+    transport::ServerTransport& transport,
+    const server::SessionContext& fallback) {
+  server::SessionContext context = fallback;
+  auto* http_transport =
+      dynamic_cast<transport::StreamableHttpServerTransport*>(&transport);
+  if (http_transport == nullptr) {
+    return context;
+  }
+
+  const auto http_context = http_transport->last_received_context();
+  if (!http_context.has_value()) {
+    return context;
+  }
+
+  context.session_id = http_context->session_id;
+  if (!http_context->remote_address.empty()) {
+    context.remote_address = http_context->remote_address;
+  }
+  context.headers = http_context->headers;
+  context.http_method = http_context->http_method;
+  context.http_url = http_context->http_url;
+  return context;
+}
+
 struct ClientNativeReceiveState {
   std::mutex mutex;
   std::condition_variable cv;
@@ -3677,7 +3702,10 @@ class Peer<RoleServer> {
               return mcp::core::unexpected(detail::peer_dispatch_error(
                   "server peer transport session is not initialized"));
             }
-            auto dispatched = dispatch_message(message, context, &transport);
+            auto message_context =
+                detail::context_for_received_server_message(transport, context);
+            auto dispatched =
+                dispatch_message(message, message_context, &transport);
             if (!dispatched) {
               return dispatched;
             }
@@ -3686,7 +3714,9 @@ class Peer<RoleServer> {
             }
             return dispatched;
           }
-          return dispatch_message(message, context, &transport);
+          auto message_context =
+              detail::context_for_received_server_message(transport, context);
+          return dispatch_message(message, message_context, &transport);
         });
   }
 

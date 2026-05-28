@@ -1,9 +1,11 @@
 // Copyright (c) 2025 [caomengxuan666]
 
+#include <condition_variable>
 #include <cstdint>
 #include <deque>
 #include <iostream>
 #include <memory>
+#include <mutex>
 #include <optional>
 #include <stdexcept>
 #include <string>
@@ -32,12 +34,16 @@ class LoopbackTransport final : public mcp::transport::ClientTransport {
   mcp::core::Result<mcp::core::Unit> send(TxMessage message) override {
     if (const auto* request =
             std::get_if<mcp::protocol::JsonRpcRequest>(&message)) {
+      std::lock_guard lock(mutex_);
       received_.push_back(make_response(*request));
+      cv_.notify_all();
     }
     return mcp::core::Unit{};
   }
 
   mcp::core::Result<std::optional<RxMessage>> receive() override {
+    std::unique_lock lock(mutex_);
+    cv_.wait(lock, [this] { return stopped_ || !received_.empty(); });
     if (received_.empty()) {
       return std::nullopt;
     }
@@ -47,36 +53,38 @@ class LoopbackTransport final : public mcp::transport::ClientTransport {
   }
 
   mcp::core::Result<mcp::core::Unit> close() override {
-    stopped_ = true;
+    {
+      std::lock_guard lock(mutex_);
+      stopped_ = true;
+    }
+    cv_.notify_all();
     return mcp::core::Unit{};
   }
 
-  bool stopped() const noexcept { return stopped_; }
+  bool stopped() const noexcept {
+    std::lock_guard lock(mutex_);
+    return stopped_;
+  }
 
  private:
   static mcp::protocol::JsonRpcResponse make_response(
       const mcp::protocol::JsonRpcRequest& request) {
-    if (request.method == "initialize") {
+    if (request.method == mcp::protocol::InitializeMethod) {
+      mcp::protocol::InitializeResult result;
+      result.server_info.name = "client-peer-example";
+      result.server_info.version = "1.0.0";
       return mcp::protocol::JsonRpcResponse{
           .id = request.id,
-          .result =
-              mcp::protocol::Json{
-                  {"protocolVersion",
-                   std::string(mcp::protocol::McpProtocolVersion)},
-                  {"capabilities", mcp::protocol::Json::object()},
-                  {"serverInfo",
-                   mcp::protocol::Json{{"name", "client-peer-example"},
-                                       {"version", "1.0.0"}}},
-              },
+          .result = mcp::protocol::initialize_result_to_json(result),
       };
     }
-    if (request.method == "ping") {
+    if (request.method == mcp::protocol::PingMethod) {
       return mcp::protocol::JsonRpcResponse{
           .id = request.id,
           .result = mcp::protocol::Json::object(),
       };
     }
-    if (request.method == "tools/list") {
+    if (request.method == mcp::protocol::ToolsListMethod) {
       return mcp::protocol::JsonRpcResponse{
           .id = request.id,
           .result =
@@ -106,6 +114,8 @@ class LoopbackTransport final : public mcp::transport::ClientTransport {
   }
 
   std::deque<RxMessage> received_;
+  mutable std::mutex mutex_;
+  std::condition_variable cv_;
   bool stopped_ = false;
 };
 

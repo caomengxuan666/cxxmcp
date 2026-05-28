@@ -153,6 +153,16 @@ struct StreamableHttpServerTransportOptions {
   std::size_t max_sessions = 1024;
 };
 
+/// @brief HTTP metadata captured for the most recently received server-side
+/// Streamable HTTP message.
+struct StreamableHttpServerMessageContext {
+  std::string session_id;
+  std::string remote_address;
+  std::unordered_map<std::string, std::string> headers;
+  std::optional<std::string> http_method;
+  std::optional<std::string> http_url;
+};
+
 /// @brief Native transport-contract server for Streamable HTTP.
 ///
 /// receive() owns a background legacy HTTP server loop and returns inbound
@@ -174,6 +184,8 @@ class StreamableHttpServerTransport final : public ServerTransport {
   protocol::Json diagnostics() const override;
   core::Result<core::Unit> send(TxMessage message) override;
   core::Result<std::optional<RxMessage>> receive() override;
+  std::optional<StreamableHttpServerMessageContext> last_received_context()
+      const;
   core::Result<core::Unit> close() override;
 
  private:

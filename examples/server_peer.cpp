@@ -89,6 +89,15 @@ class LoopbackTransport final : public mcp::transport::ServerTransport {
     cv_.notify_all();
   }
 
+  void push_notification(mcp::protocol::JsonRpcNotification notification) {
+    {
+      std::lock_guard lock(mutex_);
+      incoming_.push_back(
+          mcp::protocol::JsonRpcMessage{std::move(notification)});
+    }
+    cv_.notify_all();
+  }
+
   bool receiving() const noexcept { return receiving_.load(); }
 
   std::optional<mcp::protocol::JsonRpcResponse> take_response(
@@ -176,13 +185,32 @@ int main() {
                        std::chrono::milliseconds(1000)),
             "server peer transport did not enter receive loop");
 
+    // Initialize handshake.
+    mcp::protocol::InitializeParams init_params;
+    init_params.client_info.name = "example";
+    init_params.client_info.version = "1.0";
+    transport_ptr->push_request(mcp::protocol::JsonRpcRequest{
+        .method = std::string(mcp::protocol::InitializeMethod),
+        .params = mcp::protocol::initialize_params_to_json(init_params),
+        .id = std::int64_t{1},
+    });
+    const auto inited = transport_ptr->take_response(
+        std::int64_t{1}, std::chrono::milliseconds(1000));
+    require(inited.has_value(), "server peer initialize response missing");
+    require(inited->result.has_value(),
+            "server peer initialize result missing");
+
+    transport_ptr->push_notification(mcp::protocol::JsonRpcNotification{
+        .method = std::string(mcp::protocol::InitializedMethod),
+    });
+
     transport_ptr->push_request(mcp::protocol::JsonRpcRequest{
         .method = std::string(mcp::protocol::ToolsListMethod),
         .params = Json::object(),
-        .id = std::int64_t{1},
+        .id = std::int64_t{2},
     });
     const auto listed = transport_ptr->take_response(
-        std::int64_t{1}, std::chrono::milliseconds(1000));
+        std::int64_t{2}, std::chrono::milliseconds(1000));
     require(listed.has_value(), "server peer tools/list response missing");
     require(listed->result.has_value(),
             "server peer tools/list result missing");

@@ -1936,6 +1936,17 @@ std::string request_id_to_string_for_native_server_http(
       request_id);
 }
 
+StreamableHttpServerMessageContext to_native_server_message_context(
+    const server::SessionContext& context) {
+  StreamableHttpServerMessageContext result;
+  result.session_id = context.session_id;
+  result.remote_address = context.remote_address;
+  result.headers = context.headers;
+  result.http_method = context.http_method;
+  result.http_url = context.http_url;
+  return result;
+}
+
 }  // namespace
 
 class StreamableHttpServerTransport::Impl {
@@ -2005,11 +2016,19 @@ class StreamableHttpServerTransport::Impl {
       return mcp::core::unexpected(*startup_error_);
     }
     if (inbound_.empty()) {
+      last_context_.reset();
       return std::nullopt;
     }
-    auto message = std::move(inbound_.front());
+    auto item = std::move(inbound_.front());
     inbound_.pop_front();
-    return message;
+    last_context_ = std::move(item.context);
+    return std::move(item.message);
+  }
+
+  std::optional<StreamableHttpServerMessageContext> last_received_context()
+      const {
+    std::lock_guard<std::mutex> lock(mutex_);
+    return last_context_;
   }
 
   core::Result<core::Unit> close() {
@@ -2062,6 +2081,11 @@ class StreamableHttpServerTransport::Impl {
     std::optional<protocol::JsonRpcResponse> response;
   };
 
+  struct InboundItem {
+    protocol::JsonRpcMessage message;
+    std::optional<StreamableHttpServerMessageContext> context;
+  };
+
   core::Result<core::Unit> ensure_started() {
     std::lock_guard<std::mutex> lock(mutex_);
     if (closed_) {
@@ -2077,12 +2101,12 @@ class StreamableHttpServerTransport::Impl {
       server_thread_ = std::thread([this]() {
         const auto started = transport_.start(
             [this](const protocol::JsonRpcRequest& request,
-                   const server::SessionContext&) {
-              return handle_client_request(request);
+                   const server::SessionContext& context) {
+              return handle_client_request(request, context);
             },
             [this](const protocol::JsonRpcNotification& notification,
-                   const server::SessionContext&) {
-              return handle_client_notification(notification);
+                   const server::SessionContext& context) {
+              return handle_client_notification(notification, context);
             });
         if (!started) {
           {
@@ -2140,7 +2164,8 @@ class StreamableHttpServerTransport::Impl {
   }
 
   core::Result<protocol::JsonRpcResponse> handle_client_request(
-      const protocol::JsonRpcRequest& request) {
+      const protocol::JsonRpcRequest& request,
+      const server::SessionContext& context) {
     auto pending = std::make_shared<PendingClientRequest>(request.id);
     {
       std::lock_guard<std::mutex> lock(mutex_);
@@ -2158,7 +2183,10 @@ class StreamableHttpServerTransport::Impl {
             protocol::make_error(protocol::ErrorCode::InvalidRequest,
                                  "duplicate client request id"));
       }
-      inbound_.push_back(protocol::JsonRpcMessage{request});
+      inbound_.push_back(InboundItem{
+          protocol::JsonRpcMessage{request},
+          to_native_server_message_context(context),
+      });
     }
 
     receive_cv_.notify_one();
@@ -2170,13 +2198,17 @@ class StreamableHttpServerTransport::Impl {
   }
 
   core::Result<core::Unit> handle_client_notification(
-      const protocol::JsonRpcNotification& notification) {
+      const protocol::JsonRpcNotification& notification,
+      const server::SessionContext& context) {
     {
       std::lock_guard<std::mutex> lock(mutex_);
       if (closed_) {
         return core::Unit{};
       }
-      inbound_.push_back(protocol::JsonRpcMessage{notification});
+      inbound_.push_back(InboundItem{
+          protocol::JsonRpcMessage{notification},
+          to_native_server_message_context(context),
+      });
     }
     receive_cv_.notify_one();
     return core::Unit{};
@@ -2188,7 +2220,7 @@ class StreamableHttpServerTransport::Impl {
       if (closed_) {
         return;
       }
-      inbound_.push_back(std::move(message));
+      inbound_.push_back(InboundItem{std::move(message), std::nullopt});
     }
     receive_cv_.notify_one();
   }
@@ -2239,7 +2271,8 @@ class StreamableHttpServerTransport::Impl {
   server::HttpTransport transport_;
   mutable std::mutex mutex_;
   std::condition_variable receive_cv_;
-  std::deque<protocol::JsonRpcMessage> inbound_;
+  std::deque<InboundItem> inbound_;
+  std::optional<StreamableHttpServerMessageContext> last_context_;
   std::map<protocol::RequestId, std::shared_ptr<PendingClientRequest>>
       pending_client_requests_;
   std::vector<std::thread> request_threads_;
@@ -2275,6 +2308,11 @@ core::Result<core::Unit> StreamableHttpServerTransport::send(
 core::Result<std::optional<StreamableHttpServerTransport::RxMessage>>
 StreamableHttpServerTransport::receive() {
   return impl_->receive();
+}
+
+std::optional<StreamableHttpServerMessageContext>
+StreamableHttpServerTransport::last_received_context() const {
+  return impl_->last_received_context();
 }
 
 core::Result<core::Unit> StreamableHttpServerTransport::close() {
