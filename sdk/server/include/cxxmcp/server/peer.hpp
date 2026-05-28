@@ -45,6 +45,8 @@ class ClientPeer {
   /// @brief Construct a peer from a borrowed transport pointer.
   /// @param transport Transport used for outbound messages; may be nullptr.
   /// @param session_id Session identifier used for capability lookup.
+  /// @param transport_lifetime Lifetime token for the borrowed transport; when
+  /// expired, the peer reports unavailable instead of using the pointer.
   explicit ClientPeer(Transport* transport = nullptr,
                       std::string session_id = {},
                       std::weak_ptr<void> transport_lifetime = {}) noexcept

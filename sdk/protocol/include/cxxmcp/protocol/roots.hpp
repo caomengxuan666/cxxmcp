@@ -15,6 +15,7 @@
 #include <vector>
 
 #include "cxxmcp/core/result.hpp"
+#include "cxxmcp/protocol/reflect.hpp"
 #include "cxxmcp/protocol/types.hpp"
 
 namespace mcp::protocol {
@@ -29,6 +30,20 @@ struct Root {
   std::optional<Json> meta;
   /// Unknown JSON members preserved for forward-compatible round trips.
   Json extensions = Json::object();
+};
+
+template <>
+struct Reflect<Root> {
+  static constexpr bool defined = true;
+  static auto fields() {
+    return std::make_tuple(
+        field("uri", &Root::uri), field("name", &Root::name),
+        field("_meta", &Root::meta),
+        extensions_field(&Root::extensions, {"uri", "name", "_meta"}));
+  }
+  static std::vector<std::string> known_keys() {
+    return {"uri", "name", "_meta"};
+  }
 };
 
 /// @brief Result object for `roots/list`.
@@ -48,48 +63,12 @@ inline core::Error roots_json_error(std::string message) {
 }
 
 /// @brief Serializes a root entry.
-inline Json root_to_json(const Root& root) {
-  Json json = Json::object();
-  json["uri"] = root.uri;
-  if (!root.name.empty()) {
-    json["name"] = root.name;
-  }
-  if (root.meta.has_value()) {
-    json["_meta"] = *root.meta;
-  }
-  append_json_extensions(json, root.extensions);
-  return json;
-}
+inline Json root_to_json(const Root& root) { return reflect_to_json(root); }
 
 /// @brief Parses a root entry.
 /// @return Parsed root or validation error.
 inline core::Result<Root> root_from_json(const Json& json) {
-  if (!json.is_object()) {
-    return mcp::core::unexpected(roots_json_error("root must be an object"));
-  }
-  if (!json.contains("uri") || !json.at("uri").is_string()) {
-    return mcp::core::unexpected(
-        roots_json_error("root requires a string uri"));
-  }
-
-  Root root;
-  root.uri = json.at("uri").get<std::string>();
-  if (json.contains("name")) {
-    if (!json.at("name").is_string()) {
-      return mcp::core::unexpected(
-          roots_json_error("root name must be a string"));
-    }
-    root.name = json.at("name").get<std::string>();
-  }
-  if (json.contains("_meta")) {
-    if (!json.at("_meta").is_object()) {
-      return mcp::core::unexpected(
-          roots_json_error("root _meta must be an object"));
-    }
-    root.meta = json.at("_meta");
-  }
-  root.extensions = collect_json_extensions(json, {"uri", "name", "_meta"});
-  return root;
+  return reflect_from_json<Root>(json);
 }
 
 /// @brief Serializes a `roots/list` result.

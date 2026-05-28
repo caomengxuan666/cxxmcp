@@ -18,6 +18,7 @@
 #include <vector>
 
 #include "cxxmcp/core/result.hpp"
+#include "cxxmcp/protocol/reflect.hpp"
 #include "cxxmcp/protocol/types.hpp"
 
 namespace mcp::protocol {
@@ -252,6 +253,24 @@ struct ResourceContents {
   Json extensions = Json::object();
 };
 
+template <>
+struct Reflect<ResourceContents> {
+  static constexpr bool defined = true;
+  static auto fields() {
+    return std::make_tuple(
+        field("uri", &ResourceContents::uri),
+        field("mimeType", &ResourceContents::mime_type),
+        field("text", &ResourceContents::text),
+        field("blob", &ResourceContents::blob),
+        field("_meta", &ResourceContents::meta),
+        extensions_field(&ResourceContents::extensions,
+                         {"uri", "mimeType", "text", "blob", "_meta"}));
+  }
+  static std::vector<std::string> known_keys() {
+    return {"uri", "mimeType", "text", "blob", "_meta"};
+  }
+};
+
 /// @brief Result object for `resources/read`.
 struct ResourcesReadResult {
   /// One or more content parts for the requested URI.
@@ -268,6 +287,18 @@ struct ResourceUpdatedNotificationParams {
   std::string uri;
   /// Unknown JSON members preserved for forward-compatible round trips.
   Json extensions = Json::object();
+};
+
+template <>
+struct Reflect<ResourceUpdatedNotificationParams> {
+  static constexpr bool defined = true;
+  static auto fields() {
+    return std::make_tuple(
+        field("uri", &ResourceUpdatedNotificationParams::uri),
+        extensions_field(&ResourceUpdatedNotificationParams::extensions,
+                         {"uri"}));
+  }
+  static std::vector<std::string> known_keys() { return {"uri"}; }
 };
 
 /// @brief Builds an InvalidRequest error for resource JSON validation failures.
@@ -729,22 +760,7 @@ resources_unsubscribe_params_from_json(const Json& json) {
 
 /// @brief Serializes resource contents.
 inline Json resource_contents_to_json(const ResourceContents& contents) {
-  Json json = Json::object();
-  json["uri"] = contents.uri;
-  if (!contents.mime_type.empty()) {
-    json["mimeType"] = contents.mime_type;
-  }
-  if (contents.text.has_value()) {
-    json["text"] = *contents.text;
-  }
-  if (contents.blob.has_value()) {
-    json["blob"] = *contents.blob;
-  }
-  if (contents.meta.has_value()) {
-    json["_meta"] = *contents.meta;
-  }
-  append_json_extensions(json, contents.extensions);
-  return json;
+  return reflect_to_json(contents);
 }
 
 /// @brief Parses resource contents.
@@ -752,52 +768,15 @@ inline Json resource_contents_to_json(const ResourceContents& contents) {
 /// @note A valid contents object must include either `text` or `blob`.
 inline core::Result<ResourceContents> resource_contents_from_json(
     const Json& json) {
-  if (!json.is_object()) {
-    return mcp::core::unexpected(
-        resource_json_error("resource contents must be an object"));
+  auto result = reflect_from_json<ResourceContents>(json);
+  if (!result) {
+    return result;
   }
-  if (!json.contains("uri") || !json.at("uri").is_string()) {
-    return mcp::core::unexpected(
-        resource_json_error("resource contents require a string uri"));
-  }
-
-  ResourceContents contents;
-  contents.uri = json.at("uri").get<std::string>();
-  if (json.contains("mimeType")) {
-    if (!json.at("mimeType").is_string()) {
-      return mcp::core::unexpected(
-          resource_json_error("resource contents mimeType must be a string"));
-    }
-    contents.mime_type = json.at("mimeType").get<std::string>();
-  }
-  if (json.contains("text")) {
-    if (!json.at("text").is_string()) {
-      return mcp::core::unexpected(
-          resource_json_error("resource contents text must be a string"));
-    }
-    contents.text = json.at("text").get<std::string>();
-  }
-  if (json.contains("blob")) {
-    if (!json.at("blob").is_string()) {
-      return mcp::core::unexpected(
-          resource_json_error("resource contents blob must be a string"));
-    }
-    contents.blob = json.at("blob").get<std::string>();
-  }
-  if (json.contains("_meta")) {
-    if (!json.at("_meta").is_object()) {
-      return mcp::core::unexpected(
-          resource_json_error("resource contents _meta must be an object"));
-    }
-    contents.meta = json.at("_meta");
-  }
-  contents.extensions = collect_json_extensions(
-      json, {"uri", "mimeType", "text", "blob", "_meta"});
-  if (!contents.text.has_value() && !contents.blob.has_value()) {
+  if (!result->text.has_value() && !result->blob.has_value()) {
     return mcp::core::unexpected(
         resource_json_error("resource contents require text or blob"));
   }
-  return contents;
+  return result;
 }
 
 /// @brief Serializes a `resources/read` result.
@@ -849,26 +828,13 @@ inline core::Result<ResourcesReadResult> resources_read_result_from_json(
 /// @brief Serializes `notifications/resources/updated` params.
 inline Json resource_updated_notification_params_to_json(
     const ResourceUpdatedNotificationParams& params) {
-  Json json = Json{{"uri", params.uri}};
-  append_json_extensions(json, params.extensions);
-  return json;
+  return reflect_to_json(params);
 }
 
 /// @brief Parses `notifications/resources/updated` params.
 inline core::Result<ResourceUpdatedNotificationParams>
 resource_updated_notification_params_from_json(const Json& json) {
-  if (!json.is_object()) {
-    return mcp::core::unexpected(
-        resource_json_error("resource updated params must be an object"));
-  }
-  if (!json.contains("uri") || !json.at("uri").is_string()) {
-    return mcp::core::unexpected(
-        resource_json_error("resource updated params require a string uri"));
-  }
-  ResourceUpdatedNotificationParams params;
-  params.uri = json.at("uri").get<std::string>();
-  params.extensions = collect_json_extensions(json, {"uri"});
-  return params;
+  return reflect_from_json<ResourceUpdatedNotificationParams>(json);
 }
 
 }  // namespace mcp::protocol

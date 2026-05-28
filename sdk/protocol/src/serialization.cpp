@@ -185,6 +185,14 @@ Json normalized_params(Json params) {
   return params;
 }
 
+Json params_from_document_or_empty(const Json& document,
+                                   const jsonrpcpp::Parameter& params) {
+  if (!document.contains("params")) {
+    return Json::object();
+  }
+  return normalized_params(params.to_json());
+}
+
 core::Result<std::optional<Json>> meta_from_params(const Json& params) {
   if (!params.is_object() || !params.contains("_meta")) {
     return std::optional<Json>{};
@@ -381,10 +389,9 @@ std::optional<RequestId> from_rpc_id(const jsonrpcpp::Id& id) {
 
 core::Result<JsonRpcRequest> from_request(const jsonrpcpp::Request& request,
                                           const Json& document) {
-  (void)document;
   JsonRpcRequest message;
   message.method = request.method();
-  message.params = normalized_params(request.params().to_json());
+  message.params = params_from_document_or_empty(document, request.params());
   const auto meta = meta_from_params(message.params);
   if (!meta) {
     return mcp::core::unexpected(meta.error());
@@ -402,10 +409,10 @@ core::Result<JsonRpcRequest> from_request(const jsonrpcpp::Request& request,
 
 core::Result<JsonRpcNotification> from_notification(
     const jsonrpcpp::Notification& notification, const Json& document) {
-  (void)document;
   JsonRpcNotification message;
   message.method = notification.method();
-  message.params = normalized_params(notification.params().to_json());
+  message.params =
+      params_from_document_or_empty(document, notification.params());
   const auto meta = meta_from_params(message.params);
   if (!meta) {
     return mcp::core::unexpected(meta.error());

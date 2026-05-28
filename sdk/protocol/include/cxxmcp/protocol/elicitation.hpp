@@ -376,6 +376,22 @@ struct ElicitationCompleteNotificationParams {
   Json extensions = Json::object();
 };
 
+template <>
+struct Reflect<ElicitationCompleteNotificationParams> {
+  static constexpr bool defined = true;
+  static auto fields() {
+    return std::make_tuple(
+        field("elicitationId",
+              &ElicitationCompleteNotificationParams::elicitation_id),
+        field("_meta", &ElicitationCompleteNotificationParams::meta),
+        extensions_field(&ElicitationCompleteNotificationParams::extensions,
+                         {"elicitationId", "_meta"}));
+  }
+  static std::vector<std::string> known_keys() {
+    return {"elicitationId", "_meta"};
+  }
+};
+
 /// @brief Converts an elicitation action to its MCP string value.
 inline std::string elicitation_action_to_string(ElicitationAction action) {
   switch (action) {
@@ -1050,38 +1066,14 @@ inline core::Result<core::Unit> validate_elicitation_result_content(
 /// @brief Serializes URL-mode completion notification params.
 inline Json elicitation_complete_notification_params_to_json(
     const ElicitationCompleteNotificationParams& params) {
-  Json json = Json{{"elicitationId", params.elicitation_id}};
-  if (params.meta.has_value()) {
-    json["_meta"] = *params.meta;
-  }
-  append_json_extensions(json, params.extensions);
-  return json;
+  return reflect_to_json(params);
 }
 
 /// @brief Parses URL-mode completion notification params.
 /// @return Parsed params or validation error.
 inline core::Result<ElicitationCompleteNotificationParams>
 elicitation_complete_notification_params_from_json(const Json& json) {
-  if (!json.is_object()) {
-    return mcp::core::unexpected(elicitation_json_error(
-        "elicitation complete notification must be an object"));
-  }
-  if (!json.contains("elicitationId") ||
-      !json.at("elicitationId").is_string()) {
-    return mcp::core::unexpected(elicitation_json_error(
-        "elicitation complete notification requires elicitationId"));
-  }
-  ElicitationCompleteNotificationParams params;
-  params.elicitation_id = json.at("elicitationId").get<std::string>();
-  if (json.contains("_meta")) {
-    if (!json.at("_meta").is_object()) {
-      return mcp::core::unexpected(elicitation_json_error(
-          "elicitation complete notification _meta must be an object"));
-    }
-    params.meta = json.at("_meta");
-  }
-  params.extensions = collect_json_extensions(json, {"elicitationId", "_meta"});
-  return params;
+  return reflect_from_json<ElicitationCompleteNotificationParams>(json);
 }
 
 /// @brief Validates a property name accepted by the schema builder.

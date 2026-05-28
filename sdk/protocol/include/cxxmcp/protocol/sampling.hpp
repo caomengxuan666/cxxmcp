@@ -203,6 +203,16 @@ struct ModelHint {
   Json extensions = Json::object();
 };
 
+template <>
+struct Reflect<ModelHint> {
+  static constexpr bool defined = true;
+  static auto fields() {
+    return std::make_tuple(field("name", &ModelHint::name),
+                           extensions_field(&ModelHint::extensions, {"name"}));
+  }
+  static std::vector<std::string> known_keys() { return {"name"}; }
+};
+
 /// @brief Preferences used by the client when choosing a model.
 struct ModelPreferences {
   /// Ordered or unordered model hints supplied by the requester.
@@ -702,31 +712,13 @@ inline core::Result<SamplingMessage> sampling_message_from_json(
 
 /// @brief Serializes a model hint.
 inline Json model_hint_to_json(const ModelHint& hint) {
-  Json json = Json::object();
-  if (!hint.name.empty()) {
-    json["name"] = hint.name;
-  }
-  append_json_extensions(json, hint.extensions);
-  return json;
+  return reflect_to_json(hint);
 }
 
 /// @brief Parses a model hint.
 /// @return Parsed hint or validation error.
 inline core::Result<ModelHint> model_hint_from_json(const Json& json) {
-  if (!json.is_object()) {
-    return mcp::core::unexpected(
-        sampling_json_error("model hint must be an object"));
-  }
-  ModelHint hint;
-  if (json.contains("name")) {
-    if (!json.at("name").is_string()) {
-      return mcp::core::unexpected(
-          sampling_json_error("model hint name must be a string"));
-    }
-    hint.name = json.at("name").get<std::string>();
-  }
-  hint.extensions = collect_json_extensions(json, {"name"});
-  return hint;
+  return reflect_from_json<ModelHint>(json);
 }
 
 /// @brief Serializes model preferences.

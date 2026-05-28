@@ -7,6 +7,7 @@
 #include <stdexcept>
 #include <string>
 #include <string_view>
+#include <variant>
 #include <vector>
 
 #include "cxxmcp/protocol/capabilities.hpp"
@@ -30,6 +31,14 @@ struct SearchArgs {};
 
 struct SearchResult {};
 
+struct StrictNullableValue {
+  std::variant<std::monostate, std::int64_t> value = std::monostate{};
+};
+
+struct ExplicitNullableValue {
+  std::variant<std::monostate, std::int64_t> value = std::monostate{};
+};
+
 }  // namespace schema_fixture
 
 namespace mcp::protocol {
@@ -52,6 +61,26 @@ struct SchemaTraits<schema_fixture::SearchResult> {
         .required_property("matches", JsonSchema::array(JsonSchema::string()))
         .build();
   }
+};
+
+template <>
+struct Reflect<schema_fixture::StrictNullableValue> {
+  static constexpr bool defined = true;
+  static auto fields() {
+    return std::make_tuple(
+        field("value", &schema_fixture::StrictNullableValue::value));
+  }
+  static std::vector<std::string> known_keys() { return {"value"}; }
+};
+
+template <>
+struct Reflect<schema_fixture::ExplicitNullableValue> {
+  static constexpr bool defined = true;
+  static auto fields() {
+    return std::make_tuple(
+        nullable_field("value", &schema_fixture::ExplicitNullableValue::value));
+  }
+  static std::vector<std::string> known_keys() { return {"value"}; }
 };
 
 }  // namespace mcp::protocol
@@ -533,6 +562,23 @@ void test_protocol_family_fixture_round_trips() {
         mcp::protocol::progress_notification_params_to_json(*parsed) == fixture,
         "progress fixture should round trip");
   }
+}
+
+void test_nullable_variant_reflection_is_explicit() {
+  const Json missing = Json::object();
+  const auto strict =
+      mcp::protocol::reflect_from_json<schema_fixture::StrictNullableValue>(
+          missing);
+  require(!strict.has_value(),
+          "plain nullable variant field should remain required");
+
+  const auto explicit_nullable =
+      mcp::protocol::reflect_from_json<schema_fixture::ExplicitNullableValue>(
+          missing);
+  require(explicit_nullable.has_value(),
+          "nullable_field should allow missing nullable variant");
+  require(std::holds_alternative<std::monostate>(explicit_nullable->value),
+          "nullable_field missing value should map to monostate");
 }
 
 void test_tool_protocol_round_trips() {
@@ -3075,8 +3121,10 @@ void test_protocol_extension_round_trips() {
   require(mcp::protocol::resource_to_json(*resource).at("x-rank") == 3,
           "resource extension should serialize");
 
-  const Json resource_contents_json =
-      Json{{"uri", "file:///a.txt"}, {"text", "hello"}, {"x-origin", "cache"}};
+  const Json resource_contents_json = Json{{"uri", "file:///a.txt"},
+                                           {"mimeType", "text/plain"},
+                                           {"text", "hello"},
+                                           {"x-origin", "cache"}};
   const auto resource_contents =
       mcp::protocol::resource_contents_from_json(resource_contents_json);
   require(resource_contents.has_value(),
@@ -3161,6 +3209,7 @@ void test_protocol_extension_round_trips() {
 
   const Json roots_json =
       Json{{"roots", Json::array({Json{{"uri", "file:///workspace"},
+                                       {"name", "workspace"},
                                        {"x-root", Json{{"trusted", true}}}}})},
            {"x-roots", "workspace"}};
   const auto roots = mcp::protocol::roots_list_result_from_json(roots_json);
@@ -4502,6 +4551,8 @@ int main() {
       {"response round trips", test_response_round_trips},
       {"protocol family fixture round trips",
        test_protocol_family_fixture_round_trips},
+      {"nullable variant reflection is explicit",
+       test_nullable_variant_reflection_is_explicit},
       {"tool protocol round trips", test_tool_protocol_round_trips},
       {"schema and tool definition builders",
        test_schema_and_tool_definition_builders},

@@ -41,6 +41,7 @@ struct FieldDescriptor {
   using field_type = Field;
   using struct_type = Struct;
   core::Result<core::Unit> (*post_validate)(const Field&) = nullptr;
+  bool absent_as_monostate = false;
 };
 
 /// @brief Tag-only field descriptor for the extensions member.
@@ -107,6 +108,32 @@ struct is_optional<std::optional<T>> : std::true_type {};
 
 template <typename T>
 inline constexpr bool is_optional_v = is_optional<T>::value;
+
+/// @brief Detects std::variant containing std::monostate (nullable on wire).
+template <typename T>
+struct is_nullable_variant : std::false_type {};
+
+template <typename... Ts>
+struct is_nullable_variant<std::variant<Ts...>>
+    : std::disjunction<std::is_same<Ts, std::monostate>...> {};
+
+template <typename T>
+inline constexpr bool is_nullable_variant_v = is_nullable_variant<T>::value;
+
+/// @brief Creates a FieldDescriptor whose missing wire value maps to
+/// std::monostate.
+///
+/// Use this only for protocol fields where an absent member and an explicit
+/// JSON null have the same semantics. Normal variants remain required unless
+/// they use this descriptor.
+template <typename Struct, typename Field>
+constexpr FieldDescriptor<Struct, Field> nullable_field(
+    const char* wire_name, Field Struct::* pointer) {
+  static_assert(is_nullable_variant_v<Field>,
+                "nullable_field requires a std::variant containing "
+                "std::monostate");
+  return {wire_name, pointer, nullptr, true};
+}
 
 /// @brief Detects whether a type has an `extensions` member of type Json.
 template <typename T, typename = void>
@@ -455,10 +482,17 @@ bool deserialize_one(const Json& json, Struct& obj,
                      core::Result<core::Unit>& status) {
   const bool present = json.contains(fd.wire_name);
   if (!present) {
-    // For optional types, absent is fine. For required types, this returns
-    // false and the caller records the error.
+    // For optional types, absent is fine. Nullable variants must opt in
+    // explicitly with nullable_field(); otherwise they are required fields.
     if constexpr (is_optional_v<Field>) {
       return true;
+    }
+    if constexpr (is_nullable_variant_v<Field>) {
+      if (fd.absent_as_monostate) {
+        obj.*(fd.pointer) = Field{std::monostate{}};
+        status = core::Unit{};
+        return true;
+      }
     }
     status = mcp::core::unexpected(core::Error{
         static_cast<int>(ErrorCode::InvalidRequest),

@@ -135,7 +135,8 @@ struct Reflect<Task> {
     return std::make_tuple(
         field("taskId", &Task::task_id), field("status", &Task::status),
         field("statusMessage", &Task::status_message),
-        field("createdAt", &Task::created_at), field("ttl", &Task::ttl),
+        field("createdAt", &Task::created_at),
+        nullable_field("ttl", &Task::ttl),
         field("pollInterval", &Task::poll_interval),
         field("lastUpdatedAt", &Task::last_updated_at),
         extensions_field(&Task::extensions,
@@ -158,6 +159,18 @@ struct TaskListParams {
   Json extensions = Json::object();
 };
 
+template <>
+struct Reflect<TaskListParams> {
+  static constexpr bool defined = true;
+  static auto fields() {
+    return std::make_tuple(
+        field("cursor", &TaskListParams::cursor),
+        field("_meta", &TaskListParams::meta),
+        extensions_field(&TaskListParams::extensions, {"cursor", "_meta"}));
+  }
+  static std::vector<std::string> known_keys() { return {"cursor", "_meta"}; }
+};
+
 /// @brief Parameters for `tasks/get`.
 struct TaskGetParams {
   /// Task identifier to retrieve.
@@ -166,6 +179,18 @@ struct TaskGetParams {
   std::optional<Json> meta;
   /// Unknown JSON members preserved for forward-compatible round trips.
   Json extensions = Json::object();
+};
+
+template <>
+struct Reflect<TaskGetParams> {
+  static constexpr bool defined = true;
+  static auto fields() {
+    return std::make_tuple(
+        field("taskId", &TaskGetParams::task_id),
+        field("_meta", &TaskGetParams::meta),
+        extensions_field(&TaskGetParams::extensions, {"taskId", "_meta"}));
+  }
+  static std::vector<std::string> known_keys() { return {"taskId", "_meta"}; }
 };
 
 /// @brief Parameters for `tasks/result`.
@@ -179,6 +204,18 @@ struct TaskCancelParams {
   std::optional<Json> meta;
   /// Unknown JSON members preserved for forward-compatible round trips.
   Json extensions = Json::object();
+};
+
+template <>
+struct Reflect<TaskCancelParams> {
+  static constexpr bool defined = true;
+  static auto fields() {
+    return std::make_tuple(
+        field("taskId", &TaskCancelParams::task_id),
+        field("_meta", &TaskCancelParams::meta),
+        extensions_field(&TaskCancelParams::extensions, {"taskId", "_meta"}));
+  }
+  static std::vector<std::string> known_keys() { return {"taskId", "_meta"}; }
 };
 
 /// @brief Result object for `tasks/list`.
@@ -347,111 +384,37 @@ inline core::Result<TaskGetResult> task_operation_result_from_json(
 
 /// @brief Serializes `tasks/list` params.
 inline Json task_list_params_to_json(const TaskListParams& params) {
-  Json json = Json::object();
-  if (params.cursor.has_value()) {
-    json["cursor"] = *params.cursor;
-  }
-  if (params.meta.has_value()) {
-    json["_meta"] = *params.meta;
-  }
-  append_json_extensions(json, params.extensions);
-  return json;
+  return reflect_to_json(params);
 }
 
 /// @brief Parses `tasks/list` params.
 /// @return Parsed params or validation error.
 inline core::Result<TaskListParams> task_list_params_from_json(
     const Json& json) {
-  if (!json.is_object()) {
-    return mcp::core::unexpected(
-        task_json_error("tasks/list params must be an object"));
-  }
-  TaskListParams params;
-  if (json.contains("cursor")) {
-    if (!json.at("cursor").is_string()) {
-      return mcp::core::unexpected(
-          task_json_error("tasks/list cursor must be a string"));
-    }
-    params.cursor = json.at("cursor").get<std::string>();
-  }
-  if (json.contains("_meta")) {
-    if (!json.at("_meta").is_object()) {
-      return mcp::core::unexpected(
-          task_json_error("tasks/list _meta must be an object"));
-    }
-    params.meta = json.at("_meta");
-  }
-  params.extensions = collect_json_extensions(json, {"cursor", "_meta"});
-  return params;
+  return reflect_from_json<TaskListParams>(json);
 }
 
 /// @brief Serializes `tasks/get` params.
 inline Json task_get_params_to_json(const TaskGetParams& params) {
-  Json json = Json{{"taskId", params.task_id}};
-  if (params.meta.has_value()) {
-    json["_meta"] = *params.meta;
-  }
-  append_json_extensions(json, params.extensions);
-  return json;
+  return reflect_to_json(params);
 }
 
 /// @brief Parses `tasks/get` params.
 /// @return Parsed params or validation error.
 inline core::Result<TaskGetParams> task_get_params_from_json(const Json& json) {
-  if (!json.is_object()) {
-    return mcp::core::unexpected(
-        task_json_error("tasks/get params must be an object"));
-  }
-  if (!json.contains("taskId") || !json.at("taskId").is_string()) {
-    return mcp::core::unexpected(
-        task_json_error("tasks/get params require taskId"));
-  }
-  TaskGetParams params;
-  params.task_id = json.at("taskId").get<std::string>();
-  if (json.contains("_meta")) {
-    if (!json.at("_meta").is_object()) {
-      return mcp::core::unexpected(
-          task_json_error("tasks/get _meta must be an object"));
-    }
-    params.meta = json.at("_meta");
-  }
-  params.extensions = collect_json_extensions(json, {"taskId", "_meta"});
-  return params;
+  return reflect_from_json<TaskGetParams>(json);
 }
 
 /// @brief Serializes `tasks/cancel` params.
 inline Json task_cancel_params_to_json(const TaskCancelParams& params) {
-  Json json = Json{{"taskId", params.task_id}};
-  if (params.meta.has_value()) {
-    json["_meta"] = *params.meta;
-  }
-  append_json_extensions(json, params.extensions);
-  return json;
+  return reflect_to_json(params);
 }
 
 /// @brief Parses `tasks/cancel` params.
 /// @return Parsed params or validation error.
 inline core::Result<TaskCancelParams> task_cancel_params_from_json(
     const Json& json) {
-  if (!json.is_object()) {
-    return mcp::core::unexpected(
-        task_json_error("tasks/cancel params must be an object"));
-  }
-  if (!json.contains("taskId") || !json.at("taskId").is_string()) {
-    return mcp::core::unexpected(
-        task_json_error("tasks/cancel params require taskId"));
-  }
-  TaskCancelParams params;
-  params.task_id = json.at("taskId").get<std::string>();
-  if (json.contains("_meta")) {
-    if (!json.at("_meta").is_object()) {
-      return mcp::core::unexpected(
-          task_json_error("tasks/cancel _meta must be an object"));
-    }
-    params.meta = json.at("_meta");
-  }
-  params.extensions = collect_json_extensions(json, {"taskId", "_meta"});
-  return params;
+  return reflect_from_json<TaskCancelParams>(json);
 }
 
 /// @brief Serializes `tasks/result` params.
