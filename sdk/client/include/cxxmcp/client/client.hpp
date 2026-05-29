@@ -526,7 +526,7 @@ class Client {
     const auto request_id = request.id;
     ++in_flight_requests_;
     auto in_flight_mutex = &in_flight_mutex_;
-    auto in_flight_cv = &in_flight_cv_;
+    auto in_flight_cv = in_flight_cv_;
     auto in_flight_count = &in_flight_requests_;
     return RequestHandle<T>::spawn(
         request_id, options.timeout, options.cancellation_token,
@@ -546,8 +546,8 @@ class Client {
           {
             std::lock_guard lock(*in_flight_mutex);
             --(*in_flight_count);
+            in_flight_cv->notify_one();
           }
-          in_flight_cv->notify_one();
           return result;
         });
   }
@@ -863,7 +863,8 @@ class Client {
 
   std::atomic<int> in_flight_requests_{0};
   mutable std::mutex in_flight_mutex_;
-  std::condition_variable in_flight_cv_;
+  std::shared_ptr<std::condition_variable> in_flight_cv_ =
+      std::make_shared<std::condition_variable>();
 };
 
 }  // namespace mcp::client

@@ -1819,7 +1819,7 @@ RequestHandle<protocol::Json> Client::request_async(std::string method,
   const auto request_id = request.id;
   ++in_flight_requests_;
   auto in_flight_mutex = &in_flight_mutex_;
-  auto in_flight_cv = &in_flight_cv_;
+  auto in_flight_cv = in_flight_cv_;
   auto in_flight_count = &in_flight_requests_;
   return RequestHandle<protocol::Json>::spawn(
       request_id, options.timeout, options.cancellation_token,
@@ -1832,8 +1832,8 @@ RequestHandle<protocol::Json> Client::request_async(std::string method,
         {
           std::lock_guard lock(*in_flight_mutex);
           --(*in_flight_count);
+          in_flight_cv->notify_one();
         }
-        in_flight_cv->notify_one();
         return result;
       });
 }
@@ -2161,7 +2161,7 @@ void Client::stop() noexcept {
 
 Client::~Client() {
   std::unique_lock lock(in_flight_mutex_);
-  in_flight_cv_.wait(lock, [this] { return in_flight_requests_.load() == 0; });
+  in_flight_cv_->wait(lock, [this] { return in_flight_requests_.load() == 0; });
 }
 
 McpClientSession::McpClientSession(std::unique_ptr<Transport> transport,
