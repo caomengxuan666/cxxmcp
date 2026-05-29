@@ -89,11 +89,11 @@ AUTH_ARTIFACTS = [
 
 PACKAGE_ARTIFACTS = [
     "cxxmcp-package-vcpkg-default",
-    "cxxmcp-package-vcpkg-auth",
+    "cxxmcp-package-vcpkg-http-auth",
     "cxxmcp-package-conan-default",
-    "cxxmcp-package-conan-auth",
+    "cxxmcp-package-conan-http-auth",
     "cxxmcp-package-xmake-default",
-    "cxxmcp-package-xmake-auth",
+    "cxxmcp-package-xmake-http-auth",
 ]
 
 REQUIRED_GATE_ARTIFACTS = [
