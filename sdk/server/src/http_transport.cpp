@@ -358,26 +358,22 @@ core::Result<core::Unit> validate_get_http_headers(
 core::Result<core::Unit> validate_post_headers(
     const httplib::Request& request,
     const protocol::JsonRpcRequest& rpc_request) {
-  if (!request.has_header(std::string(MethodHeader))) {
-    return mcp::core::unexpected(make_transport_error(
-        HeaderMismatchCode,
-        "http transport request missing required Mcp-Method header"));
-  }
-  const auto method_header =
-      trim_ows(request.get_header_value(std::string(MethodHeader)));
-  if (method_header != rpc_request.method) {
-    return mcp::core::unexpected(make_transport_error(
-        HeaderMismatchCode, "http transport request Mcp-Method header mismatch",
-        method_header));
+  // SEP-2243: validate Mcp-Method/Mcp-Name headers when present.
+  // Headers are optional for backward compatibility with clients that
+  // do not yet send them (e.g. TypeScript SDK < fix, RMCP).
+  if (request.has_header(std::string(MethodHeader))) {
+    const auto method_header =
+        trim_ows(request.get_header_value(std::string(MethodHeader)));
+    if (method_header != rpc_request.method) {
+      return mcp::core::unexpected(make_transport_error(
+          HeaderMismatchCode,
+          "http transport request Mcp-Method header mismatch", method_header));
+    }
   }
 
   const auto expected_name = header_name_from_request(rpc_request);
-  if (expected_name.has_value()) {
-    if (!request.has_header(std::string(NameHeader))) {
-      return mcp::core::unexpected(make_transport_error(
-          HeaderMismatchCode,
-          "http transport request missing Mcp-Name header"));
-    }
+  if (expected_name.has_value() &&
+      request.has_header(std::string(NameHeader))) {
     const auto name_header =
         trim_ows(request.get_header_value(std::string(NameHeader)));
     if (name_header != *expected_name) {
