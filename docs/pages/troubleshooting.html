@@ -1,0 +1,251 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Troubleshooting | cxxmcp</title>
+    <meta name="description" content="Common issues and solutions when building with cxxmcp.">
+    <style>
+      :root { color-scheme: light dark; --bg: #f7f8fa; --panel: #ffffff; --text: #17202a; --muted: #596579; --line: #d9dee7; --accent: #0f766e; --accent-strong: #0b5f59; --code: #eef3f5; }
+      @media (prefers-color-scheme: dark) { :root { --bg: #101317; --panel: #171b21; --text: #edf2f7; --muted: #aab4c3; --line: #2a313a; --accent: #2dd4bf; --accent-strong: #5eead4; --code: #20262e; } }
+      * { box-sizing: border-box; }
+      body { margin: 0; font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; line-height: 1.6; color: var(--text); background: var(--bg); }
+      a { color: var(--accent-strong); text-decoration-thickness: 0.08em; text-underline-offset: 0.18em; }
+      header, main, footer { width: min(960px, calc(100% - 32px)); margin: 0 auto; }
+      header { padding: 28px 0 18px; display: flex; justify-content: space-between; gap: 16px; align-items: center; }
+      .brand { font-weight: 750; font-size: 1.05rem; letter-spacing: 0; }
+      nav { display: flex; flex-wrap: wrap; gap: 14px; font-size: 0.95rem; }
+      .hero { padding: 46px 0 34px; border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); }
+      .eyebrow { color: var(--accent-strong); font-size: 0.9rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0; }
+      h1 { max-width: 820px; margin: 12px 0 16px; font-size: clamp(2.1rem, 5vw, 3.6rem); line-height: 1.05; letter-spacing: 0; }
+      .lede { max-width: 760px; margin: 0; color: var(--muted); font-size: 1.12rem; }
+      .section { padding: 30px 0 8px; }
+      .section h2 { margin: 0 0 12px; font-size: 1.35rem; letter-spacing: 0; }
+      .section h3 { margin: 24px 0 8px; font-size: 1.1rem; letter-spacing: 0; }
+      .section p, .section li { color: var(--muted); }
+      pre { overflow-x: auto; border: 1px solid var(--line); border-radius: 8px; background: var(--code); padding: 18px; }
+      code { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace; font-size: 0.95em; }
+      .faq { border: 1px solid var(--line); border-radius: 8px; background: var(--panel); padding: 20px; margin: 16px 0; }
+      .faq h3 { margin: 0 0 8px; font-size: 1.05rem; }
+      .faq p { margin: 0 0 10px; }
+      footer { padding: 24px 0 36px; color: var(--muted); border-top: 1px solid var(--line); font-size: 0.95rem; margin-top: 32px; }
+      @media (max-width: 760px) { header { align-items: flex-start; flex-direction: column; } .hero { padding: 34px 0 28px; } }
+    </style>
+  </head>
+  <body>
+    <header>
+      <div class="brand">cxxmcp</div>
+      <nav aria-label="Primary">
+        <a href="./">Home</a>
+        <a href="./getting-started.html">Getting Started</a>
+        <a href="./tutorials.html">Tutorials</a>
+        <a href="./concepts.html">Concepts</a>
+        <a href="./cookbook.html">Cookbook</a>
+        <a href="./troubleshooting.html">Troubleshooting</a>
+        <a href="./auth.html">Auth</a>
+        <a href="./stability.html">Stability</a>
+        <a href="./api/">API Reference</a>
+      </nav>
+    </header>
+
+    <main>
+      <section class="hero">
+        <div class="eyebrow">Troubleshooting</div>
+        <h1>Common issues and how to fix them.</h1>
+        <p class="lede">
+          Solutions for build errors, runtime problems, and integration issues.
+        </p>
+      </section>
+
+      <!-- Build Issues -->
+      <section class="section">
+        <h2>Build Errors</h2>
+
+        <div class="faq">
+          <h3>CMake cannot find cxxmcp</h3>
+          <p><strong>Error:</strong> <code>Could not find a package configuration file provided by "cxxmcp"</code></p>
+          <p><strong>Solution:</strong> Install the SDK first, or use FetchContent:</p>
+          <pre><code># Option 1: Install then consume
+cmake --install build --prefix /path/to/install
+cmake -S myapp -B build -DCMAKE_PREFIX_PATH=/path/to/install
+
+# Option 2: FetchContent (no install needed)
+include(FetchContent)
+FetchContent_Declare(cxxmcp URL https://github.com/caomengxuan666/cxxmcp/releases/download/v1.1.1/cxxmcp-v1.1.1.tar.gz)
+FetchContent_MakeAvailable(cxxmcp)</code></pre>
+        </div>
+
+        <div class="faq">
+          <h3>HTTP transport symbols not found</h3>
+          <p><strong>Error:</strong> <code>undefined reference to mcp::transport::StreamableHttpServerTransport</code></p>
+          <p><strong>Solution:</strong> HTTP transport is off by default. Enable it:</p>
+          <pre><code>cmake -S . -B build -DCXXMCP_ENABLE_HTTP=ON</code></pre>
+        </div>
+
+        <div class="faq">
+          <h3>Auth target not found</h3>
+          <p><strong>Error:</strong> <code>Target "cxxmcp::auth" not found</code></p>
+          <p><strong>Solution:</strong> Auth is opt-in:</p>
+          <pre><code>cmake -S . -B build -DCXXMCP_ENABLE_AUTH=ON
+
+# With OpenSSL DPoP/JWKS support
+cmake -S . -B build -DCXXMCP_ENABLE_AUTH=ON -DCXXMCP_AUTH_CRYPTO=OpenSSL</code></pre>
+        </div>
+
+        <div class="faq">
+          <h3>OpenSSL not found</h3>
+          <p><strong>Error:</strong> <code>Could not find a package configuration file provided by "OpenSSL"</code></p>
+          <p><strong>Solution:</strong> Tell CMake where OpenSSL is:</p>
+          <pre><code># Windows (vcpkg)
+cmake -S . -B build -DCMAKE_TOOLCHAIN_FILE=C:/vcpkg/scripts/buildsystems/vcpkg.cmake
+
+# Linux (system package)
+sudo apt install libssl-dev
+cmake -S . -B build
+
+# Manual path
+cmake -S . -B build -DOPENSSL_ROOT_DIR=/path/to/openssl</code></pre>
+        </div>
+
+        <div class="faq">
+          <h3>C++17 compiler errors</h3>
+          <p><strong>Error:</strong> <code>error: 'optional' is not a member of 'std'</code></p>
+          <p><strong>Solution:</strong> Ensure C++17 is enabled:</p>
+          <pre><code>set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)</code></pre>
+        </div>
+
+        <div class="faq">
+          <h3>vcpkg cannot find cxxmcp</h3>
+          <p><strong>Error:</strong> <code>error: Unable to find package cxxmcp</code></p>
+          <p><strong>Solution:</strong> Use the overlay port from the repository:</p>
+          <pre><code>vcpkg install cxxmcp --overlay-ports=path/to/cxxmcp/packaging/vcpkg/ports</code></pre>
+        </div>
+      </section>
+
+      <!-- Runtime Issues -->
+      <section class="section">
+        <h2>Runtime Issues</h2>
+
+        <div class="faq">
+          <h3>Server does not respond to tools/list</h3>
+          <p><strong>Symptom:</strong> Client sends <code>tools/list</code> but gets method-not-found.</p>
+          <p><strong>Solution:</strong> You must register at least one tool with the builder. An empty server has no tools capability:</p>
+          <pre><code>auto server = mcp::ServerPeer::builder()
+    .name("my-server").version("1.0.0").stdio()
+    .tool&lt;Json, Json&gt;("echo", handler)  // This enables the tools capability
+    .build();</code></pre>
+        </div>
+
+        <div class="faq">
+          <h3>HTTP server connection refused</h3>
+          <p><strong>Symptom:</strong> Client gets <code>connection refused</code> on HTTP.</p>
+          <p><strong>Solution:</strong> Call <code>wait_until_ready()</code> before connecting:</p>
+          <pre><code>auto running = mcp::serve(std::move(*server));
+running->wait_until_ready();  // Wait for socket to bind
+// Now safe to connect clients</code></pre>
+        </div>
+
+        <div class="faq">
+          <h3>Bearer token rejected</h3>
+          <p><strong>Symptom:</strong> Server returns <code>401 Unauthorized</code>.</p>
+          <p><strong>Solution:</strong> Ensure the auth provider is set before building:</p>
+          <pre><code>auto auth = std::make_unique&lt;mcp::server::StaticBearerAuthProvider&gt;();
+auth->add_token("my-token", mcp::server::AuthIdentity{"user", {}});
+
+auto server = mcp::ServerPeer::builder()
+    .name("my-server").version("1.0.0")
+    .auth_provider(std::move(auth))  // Must be before .build()
+    .streamable_http(...)
+    .build();</code></pre>
+        </div>
+
+        <div class="faq">
+          <h3>Tool handler not called</h3>
+          <p><strong>Symptom:</strong> <code>tools/call</code> returns method-not-found.</p>
+          <p><strong>Solution:</strong> Tool name in <code>call_tool()</code> must match the registered name exactly (case-sensitive):</p>
+          <pre><code>// Registration
+.tool&lt;Json, Json&gt;("my_tool", handler)
+
+// Call — must match exactly
+svc.peer().call_tool("my_tool", Json{{}});  // OK
+svc.peer().call_tool("My_Tool", Json{{}});  // FAILS</code></pre>
+        </div>
+
+        <div class="faq">
+          <h3>Process stdio server exits immediately</h3>
+          <p><strong>Symptom:</strong> Client launches server process but it exits right away.</p>
+          <p><strong>Solution:</strong> The server must block on <code>wait()</code>:</p>
+          <pre><code>auto running = mcp::serve(std::move(*server));
+running->wait();  // Blocks until stdin closes or shutdown</code></pre>
+        </div>
+      </section>
+
+      <!-- Reflection Issues -->
+      <section class="section">
+        <h2>Reflection and Serialization</h2>
+
+        <div class="faq">
+          <h3>CXXMCP_REFLECT compilation error</h3>
+          <p><strong>Error:</strong> <code>no matching function for call to 'Reflect'</code></p>
+          <p><strong>Solution:</strong> The macro must be used inside <code>namespace mcp::protocol</code>:</p>
+          <pre><code>struct MyType { std::string name; int value; };
+
+namespace mcp::protocol {
+CXXMCP_REFLECT(MyType, name, value)
+}  // namespace mcp::protocol</code></pre>
+        </div>
+
+        <div class="faq">
+          <h3>JSON deserialization returns empty fields</h3>
+          <p><strong>Symptom:</strong> Fields are default-initialized after <code>reflect_from_json</code>.</p>
+          <p><strong>Solution:</strong> JSON keys must match the C++ field names exactly:</p>
+          <pre><code>// C++ field: std::string query;
+// JSON must have: {"query": "value"}
+// NOT: {"q": "value"}</code></pre>
+        </div>
+
+        <div class="faq">
+          <h3>Optional field not serialized</h3>
+          <p><strong>Symptom:</strong> <code>std::optional&lt;T&gt;</code> field is missing from output JSON.</p>
+          <p><strong>Behavior:</strong> This is correct. Empty optionals are omitted from JSON output. They deserialize as <code>std::nullopt</code> when the key is absent.</p>
+        </div>
+      </section>
+
+      <!-- Conformance Issues -->
+      <section class="section">
+        <h2>Conformance Testing</h2>
+
+        <div class="faq">
+          <h3>Conformance runner not found</h3>
+          <p><strong>Solution:</strong> The runner is a separate tool. See <a href="https://github.com/modelcontextprotocol/conformance">modelcontextprotocol/conformance</a>:</p>
+          <pre><code>git clone https://github.com/modelcontextprotocol/conformance.git
+cd conformance
+npm install
+npm run build
+node dist/cli.js --suite all --server-command "path/to/your/server"</code></pre>
+        </div>
+
+        <div class="faq">
+          <h3>Server conformance: 1 test fails</h3>
+          <p><strong>Symptom:</strong> 109/110 pass, 1 fails.</p>
+          <p><strong>Known issue:</strong> The single failure is an upstream TypeScript SDK issue where the TS SDK client does not send SEP-2243 <code>Mcp-Method</code>/<code>Mcp-Name</code> headers. cxxmcp handles this gracefully (headers are optional), but the conformance runner's own TS client triggers the test. See <a href="https://github.com/modelcontextprotocol/typescript-sdk/pull/2178">TS SDK PR #2178</a>.</p>
+        </div>
+      </section>
+
+      <section class="section">
+        <h2>Still Stuck?</h2>
+        <ul>
+          <li><a href="https://github.com/caomengxuan666/cxxmcp/issues">GitHub Issues</a> — search for existing issues or file a new one</li>
+          <li><a href="https://github.com/caomengxuan666/cxxmcp/discussions">Discussions</a> — ask questions and share ideas</li>
+          <li><a href="./api/">API Reference</a> — generated symbol documentation</li>
+        </ul>
+      </section>
+    </main>
+
+    <footer>
+      cxxmcp is a community C++ MCP SDK. It is not an official MCP SDK unless
+      accepted or listed by the MCP maintainers.
+    </footer>
+  </body>
+</html>

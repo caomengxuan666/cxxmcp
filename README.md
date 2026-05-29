@@ -6,6 +6,8 @@
 [![Pages](https://github.com/caomengxuan666/cxxmcp/actions/workflows/pages.yml/badge.svg)](https://caomengxuan666.github.io/cxxmcp/)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![MCP](https://img.shields.io/badge/protocol-Model%20Context%20Protocol-111827.svg)](https://modelcontextprotocol.io/)
+[![Server Conformance](https://img.shields.io/badge/Server%20Conformance-109%2F110%20(99%25)-brightgreen.svg)](docs/conformance_evidence.md)
+[![Client Conformance](https://img.shields.io/badge/Client%20Conformance-447%2F447%20(100%25)-brightgreen.svg)](docs/conformance_evidence.md)
 
 A production-ready C++17 SDK for the [Model Context Protocol](https://modelcontextprotocol.io/) — build MCP servers and clients that embed directly into native C++ applications, with full protocol coverage and cross-SDK conformance validation.
 

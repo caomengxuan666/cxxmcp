@@ -1,0 +1,471 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Cookbook | cxxmcp</title>
+    <meta
+      name="description"
+      content="Quick copy-paste code snippets for common cxxmcp tasks.">
+    <style>
+      :root {
+        color-scheme: light dark;
+        --bg: #f7f8fa;
+        --panel: #ffffff;
+        --text: #17202a;
+        --muted: #596579;
+        --line: #d9dee7;
+        --accent: #0f766e;
+        --accent-strong: #0b5f59;
+        --code: #eef3f5;
+      }
+
+      @media (prefers-color-scheme: dark) {
+        :root {
+          --bg: #101317;
+          --panel: #171b21;
+          --text: #edf2f7;
+          --muted: #aab4c3;
+          --line: #2a313a;
+          --accent: #2dd4bf;
+          --accent-strong: #5eead4;
+          --code: #20262e;
+        }
+      }
+
+      * { box-sizing: border-box; }
+
+      body {
+        margin: 0;
+        font-family:
+          Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont,
+          "Segoe UI", sans-serif;
+        line-height: 1.6;
+        color: var(--text);
+        background: var(--bg);
+      }
+
+      a {
+        color: var(--accent-strong);
+        text-decoration-thickness: 0.08em;
+        text-underline-offset: 0.18em;
+      }
+
+      header, main, footer {
+        width: min(960px, calc(100% - 32px));
+        margin: 0 auto;
+      }
+
+      header {
+        padding: 28px 0 18px;
+        display: flex;
+        justify-content: space-between;
+        gap: 16px;
+        align-items: center;
+      }
+
+      .brand { font-weight: 750; font-size: 1.05rem; letter-spacing: 0; }
+
+      nav { display: flex; flex-wrap: wrap; gap: 14px; font-size: 0.95rem; }
+
+      .hero {
+        padding: 46px 0 34px;
+        border-top: 1px solid var(--line);
+        border-bottom: 1px solid var(--line);
+      }
+
+      .eyebrow {
+        color: var(--accent-strong);
+        font-size: 0.9rem;
+        font-weight: 700;
+        text-transform: uppercase;
+        letter-spacing: 0;
+      }
+
+      h1 {
+        max-width: 820px;
+        margin: 12px 0 16px;
+        font-size: clamp(2.1rem, 5vw, 3.6rem);
+        line-height: 1.05;
+        letter-spacing: 0;
+      }
+
+      .lede {
+        max-width: 760px;
+        margin: 0;
+        color: var(--muted);
+        font-size: 1.12rem;
+      }
+
+      .section { padding: 30px 0 8px; }
+
+      .section h2 {
+        margin: 0 0 12px;
+        font-size: 1.35rem;
+        letter-spacing: 0;
+      }
+
+      .section h3 {
+        margin: 24px 0 8px;
+        font-size: 1.05rem;
+        letter-spacing: 0;
+      }
+
+      .section p, .section li { color: var(--muted); }
+
+      pre {
+        overflow-x: auto;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        background: var(--code);
+        padding: 18px;
+      }
+
+      code {
+        font-family:
+          ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono",
+          monospace;
+        font-size: 0.95em;
+      }
+
+      .recipe {
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        background: var(--panel);
+        padding: 20px;
+        margin: 16px 0;
+      }
+
+      .recipe h3 { margin: 0 0 8px; font-size: 1rem; }
+      .recipe p { margin: 0 0 12px; }
+
+      footer {
+        padding: 24px 0 36px;
+        color: var(--muted);
+        border-top: 1px solid var(--line);
+        font-size: 0.95rem;
+        margin-top: 32px;
+      }
+
+      @media (max-width: 760px) {
+        header { align-items: flex-start; flex-direction: column; }
+        .hero { padding: 34px 0 28px; }
+      }
+    </style>
+  </head>
+  <body>
+    <header>
+      <div class="brand">cxxmcp</div>
+      <nav aria-label="Primary">
+        <a href="./">Home</a>
+        <a href="./getting-started.html">Getting Started</a>
+        <a href="./tutorials.html">Tutorials</a>
+        <a href="./concepts.html">Concepts</a>
+        <a href="./transports.html">Transports</a>
+        <a href="./troubleshooting.html">Troubleshooting</a>
+        <a href="./auth.html">Auth</a>
+        <a href="./security.html">Security</a>
+        <a href="./stability.html">Stability</a>
+        <a href="./api/">API Reference</a>
+      </nav>
+    </header>
+
+    <main>
+      <section class="hero">
+        <div class="eyebrow">Cookbook</div>
+        <h1>Copy-paste recipes for common tasks.</h1>
+        <p class="lede">
+          Short, focused code snippets. Each recipe solves one problem. See
+          <a href="./tutorials.html">Tutorials</a> for full walkthroughs.
+        </p>
+      </section>
+
+      <!-- Server Recipes -->
+      <section class="section">
+        <h2>Server</h2>
+
+        <div class="recipe">
+          <h3>Minimal stdio server (one-liner)</h3>
+          <p>The shortest possible MCP server.</p>
+          <pre><code>#include &lt;cxxmcp/peer.hpp&gt;
+#include &lt;cxxmcp/run.hpp&gt;
+
+int main() {
+    return mcp::ServerPeer::builder()
+        .name("minimal").version("1.0.0").stdio()
+        .tool&lt;mcp::protocol::Json, mcp::protocol::Json&gt;(
+            "echo", [](const mcp::protocol::Json&amp; in) { return in; })
+        .run();
+}</code></pre>
+        </div>
+
+        <div class="recipe">
+          <h3>HTTP server</h3>
+          <p>Serve over Streamable HTTP. Requires <code>CXXMCP_ENABLE_HTTP=ON</code>.</p>
+          <pre><code>auto server = mcp::ServerPeer::builder()
+    .name("http-server").version("1.0.0")
+    .streamable_http("127.0.0.1", 3000, "/mcp")
+    .tool&lt;Json, Json&gt;("echo", [](const Json&amp; in) { return in; })
+    .build();
+
+auto running = mcp::serve(std::move(*server));
+running->wait_until_ready();
+running->wait();</code></pre>
+        </div>
+
+        <div class="recipe">
+          <h3>Add a typed tool with reflection</h3>
+          <p>Auto-serialize args and results with <code>CXXMCP_REFLECT</code>.</p>
+          <pre><code>struct Args { std::string query; int limit; };
+struct Result { std::vector&lt;std::string&gt; items; };
+
+namespace mcp::protocol {
+CXXMCP_REFLECT(Args, query, limit)
+CXXMCP_REFLECT(Result, items)
+}
+
+// In builder:
+.tool(mcp::server::tool&lt;Args, Result&gt;("search")
+          .description("Search items.")
+          .handler([](Args args, const mcp::server::ToolContext&amp;) {
+              Result r;
+              for (int i = 0; i &lt; args.limit; ++i)
+                  r.items.push_back(args.query + "_" + std::to_string(i));
+              return r;
+          }))</code></pre>
+        </div>
+
+        <div class="recipe">
+          <h3>Add a prompt</h3>
+          <pre><code>.prompt(mcp::protocol::Prompt{
+            .name = "summarize",
+            .description = "Summarize text",
+            .arguments = {mcp::protocol::PromptArgument{
+                .name = "text", .required = true,
+            }},
+        },
+        [](const mcp::server::PromptContext&amp; ctx) {
+            auto text = ctx.arguments.at("text").get&lt;std::string&gt;();
+            mcp::protocol::PromptsGetResult result;
+            result.messages.push_back(mcp::protocol::PromptMessage{
+                .role = "user",
+                .content = mcp::protocol::ContentBlock{
+                    .type = "text", .text = "Summarize: " + text},
+            });
+            return result;
+        })</code></pre>
+        </div>
+
+        <div class="recipe">
+          <h3>Add a static resource</h3>
+          <pre><code>.resource("file:///data/config.json", [] {
+    return mcp::protocol::ResourceContents{
+        .uri = "file:///data/config.json",
+        .mime_type = "application/json",
+        .text = R"({"version": 1})",
+    };
+})</code></pre>
+        </div>
+
+        <div class="recipe">
+          <h3>Add a resource template</h3>
+          <pre><code>.resource_template("file:///workspace/{path}", [] {
+    return mcp::protocol::ResourceTemplate{
+        .uri_template = "file:///workspace/{path}",
+        .name = "Workspace files",
+    };
+})</code></pre>
+        </div>
+
+        <div class="recipe">
+          <h3>Handle raw JSON-RPC requests</h3>
+          <p>For custom methods or vendor extensions.</p>
+          <pre><code>.raw_request([](const mcp::protocol::JsonRpcRequest&amp; req)
+                 -&gt; std::optional&lt;mcp::protocol::JsonRpcResponse&gt; {
+    if (req.method == "myapp/health") {
+        return mcp::protocol::make_response(
+            req.id, mcp::protocol::Json{{"ok", true}});
+    }
+    return std::nullopt;  // unhandled, let SDK return method-not-found
+})</code></pre>
+        </div>
+      </section>
+
+      <!-- Client Recipes -->
+      <section class="section">
+        <h2>Client</h2>
+
+        <div class="recipe">
+          <h3>Connect to a stdio server</h3>
+          <pre><code>return mcp::ClientPeer::builder()
+    .process_stdio("./my-server")
+    .run([](auto&amp; svc) {
+        svc.peer().initialize();
+        auto result = svc.peer().call_tool(
+            "echo", Json{{"value", "hello"}});
+    });</code></pre>
+        </div>
+
+        <div class="recipe">
+          <h3>Connect to an HTTP server</h3>
+          <pre><code>auto client = mcp::ClientPeer::builder()
+    .streamable_http("http://127.0.0.1:3000/mcp")
+    .build();
+
+auto svc = mcp::serve(std::move(*client));
+svc->peer().initialize();</code></pre>
+        </div>
+
+        <div class="recipe">
+          <h3>List all tools</h3>
+          <pre><code>auto tools = svc.peer().list_all_tools();
+for (const auto&amp; tool : tools) {
+    std::cout &lt;&lt; tool.name &lt;&lt; ": " &lt;&lt; tool.description &lt;&lt; "\n";
+}</code></pre>
+        </div>
+
+        <div class="recipe">
+          <h3>Read a resource</h3>
+          <pre><code>auto contents = svc.peer().read_resource("file:///data/config.json");
+for (const auto&amp; c : *contents) {
+    std::cout &lt;&lt; c.text &lt;&lt; "\n";
+}</code></pre>
+        </div>
+
+        <div class="recipe">
+          <h3>Get a prompt</h3>
+          <pre><code>mcp::protocol::Json args{{"text", "The quick brown fox."}};
+auto result = svc.peer().get_prompt("summarize", args);</code></pre>
+        </div>
+      </section>
+
+      <!-- Auth Recipes -->
+      <section class="section">
+        <h2>Auth</h2>
+
+        <div class="recipe">
+          <h3>Bearer token server + client</h3>
+          <pre><code>// Server
+auto auth = std::make_unique&lt;mcp::server::StaticBearerAuthProvider&gt;();
+auth->add_token("my-token", mcp::server::AuthIdentity{"alice", {}});
+
+auto server = mcp::ServerPeer::builder()
+    .name("auth-demo").version("1.0.0")
+    .auth_provider(std::move(auth))
+    .streamable_http("127.0.0.1", 3001, "/mcp")
+    .tool&lt;Json, Json&gt;("whoami", [](const Json&amp;, const auto&amp; ctx) {
+        return Json{{"subject",
+            ctx.auth_identity ? ctx.auth_identity->subject : "anon"}};
+    })
+    .build();
+
+// Client
+auto client = mcp::ClientPeer::builder()
+    .streamable_http("http://127.0.0.1:3001/mcp")
+    .bearer_token("my-token")
+    .build();</code></pre>
+        </div>
+
+        <div class="recipe">
+          <h3>CMake flags for auth</h3>
+          <pre><code># Auth contracts only (no OpenSSL)
+cmake -S . -B build -DCXXMCP_ENABLE_AUTH=ON
+
+# With OpenSSL crypto (DPoP, JWT, JWKS)
+cmake -S . -B build -DCXXMCP_ENABLE_AUTH=ON -DCXXMCP_AUTH_CRYPTO=OpenSSL
+
+# vcpkg
+vcpkg install "cxxmcp[auth]"</code></pre>
+        </div>
+      </section>
+
+      <!-- Task Recipes -->
+      <section class="section">
+        <h2>Tasks and Async</h2>
+
+        <div class="recipe">
+          <h3>Task-aware tool</h3>
+          <pre><code>.task_manager(mcp::server::TaskOperationProcessorOptions{
+    .worker_count = 2, .queue_size = 16,
+})
+.tool(mcp::server::tool&lt;Json, Json&gt;("heavy")
+          .task_support(mcp::protocol::TaskSupport::Optional)
+          .handler([](const Json&amp; args, const auto&amp; ctx) {
+              // runs in background task
+              return Json{{"done", true}};
+          }))</code></pre>
+        </div>
+
+        <div class="recipe">
+          <h3>Request timeout</h3>
+          <pre><code>// Client-side timeout
+auto result = svc.peer().call_tool(
+    "slow-tool", Json{{"data", "x"}},
+    std::chrono::seconds(30));</code></pre>
+        </div>
+
+        <div class="recipe">
+          <h3>Cancel a task</h3>
+          <pre><code>auto task = svc.peer().call_tool("heavy", Json{{}});
+svc.peer().cancel_task(task->task_id);</code></pre>
+        </div>
+      </section>
+
+      <!-- CMake Recipes -->
+      <section class="section">
+        <h2>CMake</h2>
+
+        <div class="recipe">
+          <h3>Minimum CMakeLists.txt</h3>
+          <pre><code>cmake_minimum_required(VERSION 3.16)
+project(my-app LANGUAGES CXX)
+set(CMAKE_CXX_STANDARD 17)
+
+find_package(cxxmcp CONFIG REQUIRED)
+add_executable(server server.cpp)
+target_link_libraries(server PRIVATE cxxmcp::server)</code></pre>
+        </div>
+
+        <div class="recipe">
+          <h3>All CMake options</h3>
+          <pre><code>cmake -S . -B build \
+  -DCXXMCP_BUILD_SDK=ON \           # aggregate SDK (default ON)
+  -DCXXMCP_BUILD_CLIENT=ON \        # client library
+  -DCXXMCP_BUILD_SERVER=ON \        # server library
+  -DCXXMCP_BUILD_EXAMPLES=ON \      # example executables
+  -DCXXMCP_BUILD_TESTS=ON \         # tests
+  -DCXXMCP_ENABLE_HTTP=ON \         # HTTP transport (cpp-httplib)
+  -DCXXMCP_ENABLE_AUTH=ON \         # OAuth 2.1 / DPoP contracts
+  -DCXXMCP_AUTH_CRYPTO=OpenSSL      # OpenSSL crypto backend</code></pre>
+        </div>
+
+        <div class="recipe">
+          <h3>FetchContent consumption</h3>
+          <pre><code>include(FetchContent)
+FetchContent_Declare(cxxmcp
+    URL https://github.com/caomengxuan666/cxxmcp/releases/download/v1.1.1/cxxmcp-v1.1.1.tar.gz
+    URL_HASH SHA256=3c4ad678a8612183a4f2539973328b6a85dab360991a86e6328ca032cc5e2ba8
+)
+FetchContent_MakeAvailable(cxxmcp)
+
+target_link_libraries(my_app PRIVATE cxxmcp::server)</code></pre>
+        </div>
+      </section>
+
+      <section class="section">
+        <h2>Next Steps</h2>
+        <ul>
+          <li><a href="./tutorials.html">Tutorials</a> — full walkthroughs with explanations</li>
+          <li><a href="./concepts.html">Concepts</a> — understand the architecture</li>
+          <li><a href="./getting-started.html">Getting Started</a> — install and build</li>
+          <li><a href="./api/">API Reference</a> — every type and function</li>
+        </ul>
+      </section>
+    </main>
+
+    <footer>
+      cxxmcp is a community C++ MCP SDK. It is not an official MCP SDK unless
+      accepted or listed by the MCP maintainers.
+    </footer>
+  </body>
+</html>

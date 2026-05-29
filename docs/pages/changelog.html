@@ -1,0 +1,113 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Changelog | cxxmcp</title>
+    <meta name="description" content="Release history for cxxmcp.">
+    <style>
+      :root { color-scheme: light dark; --bg: #f7f8fa; --panel: #ffffff; --text: #17202a; --muted: #596579; --line: #d9dee7; --accent: #0f766e; --accent-strong: #0b5f59; --code: #eef3f5; }
+      @media (prefers-color-scheme: dark) { :root { --bg: #101317; --panel: #171b21; --text: #edf2f7; --muted: #aab4c3; --line: #2a313a; --accent: #2dd4bf; --accent-strong: #5eead4; --code: #20262e; } }
+      * { box-sizing: border-box; }
+      body { margin: 0; font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; line-height: 1.6; color: var(--text); background: var(--bg); }
+      a { color: var(--accent-strong); text-decoration-thickness: 0.08em; text-underline-offset: 0.18em; }
+      header, main, footer { width: min(960px, calc(100% - 32px)); margin: 0 auto; }
+      header { padding: 28px 0 18px; display: flex; justify-content: space-between; gap: 16px; align-items: center; }
+      .brand { font-weight: 750; font-size: 1.05rem; letter-spacing: 0; }
+      nav { display: flex; flex-wrap: wrap; gap: 14px; font-size: 0.95rem; }
+      .hero { padding: 46px 0 34px; border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); }
+      .eyebrow { color: var(--accent-strong); font-size: 0.9rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0; }
+      h1 { max-width: 820px; margin: 12px 0 16px; font-size: clamp(2.1rem, 5vw, 3.6rem); line-height: 1.05; letter-spacing: 0; }
+      .lede { max-width: 760px; margin: 0; color: var(--muted); font-size: 1.12rem; }
+      .section { padding: 30px 0 8px; }
+      .section h2 { margin: 0 0 12px; font-size: 1.35rem; letter-spacing: 0; }
+      .section p, .section li { color: var(--muted); }
+      .release { border: 1px solid var(--line); border-radius: 8px; background: var(--panel); padding: 20px; margin: 16px 0; }
+      .release h3 { margin: 0 0 4px; font-size: 1.15rem; }
+      .release .date { color: var(--muted); font-size: 0.9rem; margin: 0 0 12px; }
+      .release ul { margin: 0; padding-left: 20px; }
+      .release li { margin: 4px 0; }
+      footer { padding: 24px 0 36px; color: var(--muted); border-top: 1px solid var(--line); font-size: 0.95rem; margin-top: 32px; }
+      @media (max-width: 760px) { header { align-items: flex-start; flex-direction: column; } .hero { padding: 34px 0 28px; } }
+    </style>
+  </head>
+  <body>
+    <header>
+      <div class="brand">cxxmcp</div>
+      <nav aria-label="Primary">
+        <a href="./">Home</a>
+        <a href="./getting-started.html">Getting Started</a>
+        <a href="./tutorials.html">Tutorials</a>
+        <a href="./concepts.html">Concepts</a>
+        <a href="./cookbook.html">Cookbook</a>
+        <a href="./transports.html">Transports</a>
+        <a href="./troubleshooting.html">Troubleshooting</a>
+        <a href="./auth.html">Auth</a>
+        <a href="./stability.html">Stability</a>
+        <a href="./api/">API Reference</a>
+      </nav>
+    </header>
+
+    <main>
+      <section class="hero">
+        <div class="eyebrow">Changelog</div>
+        <h1>What changed in each release.</h1>
+        <p class="lede">
+          All notable changes to cxxmcp. See also
+          <a href="https://github.com/caomengxuan666/cxxmcp/releases">GitHub Releases</a>.
+        </p>
+      </section>
+
+      <div class="release">
+        <h3>v1.1.1</h3>
+        <p class="date">Latest release</p>
+        <ul>
+          <li>Implemented SEP-1699 SSE retry/reconnection in the SDK client HTTP transport</li>
+          <li>Fixed SSEClient <code>last_event_id_</code> tracking for priming events with empty data</li>
+          <li>Updated conformance status: server 109/110, client 447/447 (OpenSSL)</li>
+        </ul>
+      </div>
+
+      <div class="release">
+        <h3>v1.1.0</h3>
+        <ul>
+          <li>Separated HTTP transport behind <code>CXXMCP_ENABLE_HTTP</code> compile-time flag (default OFF) so the core SDK builds without cpp-httplib</li>
+          <li>Added <code>CXXMCP_ENABLE_AUTH</code> flag to the release-blocking CI matrix</li>
+          <li>Fixed CMake export set to include cpp_httplib when HTTP is enabled</li>
+          <li>Fixed CI validation scripts for VERSION-file variable references</li>
+          <li>Added MinGW provisional compatibility policy documentation</li>
+        </ul>
+      </div>
+
+      <div class="release">
+        <h3>v1.0.0</h3>
+        <ul>
+          <li>Added explicit protocol-version coverage for the <code>2025-11-25</code> MCP snapshot</li>
+          <li>Added lightweight <code>WWW-Authenticate</code> parser to optional <code>cxxmcp::auth</code> surface</li>
+          <li>Changed default in-memory token store to keep entries separated by resource/issuer/client key</li>
+          <li>Documented external <code>cxxmcp-examples</code> auth-lite coverage</li>
+        </ul>
+      </div>
+
+      <div class="release">
+        <h3>v1.0.0 (pre-release)</h3>
+        <ul>
+          <li>Reframed public SDK around <code>Peer</code> / <code>Service</code> entry points</li>
+          <li>Added HTTP URI and auth header support for client transport</li>
+          <li>Added HTTP auth-lite server behavior with configurable <code>WWW-Authenticate</code></li>
+          <li>Added optional <code>cxxmcp::auth</code> scaffold target for OAuth 2.1 / DPoP</li>
+          <li>Applied client HTTP bearer-token helpers to POST, SSE GET, and session DELETE</li>
+          <li>Added <code>ClientPeer</code> and <code>ServerPeer</code> examples</li>
+          <li>Routed all request handling through Peer boundary (tools, prompts, resources, completions, sampling, logging, tasks)</li>
+          <li>Added cancellation-aware client inbound handler overloads</li>
+          <li>Added <code>ServerBuilder::with_handler()</code> for aggregate handler installation</li>
+        </ul>
+      </div>
+    </main>
+
+    <footer>
+      cxxmcp is a community C++ MCP SDK. It is not an official MCP SDK unless
+      accepted or listed by the MCP maintainers.
+    </footer>
+  </body>
+</html>

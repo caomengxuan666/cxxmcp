@@ -1,0 +1,284 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Transports | cxxmcp</title>
+    <meta name="description" content="Transport layer reference for cxxmcp: stdio, process stdio, Streamable HTTP, and custom transports.">
+    <style>
+      :root { color-scheme: light dark; --bg: #f7f8fa; --panel: #ffffff; --text: #17202a; --muted: #596579; --line: #d9dee7; --accent: #0f766e; --accent-strong: #0b5f59; --code: #eef3f5; }
+      @media (prefers-color-scheme: dark) { :root { --bg: #101317; --panel: #171b21; --text: #edf2f7; --muted: #aab4c3; --line: #2a313a; --accent: #2dd4bf; --accent-strong: #5eead4; --code: #20262e; } }
+      * { box-sizing: border-box; }
+      body { margin: 0; font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; line-height: 1.6; color: var(--text); background: var(--bg); }
+      a { color: var(--accent-strong); text-decoration-thickness: 0.08em; text-underline-offset: 0.18em; }
+      header, main, footer { width: min(960px, calc(100% - 32px)); margin: 0 auto; }
+      header { padding: 28px 0 18px; display: flex; justify-content: space-between; gap: 16px; align-items: center; }
+      .brand { font-weight: 750; font-size: 1.05rem; letter-spacing: 0; }
+      nav { display: flex; flex-wrap: wrap; gap: 14px; font-size: 0.95rem; }
+      .hero { padding: 46px 0 34px; border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); }
+      .eyebrow { color: var(--accent-strong); font-size: 0.9rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0; }
+      h1 { max-width: 820px; margin: 12px 0 16px; font-size: clamp(2.1rem, 5vw, 3.6rem); line-height: 1.05; letter-spacing: 0; }
+      .lede { max-width: 760px; margin: 0; color: var(--muted); font-size: 1.12rem; }
+      .section { padding: 30px 0 8px; }
+      .section h2 { margin: 0 0 12px; font-size: 1.35rem; letter-spacing: 0; }
+      .section h3 { margin: 24px 0 8px; font-size: 1.1rem; letter-spacing: 0; }
+      .section p, .section li { color: var(--muted); }
+      pre { overflow-x: auto; border: 1px solid var(--line); border-radius: 8px; background: var(--code); padding: 18px; }
+      code { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace; font-size: 0.95em; }
+      table { width: 100%; border-collapse: collapse; margin: 16px 0; }
+      th, td { text-align: left; padding: 10px 14px; border-bottom: 1px solid var(--line); }
+      th { color: var(--text); font-weight: 650; }
+      td { color: var(--muted); }
+      .card { border: 1px solid var(--line); border-radius: 8px; background: var(--panel); padding: 20px; margin: 16px 0; }
+      .card h3 { margin: 0 0 8px; font-size: 1.05rem; }
+      .card p { margin: 0 0 10px; }
+      footer { padding: 24px 0 36px; color: var(--muted); border-top: 1px solid var(--line); font-size: 0.95rem; margin-top: 32px; }
+      @media (max-width: 760px) { header { align-items: flex-start; flex-direction: column; } .hero { padding: 34px 0 28px; } }
+    </style>
+  </head>
+  <body>
+    <header>
+      <div class="brand">cxxmcp</div>
+      <nav aria-label="Primary">
+        <a href="./">Home</a>
+        <a href="./getting-started.html">Getting Started</a>
+        <a href="./tutorials.html">Tutorials</a>
+        <a href="./concepts.html">Concepts</a>
+        <a href="./cookbook.html">Cookbook</a>
+        <a href="./transports.html">Transports</a>
+        <a href="./troubleshooting.html">Troubleshooting</a>
+        <a href="./auth.html">Auth</a>
+        <a href="./stability.html">Stability</a>
+        <a href="./api/">API Reference</a>
+      </nav>
+    </header>
+
+    <main>
+      <section class="hero">
+        <div class="eyebrow">Transports</div>
+        <h1>Move JSON-RPC messages between client and server.</h1>
+        <p class="lede">
+          cxxmcp ships four built-in transports and lets you implement custom
+          ones. This page covers each transport's API, options, and behavior.
+        </p>
+      </section>
+
+      <!-- Overview -->
+      <section class="section">
+        <h2>Transport Overview</h2>
+        <table>
+          <tr><th>Transport</th><th>Role</th><th>CMake Flag</th><th>Builder Method</th><th>Class</th></tr>
+          <tr><td>stdio</td><td>Server + Client</td><td>default</td><td><code>.stdio()</code></td><td><code>StdioTransport</code></td></tr>
+          <tr><td>Process stdio</td><td>Client</td><td>default</td><td><code>.process_stdio(cmd)</code></td><td><code>ProcessStdioClientTransport</code></td></tr>
+          <tr><td>Streamable HTTP</td><td>Server + Client</td><td><code>CXXMCP_ENABLE_HTTP</code></td><td><code>.streamable_http(...)</code></td><td><code>StreamableHttp{Server,Client}Transport</code></td></tr>
+          <tr><td>Custom</td><td>Either</td><td>—</td><td>implement <code>Transport&lt;Role&gt;</code></td><td>your class</td></tr>
+        </table>
+      </section>
+
+      <!-- stdio -->
+      <section class="section">
+        <h2>stdio Transport</h2>
+        <p>
+          Reads JSON-RPC messages from stdin, writes responses to stdout. The
+          simplest transport — ideal for CLI tools, local subprocess
+          integrations, and editors that launch MCP servers as child processes.
+        </p>
+
+        <h3>Server</h3>
+        <pre><code>#include &lt;cxxmcp/peer.hpp&gt;
+#include &lt;cxxmcp/run.hpp&gt;
+
+int main() {
+    return mcp::ServerPeer::builder()
+        .name("my-server").version("1.0.0")
+        .stdio()                          // enables stdio transport
+        .tool&lt;Json, Json&gt;("echo", handler)
+        .run();
+}</code></pre>
+
+        <h3>Client</h3>
+        <pre><code>// Launch a server process and talk to it via stdin/stdout
+auto client = mcp::ClientPeer::builder()
+    .process_stdio("./my-server")        // launches the process
+    .build();</code></pre>
+
+        <h3>Behavior</h3>
+        <ul>
+          <li>One JSON-RPC message per line (newline-delimited JSON)</li>
+          <li>Server blocks until stdin is closed or <code>stop()</code> is called</li>
+          <li>No multiplexing — one request at a time</li>
+          <li>No network overhead — fastest transport for local use</li>
+        </ul>
+      </section>
+
+      <!-- Process stdio -->
+      <section class="section">
+        <h2>Process stdio Transport</h2>
+        <p>
+          Client-only transport that launches a server as a subprocess and
+          communicates over its stdin/stdout. The process lifecycle is managed
+          by the transport.
+        </p>
+
+        <h3>Usage</h3>
+        <pre><code>// Simple command
+auto client = mcp::ClientPeer::builder()
+    .process_stdio("node my-server.js")
+    .build();
+
+// With arguments
+auto client = mcp::ClientPeer::builder()
+    .process_stdio("python -m my_mcp_server --port stdio")
+    .build();
+
+// With options
+mcp::transport::ProcessStdioClientTransportOptions opts;
+opts.command = "./my-server";
+opts.working_directory = "/path/to/server";
+auto client = mcp::ClientPeer::builder()
+    .process_stdio(opts)
+    .build();</code></pre>
+
+        <h3>Behavior</h3>
+        <ul>
+          <li>Process is started on first <code>send()</code> or <code>initialize()</code></li>
+          <li>Process is terminated when the transport is destroyed or <code>close()</code> is called</li>
+          <li>Response ID validation ensures responses match requests</li>
+          <li>Timeout on process startup (configurable)</li>
+        </ul>
+      </section>
+
+      <!-- Streamable HTTP -->
+      <section class="section">
+        <h2>Streamable HTTP Transport</h2>
+        <p>
+          Full-duplex HTTP transport with SSE streaming. Supports stateful
+          sessions, concurrent requests, and server-to-client notifications.
+          Requires <code>CXXMCP_ENABLE_HTTP=ON</code>.
+        </p>
+
+        <h3>Build</h3>
+        <pre><code>cmake -S . -B build -DCXXMCP_ENABLE_HTTP=ON -DCXXMCP_BUILD_SERVER=ON -DCXXMCP_BUILD_CLIENT=ON</code></pre>
+
+        <h3>Server</h3>
+        <pre><code>#include &lt;cxxmcp/peer.hpp&gt;
+#include &lt;cxxmcp/run.hpp&gt;
+
+auto server = mcp::ServerPeer::builder()
+    .name("http-server").version("1.0.0")
+    .streamable_http("127.0.0.1", 3000, "/mcp")
+    .tool&lt;Json, Json&gt;("echo", [](const Json&amp; in) { return in; })
+    .build();
+
+auto running = mcp::serve(std::move(*server));
+running->wait_until_ready();
+running->wait();</code></pre>
+
+        <h3>Server Options</h3>
+        <pre><code>mcp::transport::StreamableHttpServerTransportOptions opts;
+opts.listen_host = "0.0.0.0";         // Bind address
+opts.listen_port = 8080;               // Port
+opts.path = "/mcp";                    // Endpoint path
+opts.session_header = "Mcp-Session-Id"; // Session header name
+
+auto server = mcp::ServerPeer::builder()
+    .name("my-server").version("1.0.0")
+    .streamable_http(opts)
+    .build();</code></pre>
+
+        <h3>Client</h3>
+        <pre><code>auto client = mcp::ClientPeer::builder()
+    .streamable_http("http://127.0.0.1:3000/mcp")
+    .build();
+
+// With bearer token
+auto client = mcp::ClientPeer::builder()
+    .streamable_http("http://127.0.0.1:3000/mcp")
+    .bearer_token("my-secret-token")
+    .build();</code></pre>
+
+        <h3>Client Options</h3>
+        <pre><code>mcp::transport::StreamableHttpClientTransportOptions opts;
+opts.base_url = "http://127.0.0.1:3000/mcp";
+opts.timeout = std::chrono::seconds(30);
+opts.bearer_token = "my-secret-token";
+
+auto client = mcp::ClientPeer::builder()
+    .streamable_http(opts)
+    .build();</code></pre>
+
+        <h3>Behavior</h3>
+        <ul>
+          <li>POST requests carry JSON-RPC messages; responses may be SSE streams</li>
+          <li>GET opens an SSE channel for server-to-client notifications</li>
+          <li>DELETE terminates the session</li>
+          <li>Session state is tracked via <code>Mcp-Session-Id</code> header</li>
+          <li>SEP-2243: <code>Mcp-Method</code> and <code>Mcp-Name</code> headers are validated when present (optional for backward compat)</li>
+          <li>Legacy SSE endpoint <code>/sse</code> is supported for older clients</li>
+        </ul>
+      </section>
+
+      <!-- Custom Transports -->
+      <section class="section">
+        <h2>Custom Transports</h2>
+        <p>
+          Implement the <code>Transport&lt;Role&gt;</code> interface to create
+          your own transport (WebSocket, Unix socket, in-memory loopback, etc.).
+        </p>
+
+        <pre><code>#include &lt;cxxmcp/transport/transport.hpp&gt;
+
+// Client transport
+class MyClientTransport : public mcp::transport::ClientTransport {
+ public:
+    mcp::core::Result&lt;mcp::protocol::JsonRpcResponse&gt; send(
+        const mcp::protocol::JsonRpcRequest&amp; request) override {
+        // Serialize request, send over your channel, return response
+    }
+
+    mcp::core::Result&lt;mcp::core::Unit&gt; send_notification(
+        const mcp::protocol::JsonRpcNotification&amp; notification) override {
+        // Send notification (no response expected)
+    }
+};
+
+// Server transport
+class MyServerTransport : public mcp::transport::ServerTransport {
+ public:
+    void on_request(RequestHandler handler) override {
+        // Store handler; call it when a request arrives on your channel
+    }
+
+    mcp::core::Result&lt;mcp::core::Unit&gt; send_response(
+        const mcp::protocol::JsonRpcResponse&amp; response) override {
+        // Send response back to client
+    }
+};</code></pre>
+
+        <h3>Built-in Adapters</h3>
+        <p>
+          The SDK provides adapter classes for common patterns:
+        </p>
+        <ul>
+          <li><code>FunctionTransport&lt;Role&gt;</code> — wrap lambda functions as a transport</li>
+          <li><code>JsonLineTransport&lt;Role&gt;</code> — newline-delimited JSON over any stream</li>
+          <li><code>QueueTransport&lt;Role&gt;</code> — in-memory queue for testing</li>
+        </ul>
+      </section>
+
+      <section class="section">
+        <h2>Next Steps</h2>
+        <ul>
+          <li><a href="./auth.html">Auth</a> — secure your HTTP transport</li>
+          <li><a href="./tutorials.html">Tutorials</a> — build with each transport</li>
+          <li><a href="./api/">API Reference</a> — full transport class docs</li>
+        </ul>
+      </section>
+    </main>
+
+    <footer>
+      cxxmcp is a community C++ MCP SDK. It is not an official MCP SDK unless
+      accepted or listed by the MCP maintainers.
+    </footer>
+  </body>
+</html>

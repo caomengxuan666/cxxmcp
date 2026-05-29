@@ -57,10 +57,21 @@ jobs:
           touch public/.nojekyll
           test -f public/index.html
           test -f public/getting-started.html
+          test -f public/tutorials.html
+          test -f public/concepts.html
+          test -f public/cookbook.html
+          test -f public/transports.html
+          test -f public/troubleshooting.html
+          test -f public/migration.html
+          test -f public/changelog.html
+          test -f public/contributing.html
+          test -f public/roadmap.html
+          test -f public/security.html
           test -f public/auth.html
           test -f public/stability.html
           test -f public/api/index.html
           grep -q 'href="./getting-started.html"' public/index.html
+          grep -q 'href="./tutorials.html"' public/index.html
           grep -q 'href="./auth.html"' public/index.html
           grep -q 'href="./stability.html"' public/index.html
 

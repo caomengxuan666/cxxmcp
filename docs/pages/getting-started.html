@@ -192,8 +192,14 @@
       <div class="brand">cxxmcp</div>
       <nav aria-label="Primary">
         <a href="./">Home</a>
+        <a href="./tutorials.html">Tutorials</a>
+        <a href="./concepts.html">Concepts</a>
+        <a href="./cookbook.html">Cookbook</a>
+        <a href="./transports.html">Transports</a>
+        <a href="./troubleshooting.html">Troubleshooting</a>
         <a href="./auth.html">Auth</a>
-        <a href="./stability.html">Release and API Stability</a>
+        <a href="./security.html">Security</a>
+        <a href="./stability.html">Stability</a>
         <a href="./api/">API Reference</a>
       </nav>
     </header>
@@ -287,6 +293,166 @@ int main() {
       </section>
 
       <section class="section">
+        <h2>Streamable HTTP Transport</h2>
+        <p>
+          HTTP transport requires <code>CXXMCP_ENABLE_HTTP=ON</code> at build
+          time. The SDK bundles <code>cpp-httplib</code> as a header-only
+          dependency.
+        </p>
+        <pre><code># Build with HTTP transport
+cmake -S . -B build -DCXXMCP_ENABLE_HTTP=ON -DCXXMCP_BUILD_SERVER=ON -DCXXMCP_BUILD_CLIENT=ON</code></pre>
+        <p>
+          Server and client builder both expose
+          <code>.streamable_http(...)</code>:
+        </p>
+        <pre><code>// Server — listen on HTTP
+auto server = mcp::ServerPeer::builder()
+    .name("my-server")
+    .version("1.0.0")
+    .streamable_http("127.0.0.1", 3000, "/mcp")  // host, port, path
+    .tool(mcp::server::tool&lt;Json, Json&gt;("echo")
+              .handler([](const Json&amp; in) { return in; }))
+    .build();
+
+auto running = mcp::serve(std::move(*server));
+running->wait_until_ready();</code></pre>
+        <pre><code>// Client — connect over HTTP
+auto client = mcp::ClientPeer::builder()
+    .streamable_http("http://127.0.0.1:3000/mcp")
+    .build();
+
+auto svc = mcp::serve(std::move(*client));
+svc->peer().initialize();
+svc->peer().call_tool("echo", Json{{"value", "hello"}});</code></pre>
+      </section>
+
+      <section class="section">
+        <h2>OAuth 2.1 and Auth</h2>
+        <p>
+          Auth is opt-in. Set <code>CXXMCP_ENABLE_AUTH=ON</code> to export
+          <code>cxxmcp::auth</code> with PKCE, DPoP, metadata endpoints, and
+          bearer-token helpers.
+        </p>
+        <pre><code># Auth contracts (no OpenSSL)
+cmake -S . -B build -DCXXMCP_ENABLE_AUTH=ON
+
+# With OpenSSL crypto backend
+cmake -S . -B build -DCXXMCP_ENABLE_AUTH=ON -DCXXMCP_AUTH_CRYPTO=OpenSSL</code></pre>
+        <p>
+          vcpkg shortcut: <code>vcpkg install "cxxmcp[auth]"</code>.
+        </p>
+        <p>
+          Add a bearer-token auth provider to the server builder:
+        </p>
+        <pre><code>#include &lt;cxxmcp/peer.hpp&gt;
+
+auto auth = std::make_unique&lt;mcp::server::StaticBearerAuthProvider&gt;();
+auth->add_token("my-secret",
+                mcp::server::AuthIdentity{
+                    "alice", {{"scope", "tools:call"}},
+                });
+
+auto server = mcp::ServerPeer::builder()
+    .name("auth-demo")
+    .version("1.0.0")
+    .auth_provider(std::move(auth))
+    .streamable_http("127.0.0.1", 3001, "/mcp")
+    .tool(mcp::server::tool&lt;Json, Json&gt;("whoami")
+              .handler([](const Json&amp;, const mcp::server::ToolContext&amp; ctx) {
+                  return Json{{"subject",
+                      ctx.auth_identity ? ctx.auth_identity->subject : "anon"}};
+              }))
+    .build();</code></pre>
+        <p>
+          Client side — pass the bearer token:
+        </p>
+        <pre><code>auto client = mcp::ClientPeer::builder()
+    .streamable_http("http://127.0.0.1:3001/mcp")
+    .bearer_token("my-secret")
+    .build();</code></pre>
+      </section>
+
+      <section class="section">
+        <h2>OpenSSL Crypto Backend</h2>
+        <p>
+          When <code>CXXMCP_AUTH_CRYPTO=OpenSSL</code> is set alongside
+          <code>CXXMCP_ENABLE_AUTH=ON</code>, the SDK resolves OpenSSL via
+          <code>find_package(OpenSSL)</code> and exports
+          <code>cxxmcp::auth_openssl</code>. This enables:
+        </p>
+        <ul>
+          <li>SHA-256 / base64url for PKCE</li>
+          <li>JWK / JWS / JWT (RS256, ES256)</li>
+          <li>DPoP proof signing and verification</li>
+          <li><code>StaticJwksDpopBearerAuthProvider</code></li>
+          <li><code>FetchingJwksJwtVerifier</code> for remote JWKS</li>
+        </ul>
+        <pre><code>#include &lt;cxxmcp/auth/openssl/server_auth_provider.hpp&gt;
+
+mcp::auth::DpopAuthProviderOptions opts;
+opts.require_dpop = true;
+opts.issuer = "https://auth.example.com";
+opts.audience = "https://resource.example/mcp";
+
+auto auth =
+    std::make_unique&lt;mcp::auth::openssl::StaticJwksDpopBearerAuthProvider&gt;(
+        std::move(jwks), &amp;replay_cache, opts);</code></pre>
+        <p>
+          OpenSSL is <em>not</em> vendored — it must be available on the system
+          or through a package manager. Set <code>OPENSSL_ROOT_DIR</code> if
+          CMake cannot find it automatically.
+        </p>
+      </section>
+
+      <section class="section">
+        <h2>DTO Reflection</h2>
+        <p>
+          The <code>CXXMCP_REFLECT</code> macro gives your structs automatic
+          JSON serialization, deserialization, and JSON Schema generation — no
+          boilerplate.
+        </p>
+        <pre><code>#include &lt;cxxmcp/protocol/reflect.hpp&gt;
+
+struct SearchArgs {
+    std::string query;
+    int limit = 3;
+};
+
+struct SearchResult {
+    std::string session;
+    std::vector&lt;SearchHit&gt; hits;
+};
+
+namespace mcp::protocol {
+CXXMCP_REFLECT(SearchArgs, query, limit)
+CXXMCP_REFLECT(SearchResult, session, hits)
+}</code></pre>
+        <p>
+          Once reflected, use typed tool registration:
+        </p>
+        <pre><code>.tool(mcp::server::tool&lt;SearchArgs, SearchResult&gt;("search")
+          .description("Search local documents.")
+          .handler([](SearchArgs args, const mcp::server::ToolContext&amp; ctx) {
+              SearchResult result;
+              result.session = ctx.session_id;
+              // ...
+              return result;
+          }))</code></pre>
+        <p>
+          The SDK auto-generates <code>inputSchema</code> from
+          <code>SearchArgs</code> fields and serializes
+          <code>SearchResult</code> back to JSON. Use
+          <code>CXXMCP_REFLECT_CHECK(Type, N)</code> to validate field count at
+          compile time.
+        </p>
+        <p>
+          <code>schema_for&lt;T&gt;()</code> returns a
+          <code>nlohmann::json</code> JSON Schema object for any reflected or
+          primitive type.
+        </p>
+      </section>
+
+      <section class="section">
         <h2>Package Routes</h2>
         <div class="grid">
           <article class="card">
@@ -318,7 +484,7 @@ int main() {
     </main>
 
     <footer>
-      cxxmcp is a community SDK candidate and is not an official MCP SDK unless
+      cxxmcp is a community C++ MCP SDK. It is not an official MCP SDK unless
       accepted or listed by the MCP maintainers.
     </footer>
   </body>

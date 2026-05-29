@@ -1,0 +1,276 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Migration Guide | cxxmcp</title>
+    <meta name="description" content="Migrate from other MCP SDKs to cxxmcp, or upgrade between cxxmcp versions.">
+    <style>
+      :root { color-scheme: light dark; --bg: #f7f8fa; --panel: #ffffff; --text: #17202a; --muted: #596579; --line: #d9dee7; --accent: #0f766e; --accent-strong: #0b5f59; --code: #eef3f5; }
+      @media (prefers-color-scheme: dark) { :root { --bg: #101317; --panel: #171b21; --text: #edf2f7; --muted: #aab4c3; --line: #2a313a; --accent: #2dd4bf; --accent-strong: #5eead4; --code: #20262e; } }
+      * { box-sizing: border-box; }
+      body { margin: 0; font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; line-height: 1.6; color: var(--text); background: var(--bg); }
+      a { color: var(--accent-strong); text-decoration-thickness: 0.08em; text-underline-offset: 0.18em; }
+      header, main, footer { width: min(960px, calc(100% - 32px)); margin: 0 auto; }
+      header { padding: 28px 0 18px; display: flex; justify-content: space-between; gap: 16px; align-items: center; }
+      .brand { font-weight: 750; font-size: 1.05rem; letter-spacing: 0; }
+      nav { display: flex; flex-wrap: wrap; gap: 14px; font-size: 0.95rem; }
+      .hero { padding: 46px 0 34px; border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); }
+      .eyebrow { color: var(--accent-strong); font-size: 0.9rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0; }
+      h1 { max-width: 820px; margin: 12px 0 16px; font-size: clamp(2.1rem, 5vw, 3.6rem); line-height: 1.05; letter-spacing: 0; }
+      .lede { max-width: 760px; margin: 0; color: var(--muted); font-size: 1.12rem; }
+      .section { padding: 30px 0 8px; }
+      .section h2 { margin: 0 0 12px; font-size: 1.35rem; letter-spacing: 0; }
+      .section h3 { margin: 24px 0 8px; font-size: 1.1rem; letter-spacing: 0; }
+      .section p, .section li { color: var(--muted); }
+      pre { overflow-x: auto; border: 1px solid var(--line); border-radius: 8px; background: var(--code); padding: 18px; }
+      code { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace; font-size: 0.95em; }
+      table { width: 100%; border-collapse: collapse; margin: 16px 0; }
+      th, td { text-align: left; padding: 10px 14px; border-bottom: 1px solid var(--line); }
+      th { color: var(--text); font-weight: 650; }
+      td { color: var(--muted); }
+      footer { padding: 24px 0 36px; color: var(--muted); border-top: 1px solid var(--line); font-size: 0.95rem; margin-top: 32px; }
+      @media (max-width: 760px) { header { align-items: flex-start; flex-direction: column; } .hero { padding: 34px 0 28px; } }
+    </style>
+  </head>
+  <body>
+    <header>
+      <div class="brand">cxxmcp</div>
+      <nav aria-label="Primary">
+        <a href="./">Home</a>
+        <a href="./getting-started.html">Getting Started</a>
+        <a href="./tutorials.html">Tutorials</a>
+        <a href="./concepts.html">Concepts</a>
+        <a href="./cookbook.html">Cookbook</a>
+        <a href="./transports.html">Transports</a>
+        <a href="./troubleshooting.html">Troubleshooting</a>
+        <a href="./auth.html">Auth</a>
+        <a href="./stability.html">Stability</a>
+        <a href="./api/">API Reference</a>
+      </nav>
+    </header>
+
+    <main>
+      <section class="hero">
+        <div class="eyebrow">Migration Guide</div>
+        <h1>Move to cxxmcp from other MCP SDKs.</h1>
+        <p class="lede">
+          API mapping tables and side-by-side examples for migrating from the
+          TypeScript, Python, and Rust MCP SDKs.
+        </p>
+      </section>
+
+      <!-- From TypeScript -->
+      <section class="section">
+        <h2>From TypeScript SDK</h2>
+        <p>
+          The TypeScript SDK uses a class-based <code>Server</code> with
+          callback registration. cxxmcp uses a builder pattern with
+          <code>ServerPeer::builder()</code>.
+        </p>
+
+        <h3>Server Setup</h3>
+        <table>
+          <tr><th>TypeScript</th><th>cxxmcp</th></tr>
+          <tr>
+            <td><code>new McpServer({name, version})</code></td>
+            <td><code>ServerPeer::builder().name(n).version(v)</code></td>
+          </tr>
+          <tr>
+            <td><code>server.tool(name, desc, handler)</code></td>
+            <td><code>.tool&lt;In, Out&gt;(name, handler)</code></td>
+          </tr>
+          <tr>
+            <td><code>server.resource(name, uri, handler)</code></td>
+            <td><code>.resource(uri, handler)</code></td>
+          </tr>
+          <tr>
+            <td><code>server.prompt(name, handler)</code></td>
+            <td><code>.prompt(Prompt{...}, handler)</code></td>
+          </tr>
+          <tr>
+            <td><code>StdioServerTransport</code></td>
+            <td><code>.stdio()</code></td>
+          </tr>
+          <tr>
+            <td><code>StreamableHTTPServerTransport</code></td>
+            <td><code>.streamable_http(host, port, path)</code></td>
+          </tr>
+        </table>
+
+        <h3>Side-by-Side: Echo Server</h3>
+        <pre><code>// TypeScript
+import { McpServer } from "@modelcontextprotocol/sdk/server";
+import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio";
+
+const server = new McpServer({ name: "echo", version: "1.0.0" });
+server.tool("echo", { input: { type: "object" } }, async ({ input }) => ({
+    content: [{ type: "text", text: JSON.stringify(input) }],
+}));
+const transport = new StdioServerTransport();
+await server.connect(transport);</code></pre>
+        <pre><code>// cxxmcp
+#include &lt;cxxmcp/peer.hpp&gt;
+#include &lt;cxxmcp/run.hpp&gt;
+
+int main() {
+    return mcp::ServerPeer::builder()
+        .name("echo").version("1.0.0").stdio()
+        .tool&lt;Json, Json&gt;("echo",
+            [](const Json&amp; input) { return input; })
+        .run();
+}</code></pre>
+
+        <h3>Key Differences</h3>
+        <ul>
+          <li><strong>Async:</strong> TS uses <code>async/await</code>; cxxmcp uses synchronous handlers by default, with task-aware async support</li>
+          <li><strong>Types:</strong> TS uses JSON schema objects; cxxmcp uses <code>CXXMCP_REFLECT</code> for typed DTOs</li>
+          <li><strong>Transport:</strong> TS requires manual transport construction; cxxmcp uses builder methods</li>
+          <li><strong>Error handling:</strong> TS throws exceptions; cxxmcp returns <code>Result&lt;T&gt;</code></li>
+        </ul>
+      </section>
+
+      <!-- From Python -->
+      <section class="section">
+        <h2>From Python SDK</h2>
+
+        <h3>Server Setup</h3>
+        <table>
+          <tr><th>Python</th><th>cxxmcp</th></tr>
+          <tr>
+            <td><code>Server("name")</code></td>
+            <td><code>ServerPeer::builder().name("name")</code></td>
+          </tr>
+          <tr>
+            <td><code>@server.tool()</code></td>
+            <td><code>.tool&lt;In, Out&gt;(name, handler)</code></td>
+          </tr>
+          <tr>
+            <td><code>@server.resource(uri)</code></td>
+            <td><code>.resource(uri, handler)</code></td>
+          </tr>
+          <tr>
+            <td><code>@server.prompt()</code></td>
+            <td><code>.prompt(Prompt{...}, handler)</code></td>
+          </tr>
+          <tr>
+            <td><code>stdio_server()</code></td>
+            <td><code>.stdio()</code></td>
+          </tr>
+        </table>
+
+        <h3>Side-by-Side: Echo Server</h3>
+        <pre><code># Python
+from mcp.server import Server
+from mcp.server.stdio import stdio_server
+
+server = Server("echo")
+
+@server.tool()
+async def echo(input: dict) -&gt; dict:
+    return input
+
+async def main():
+    async with stdio_server() as (read, write):
+        await server.run(read, write)</code></pre>
+        <pre><code>// cxxmcp
+#include &lt;cxxmcp/peer.hpp&gt;
+#include &lt;cxxmcp/run.hpp&gt;
+
+int main() {
+    return mcp::ServerPeer::builder()
+        .name("echo").version("1.0.0").stdio()
+        .tool&lt;Json, Json&gt;("echo",
+            [](const Json&amp; input) { return input; })
+        .run();
+}</code></pre>
+
+        <h3>Key Differences</h3>
+        <ul>
+          <li><strong>Decorators vs builder:</strong> Python uses <code>@server.tool()</code> decorators; cxxmcp uses method chaining on a builder</li>
+          <li><strong>Async:</strong> Python is async-first; cxxmcp is synchronous-first with optional async tasks</li>
+          <li><strong>Types:</strong> Python uses type hints; cxxmcp uses compile-time <code>CXXMCP_REFLECT</code></li>
+          <li><strong>Deployment:</strong> Python needs a runtime; cxxmcp compiles to a native binary</li>
+        </ul>
+      </section>
+
+      <!-- From Rust (RMCP) -->
+      <section class="section">
+        <h2>From Rust SDK (RMCP)</h2>
+
+        <h3>Architecture Mapping</h3>
+        <table>
+          <tr><th>RMCP</th><th>cxxmcp</th></tr>
+          <tr>
+            <td><code>ServerHandler</code> trait</td>
+            <td><code>ServerPeer::builder()</code> with registered handlers</td>
+          </tr>
+          <tr>
+            <td><code>#[tool]</code> attribute macro</td>
+            <td><code>.tool&lt;In, Out&gt;(name, handler)</code></td>
+          </tr>
+          <tr>
+            <td><code>serve_server()</code></td>
+            <td><code>mcp::serve(peer)</code></td>
+          </tr>
+          <tr>
+            <td><code>axum</code> / <code>tower</code></td>
+            <td>built-in <code>cpp-httplib</code></td>
+          </tr>
+          <tr>
+            <td><code>tokio</code> runtime</td>
+            <td>no runtime dependency</td>
+          </tr>
+        </table>
+
+        <h3>Key Differences</h3>
+        <ul>
+          <li><strong>Concurrency:</strong> RMCP uses <code>tokio</code> async; cxxmcp uses threads and task managers</li>
+          <li><strong>Macros:</strong> RMCP uses proc macros (<code>#[tool]</code>); cxxmcp uses <code>CXXMCP_REFLECT</code> for DTOs</li>
+          <li><strong>Memory:</strong> RMCP uses Rust ownership; cxxmcp uses <code>std::unique_ptr</code> and move semantics</li>
+          <li><strong>Conformance:</strong> cxxmcp scores 109/110 server, 447/447 client; RMCP scores 48/95 server</li>
+        </ul>
+      </section>
+
+      <!-- Version Upgrades -->
+      <section class="section">
+        <h2>Upgrading cxxmcp Versions</h2>
+
+        <h3>v1.0.0 to v1.1.0</h3>
+        <ul>
+          <li>HTTP transport now requires <code>CXXMCP_ENABLE_HTTP=ON</code> (was always-on before)</li>
+          <li>Add <code>-DCXXMCP_ENABLE_HTTP=ON</code> to your CMake command if you use HTTP</li>
+          <li>No API changes — only build configuration</li>
+        </ul>
+
+        <h3>v1.1.0 to v1.1.1</h3>
+        <ul>
+          <li>SSE retry/reconnection in client HTTP transport</li>
+          <li>No breaking changes — drop-in upgrade</li>
+        </ul>
+
+        <h3>General Upgrade Rule</h3>
+        <p>
+          cxxmcp follows <a href="https://semver.org/">SemVer</a>. Patch
+          versions (1.1.0 → 1.1.1) are always backward-compatible. Minor
+          versions (1.0.x → 1.1.0) add features without breaking existing code.
+          See <a href="./stability.html">Stability</a> for the full policy.
+        </p>
+      </section>
+
+      <section class="section">
+        <h2>Next Steps</h2>
+        <ul>
+          <li><a href="./tutorials.html">Tutorials</a> — build your first server</li>
+          <li><a href="./concepts.html">Concepts</a> — understand the architecture</li>
+          <li><a href="./cookbook.html">Cookbook</a> — common code patterns</li>
+        </ul>
+      </section>
+    </main>
+
+    <footer>
+      cxxmcp is a community C++ MCP SDK. It is not an official MCP SDK unless
+      accepted or listed by the MCP maintainers.
+    </footer>
+  </body>
+</html>

@@ -1,0 +1,149 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Contributing | cxxmcp</title>
+    <meta name="description" content="How to contribute to cxxmcp.">
+    <style>
+      :root { color-scheme: light dark; --bg: #f7f8fa; --panel: #ffffff; --text: #17202a; --muted: #596579; --line: #d9dee7; --accent: #0f766e; --accent-strong: #0b5f59; --code: #eef3f5; }
+      @media (prefers-color-scheme: dark) { :root { --bg: #101317; --panel: #171b21; --text: #edf2f7; --muted: #aab4c3; --line: #2a313a; --accent: #2dd4bf; --accent-strong: #5eead4; --code: #20262e; } }
+      * { box-sizing: border-box; }
+      body { margin: 0; font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; line-height: 1.6; color: var(--text); background: var(--bg); }
+      a { color: var(--accent-strong); text-decoration-thickness: 0.08em; text-underline-offset: 0.18em; }
+      header, main, footer { width: min(960px, calc(100% - 32px)); margin: 0 auto; }
+      header { padding: 28px 0 18px; display: flex; justify-content: space-between; gap: 16px; align-items: center; }
+      .brand { font-weight: 750; font-size: 1.05rem; letter-spacing: 0; }
+      nav { display: flex; flex-wrap: wrap; gap: 14px; font-size: 0.95rem; }
+      .hero { padding: 46px 0 34px; border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); }
+      .eyebrow { color: var(--accent-strong); font-size: 0.9rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0; }
+      h1 { max-width: 820px; margin: 12px 0 16px; font-size: clamp(2.1rem, 5vw, 3.6rem); line-height: 1.05; letter-spacing: 0; }
+      .lede { max-width: 760px; margin: 0; color: var(--muted); font-size: 1.12rem; }
+      .section { padding: 30px 0 8px; }
+      .section h2 { margin: 0 0 12px; font-size: 1.35rem; letter-spacing: 0; }
+      .section h3 { margin: 24px 0 8px; font-size: 1.1rem; letter-spacing: 0; }
+      .section p, .section li { color: var(--muted); }
+      pre { overflow-x: auto; border: 1px solid var(--line); border-radius: 8px; background: var(--code); padding: 18px; }
+      code { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace; font-size: 0.95em; }
+      .note { border: 1px solid var(--line); border-radius: 8px; background: var(--panel); padding: 14px 18px; margin: 16px 0; }
+      .note strong { color: var(--text); }
+      footer { padding: 24px 0 36px; color: var(--muted); border-top: 1px solid var(--line); font-size: 0.95rem; margin-top: 32px; }
+      @media (max-width: 760px) { header { align-items: flex-start; flex-direction: column; } .hero { padding: 34px 0 28px; } }
+    </style>
+  </head>
+  <body>
+    <header>
+      <div class="brand">cxxmcp</div>
+      <nav aria-label="Primary">
+        <a href="./">Home</a>
+        <a href="./getting-started.html">Getting Started</a>
+        <a href="./tutorials.html">Tutorials</a>
+        <a href="./concepts.html">Concepts</a>
+        <a href="./cookbook.html">Cookbook</a>
+        <a href="./transports.html">Transports</a>
+        <a href="./troubleshooting.html">Troubleshooting</a>
+        <a href="./auth.html">Auth</a>
+        <a href="./stability.html">Stability</a>
+        <a href="./api/">API Reference</a>
+      </nav>
+    </header>
+
+    <main>
+      <section class="hero">
+        <div class="eyebrow">Contributing</div>
+        <h1>Help improve cxxmcp.</h1>
+        <p class="lede">
+          The project follows an SDK-first architecture. Protocol, transport,
+          handler, peer, service, client, and server APIs are the stable public
+          surface.
+        </p>
+      </section>
+
+      <section class="section">
+        <h2>Development Flow</h2>
+        <p>Use topic branches from <code>master</code>. Keep changes scoped to one behavior, capability family, or documentation concern.</p>
+
+        <h3>Before Opening a PR</h3>
+        <pre><code># Format check
+pwsh -NoProfile -File scripts\format.ps1 -Check
+
+# Build and test
+cmake --build build-package-prep --target mcp_protocol_tests mcp_client_server_tests mcp_sdk_tests --parallel
+ctest --test-dir build-package-prep -R "^(protocol|client_server|sdk|package_smoke)$" --output-on-failure --timeout 600</code></pre>
+
+        <h3>Transport Changes</h3>
+        <p>Also run the relevant transport tests:</p>
+        <pre><code>ctest --test-dir build -R "transport" --output-on-failure</code></pre>
+
+        <h3>Package Changes</h3>
+        <p>Run <code>package_smoke</code> for both bundled and <code>CXXMCP_USE_SYSTEM_DEPS=ON</code> builds.</p>
+      </section>
+
+      <section class="section">
+        <h2>Public API Rules</h2>
+        <p>Public headers live under <code>sdk/**/include/cxxmcp</code>. New public surface must state one of:</p>
+        <ul>
+          <li><strong>core</strong> — stable SDK contract for normal use</li>
+          <li><strong>optional</strong> — stable API for a negotiated or opt-in capability</li>
+          <li><strong>experimental</strong> — available but not yet a stable compatibility promise</li>
+        </ul>
+
+        <h3>Breaking Changes</h3>
+        <p>Breaking public API changes require a design note or RFC-style issue before implementation. Public renames must:</p>
+        <ul>
+          <li>Add the new spelling first</li>
+          <li>Keep the old spelling as an alias or forwarding wrapper</li>
+          <li>Mark the old spelling with <code>CXXMCP_DEPRECATED("message")</code></li>
+          <li>Document the migration</li>
+        </ul>
+      </section>
+
+      <section class="section">
+        <h2>Protocol Compatibility</h2>
+        <p>
+          cxxmcp follows published MCP protocol snapshots and cross-checks
+          behavior against pinned reference SDKs. Do not add custom MCP
+          dialects or alternate wire formats. Unknown or future protocol fields
+          should be preserved through typed models when possible and exposed
+          through raw JSON-RPC escape hatches when they are not modeled yet.
+        </p>
+      </section>
+
+      <section class="section">
+        <h2>Tests and Evidence</h2>
+        <p>Every new public behavior should have at least one focused test:</p>
+        <ul>
+          <li><strong>Protocol tests</strong> — model/serialization behavior</li>
+          <li><strong>Client/server tests</strong> — SDK request handling</li>
+          <li><strong>Transport tests</strong> — I/O behavior</li>
+          <li><strong>Package smoke tests</strong> — install/export concerns</li>
+        </ul>
+        <p>Release-candidate evidence is governed by <code>docs/release_gates.md</code> and <code>docs/release_candidate_checklist.md</code>.</p>
+      </section>
+
+      <section class="section">
+        <h2>Code Style</h2>
+        <ul>
+          <li>C++17 public API — no C++20 features in public headers</li>
+          <li>Follow the existing naming conventions (<code>snake_case</code> for functions, <code>PascalCase</code> for types)</li>
+          <li>Use <code>mcp::</code> namespace; sub-namespaces for protocol, transport, etc.</li>
+          <li>Keep headers self-contained — include what you use</li>
+        </ul>
+      </section>
+
+      <section class="section">
+        <h2>Next Steps</h2>
+        <ul>
+          <li><a href="https://github.com/caomengxuan666/cxxmcp/issues">Issues</a> — find something to work on</li>
+          <li><a href="https://github.com/caomengxuan666/cxxmcp/pulls">Pull Requests</a> — review open PRs</li>
+          <li><a href="./stability.html">Stability</a> — understand the compatibility contract</li>
+        </ul>
+      </section>
+    </main>
+
+    <footer>
+      cxxmcp is a community C++ MCP SDK. It is not an official MCP SDK unless
+      accepted or listed by the MCP maintainers.
+    </footer>
+  </body>
+</html>

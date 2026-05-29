@@ -1,0 +1,610 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Tutorials | cxxmcp</title>
+    <meta
+      name="description"
+      content="Step-by-step tutorials for building MCP servers and clients with cxxmcp.">
+    <style>
+      :root {
+        color-scheme: light dark;
+        --bg: #f7f8fa;
+        --panel: #ffffff;
+        --text: #17202a;
+        --muted: #596579;
+        --line: #d9dee7;
+        --accent: #0f766e;
+        --accent-strong: #0b5f59;
+        --code: #eef3f5;
+      }
+
+      @media (prefers-color-scheme: dark) {
+        :root {
+          --bg: #101317;
+          --panel: #171b21;
+          --text: #edf2f7;
+          --muted: #aab4c3;
+          --line: #2a313a;
+          --accent: #2dd4bf;
+          --accent-strong: #5eead4;
+          --code: #20262e;
+        }
+      }
+
+      * { box-sizing: border-box; }
+
+      body {
+        margin: 0;
+        font-family:
+          Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont,
+          "Segoe UI", sans-serif;
+        line-height: 1.6;
+        color: var(--text);
+        background: var(--bg);
+      }
+
+      a {
+        color: var(--accent-strong);
+        text-decoration-thickness: 0.08em;
+        text-underline-offset: 0.18em;
+      }
+
+      header, main, footer {
+        width: min(960px, calc(100% - 32px));
+        margin: 0 auto;
+      }
+
+      header {
+        padding: 28px 0 18px;
+        display: flex;
+        justify-content: space-between;
+        gap: 16px;
+        align-items: center;
+      }
+
+      .brand { font-weight: 750; font-size: 1.05rem; letter-spacing: 0; }
+
+      nav { display: flex; flex-wrap: wrap; gap: 14px; font-size: 0.95rem; }
+
+      .hero {
+        padding: 46px 0 34px;
+        border-top: 1px solid var(--line);
+        border-bottom: 1px solid var(--line);
+      }
+
+      .eyebrow {
+        color: var(--accent-strong);
+        font-size: 0.9rem;
+        font-weight: 700;
+        text-transform: uppercase;
+        letter-spacing: 0;
+      }
+
+      h1 {
+        max-width: 820px;
+        margin: 12px 0 16px;
+        font-size: clamp(2.1rem, 5vw, 3.6rem);
+        line-height: 1.05;
+        letter-spacing: 0;
+      }
+
+      .lede {
+        max-width: 760px;
+        margin: 0;
+        color: var(--muted);
+        font-size: 1.12rem;
+      }
+
+      .section { padding: 30px 0 8px; }
+
+      .section h2 {
+        margin: 0 0 12px;
+        font-size: 1.35rem;
+        letter-spacing: 0;
+      }
+
+      .section h3 {
+        margin: 20px 0 8px;
+        font-size: 1.1rem;
+        letter-spacing: 0;
+      }
+
+      .section p, .section li { color: var(--muted); }
+
+      pre {
+        overflow-x: auto;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        background: var(--code);
+        padding: 18px;
+      }
+
+      code {
+        font-family:
+          ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono",
+          monospace;
+        font-size: 0.95em;
+      }
+
+      .step {
+        border-left: 3px solid var(--accent);
+        padding-left: 20px;
+        margin: 24px 0;
+      }
+
+      .step-num {
+        display: inline-block;
+        width: 28px;
+        height: 28px;
+        border-radius: 50%;
+        background: var(--accent);
+        color: #fff;
+        text-align: center;
+        line-height: 28px;
+        font-size: 0.85rem;
+        font-weight: 700;
+        margin-right: 8px;
+      }
+
+      .note {
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        background: var(--panel);
+        padding: 14px 18px;
+        margin: 16px 0;
+        font-size: 0.95rem;
+      }
+
+      .note strong { color: var(--text); }
+
+      footer {
+        padding: 24px 0 36px;
+        color: var(--muted);
+        border-top: 1px solid var(--line);
+        font-size: 0.95rem;
+        margin-top: 32px;
+      }
+
+      @media (max-width: 760px) {
+        header { align-items: flex-start; flex-direction: column; }
+        .hero { padding: 34px 0 28px; }
+      }
+    </style>
+  </head>
+  <body>
+    <header>
+      <div class="brand">cxxmcp</div>
+      <nav aria-label="Primary">
+        <a href="./">Home</a>
+        <a href="./getting-started.html">Getting Started</a>
+        <a href="./concepts.html">Concepts</a>
+        <a href="./cookbook.html">Cookbook</a>
+        <a href="./transports.html">Transports</a>
+        <a href="./troubleshooting.html">Troubleshooting</a>
+        <a href="./auth.html">Auth</a>
+        <a href="./security.html">Security</a>
+        <a href="./stability.html">Stability</a>
+        <a href="./api/">API Reference</a>
+      </nav>
+    </header>
+
+    <main>
+      <section class="hero">
+        <div class="eyebrow">Tutorials</div>
+        <h1>Build your first MCP server and client in C++.</h1>
+        <p class="lede">
+          Each tutorial walks through a complete working example. Copy-paste
+          the code, build it, and run it.
+        </p>
+      </section>
+
+      <!-- Tutorial 1: Stdio Server -->
+      <section class="section">
+        <h2>Tutorial 1: Minimal Stdio Server</h2>
+        <p>
+          Build an MCP server that communicates over stdin/stdout. This is the
+          simplest transport — ideal for CLI tools and local integrations.
+        </p>
+
+        <div class="step">
+          <p><span class="step-num">1</span><strong>Create the CMake project</strong></p>
+          <pre><code>cmake_minimum_required(VERSION 3.16)
+project(my-mcp-server LANGUAGES CXX)
+set(CMAKE_CXX_STANDARD 17)
+
+find_package(cxxmcp CONFIG REQUIRED)
+add_executable(server server.cpp)
+target_link_libraries(server PRIVATE cxxmcp::server)</code></pre>
+        </div>
+
+        <div class="step">
+          <p><span class="step-num">2</span><strong>Write the server</strong></p>
+          <pre><code>// server.cpp
+#include &lt;cxxmcp/peer.hpp&gt;
+#include &lt;cxxmcp/run.hpp&gt;
+
+using Json = mcp::protocol::Json;
+
+int main() {
+    return mcp::ServerPeer::builder()
+        .name("my-first-server")
+        .version("1.0.0")
+        .stdio()
+        .tool&lt;Json, Json&gt;("greet",
+            [](const Json&amp; input) {
+                auto name = input.value("name", "world");
+                return Json{{"message", "Hello, " + name + "!"}};
+            })
+        .run();
+}</code></pre>
+        </div>
+
+        <div class="step">
+          <p><span class="step-num">3</span><strong>Build and test</strong></p>
+          <pre><code>cmake -S . -B build
+cmake --build build
+echo '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-11-25","capabilities":{},"clientInfo":{"name":"test","version":"1.0"}}}' | ./build/server</code></pre>
+        </div>
+
+        <div class="note">
+          <strong>Tip:</strong> The <code>.run()</code> call builds, serves, and
+          blocks until shutdown — all in one line. For more control, use
+          <code>.build()</code> + <code>mcp::serve()</code> separately.
+        </div>
+      </section>
+
+      <!-- Tutorial 2: HTTP Server + Client -->
+      <section class="section">
+        <h2>Tutorial 2: HTTP Server and Client</h2>
+        <p>
+          Serve MCP over Streamable HTTP. Requires
+          <code>CXXMCP_ENABLE_HTTP=ON</code>.
+        </p>
+
+        <div class="step">
+          <p><span class="step-num">1</span><strong>Build with HTTP enabled</strong></p>
+          <pre><code>cmake -S . -B build \
+  -DCXXMCP_ENABLE_HTTP=ON \
+  -DCXXMCP_BUILD_SERVER=ON \
+  -DCXXMCP_BUILD_CLIENT=ON
+cmake --build build</code></pre>
+        </div>
+
+        <div class="step">
+          <p><span class="step-num">2</span><strong>HTTP server</strong></p>
+          <pre><code>// http_server.cpp
+#include &lt;cxxmcp/peer.hpp&gt;
+#include &lt;cxxmcp/run.hpp&gt;
+
+using Json = mcp::protocol::Json;
+
+int main() {
+    auto server = mcp::ServerPeer::builder()
+        .name("http-demo")
+        .version("1.0.0")
+        .streamable_http("127.0.0.1", 3000, "/mcp")
+        .tool&lt;Json, Json&gt;("echo",
+            [](const Json&amp; in) { return in; })
+        .build();
+
+    auto running = mcp::serve(std::move(*server));
+    running->wait_until_ready();
+    return running->wait().has_value() ? 0 : 1;
+}</code></pre>
+        </div>
+
+        <div class="step">
+          <p><span class="step-num">3</span><strong>HTTP client</strong></p>
+          <pre><code>// http_client.cpp
+#include &lt;iostream&gt;
+#include &lt;cxxmcp/peer.hpp&gt;
+#include &lt;cxxmcp/run.hpp&gt;
+
+using Json = mcp::protocol::Json;
+
+int main() {
+    return mcp::ClientPeer::builder()
+        .streamable_http("http://127.0.0.1:3000/mcp")
+        .run([](auto&amp; svc) {
+            svc.peer().initialize();
+            auto result = svc.peer().call_tool(
+                "echo", Json{{"value", "hello"}});
+            std::cout &lt;&lt; result-&gt;dump(2) &lt;&lt; std::endl;
+        });
+}</code></pre>
+        </div>
+      </section>
+
+      <!-- Tutorial 3: Typed Tools with Reflection -->
+      <section class="section">
+        <h2>Tutorial 3: Type-Safe Tools with Reflection</h2>
+        <p>
+          Use <code>CXXMCP_REFLECT</code> to get automatic JSON
+          serialization and schema generation for your tool arguments and
+          results.
+        </p>
+
+        <div class="step">
+          <p><span class="step-num">1</span><strong>Define your types</strong></p>
+          <pre><code>#include &lt;string&gt;
+#include &lt;vector&gt;
+#include &lt;cxxmcp/protocol/reflect.hpp&gt;
+
+struct SearchArgs {
+    std::string query;
+    int limit = 10;
+};
+
+struct SearchResult {
+    std::string title;
+    std::string url;
+    double score;
+};
+
+struct SearchResponse {
+    std::vector&lt;SearchResult&gt; results;
+    int total;
+};
+
+// Register for reflection — must be in mcp::protocol namespace
+namespace mcp::protocol {
+CXXMCP_REFLECT(SearchArgs, query, limit)
+CXXMCP_REFLECT(SearchResult, title, url, score)
+CXXMCP_REFLECT(SearchResponse, results, total)
+}</code></pre>
+        </div>
+
+        <div class="step">
+          <p><span class="step-num">2</span><strong>Register the typed tool</strong></p>
+          <pre><code>#include &lt;cxxmcp/peer.hpp&gt;
+#include &lt;cxxmcp/run.hpp&gt;
+
+int main() {
+    return mcp::ServerPeer::builder()
+        .name("search-server")
+        .version("1.0.0")
+        .stdio()
+        .tool(mcp::server::tool&lt;SearchArgs, SearchResponse&gt;("search")
+                  .description("Search documents by query.")
+                  .handler([](SearchArgs args,
+                              const mcp::server::ToolContext&amp; ctx) {
+                      SearchResponse resp;
+                      resp.total = 1;
+                      resp.results.push_back(SearchResult{
+                          .title = "Result for: " + args.query,
+                          .url = "https://example.com/1",
+                          .score = 0.95,
+                      });
+                      return resp;
+                  }))
+        .run();
+}</code></pre>
+        </div>
+
+        <div class="note">
+          <strong>What happens automatically:</strong>
+          <ul>
+            <li><code>inputSchema</code> is generated from <code>SearchArgs</code> fields</li>
+            <li>Input JSON is deserialized into <code>SearchArgs</code> with type checking</li>
+            <li><code>SearchResponse</code> is serialized back to JSON content blocks</li>
+            <li>Compile-time validation via <code>CXXMCP_REFLECT_CHECK(Type, N)</code></li>
+          </ul>
+        </div>
+      </section>
+
+      <!-- Tutorial 4: Auth -->
+      <section class="section">
+        <h2>Tutorial 4: Adding Authentication</h2>
+        <p>
+          Protect your HTTP server with bearer token auth. Requires
+          <code>CXXMCP_ENABLE_AUTH=ON</code>.
+        </p>
+
+        <div class="step">
+          <p><span class="step-num">1</span><strong>Server with bearer auth</strong></p>
+          <pre><code>#include &lt;memory&gt;
+#include &lt;cxxmcp/peer.hpp&gt;
+#include &lt;cxxmcp/run.hpp&gt;
+
+using Json = mcp::protocol::Json;
+
+int main() {
+    // Create an auth provider with static tokens
+    auto auth = std::make_unique&lt;mcp::server::StaticBearerAuthProvider&gt;();
+    auth->add_token("secret-token-123",
+                    mcp::server::AuthIdentity{
+                        "alice",
+                        {{"role", "admin"}},
+                    });
+
+    return mcp::ServerPeer::builder()
+        .name("auth-demo")
+        .version("1.0.0")
+        .auth_provider(std::move(auth))
+        .streamable_http("127.0.0.1", 3001, "/mcp")
+        .tool(mcp::server::tool&lt;Json, Json&gt;("whoami")
+                  .description("Return the authenticated user.")
+                  .handler([](const Json&amp;,
+                              const mcp::server::ToolContext&amp; ctx) {
+                      return Json{
+                          {"subject",
+                           ctx.auth_identity
+                               ? ctx.auth_identity->subject
+                               : "anonymous"},
+                      };
+                  }))
+        .run();
+}</code></pre>
+        </div>
+
+        <div class="step">
+          <p><span class="step-num">2</span><strong>Client with bearer token</strong></p>
+          <pre><code>auto client = mcp::ClientPeer::builder()
+    .streamable_http("http://127.0.0.1:3001/mcp")
+    .bearer_token("secret-token-123")
+    .build();</code></pre>
+        </div>
+
+        <div class="step">
+          <p><span class="step-num">3</span><strong>Upgrade to DPoP with OpenSSL</strong></p>
+          <pre><code>cmake -S . -B build \
+  -DCXXMCP_ENABLE_AUTH=ON \
+  -DCXXMCP_AUTH_CRYPTO=OpenSSL
+
+#include &lt;cxxmcp/auth/openssl/server_auth_provider.hpp&gt;
+
+mcp::auth::DpopAuthProviderOptions opts;
+opts.require_dpop = true;
+opts.issuer = "https://auth.example.com";
+opts.audience = "https://resource.example/mcp";
+
+auto auth =
+    std::make_unique&lt;mcp::auth::openssl::StaticJwksDpopBearerAuthProvider&gt;(
+        std::move(jwks), &amp;replay_cache, opts);</code></pre>
+        </div>
+      </section>
+
+      <!-- Tutorial 5: Async Tasks -->
+      <section class="section">
+        <h2>Tutorial 5: Async Tasks with Progress</h2>
+        <p>
+          Run long-running operations as background tasks with progress
+          reporting and cancellation support.
+        </p>
+
+        <div class="step">
+          <p><span class="step-num">1</span><strong>Server with task support</strong></p>
+          <pre><code>#include &lt;cxxmcp/peer.hpp&gt;
+#include &lt;cxxmcp/run.hpp&gt;
+
+using Json = mcp::protocol::Json;
+
+int main() {
+    return mcp::ServerPeer::builder()
+        .name("task-demo")
+        .version("1.0.0")
+        .stdio()
+        .task_manager(mcp::server::TaskOperationProcessorOptions{
+            .worker_count = 2,
+            .queue_size = 16,
+        })
+        .tool(mcp::server::tool&lt;Json, Json&gt;("process")
+                  .description("Process data asynchronously.")
+                  .task_support(mcp::protocol::TaskSupport::Optional)
+                  .handler([](const Json&amp; args,
+                              const mcp::server::ToolContext&amp; ctx) {
+                      // The tool runs in a background task
+                      // Progress is reported via ctx
+                      return Json{{"status", "done"}};
+                  }))
+        .run();
+}</code></pre>
+        </div>
+
+        <div class="step">
+          <p><span class="step-num">2</span><strong>Client calling a task</strong></p>
+          <pre><code>svc.peer().initialize();
+
+// Start an async task
+auto task = svc.peer().call_tool(
+    "process", Json{{"data", "large-dataset"}});
+
+// Poll for completion
+auto status = svc.peer().get_task(task->task_id);
+while (status->status != mcp::protocol::TaskStatus::Completed) {
+    // Check progress, handle cancellation
+    status = svc.peer().get_task(task->task_id);
+}
+
+// Cancel if needed
+svc.peer().cancel_task(task->task_id);</code></pre>
+        </div>
+      </section>
+
+      <!-- Tutorial 6: Resources and Prompts -->
+      <section class="section">
+        <h2>Tutorial 6: Resources and Prompts</h2>
+        <p>
+          Expose data as resources and reusable prompt templates alongside
+          your tools.
+        </p>
+
+        <div class="step">
+          <p><span class="step-num">1</span><strong>Register resources and prompts</strong></p>
+          <pre><code>return mcp::ServerPeer::builder()
+    .name("full-demo")
+    .version("1.0.0")
+    .stdio()
+
+    // Static resource
+    .resource("file:///data/config.json",
+              [] {
+                  return mcp::protocol::ResourceContents{
+                      .uri = "file:///data/config.json",
+                      .mime_type = "application/json",
+                      .text = R"({"debug": false})",
+                  };
+              })
+
+    // Dynamic resource with context
+    .resource("file:///data/session.txt",
+              [](std::string uri,
+                 const mcp::server::ResourceContext&amp; ctx) {
+                  return ctx.session_id + " @ " + uri;
+              })
+
+    // Resource template
+    .resource_template("file:///data/{path}",
+                       [] {
+                           return mcp::protocol::ResourceTemplate{
+                               .uri_template = "file:///data/{path}",
+                               .name = "Data files",
+                           };
+                       })
+
+    // Prompt with arguments
+    .prompt(mcp::protocol::Prompt{
+                .name = "summarize",
+                .description = "Summarize text",
+                .arguments = {mcp::protocol::PromptArgument{
+                    .name = "text",
+                    .description = "Text to summarize",
+                    .required = true,
+                }},
+            },
+            [](const mcp::server::PromptContext&amp; ctx) {
+                auto text = ctx.arguments.at("text").get&lt;std::string&gt;();
+                mcp::protocol::PromptsGetResult result;
+                result.messages.push_back(mcp::protocol::PromptMessage{
+                    .role = "user",
+                    .content = mcp::protocol::ContentBlock{
+                        .type = "text",
+                        .text = "Summarize: " + text,
+                    },
+                });
+                return result;
+            })
+
+    .run();</code></pre>
+        </div>
+      </section>
+
+      <section class="section">
+        <h2>Next Steps</h2>
+        <ul>
+          <li><a href="./concepts.html">Concepts</a> — understand Peer/Service, Transports, and Capabilities</li>
+          <li><a href="./cookbook.html">Cookbook</a> — quick copy-paste code for common tasks</li>
+          <li><a href="./auth.html">Auth</a> — full OAuth 2.1 / DPoP documentation</li>
+          <li><a href="./api/">API Reference</a> — generated symbol-level docs</li>
+        </ul>
+      </section>
+    </main>
+
+    <footer>
+      cxxmcp is a community C++ MCP SDK. It is not an official MCP SDK unless
+      accepted or listed by the MCP maintainers.
+    </footer>
+  </body>
+</html>

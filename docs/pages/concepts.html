@@ -1,0 +1,460 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Concepts | cxxmcp</title>
+    <meta
+      name="description"
+      content="Core concepts of the cxxmcp C++ SDK: Peer/Service architecture, transports, capabilities, and protocol models.">
+    <style>
+      :root {
+        color-scheme: light dark;
+        --bg: #f7f8fa;
+        --panel: #ffffff;
+        --text: #17202a;
+        --muted: #596579;
+        --line: #d9dee7;
+        --accent: #0f766e;
+        --accent-strong: #0b5f59;
+        --code: #eef3f5;
+      }
+
+      @media (prefers-color-scheme: dark) {
+        :root {
+          --bg: #101317;
+          --panel: #171b21;
+          --text: #edf2f7;
+          --muted: #aab4c3;
+          --line: #2a313a;
+          --accent: #2dd4bf;
+          --accent-strong: #5eead4;
+          --code: #20262e;
+        }
+      }
+
+      * { box-sizing: border-box; }
+
+      body {
+        margin: 0;
+        font-family:
+          Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont,
+          "Segoe UI", sans-serif;
+        line-height: 1.6;
+        color: var(--text);
+        background: var(--bg);
+      }
+
+      a {
+        color: var(--accent-strong);
+        text-decoration-thickness: 0.08em;
+        text-underline-offset: 0.18em;
+      }
+
+      header, main, footer {
+        width: min(960px, calc(100% - 32px));
+        margin: 0 auto;
+      }
+
+      header {
+        padding: 28px 0 18px;
+        display: flex;
+        justify-content: space-between;
+        gap: 16px;
+        align-items: center;
+      }
+
+      .brand { font-weight: 750; font-size: 1.05rem; letter-spacing: 0; }
+
+      nav { display: flex; flex-wrap: wrap; gap: 14px; font-size: 0.95rem; }
+
+      .hero {
+        padding: 46px 0 34px;
+        border-top: 1px solid var(--line);
+        border-bottom: 1px solid var(--line);
+      }
+
+      .eyebrow {
+        color: var(--accent-strong);
+        font-size: 0.9rem;
+        font-weight: 700;
+        text-transform: uppercase;
+        letter-spacing: 0;
+      }
+
+      h1 {
+        max-width: 820px;
+        margin: 12px 0 16px;
+        font-size: clamp(2.1rem, 5vw, 3.6rem);
+        line-height: 1.05;
+        letter-spacing: 0;
+      }
+
+      .lede {
+        max-width: 760px;
+        margin: 0;
+        color: var(--muted);
+        font-size: 1.12rem;
+      }
+
+      .section { padding: 30px 0 8px; }
+
+      .section h2 {
+        margin: 0 0 12px;
+        font-size: 1.35rem;
+        letter-spacing: 0;
+      }
+
+      .section h3 {
+        margin: 20px 0 8px;
+        font-size: 1.1rem;
+        letter-spacing: 0;
+      }
+
+      .section p, .section li { color: var(--muted); }
+
+      .grid {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 16px;
+        margin: 16px 0;
+      }
+
+      .card {
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        background: var(--panel);
+        padding: 20px;
+      }
+
+      .card h3 { margin: 0 0 8px; font-size: 1rem; }
+      .card p { margin: 0; }
+
+      pre {
+        overflow-x: auto;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        background: var(--code);
+        padding: 18px;
+      }
+
+      code {
+        font-family:
+          ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono",
+          monospace;
+        font-size: 0.95em;
+      }
+
+      table {
+        width: 100%;
+        border-collapse: collapse;
+        margin: 16px 0;
+      }
+
+      th, td {
+        text-align: left;
+        padding: 10px 14px;
+        border-bottom: 1px solid var(--line);
+      }
+
+      th { color: var(--text); font-weight: 650; }
+      td { color: var(--muted); }
+
+      footer {
+        padding: 24px 0 36px;
+        color: var(--muted);
+        border-top: 1px solid var(--line);
+        font-size: 0.95rem;
+        margin-top: 32px;
+      }
+
+      @media (max-width: 760px) {
+        header { align-items: flex-start; flex-direction: column; }
+        .hero { padding: 34px 0 28px; }
+        .grid { grid-template-columns: 1fr; }
+      }
+    </style>
+  </head>
+  <body>
+    <header>
+      <div class="brand">cxxmcp</div>
+      <nav aria-label="Primary">
+        <a href="./">Home</a>
+        <a href="./getting-started.html">Getting Started</a>
+        <a href="./tutorials.html">Tutorials</a>
+        <a href="./cookbook.html">Cookbook</a>
+        <a href="./transports.html">Transports</a>
+        <a href="./troubleshooting.html">Troubleshooting</a>
+        <a href="./auth.html">Auth</a>
+        <a href="./security.html">Security</a>
+        <a href="./stability.html">Stability</a>
+        <a href="./api/">API Reference</a>
+      </nav>
+    </header>
+
+    <main>
+      <section class="hero">
+        <div class="eyebrow">Concepts</div>
+        <h1>Understand the cxxmcp architecture.</h1>
+        <p class="lede">
+          The SDK is organized in layers: Protocol, Transport, Handler, Peer,
+          and Service. This page explains how they fit together.
+        </p>
+      </section>
+
+      <!-- Architecture Overview -->
+      <section class="section">
+        <h2>Layer Architecture</h2>
+        <p>
+          cxxmcp follows the RMCP-style role-aware design. Each layer has a
+          specific responsibility and a corresponding CMake target:
+        </p>
+        <table>
+          <tr>
+            <th>Layer</th>
+            <th>Target</th>
+            <th>Responsibility</th>
+          </tr>
+          <tr>
+            <td><code>protocol</code></td>
+            <td><code>cxxmcp::protocol</code></td>
+            <td>MCP data models, JSON-RPC serialization, reflection, schema</td>
+          </tr>
+          <tr>
+            <td><code>transport</code></td>
+            <td><code>cxxmcp::transport</code></td>
+            <td>Role-generic transport contracts (stdio, HTTP, custom)</td>
+          </tr>
+          <tr>
+            <td><code>handler</code></td>
+            <td><code>cxxmcp::handler</code></td>
+            <td>Client/server handler interfaces</td>
+          </tr>
+          <tr>
+            <td><code>peer</code></td>
+            <td><code>cxxmcp::peer</code></td>
+            <td>Role-aware execution boundary (<code>ServerPeer</code>, <code>ClientPeer</code>)</td>
+          </tr>
+          <tr>
+            <td><code>service</code></td>
+            <td><code>cxxmcp::service</code></td>
+            <td>Service lifecycle (start, stop, wait)</td>
+          </tr>
+          <tr>
+            <td><code>server</code></td>
+            <td><code>cxxmcp::server</code></td>
+            <td>Server SDK: registries, builders, auth providers</td>
+          </tr>
+          <tr>
+            <td><code>client</code></td>
+            <td><code>cxxmcp::client</code></td>
+            <td>Client SDK: connection, request helpers</td>
+          </tr>
+          <tr>
+            <td><code>auth</code></td>
+            <td><code>cxxmcp::auth</code></td>
+            <td>Optional OAuth 2.1 / DPoP contracts</td>
+          </tr>
+        </table>
+      </section>
+
+      <!-- Peer/Service -->
+      <section class="section">
+        <h2>Peer and Service</h2>
+        <p>
+          <strong>Peer</strong> is the execution boundary. It owns the server
+          or client state and routes incoming requests to registered handlers.
+          <strong>Service</strong> wraps a Peer with a transport and manages
+          the lifecycle (start, run, stop).
+        </p>
+        <div class="grid">
+          <article class="card">
+            <h3>ServerPeer</h3>
+            <p>
+              Owns tool/prompt/resource registries, auth provider, and request
+              dispatch. Built via <code>ServerPeer::builder()</code>.
+            </p>
+          </article>
+          <article class="card">
+            <h3>ClientPeer</h3>
+            <p>
+              Owns connection state, sends requests to a server, handles
+              notifications. Built via <code>ClientPeer::builder()</code>.
+            </p>
+          </article>
+        </div>
+        <pre><code>// Server lifecycle
+auto server = mcp::ServerPeer::builder()
+    .name("my-server").version("1.0.0")
+    .stdio()
+    .tool&lt;Json, Json&gt;("echo", handler)
+    .build();
+
+auto running = mcp::serve(std::move(*server));
+running->wait();  // blocks until shutdown
+
+// Client lifecycle
+auto client = mcp::ClientPeer::builder()
+    .streamable_http("http://localhost:3000/mcp")
+    .build();
+
+auto svc = mcp::serve(std::move(*client));
+svc->peer().initialize();
+svc->peer().call_tool("echo", Json{{"value", "hi"}});</code></pre>
+      </section>
+
+      <!-- Transports -->
+      <section class="section">
+        <h2>Transports</h2>
+        <p>
+          A transport moves JSON-RPC messages between client and server.
+          cxxmcp ships several built-in transports and lets you write custom
+          ones.
+        </p>
+        <table>
+          <tr>
+            <th>Transport</th>
+            <th>Builder Method</th>
+            <th>CMake Flag</th>
+            <th>Use Case</th>
+          </tr>
+          <tr>
+            <td>stdio</td>
+            <td><code>.stdio()</code></td>
+            <td>default</td>
+            <td>CLI tools, local subprocess</td>
+          </tr>
+          <tr>
+            <td>Process stdio</td>
+            <td><code>.process_stdio(cmd)</code></td>
+            <td>default</td>
+            <td>Launch a server process and talk to it</td>
+          </tr>
+          <tr>
+            <td>Streamable HTTP</td>
+            <td><code>.streamable_http(host, port, path)</code></td>
+            <td><code>CXXMCP_ENABLE_HTTP</code></td>
+            <td>Web services, remote access</td>
+          </tr>
+          <tr>
+            <td>Custom</td>
+            <td>implement <code>mcp::transport::Transport</code></td>
+            <td>—</td>
+            <td>WebSocket, Unix socket, etc.</td>
+          </tr>
+        </table>
+      </section>
+
+      <!-- Capabilities -->
+      <section class="section">
+        <h2>Capability Negotiation</h2>
+        <p>
+          During <code>initialize</code>, client and server exchange
+          capability declarations. This tells each side what the other
+          supports.
+        </p>
+        <pre><code>// Server declares capabilities via builder
+auto server = mcp::ServerPeer::builder()
+    .name("my-server")
+    .version("1.0.0")
+    .stdio()
+    .tool(...)         // enables tools capability
+    .prompt(...)       // enables prompts capability
+    .resource(...)     // enables resources capability
+    .build();
+
+// Client discovers capabilities after initialize
+auto&amp; caps = svc.peer().server_capabilities();
+if (caps.tools) {
+    auto tools = svc.peer().list_all_tools();
+    // ...
+}</code></pre>
+        <div class="grid">
+          <article class="card">
+            <h3>Server Capabilities</h3>
+            <p>
+              tools, resources, prompts, logging, completions, tasks,
+              experimental, extensions
+            </p>
+          </article>
+          <article class="card">
+            <h3>Client Capabilities</h3>
+            <p>
+              roots, sampling, elicitation, tasks, experimental, extensions
+            </p>
+          </article>
+        </div>
+      </section>
+
+      <!-- Protocol Model -->
+      <section class="section">
+        <h2>Protocol Model</h2>
+        <p>
+          All MCP messages are JSON-RPC 2.0. The SDK provides typed C++ structs
+          for every protocol object:
+        </p>
+        <ul>
+          <li><code>ToolDefinition</code>, <code>ToolResult</code></li>
+          <li><code>Prompt</code>, <code>PromptMessage</code>, <code>PromptsGetResult</code></li>
+          <li><code>Resource</code>, <code>ResourceContents</code>, <code>ResourceTemplate</code></li>
+          <li><code>ContentBlock</code> (text, image, audio, embedded resource)</li>
+          <li><code>JsonRpcRequest</code>, <code>JsonRpcResponse</code>, <code>JsonRpcNotification</code></li>
+        </ul>
+        <p>
+          Use <code>CXXMCP_REFLECT</code> on your own types to get automatic
+          JSON serialization and JSON Schema generation. See
+          <a href="./tutorials.html">Tutorials</a> for examples.
+        </p>
+      </section>
+
+      <!-- Reflection -->
+      <section class="section">
+        <h2>Reflection System</h2>
+        <p>
+          The reflection system gives you zero-boilerplate DTO serialization.
+          One macro replaces hand-written <code>to_json</code>/<code>from_json</code>
+          for every struct.
+        </p>
+        <pre><code>#include &lt;cxxmcp/protocol/reflect.hpp&gt;
+
+struct MyInput {
+    std::string name;
+    int count;
+    std::optional&lt;std::string&gt; tag;
+};
+
+namespace mcp::protocol {
+CXXMCP_REFLECT(MyInput, name, count, tag)
+}</code></pre>
+        <p>This gives you:</p>
+        <ul>
+          <li><code>reflect_to_json&lt;MyInput&gt;(value)</code> — serialize to JSON</li>
+          <li><code>reflect_from_json&lt;MyInput&gt;(json)</code> — deserialize from JSON</li>
+          <li><code>schema_for&lt;MyInput&gt;()</code> — auto-generated JSON Schema</li>
+          <li><code>has_reflect_v&lt;MyInput&gt;</code> — compile-time trait (<code>true</code>)</li>
+        </ul>
+        <p>
+          Supported field types: scalars, <code>std::string</code>,
+          <code>std::optional&lt;T&gt;</code>, <code>std::vector&lt;T&gt;</code>,
+          <code>std::variant</code>, <code>std::map</code>, nested reflected
+          types, and raw <code>Json</code>.
+        </p>
+      </section>
+
+      <section class="section">
+        <h2>Next Steps</h2>
+        <ul>
+          <li><a href="./tutorials.html">Tutorials</a> — build working examples step by step</li>
+          <li><a href="./cookbook.html">Cookbook</a> — quick code snippets for common tasks</li>
+          <li><a href="./getting-started.html">Getting Started</a> — install and first build</li>
+          <li><a href="./api/">API Reference</a> — generated symbol-level docs</li>
+        </ul>
+      </section>
+    </main>
+
+    <footer>
+      cxxmcp is a community C++ MCP SDK. It is not an official MCP SDK unless
+      accepted or listed by the MCP maintainers.
+    </footer>
+  </body>
+</html>

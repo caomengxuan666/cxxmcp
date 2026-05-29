@@ -1,0 +1,126 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Security | cxxmcp</title>
+    <meta name="description" content="Security policy and vulnerability reporting for cxxmcp.">
+    <style>
+      :root { color-scheme: light dark; --bg: #f7f8fa; --panel: #ffffff; --text: #17202a; --muted: #596579; --line: #d9dee7; --accent: #0f766e; --accent-strong: #0b5f59; --code: #eef3f5; }
+      @media (prefers-color-scheme: dark) { :root { --bg: #101317; --panel: #171b21; --text: #edf2f7; --muted: #aab4c3; --line: #2a313a; --accent: #2dd4bf; --accent-strong: #5eead4; --code: #20262e; } }
+      * { box-sizing: border-box; }
+      body { margin: 0; font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; line-height: 1.6; color: var(--text); background: var(--bg); }
+      a { color: var(--accent-strong); text-decoration-thickness: 0.08em; text-underline-offset: 0.18em; }
+      header, main, footer { width: min(960px, calc(100% - 32px)); margin: 0 auto; }
+      header { padding: 28px 0 18px; display: flex; justify-content: space-between; gap: 16px; align-items: center; }
+      .brand { font-weight: 750; font-size: 1.05rem; letter-spacing: 0; }
+      nav { display: flex; flex-wrap: wrap; gap: 14px; font-size: 0.95rem; }
+      .hero { padding: 46px 0 34px; border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); }
+      .eyebrow { color: var(--accent-strong); font-size: 0.9rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0; }
+      h1 { max-width: 820px; margin: 12px 0 16px; font-size: clamp(2.1rem, 5vw, 3.6rem); line-height: 1.05; letter-spacing: 0; }
+      .lede { max-width: 760px; margin: 0; color: var(--muted); font-size: 1.12rem; }
+      .section { padding: 30px 0 8px; }
+      .section h2 { margin: 0 0 12px; font-size: 1.35rem; letter-spacing: 0; }
+      .section p, .section li { color: var(--muted); }
+      .scope-list { list-style: none; padding: 0; }
+      .scope-list li { padding: 8px 0; border-bottom: 1px solid var(--line); }
+      .scope-list li:last-child { border-bottom: none; }
+      footer { padding: 24px 0 36px; color: var(--muted); border-top: 1px solid var(--line); font-size: 0.95rem; margin-top: 32px; }
+      @media (max-width: 760px) { header { align-items: flex-start; flex-direction: column; } .hero { padding: 34px 0 28px; } }
+    </style>
+  </head>
+  <body>
+    <header>
+      <div class="brand">cxxmcp</div>
+      <nav aria-label="Primary">
+        <a href="./">Home</a>
+        <a href="./getting-started.html">Getting Started</a>
+        <a href="./tutorials.html">Tutorials</a>
+        <a href="./concepts.html">Concepts</a>
+        <a href="./cookbook.html">Cookbook</a>
+        <a href="./transports.html">Transports</a>
+        <a href="./troubleshooting.html">Troubleshooting</a>
+        <a href="./auth.html">Auth</a>
+        <a href="./security.html">Security</a>
+        <a href="./stability.html">Stability</a>
+        <a href="./api/">API Reference</a>
+      </nav>
+    </header>
+
+    <main>
+      <section class="hero">
+        <div class="eyebrow">Security</div>
+        <h1>Report vulnerabilities responsibly.</h1>
+        <p class="lede">
+          cxxmcp takes security seriously. This page explains how to report
+          issues and what is in scope.
+        </p>
+      </section>
+
+      <section class="section">
+        <h2>Supported Versions</h2>
+        <p>Security fixes target the latest <code>master</code> branch and any active release candidate branch. Stable release-line support will be listed in release notes once cxxmcp declares a stable minor line.</p>
+      </section>
+
+      <section class="section">
+        <h2>Reporting a Vulnerability</h2>
+        <p>
+          Use <a href="https://github.com/caomengxuan666/cxxmcp/security/advisories">GitHub private vulnerability reporting</a> if it is enabled for the repository. If private reporting is not available, contact the maintainer through the <a href="https://github.com/caomengxuan666">GitHub profile</a> and request a private channel.
+        </p>
+        <p><strong>Do not</strong> open a public issue with exploit details, credentials, tokens, private URLs, or proof-of-concept payloads.</p>
+
+        <h3>What to Include</h3>
+        <ul>
+          <li>Affected commit, tag, or package version</li>
+          <li>Platform and compiler</li>
+          <li>Affected transport or SDK surface</li>
+          <li>Minimal reproduction steps</li>
+          <li>Expected impact</li>
+          <li>Whether the issue is already public</li>
+        </ul>
+      </section>
+
+      <section class="section">
+        <h2>Scope</h2>
+        <p>Security reports are appropriate for:</p>
+        <ul class="scope-list">
+          <li><strong>Parser crashes</strong> — JSON-RPC or HTTP parsing that crashes the process</li>
+          <li><strong>Request smuggling</strong> — malformed requests that bypass validation</li>
+          <li><strong>Transport/session isolation failures</strong> — cross-session data leaks</li>
+          <li><strong>Unsafe process execution</strong> — command injection in process stdio transport</li>
+          <li><strong>Credential leaks</strong> — tokens, keys, or secrets exposed in logs or responses</li>
+          <li><strong>Auth bypasses</strong> — requests that skip authentication when required</li>
+          <li><strong>Denial-of-service vectors</strong> — requests that exhaust memory, CPU, or file descriptors</li>
+          <li><strong>Dependency vulnerabilities</strong> — CVEs in bundled dependencies that affect the SDK package</li>
+        </ul>
+      </section>
+
+      <section class="section">
+        <h2>Process</h2>
+        <p>The project will:</p>
+        <ul>
+          <li>Acknowledge valid reports</li>
+          <li>Coordinate a fix with the reporter</li>
+          <li>Publish release notes or advisories when a public release is affected</li>
+          <li>Credit the reporter (unless they prefer anonymity)</li>
+        </ul>
+      </section>
+
+      <section class="section">
+        <h2>Security-Related Design Decisions</h2>
+        <ul>
+          <li>Auth is opt-in (<code>CXXMCP_ENABLE_AUTH=ON</code>) — no auth code runs unless you enable it</li>
+          <li>OpenSSL is not vendored — resolved through system package managers or vcpkg</li>
+          <li>Process stdio transport validates response IDs to prevent request/response mismatch</li>
+          <li>HTTP transport validates <code>Mcp-Method</code>/<code>Mcp-Name</code> headers when present (SEP-2243)</li>
+          <li>Bearer tokens are passed via HTTP headers, never in URL query parameters</li>
+        </ul>
+      </section>
+    </main>
+
+    <footer>
+      cxxmcp is a community C++ MCP SDK. It is not an official MCP SDK unless
+      accepted or listed by the MCP maintainers.
+    </footer>
+  </body>
+</html>
