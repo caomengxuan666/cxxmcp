@@ -6,119 +6,17 @@
 [![Pages](https://github.com/caomengxuan666/cxxmcp/actions/workflows/pages.yml/badge.svg)](https://caomengxuan666.github.io/cxxmcp/)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![MCP](https://img.shields.io/badge/protocol-Model%20Context%20Protocol-111827.svg)](https://modelcontextprotocol.io/)
-[![SDK](https://img.shields.io/badge/package-C%2B%2B%20SDK-0F766E.svg)](#快速安装)
 
-`cxxmcp` 是面向 [Model Context Protocol](https://modelcontextprotocol.io/)
-client 和 server 的现代 C++17 SDK，适合直接嵌入原生 C++ 应用。
-
-你可以用它把本地工具暴露为 MCP server，连接已有 MCP server，或者在自己的
-client/server 进程里接入 typed MCP protocol 能力，而不需要采用额外托管层。
+生产就绪的 C++17 [Model Context Protocol](https://modelcontextprotocol.io/) SDK —— 直接在原生 C++ 应用中嵌入 MCP server 和 client，完整覆盖协议能力，通过跨 SDK conformance 验证。
 
 English version: [README.md](README.md)
 
-## 从这里开始
-
-| 我想要... | 使用 |
-|---|---|
-| 构建带 typed tools 的 MCP server | `cxxmcp::server` 和 `mcp::ServerPeer` |
-| 连接 MCP server | `cxxmcp::client` 和 `mcp::ClientPeer` |
-| 复用协议 DTO 或 JSON-RPC helper | `cxxmcp::protocol` |
-| 引入完整 SDK surface | `cxxmcp::sdk` |
-
-核心 SDK 表面保持稳定、窄、可打包：`protocol`、`transport`、`handler`、
-`peer`、`service`、`client` 和 `server` 是主要库层。工具层和应用托管层保持在
-core SDK contract 之外。
-
-## 目录
-
-- [为什么选择 cxxmcp](#为什么选择-cxxmcp)
-- [快速安装](#快速安装)
-- [快速开始](#快速开始)
-- [能力快照](#能力快照)
-- [SDK Map](#sdk-map)
-- [质量信号](#质量信号)
-- [作为库使用](#作为库使用)
-- [从源码构建](#从源码构建)
-- [Package Targets](#package-targets)
-- [协议边界](#协议边界)
-- [能力分类](#能力分类)
-- [HTTP Transport 策略](#http-transport-策略)
-- [兼容性契约](#兼容性契约)
-- [Examples](#examples)
-- [Release Evidence](#release-evidence)
-- [文档](#文档)
-- [项目状态](#项目状态)
-
-## 为什么选择 cxxmcp
-
-- 普通 CMake SDK 体验：`find_package(cxxmcp CONFIG REQUIRED)`
-- C++17 public SDK targets 和 typed MCP 协议模型
-- 可嵌入的 client / server SDK，适合真实 C++ 应用集成
-- RMCP 风格的 `Peer`、`Service` 和 handler boundary
-- 支持 stdio、process stdio、Streamable HTTP，以及 legacy SSE 兼容路径
-- 覆盖 tool、prompt、resource、completion、elicitation、sampling、task、
-  progress 和 cancellation 等主要 MCP surface
-- 保留 raw JSON-RPC escape hatch，方便处理 vendor-specific 或未来 MCP 行为
-- 使用 package-smoke 和跨 SDK interoperability 测试作为 release gate
-
-## 快速安装
-
-如果 cxxmcp 已经安装到 CMake prefix，下游项目按普通 SDK 方式消费：
-
-```cmake
-find_package(cxxmcp CONFIG REQUIRED)
-
-add_executable(my_server server.cpp)
-target_link_libraries(my_server PRIVATE cxxmcp::server)
-
-add_executable(my_client client.cpp)
-target_link_libraries(my_client PRIVATE cxxmcp::client)
-```
-
-从当前 checkout 构建并安装本地 SDK package：
-
-```powershell
-cmake -S . -B build -DCXXMCP_BUILD_CLIENT=ON -DCXXMCP_BUILD_SERVER=ON
-cmake --build build --config Release
-cmake --install build --config Release --prefix out/install/cxxmcp
-```
-
-Public SDK headers 和 package targets 面向 C++17。仓库内 examples、tests 和
-documentation checks 可能需要 C++20。
-
-包管理器支持先从 SDK-only 契约开始：
-
-- Conan 2 recipe：`conanfile.py`
-- vcpkg overlay port：`packaging/vcpkg/ports/cxxmcp`
-- xmake-repo recipe 草案：`packaging/xmake/packages/c/cxxmcp/xmake.lua`
-- FetchContent / CPM.cmake 片段：
-  [包消费方式](docs/package_consumption_zh.md)
-
-这些路径只构建本仓库的 C++17 SDK targets。当前 vcpkg port 是用于本仓库 checkout
-的 overlay port：
-
-```powershell
-vcpkg install cxxmcp --overlay-ports=C:\path\to\MCPServer.cpp\packaging\vcpkg\ports
-```
-
-manifest-mode 项目可以从
-`packaging/vcpkg/vcpkg-configuration.overlay-example.json` 开始，并锁定自己的
-vcpkg `builtin-baseline`。cxxmcp 目前不在 curated registry；未来 registry port
-需要 release tag、SHA512 source archive hash、由 triplet 控制 linkage，并继续保持
-SDK-only dependency contract。
-
 ## 快速开始
 
-先按你要构建的方向链接普通 CMake target：
-
 ```cmake
 find_package(cxxmcp CONFIG REQUIRED)
-
-add_executable(my_mcp_server server.cpp)
-target_link_libraries(my_mcp_server PRIVATE cxxmcp::server)
+target_link_libraries(my_server PRIVATE cxxmcp::server)
 ```
-
-然后创建 peer，注册 typed handler，并通过 transport 对外服务：
 
 ```cpp
 #include <cxxmcp/peer.hpp>
@@ -137,153 +35,8 @@ int main() {
 }
 ```
 
-Client 代码和更底层的 transport 示例见
-[完整 Peer/Service 示例](#完整-peerservice-示例)。
-
-## 能力快照
-
-| 领域 | 当前状态 |
-|---|---|
-| Protocol / JSON-RPC | Typed models、序列化 helper、initialize version 校验、raw request/notification escape hatch |
-| Client SDK | HTTP、stdio、process stdio、request handles、typed async helpers、roots、sampling、elicitation、tasks |
-| Server SDK | Registry、typed tool helper、prompt/resource handler、task-aware tool call、notifications |
-| Peer/service boundary | RMCP-like role-aware `Peer<Role>` 和 `Service<Role>` public shape |
-| Transports | stdio、process stdio、Streamable HTTP、legacy SSE 兼容路径 |
-| Packaging | 导出的 CMake targets、install tree 支持、package-smoke fixture |
-
-## SDK Map
-
-```mermaid
-flowchart TD
-    app[Application code]
-    peer[Peer / Service]
-    sdk[Client SDK / Server SDK]
-    core[Protocol / Transport / Handler]
-    io[stdio / process stdio / Streamable HTTP / SSE compatibility]
-    app --> peer
-    peer --> sdk
-    sdk --> core
-    core --> io
-```
-
-## 质量信号
-
-- Release gates 覆盖 public headers、package-smoke 消费、transports、
-  SDK 行为，以及 RMCP / TypeScript / Python 互操作。
-- Release candidate 应为精确 commit 发布 workflow artifacts、Doxygen API
-  docs、source archive、checksums 和 release evidence。
-- 兼容性预期记录在 [Compatibility policy](docs/compatibility_policy.md) 和
-  [Release gates](docs/release_gates.md)。
-- official SDK candidate 路径记录在
-  [Official SDK candidate process](docs/official_sdk_candidate_process.md)。
-
-项目状态：`cxxmcp` 是正在准备 official SDK candidate 证据的社区 C++ MCP
-SDK。除非被 MCP maintainers 接受或列入官方 SDK 页面，否则它不是官方 MCP SDK。
-
-## 作为库使用
-
-安装后的 CMake 使用方式应该像普通 SDK：
-
-```cmake
-find_package(cxxmcp CONFIG REQUIRED)
-
-add_executable(my_client main.cpp)
-target_link_libraries(my_client PRIVATE cxxmcp::client)
-
-add_executable(my_server server.cpp)
-target_link_libraries(my_server PRIVATE cxxmcp::server)
-```
-
-只有在希望一个 target 同时引入 public protocol、client 和 server SDK 层时，
-才使用聚合目标 `cxxmcp::sdk`。
-
-项目名、包名、安装后的 include 路径和 CMake target 前缀使用 `cxxmcp`。
-C++ 命名空间有意保持为 `mcp`，并属于稳定源码 API；稳定大版本内不应把
-命名空间重命名当成普通清理项。
-
-常用公共头文件：
-
 ```cpp
-#include <cxxmcp/protocol.hpp>
-#include <cxxmcp/request.hpp>
-#include <cxxmcp/transport.hpp>
-#include <cxxmcp/handler.hpp>
-#include <cxxmcp/peer.hpp>
-#include <cxxmcp/service.hpp>
-#include <cxxmcp/client.hpp>
-#include <cxxmcp/server.hpp>
-#include <cxxmcp/sdk.hpp>
-```
-
-## 从源码构建
-
-要求：
-
-- CMake 3.23+
-- SDK target 需要 C++17 compiler
-- 构建 examples 或 tests 时需要 C++20 compiler
-
-默认 SDK 构建：
-
-```powershell
-cmake -S . -B build
-cmake --build build
-```
-
-显式构建 client / server SDK：
-
-```powershell
-cmake -S . -B build-sdk -DCXXMCP_BUILD_CLIENT=ON -DCXXMCP_BUILD_SERVER=ON
-cmake --build build-sdk
-```
-
-构建 examples：
-
-```powershell
-cmake --preset examples
-cmake --build --preset examples
-ctest --preset examples
-```
-
-构建并运行完整 smoke 测试：
-
-```powershell
-cmake -S . -B build-smoke -DCXXMCP_BUILD_SDK=ON -DCXXMCP_BUILD_CLIENT=ON -DCXXMCP_BUILD_SERVER=ON -DCXXMCP_BUILD_TESTS=ON
-cmake --build build-smoke --config Debug
-ctest --test-dir build-smoke -C Debug --output-on-failure
-```
-
-安装到本地 prefix：
-
-```powershell
-cmake --install build-smoke --config Debug --prefix out/install/cxxmcp
-```
-
-## 完整 Peer/Service 示例
-
-### 首选 Server Peer/Service
-
-```cpp
-#include <cxxmcp/peer.hpp>
-#include <cxxmcp/run.hpp>
-
-int main() {
-    return mcp::ServerPeer::builder()
-        .name("demo-server")
-        .version("1.0.0")
-        .stdio()
-        .tool(mcp::server::tool<mcp::protocol::Json, mcp::protocol::Json>("echo")
-            .description("Echo the incoming payload")
-            .handler([](const mcp::protocol::Json& input) {
-                return mcp::protocol::Json{{"echo", input}};
-            }))
-        .run();
-}
-```
-
-### 首选 Client Peer/Service
-
-```cpp
+// Client 端
 #include <cxxmcp/peer.hpp>
 #include <cxxmcp/run.hpp>
 
@@ -299,260 +52,98 @@ int main() {
 }
 ```
 
-### 兼容 App Builder（已弃用）
+## 能力覆盖
 
-`server::App::builder()` 已弃用，请使用 `ServerPeer::builder()` 配合
-`cxxmcp/run.hpp` 替代——同样的 `.tool<Args, Result>(name, handler)` 语法，
-一行 `.run()` 启动：
+| 领域 | 状态 |
+|---|---|
+| Protocol / JSON-RPC | Typed models、序列化、initialize 校验、raw escape hatch |
+| Server SDK | tool/prompt/resource registry、typed handler、task-aware call、notification |
+| Client SDK | HTTP、stdio、process stdio、async helper、roots、sampling、elicitation、tasks |
+| Transports | stdio、process stdio、Streamable HTTP（有状态 session）、legacy SSE 兼容 |
+| Packaging | CMake `find_package`、Conan 2、vcpkg overlay、FetchContent / CPM |
+| Peer/Service boundary | RMCP 风格 role-aware `Peer<Role>` 和 `Service<Role>` |
 
-```cpp
-#include <string>
+**协议覆盖：** tool、prompt、resource、resource template、completion、logging、roots、sampling、elicitation、task lifecycle、progress、cancellation，以及用于 vendor extension 的 raw JSON-RPC escape hatch。
 
-#include <cxxmcp/peer.hpp>
-#include <cxxmcp/run.hpp>
+**Conformance：** client 最新套件 428/436 通过（OpenSSL auth），server 最新套件 108/109 通过。基于官方 `modelcontextprotocol/conformance` runner 验证。完整结果见 [conformance evidence](docs/conformance_evidence.md)。
 
-int main() {
-    return mcp::ServerPeer::builder()
-        .name("demo-server")
-        .version("1.0.0")
-        .instructions("Expose local tools over MCP.")
-        .stdio()
-        .tool<std::string, std::string>("echo", [](const std::string& text) {
-            return text;
-        })
-        .run();
-}
+## 安装
+
+```cmake
+find_package(cxxmcp CONFIG REQUIRED)
+
+# Server
+target_link_libraries(my_server PRIVATE cxxmcp::server)
+# Client
+target_link_libraries(my_client PRIVATE cxxmcp::client)
+# 完整 SDK
+target_link_libraries(my_app PRIVATE cxxmcp::sdk)
 ```
+
+从源码构建：
+
+```powershell
+cmake -S . -B build -DCXXMCP_BUILD_CLIENT=ON -DCXXMCP_BUILD_SERVER=ON
+cmake --build build --config Release
+cmake --install build --config Release --prefix out/install/cxxmcp
+```
+
+包管理器：`conanfile.py`（Conan 2）、`packaging/vcpkg/ports/cxxmcp`（vcpkg overlay）、`packaging/xmake/`（xmake）。详见 [package consumption](docs/package_consumption_zh.md)。
+
+## CMake Options
+
+| Option | Default | 说明 |
+|---|---:|---|
+| `CXXMCP_BUILD_SDK` | `ON` | 构建聚合 SDK 层（protocol + client + server） |
+| `CXXMCP_BUILD_CLIENT` | `OFF` | 构建 MCP client library |
+| `CXXMCP_BUILD_SERVER` | `OFF` | 构建 MCP server library |
+| `CXXMCP_BUILD_EXAMPLES` | `OFF` | 构建示例 |
+| `CXXMCP_BUILD_TESTS` | `BUILD_TESTING` | 构建测试 |
+| `CXXMCP_ENABLE_AUTH` | `OFF` | 构建可选 OAuth 2.1 / DPoP auth target |
 
 ## Package Targets
 
 | Target | 用途 |
 |---|---|
 | `cxxmcp::protocol` | MCP 协议模型和 JSON-RPC 序列化 |
-| `cxxmcp::transport` | Role-generic transport contract 和共享 transport helper |
-| `cxxmcp::handler` | Client/server handler interface 与 aggregate |
-| `cxxmcp::peer` | Role-aware client/server execution boundary |
-| `cxxmcp::service` | 围绕 peer 的 service lifecycle boundary |
+| `cxxmcp::transport` | Role-generic transport contract |
+| `cxxmcp::handler` | Client/server handler interface |
+| `cxxmcp::peer` | Role-aware execution boundary |
+| `cxxmcp::service` | Service lifecycle boundary |
 | `cxxmcp::client` | 可嵌入 MCP client SDK |
 | `cxxmcp::server` | 可嵌入 MCP server SDK |
-| `cxxmcp::auth` | `CXXMCP_ENABLE_AUTH=ON` 时启用的可选 OAuth 2.1 / DPoP contract scaffold |
+| `cxxmcp::auth` | 可选 OAuth 2.1 / DPoP contract（`CXXMCP_ENABLE_AUTH=ON`） |
 | `cxxmcp::sdk` | 聚合 public SDK target |
-| `cxxmcp::plugin_sdk` | 可选 plugin authoring surface |
-| `cxxmcp::adapters` | 可选 adapter helpers |
 
-Gateway/runtime/CLI tooling 已经在本 SDK 仓库之外。仓库内的 `plugin_sdk` 和
-`adapters` 是可选 SDK-adjacent surface，不是首选 SDK 入口。
+## 为什么选择 cxxmcp
 
-## 协议边界
-
-cxxmcp 遵循 MCP JSON-RPC wire shape，不定义自研 MCP dialect，也不引入替代
-wire format。常规应用代码应优先使用 tool、prompt、resource、completion、
-roots、sampling、elicitation、task、progress 和 cancellation 的 typed helper。
-raw JSON-RPC request / notification API 会保留，用于 vendor-specific method、
-未来协议兼容和 conformance test。特殊宿主集成应通过 public transport
-contract 上的兼容 adapter 完成，而不是扩展协议本身。
-
-task 和 elicitation 已作为 typed SDK capability 暴露，但它们仍然是可选能力族。
-只要求 core MCP parity 的 milestone 不应强制应用实现 task 或 elicitation handler，
-除非该 milestone 明确覆盖这些能力。capability negotiation 和 raw JSON-RPC escape
-hatch 是部分实现或未来能力的兼容路径。server-side task 和 elicitation lifecycle 语义记录在
-[Capability lifecycles](docs/capability_lifecycles.md)，request
-timeout、cancellation、progress 和 shutdown 语义记录在
-[Request lifecycle](docs/request_lifecycle.md)。
-
-## 能力分类
-
-cxxmcp 把 protocol capability 当成协商后的契约，而不是全局功能承诺。
-一旦 `initialize` 的 capability 已知，typed helper 会在本地返回 protocol error，
-而不是继续发送对端没有声明支持的方法。raw JSON-RPC API 仍然保留，用于 vendor
-extension 和未来协议字段。
-
-| 分类 | 能力族 | SDK 规则 |
-|---|---|---|
-| Core protocol | initialize、initialized、ping、JSON-RPC error、raw request/notification escape hatch、cancellation、progress、typed model / serialization layer | 始终属于 SDK contract。它们不是可选产品功能，但具体 transport 仍可能返回 transport-level failure。 |
-| Core advertised server features | tools、prompts、resources、resource templates、completion、logging、resource subscribe/unsubscribe | typed helper 是稳定 public API；依赖 server capability 的 helper 会在 initialize 后按协商结果 gate。 |
-| Core advertised client features | roots、sampling、elicitation、cancellation/progress callbacks | typed handler/helper 是稳定 public API；server-side `ClientPeer` helper 会按当前 client session 的 capability gate。 |
-| Optional task lifecycle | task-aware tool call、task list/get/cancel/result、task status notification、支持 task 的 feature request parameters | typed protocol model 和 helper 稳定存在，但应用只有在声明或需要 task support 时才需要实现。 |
-| Optional advanced interaction | elicitation form/URL flow，以及 basic request handling 之外的 sampling 细节 | typed helper 稳定存在，但实现应保持 capability-gated，并记录用户可见行为。 |
-| Experimental or vendor extension | `experimental`、`extensions`、unknown JSON member、vendor-specific method | 已建模处会保留 raw JSON；在被提升为明确 capability family 前，语义不承诺为稳定 SDK 行为。 |
-
-## 协议版本策略
-
-cxxmcp 跟随已发布的 MCP protocol snapshot，不自定义协议版本。SDK 只声明并校验
-`protocol::supported_protocol_versions()` 返回的版本。
-
-新增 MCP snapshot 时，cxxmcp 至少在一个 minor release 内继续保留前一个已支持
-snapshot，给 client 和 server 留出重叠升级窗口。移除某个 snapshot 属于 breaking
-compatibility event，必须写入 release notes 和 public compatibility checklist。
-
-不支持的版本会快速返回 protocol 或 transport validation error；SDK 不会静默降级到
-未声明的 dialect。HTTP 在 initialize 之后还要求请求携带
-`MCP-Protocol-Version`，initialize 请求中 header/body 版本不一致会被拒绝。
-
-## HTTP Transport 策略
-
-Streamable HTTP 是默认 HTTP 路径。server transport 当前采用 stateful mode：
-每次成功 `initialize` 都会创建独立的 `Mcp-Session-Id`，后续 POST、GET/SSE
-和 DELETE 请求都必须携带该 session id 以及 `MCP-Protocol-Version`。未知或已
-删除的 session 会被当作 stale session 拒绝。
-
-`server::HttpTransport` 当前不声明 stateless server mode。使用本 SDK 暴露
-Streamable HTTP server 时，应采用上面的 stateful session contract。client
-transport 仍然可以消费不返回 `Mcp-Session-Id` 的简单 HTTP MCP endpoint；这种
-情况下它不会发送 session header，并把每个 POST response 作为独立响应处理。
-
-Server-to-client request、notification、client capabilities、replay window
-和 pending response 都按 session 隔离。`SessionContext::client()` 返回的
-`ClientPeer` 会绑定当前 session，因此 roots、sampling、elicitation、
-cancellation 和 progress notification 会路由到正确的 HTTP client。同一个
-session 只接受一条实时 SSE stream；携带 `Last-Event-ID` 的 reconnect 可以在
-旧 stream 收尾时 replay 已保留事件。
-
-HTTP auth 以 SDK contract 暴露，而不是绑定某个内置 identity provider。
-Server 应用可以安装 `server::AuthProvider`；Streamable HTTP transport 会把
-request headers 传入 `SessionContext`，保存认证成功后的 `AuthIdentity`，并把
-auth-category failure 映射为 `401 Unauthorized`，同时使用
-`HttpTransportOptions::auth_challenge` 作为 `WWW-Authenticate` 值。Client
-transport 可以通过 `StreamableHttpClientTransportOptions` 设置固定 headers
-和 bearer token；bearer helper 会应用到 POST、SSE GET 和 session DELETE，
-除非 custom headers 中已经显式提供 `Authorization`。更完整的 OAuth 2.1 /
-DPoP 路线记录在 [Auth design](docs/auth_design.md)。
-
-Legacy SSE 只作为兼容路径保留。新代码应使用 Streamable HTTP 的
-POST/GET/DELETE 行为，把 raw SSE endpoint 当作 adapter 问题，而不是新的 SDK
-协议。
-
-当前 `cpp-httplib` backend 的保留依据和替换触发条件记录在
-`docs/compatibility_policy.md#http-transport-backend-evidence`。
-
-## CMake Options
-
-| Option | Default | Description |
-|---|---:|---|
-| `CXXMCP_BUILD_SDK` | `ON` | 构建聚合 public SDK 层 |
-| `CXXMCP_BUILD_PROTOCOL` | `ON` | 构建 MCP protocol library |
-| `CXXMCP_BUILD_CLIENT` | `OFF` | 构建 MCP client library |
-| `CXXMCP_BUILD_SERVER` | `OFF` | 构建 MCP server library |
-| `CXXMCP_BUILD_EXAMPLES` | `OFF` | 构建 example executables |
-| `CXXMCP_BUILD_TESTS` | `BUILD_TESTING` | 构建已启用层的测试 |
-| `CXXMCP_BUILD_DOCS` | `OFF` | 构建 Doxygen API 文档 |
-| `CXXMCP_ENABLE_AUTH` | `OFF` | 构建可选 OAuth 2.1 / DPoP auth contract target |
-
-`CXXMCP_BUILD_SDK` 会启用 protocol、client 和 server 层。
-
-## Async Request Executor
-
-Async request helper 使用一个进程级 bounded worker pool。默认是 4 个 worker、
-队列大小 64，面向本地 stdio / process-stdio MCP workload。远程 HTTP
-或高并发应用可以在第一次 async request 之前配置它：
-
-```cpp
-mcp::configure_request_executor(
-    mcp::RequestExecutorOptions{.worker_count = 8, .max_queue_size = 256});
-```
-
-executor 初始化之后会拒绝再次配置，以保持 in-flight request 语义稳定。
-
-## 兼容性契约
-
-- Public SDK headers 和 package targets 默认以 C++17 编译。下游可以通过
-  `CXXMCP_SDK_CXX_STANDARD` 提高语言标准，但公共头文件不能依赖更高标准。
-- Release compiler matrix 是 Windows/MSVC、Linux/GCC、Linux/Clang 和
-  macOS/AppleClang。某个 release 只能声明已经通过该 release public-header、
-  package-smoke 和 conformance gates 的矩阵项。
-- MinGW UCRT64 GCC 和 MinGW CLANG64 Clang 只是 scheduled
-  `compiler-compat` workflow 里的 provisional best-effort compatibility
-  evidence；在这些 jobs 仍为 `continue-on-error` 时，它们不是
-  release-supported targets。
-- Public include path 固定在 `cxxmcp/...` 下；公共 targets 是
-  `cxxmcp::protocol`、`cxxmcp::transport`、`cxxmcp::handler`、
-  `cxxmcp::peer`、`cxxmcp::service`、`cxxmcp::client`、
-  `cxxmcp::server` 和 `cxxmcp::sdk`。
-- 源码兼容遵循语义化版本。公共 API 改名必须先添加新名字，保留旧 alias，并用
-  `CXXMCP_DEPRECATED("message")` 标记，写清迁移方式，只能在下一个 major 移除。
-- 在 cxxmcp 默认发布静态库期间，ABI 稳定性明确不承诺。以后如果把 shared
-  library 作为稳定发布物，必须先定义 ABI policy。
-- Release review 必须包含 public header diff、独立 public-header compile
-  tests、安装树 `package_smoke`，以及该 release 可用的 conformance matrix。
-- 完整兼容性策略记录在 [Compatibility policy](docs/compatibility_policy.md)。
-  Release-blocking tests、labels，以及支持的 compiler/generator/runtime
-  matrix 记录在 [Release gates](docs/release_gates.md)。
+- 标准 CMake SDK 体验 —— `find_package` 即用
+- C++17 public API，除标准库外无运行时依赖
+- 完整 MCP 协议覆盖，typed helper 自动按 capability gate
+- 基于官方 runner 的跨 SDK conformance 验证
+- RMCP 风格 Peer/Service 架构，为嵌入场景设计
+- 开箱支持 stdio、process stdio 和 Streamable HTTP transport
 
 ## Examples
 
-源码树内的 `examples` preset 会构建紧凑的 SDK 入口：
+源码树内示例覆盖 server/client peer、auth、tasks、elicitation 和 transport adapter。运行：
 
-- 首选 Peer/Service 示例：`cxx17_consumer`、`auth_bearer_http`、
-  `server_stdio_peer`、`server_peer`、`client_peer`、`process_stdio_client`、
-  `timeout_cancellation`、`elicitation_client`、`stdio_server`、
-  `typed_stdio_server`
-- 聚焦能力示例：`handler_contracts`、`task_async_client_server`、
-  `streamable_http_client`
-- 兼容和低层示例：`client_loopback`
-`ctest --preset examples` 只运行自包含的 smoke examples。长驻 stdio server
-和需要外部服务的 Streamable HTTP sample 只做构建检查，不作为独立 CTest case
-直接运行。
+```powershell
+cmake --preset examples && cmake --build --preset examples && ctest --preset examples
+```
 
-示例分类维护在 `docs/examples.md`。
-
-独立的
-[cxxmcp-examples](https://github.com/caomengxuan666/cxxmcp-examples)
-仓库是下游应用形态的验证套件。它通过普通外部 CMake 项目消费 SDK，覆盖比源码树内
-compact samples 更完整的高级 surface：direct Streamable HTTP 和 legacy SSE、
-process stdio、自定义 transport、transport adapter、async request handle、
-cursor pagination、subscription、server-to-client callback、HTTP auth-lite、
-task/cancellation，以及 plugin/adapters。
-
-## 质量门槛
-
-仓库把 SDK 级质量检查放在源码树里：
-
-- protocol、client/server、transport、SDK、public target tests
-- 安装后消费 CMake target 的 package-smoke fixture
-- 本地 RMCP conformance coverage
-- examples build preset
-- formatting、cpplint、clang-tidy、Doxygen 和 release-evidence scripts
-
-当前标准化工作统一记录在 [Fact-standard TODO](todo.md)。
-
-## Release Evidence
-
-某个 release 只能声明已经在该 release commit 通过 release-blocking 检查的
-compiler、generator、runtime-library 和 platform 组合。Release evidence package
-应包含：
-
-- `cxxmcp-release-gates-*` workflow artifacts，包含 CTest logs 和 JUnit output
-- `cxxmcp-doxygen-html` API 文档
-- `cxxmcp-source` source archive 和 `SHA256SUMS.txt`
-- `cxxmcp-release-evidence`，包含 README、changelog、compatibility policy、
-  release gates、checklist、notes template、TODO 和 examples
-
-互操作证据由 RMCP conformance coverage，以及 RMCP、TypeScript SDK、Python SDK
-client 的 process-stdio fixtures 支撑。
+完整列表见 [examples.md](docs/examples.md)。独立仓库 [cxxmcp-examples](https://github.com/caomengxuan666/cxxmcp-examples) 通过外部 CMake 项目消费 SDK，覆盖更多高级场景。
 
 ## 文档
 
-- [GitHub Pages 文档站](https://caomengxuan666.github.io/cxxmcp/)
-- [Fact-standard TODO](todo.md)
-- [Contributing](CONTRIBUTING.md)
-- [Security policy](SECURITY.md)
-- [Compatibility policy](docs/compatibility_policy.md)
-- [Dependency and reference policy](docs/dependency_policy.md)
-- External gateway boundary：`docs/runtime_gateway.md`
-- [Protocol model audit](docs/protocol_model_audit.md)
-- [External consumer template](templates/external_consumer)
-- [Release process](docs/release_process.md)
-- [Release gates](docs/release_gates.md)
-- [Release candidate checklist](docs/release_candidate_checklist.md)
-- [Release notes template](docs/release_notes_template.md)
-- [Official SDK candidate process](docs/official_sdk_candidate_process.md)
-- [Request lifecycle](docs/request_lifecycle.md)
-- [更新日志](CHANGELOG.md)
+- [GitHub Pages](https://caomengxuan666.github.io/cxxmcp/) — API 参考
+- [Conformance evidence](docs/conformance_evidence.md) — 测试结果和已知例外
+- [Compatibility policy](docs/compatibility_policy.md) — 版本策略、编译器矩阵、ABI
+- [Release gates](docs/release_gates.md) — release-blocking 检查
+- [Auth design](docs/auth_design.md) — OAuth 2.1 / DPoP 方向
+- [Request lifecycle](docs/request_lifecycle.md) — 超时、取消、进度、关闭
+- [Contributing](CONTRIBUTING.md) | [Security](SECURITY.md) | [Changelog](CHANGELOG.md)
 
 ## 项目状态
 
-`cxxmcp` 已经是具备 RMCP-like public architecture 的 MCP C++ SDK，并且有很强
-的标准 SDK 潜力。SDK-first 形态、Peer/Service boundary、内建 transport 行为
-和跨 SDK conformance gates 已经接近 release candidate 状态。在 release-gates
-matrix 为精确 release commit 产出可审计 artifacts，并且 release candidate
-checklist 完成之前，不声明 fact-standard 状态。
+cxxmcp 是正在准备 official SDK candidate 证据的社区 C++ MCP SDK。Peer/Service boundary、transport 层和 conformance gates 已接近 release candidate 状态。除非被 MCP maintainers 接受，否则它不是官方 MCP SDK。
