@@ -182,6 +182,10 @@ def artifact_root(gate_artifacts: Path, name: str) -> Path:
 def check_release_gate_matrix_artifact(
     root: Path, junit_name: str, required_tests: list[str]
 ) -> None:
+    # Support both flat layout and nested build-release-gates/ layout.
+    candidate = root / "build-release-gates"
+    if candidate.is_dir():
+        root = candidate
     require_file(root / "CMakeCache.txt")
     require_junit_tests(root / "test-results" / junit_name, required_tests)
     require_glob(root, "Testing/Temporary/*.log")
