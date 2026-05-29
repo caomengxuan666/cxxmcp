@@ -1098,11 +1098,10 @@ core::Result<core::Unit> HttpTransport::start(
       }
     }
 
-    // Validate _meta for stateless requests. This must run before session
-    // validation so that requests with Mcp-Method but missing _meta get the
-    // correct InvalidParams error (-32602) instead of a session error (-32001).
-    if ((stateless_mode || has_method_header) && rpc_request &&
-        !initialize_request) {
+    // Validate _meta for stateless requests only. Session-based requests
+    // do not require _meta even when Mcp-Method header is present (SEP-2243
+    // made Mcp-Method optional for all transports).
+    if (stateless_mode && rpc_request && !initialize_request) {
       const auto error_id = std::optional<protocol::RequestId>{rpc_request->id};
       if (!rpc_request->params.is_object() ||
           !rpc_request->params.contains("_meta")) {
