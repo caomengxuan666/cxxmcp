@@ -50,6 +50,35 @@ jobs:
             echo "commit=${commit}"
           } >> "${GITHUB_OUTPUT}"
 
+      - name: Trigger release-gates if needed
+        id: trigger_gates
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RELEASE_COMMIT: ${{ steps.release_identity.outputs.commit }}
+        run: |
+          set -euo pipefail
+          existing="$(
+            gh api \
+              "/repos/${GITHUB_REPOSITORY}/actions/workflows/release-gates.yml/runs?status=success&head_sha=${RELEASE_COMMIT}&per_page=1" \
+              --jq '.workflow_runs[0].id // empty'
+          )"
+          if [[ -n "${existing}" ]]; then
+            echo "skip_trigger=true" >> "${GITHUB_OUTPUT}"
+          else
+            echo "Triggering release-gates for ${RELEASE_COMMIT}..."
+            gh workflow run release-gates.yml --ref "${RELEASE_COMMIT}"
+            sleep 10
+            gates_run_id="$(
+              gh api \
+                "/repos/${GITHUB_REPOSITORY}/actions/workflows/release-gates.yml/runs?head_sha=${RELEASE_COMMIT}&per_page=1&sort=created_at&direction=desc" \
+                --jq '.workflow_runs[0].id // empty'
+            )"
+            echo "Waiting for release-gates run ${gates_run_id}..."
+            gh run watch "${gates_run_id}" --exit-status
+            echo "skip_trigger=false" >> "${GITHUB_OUTPUT}"
+          fi
+
       - name: Verify matching release-gates run
         id: release_gates
         shell: bash
