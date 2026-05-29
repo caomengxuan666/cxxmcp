@@ -129,7 +129,8 @@ class Server {
       const std::string& session_id = {}) const;
   core::Result<protocol::ToolResult> call_tool(
       std::string_view name, protocol::Json arguments,
-      const SessionContext& context, CancellationToken cancellation = {}) const;
+      const SessionContext& context,
+      CancellationToken cancellation = CancellationToken::none()) const;
 
   /// @brief Enables the built-in SDK task processor.
   Server& use_task_manager(TaskOperationProcessorOptions options = {});
@@ -165,7 +166,8 @@ class Server {
       const std::string& session_id = {}) const;
   core::Result<protocol::PromptsGetResult> get_prompt(
       std::string_view name, protocol::Json arguments,
-      const SessionContext& context, CancellationToken cancellation = {}) const;
+      const SessionContext& context,
+      CancellationToken cancellation = CancellationToken::none()) const;
 
   /// @brief Returns the mutable resource registry.
   ResourceRegistry& resources() noexcept;
@@ -191,7 +193,8 @@ class Server {
       const std::string& session_id = {}) const;
   core::Result<protocol::ResourcesReadResult> read_resource(
       std::string_view uri, protocol::Json params,
-      const SessionContext& context, CancellationToken cancellation = {}) const;
+      const SessionContext& context,
+      CancellationToken cancellation = CancellationToken::none()) const;
 
   /// @brief Returns the mutable resource-template registry.
   ResourceTemplateRegistry& resource_templates() noexcept;

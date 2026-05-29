@@ -474,7 +474,8 @@ class Peer<RoleClient> {
     return native_transport_ != nullptr;
   }
 
-  core::Result<core::Unit> start(CancellationToken cancellation = {}) {
+  core::Result<core::Unit> start(
+      CancellationToken cancellation = CancellationToken::none()) {
     if (native_transport_) {
       return start_native_receive_loop(cancellation);
     }
@@ -1780,7 +1781,7 @@ class Peer<RoleClient> {
   /// transport.
   core::Result<core::Unit> serve_transport(
       transport::ClientTransport& transport,
-      CancellationToken cancellation = {}) {
+      CancellationToken cancellation = CancellationToken::none()) {
     return detail::serve_transport_loop(
         transport, cancellation,
         [this](const protocol::JsonRpcMessage& message) {
@@ -3101,7 +3102,7 @@ class Peer<RoleServer> {
   core::Result<protocol::ToolResult> call_tool(
       std::string_view name, protocol::Json arguments,
       const server::SessionContext& context,
-      CancellationToken cancellation = {}) const {
+      CancellationToken cancellation = CancellationToken::none()) const {
     return server_->call_tool(name, std::move(arguments), context,
                               cancellation);
   }
@@ -3120,7 +3121,7 @@ class Peer<RoleServer> {
   core::Result<protocol::PromptsGetResult> get_prompt(
       std::string_view name, protocol::Json arguments,
       const server::SessionContext& context,
-      CancellationToken cancellation = {}) const {
+      CancellationToken cancellation = CancellationToken::none()) const {
     return server_->get_prompt(name, std::move(arguments), context,
                                cancellation);
   }
@@ -3138,7 +3139,7 @@ class Peer<RoleServer> {
   core::Result<protocol::ResourcesReadResult> read_resource(
       std::string_view uri, protocol::Json params,
       const server::SessionContext& context,
-      CancellationToken cancellation = {}) const {
+      CancellationToken cancellation = CancellationToken::none()) const {
     return server_->read_resource(uri, std::move(params), context,
                                   cancellation);
   }
@@ -3546,7 +3547,8 @@ class Peer<RoleServer> {
     return core::Unit{};
   }
 
-  core::Result<core::Unit> start(CancellationToken cancellation = {}) {
+  core::Result<core::Unit> start(
+      CancellationToken cancellation = CancellationToken::none()) {
     if (native_transports_.empty()) {
       return server_->start();
     }
@@ -3596,6 +3598,13 @@ class Peer<RoleServer> {
       }
     }
     server_->stop();
+  }
+
+  /// @brief Blocks until all native transports are ready to process messages.
+  void wait_until_ready() {
+    for (auto& transport : native_transports_) {
+      transport->wait_until_ready();
+    }
   }
 
   core::Result<core::Unit> notify_roots_list_changed() {
@@ -3674,7 +3683,7 @@ class Peer<RoleServer> {
   core::Result<core::Unit> serve_transport(
       transport::ServerTransport& transport,
       const server::SessionContext& context = {},
-      CancellationToken cancellation = {}) {
+      CancellationToken cancellation = CancellationToken::none()) {
     bool initialized = false;
     return detail::serve_transport_loop(
         transport, cancellation,
@@ -4226,6 +4235,7 @@ class Peer<RoleServer>::Builder {
   /// registered with .resource(name) is filled in automatically.
   template <class Handler>
   Builder& resource(std::string name, Handler handler) {
+    server::detail::require_callable(handler, "resource");
     server::detail::require_unambiguous_resource_handler<Handler>();
     auto uri = name;
     protocol::Resource resource;

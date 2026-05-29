@@ -187,6 +187,7 @@ class StreamableHttpServerTransport final : public ServerTransport {
   std::optional<StreamableHttpServerMessageContext> last_received_context()
       const;
   core::Result<core::Unit> close() override;
+  void wait_until_ready() override;
 
  private:
   class Impl;

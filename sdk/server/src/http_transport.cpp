@@ -9,6 +9,7 @@
 #include <cstdint>
 #include <deque>
 #include <exception>
+#include <future>
 #include <map>
 #include <mutex>
 #include <optional>
@@ -701,6 +702,24 @@ void write_oauth_json_error(httplib::Response& response, int status,
 
 #endif  // defined(CXXMCP_ENABLE_AUTH)
 
+bool is_loopback_host(std::string_view host) {
+  if (host == "localhost" || host == "127.0.0.1" || host == "::1") return true;
+  if (host.size() >= 4 && host.front() == '[' && host.back() == ']') {
+    return is_loopback_host(host.substr(1, host.size() - 2));
+  }
+  return false;
+}
+
+bool has_non_loopback_host(const std::vector<std::string>& allowed_hosts) {
+  for (const auto& entry : allowed_hosts) {
+    const auto parsed = parse_authority(entry);
+    if (parsed.has_value() && !is_loopback_host(parsed->host)) {
+      return true;
+    }
+  }
+  return false;
+}
+
 bool is_auth_error(const core::Error& error) {
   return error.code ==
              static_cast<int>(protocol::ErrorCode::PermissionDenied) &&
@@ -772,6 +791,13 @@ struct HttpTransport::HttpServerHolder {
 
 HttpTransport::~HttpTransport() = default;
 
+void HttpTransport::wait_until_ready() {
+  std::lock_guard lock(mutex_);
+  if (server_) {
+    server_->server.wait_until_ready();
+  }
+}
+
 core::Result<core::Unit> HttpTransport::start(
     RequestHandler handler, NotificationHandler notification_handler) {
   if (!handler) {
@@ -784,6 +810,17 @@ core::Result<core::Unit> HttpTransport::start(
         static_cast<int>(protocol::ErrorCode::InvalidRequest),
         "http transport listen port must be configured",
         std::to_string(options_.listen_port)));
+  }
+
+  if (options_.allowed_origins.empty() &&
+      (!is_loopback_host(options_.listen_host) ||
+       has_non_loopback_host(options_.allowed_hosts))) {
+    return mcp::core::unexpected(make_transport_error(
+        static_cast<int>(protocol::ErrorCode::InvalidRequest),
+        "http transport allowed_origins must be configured when the server is "
+        "exposed to non-loopback addresses",
+        "set HttpTransportOptions::allowed_origins to restrict cross-origin "
+        "requests"));
   }
 
   {
@@ -2031,6 +2068,8 @@ class StreamableHttpServerTransport::Impl {
     return last_context_;
   }
 
+  void wait_until_ready() { ready_future_.wait(); }
+
   core::Result<core::Unit> close() {
     std::map<protocol::RequestId, std::shared_ptr<PendingClientRequest>>
         pending;
@@ -2114,9 +2153,12 @@ class StreamableHttpServerTransport::Impl {
             startup_error_ = started.error();
             closed_ = true;
           }
+          mark_ready();
           receive_cv_.notify_all();
         }
       });
+      transport_.wait_until_ready();
+      mark_ready();
     } catch (const std::system_error& ex) {
       started_ = false;
       return mcp::core::unexpected(make_native_server_http_error(
@@ -2284,6 +2326,13 @@ class StreamableHttpServerTransport::Impl {
   std::optional<core::Error> startup_error_;
   bool started_ = false;
   bool closed_ = false;
+  std::promise<void> ready_promise_;
+  std::shared_future<void> ready_future_ = ready_promise_.get_future().share();
+  std::once_flag ready_once_;
+
+  void mark_ready() {
+    std::call_once(ready_once_, [this]() { ready_promise_.set_value(); });
+  }
 };
 
 StreamableHttpServerTransport::StreamableHttpServerTransport(
@@ -2313,6 +2362,10 @@ StreamableHttpServerTransport::receive() {
 std::optional<StreamableHttpServerMessageContext>
 StreamableHttpServerTransport::last_received_context() const {
   return impl_->last_received_context();
+}
+
+void StreamableHttpServerTransport::wait_until_ready() {
+  impl_->wait_until_ready();
 }
 
 core::Result<core::Unit> StreamableHttpServerTransport::close() {

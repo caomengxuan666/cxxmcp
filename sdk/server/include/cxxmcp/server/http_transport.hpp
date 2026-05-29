@@ -219,6 +219,9 @@ class HttpTransport final : public Transport {
   /// @brief Return the diagnostic transport name "http".
   std::string_view name() const noexcept override;
 
+  /// @brief Blocks until the underlying HTTP server socket is bound.
+  void wait_until_ready() override;
+
  private:
   struct HttpServerHolder;
 

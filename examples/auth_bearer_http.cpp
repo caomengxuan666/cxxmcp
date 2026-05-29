@@ -2,11 +2,9 @@
 //
 // First-choice SDK example: HTTP bearer auth wiring for ServerPeer/ClientPeer.
 
-#include <chrono>
 #include <iostream>
 #include <memory>
 #include <string>
-#include <thread>
 
 #include "cxxmcp/peer.hpp"
 #include "cxxmcp/service.hpp"
@@ -50,8 +48,8 @@ int main() {
       return 1;
     }
 
-    // Give the server time to bind.
-    std::this_thread::sleep_for(std::chrono::milliseconds(200));
+    // Wait until the HTTP server socket is bound.
+    running->wait_until_ready();
 
     auto client = mcp::ClientPeer::builder()
                       .streamable_http("http://127.0.0.1:3001/mcp")
@@ -68,9 +66,6 @@ int main() {
       std::cerr << "bearer auth client service failed to start\n";
       return 1;
     }
-
-    // Give the client service time to start its receive loop.
-    std::this_thread::sleep_for(std::chrono::milliseconds(200));
 
     const auto inited = client_running->peer().initialize();
     if (!inited) {

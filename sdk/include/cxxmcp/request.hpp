@@ -162,8 +162,9 @@ class RequestHandle {
     auto handle = RequestHandle(std::move(request_id), std::move(timeout),
                                 std::move(cancellation), std::move(cancel),
                                 std::move(async_result));
-    // Start cancellation watcher if a token is configured
-    if (handle.cancellation_.has_value()) {
+    // Start cancellation watcher if a real cancellation source is configured.
+    if (handle.cancellation_.has_value() &&
+        handle.cancellation_->cancellable()) {
       handle.start_cancellation_watcher();
     }
     return handle;

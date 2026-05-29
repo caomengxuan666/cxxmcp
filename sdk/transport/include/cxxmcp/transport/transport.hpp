@@ -68,6 +68,13 @@ class Transport {
 
   /// @brief Closes the transport and unblocks receive() where possible.
   virtual core::Result<core::Unit> close() = 0;
+
+  /// @brief Blocks until the transport is ready to process messages.
+  ///
+  /// The default is a no-op. Transports that need asynchronous startup
+  /// (e.g. binding a socket) override this to block until the underlying
+  /// resource is available.
+  virtual void wait_until_ready() {}
 };
 
 using ClientTransport = Transport<RoleClient>;

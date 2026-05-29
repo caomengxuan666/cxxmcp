@@ -1321,26 +1321,25 @@ void test_server_peer_serve_transport_requires_initialized_notification() {
 }
 
 void test_server_peer_tool_discovery_dispatches_on_peer_boundary() {
-  auto server = mcp::server::App::builder()
-                    .tool(
-                        mcp::protocol::ToolDefinition{
-                            .name = "echo",
-                            .description = "Echo payload",
-                            .input_schema = Json{{"type", "object"}},
-                        },
-                        [](const mcp::server::ToolContext&)
-                            -> mcp::core::Result<mcp::protocol::ToolResult> {
-                          mcp::protocol::ToolResult result;
-                          result.content.push_back(mcp::protocol::ContentBlock{
-                              .type = "text",
-                              .text = "ok",
-                              .data = Json::object(),
-                          });
-                          return result;
-                        })
-                    .build();
-  require(server.has_value(), "tool discovery server build failed");
-  mcp::ServerPeer peer(std::move(*server));
+  auto peer = mcp::ServerPeer::builder()
+                  .tool(
+                      mcp::protocol::ToolDefinition{
+                          .name = "echo",
+                          .description = "Echo payload",
+                          .input_schema = Json{{"type", "object"}},
+                      },
+                      [](const mcp::server::ToolContext&)
+                          -> mcp::core::Result<mcp::protocol::ToolResult> {
+                        mcp::protocol::ToolResult result;
+                        result.content.push_back(mcp::protocol::ContentBlock{
+                            .type = "text",
+                            .text = "ok",
+                            .data = Json::object(),
+                        });
+                        return result;
+                      })
+                  .build();
+  require(peer.has_value(), "tool discovery server build failed");
 
   RecordingServerContractTransport transport;
   enqueue_server_transport_lifecycle(transport);
@@ -1355,7 +1354,7 @@ void test_server_peer_tool_discovery_dispatches_on_peer_boundary() {
       .id = mcp::protocol::RequestId{std::int64_t{11}},
   });
 
-  const auto served = peer.serve_transport(transport);
+  const auto served = peer->serve_transport(transport);
   require(served.has_value(),
           "server peer tool discovery dispatch should succeed");
   require(
@@ -1414,8 +1413,8 @@ void test_server_peer_tool_call_dispatches_on_peer_boundary() {
   std::mutex mutex;
   std::condition_variable cv;
   bool entered = false;
-  auto server =
-      mcp::server::App::builder()
+  auto peer =
+      mcp::ServerPeer::builder()
           .tool(
               mcp::protocol::ToolDefinition{
                   .name = "wait",
@@ -1447,12 +1446,11 @@ void test_server_peer_tool_call_dispatches_on_peer_boundary() {
                 return result;
               })
           .build();
-  require(server.has_value(), "tool call server build failed");
-  mcp::ServerPeer peer(std::move(*server));
+  require(peer.has_value(), "tool call server build failed");
 
   std::optional<mcp::core::Result<mcp::protocol::JsonRpcResponse>> response;
   std::thread worker([&] {
-    response = peer.handle_request(mcp::protocol::JsonRpcRequest{
+    response = peer->handle_request(mcp::protocol::JsonRpcRequest{
         .method = mcp::protocol::ToolsCallMethod,
         .params =
             Json{{"name", "wait"}, {"arguments", Json{{"value", "peer"}}}},
@@ -1473,7 +1471,7 @@ void test_server_peer_tool_call_dispatches_on_peer_boundary() {
   cancelled.request_id = mcp::protocol::RequestId{std::int64_t{50}};
   cancelled.reason = "test cancellation";
   const auto cancelled_notification =
-      peer.handle_notification(mcp::protocol::JsonRpcNotification{
+      peer->handle_notification(mcp::protocol::JsonRpcNotification{
           .method = mcp::protocol::CancelledNotificationMethod,
           .params =
               mcp::protocol::cancelled_notification_params_to_json(cancelled),
@@ -1541,8 +1539,8 @@ void test_server_peer_task_aware_tool_call_dispatches_on_peer_boundary() {
 }
 
 void test_server_peer_prompt_resource_dispatches_on_peer_boundary() {
-  auto server =
-      mcp::server::App::builder()
+  auto peer =
+      mcp::ServerPeer::builder()
           .prompt(
               "session-summary",
               [](std::string text, const mcp::server::PromptContext& context) {
@@ -1561,8 +1559,7 @@ void test_server_peer_prompt_resource_dispatches_on_peer_boundary() {
               .mime_type = "text/plain",
           })
           .build();
-  require(server.has_value(), "prompt/resource server build failed");
-  mcp::ServerPeer peer(std::move(*server));
+  require(peer.has_value(), "prompt/resource server build failed");
 
   RecordingServerContractTransport transport;
   enqueue_server_transport_lifecycle(transport);
@@ -1595,7 +1592,7 @@ void test_server_peer_prompt_resource_dispatches_on_peer_boundary() {
 
   mcp::server::SessionContext context;
   context.session_id = "peer-session";
-  const auto served = peer.serve_transport(transport, context);
+  const auto served = peer->serve_transport(transport, context);
   require(served.has_value(),
           "server peer prompt/resource dispatch should succeed");
   require(transport.sent.size() == 6,
@@ -2113,12 +2110,11 @@ void test_server_builder_peer_canonical_authoring_surface() {
             request.id, Json{{"session", context.session_id}});
       });
 
-  auto server = builder.build();
-  require(server.has_value(), "canonical server builder failed");
-  mcp::ServerPeer peer(std::move(*server));
+  auto peer = mcp::ServerPeer::build(std::move(builder));
+  require(peer.has_value(), "canonical server builder failed");
   const mcp::server::SessionContext context{.session_id = "canonical"};
 
-  const auto initialized = peer.handle_request(
+  const auto initialized = peer->handle_request(
       mcp::protocol::JsonRpcRequest{
           .method = "initialize",
           .params =
@@ -2148,7 +2144,7 @@ void test_server_builder_peer_canonical_authoring_surface() {
   require(initialized->result->at("capabilities").contains("logging"),
           "canonical logging capability missing");
 
-  const auto tool = peer.handle_request(
+  const auto tool = peer->handle_request(
       mcp::protocol::JsonRpcRequest{
           .method = mcp::protocol::ToolsCallMethod,
           .params =
@@ -2163,7 +2159,7 @@ void test_server_builder_peer_canonical_authoring_surface() {
       tool->result->at("content").at(0).at("text") == "canonical:{\"value\":7}",
       "canonical tool text mismatch");
 
-  const auto prompt = peer.handle_request(
+  const auto prompt = peer->handle_request(
       mcp::protocol::JsonRpcRequest{
           .method = mcp::protocol::PromptsGetMethod,
           .params = Json{{"name", "summarize"},
@@ -2176,7 +2172,7 @@ void test_server_builder_peer_canonical_authoring_surface() {
               "canonical:hello",
           "canonical prompt context mismatch");
 
-  const auto resource = peer.handle_request(
+  const auto resource = peer->handle_request(
       mcp::protocol::JsonRpcRequest{
           .method = mcp::protocol::ResourcesReadMethod,
           .params = Json{{"uri", "file:///tmp/readme.txt"}},
@@ -2188,7 +2184,7 @@ void test_server_builder_peer_canonical_authoring_surface() {
       resource->result->at("contents").at(0).at("text") == "canonical:readme",
       "canonical resource context mismatch");
 
-  const auto templates = peer.handle_request(
+  const auto templates = peer->handle_request(
       mcp::protocol::JsonRpcRequest{
           .method = mcp::protocol::ResourcesTemplatesListMethod,
           .params = Json::object(),
@@ -2200,7 +2196,7 @@ void test_server_builder_peer_canonical_authoring_surface() {
               "file:///tmp/{name}.txt",
           "canonical resource template mismatch");
 
-  const auto completion = peer.handle_request(
+  const auto completion = peer->handle_request(
       mcp::protocol::JsonRpcRequest{
           .method = mcp::protocol::CompletionCompleteMethod,
           .params =
@@ -2216,7 +2212,7 @@ void test_server_builder_peer_canonical_authoring_surface() {
               "canonical:hello",
           "canonical completion result mismatch");
 
-  const auto sampling = peer.handle_request(
+  const auto sampling = peer->handle_request(
       mcp::protocol::JsonRpcRequest{
           .method = mcp::protocol::SamplingCreateMessageMethod,
           .params = Json{{"prompt", "sample"}},
@@ -2227,7 +2223,7 @@ void test_server_builder_peer_canonical_authoring_surface() {
   require(sampling->result->at("content").at("text") == "canonical:sample",
           "canonical sampling result mismatch");
 
-  const auto logging = peer.handle_request(
+  const auto logging = peer->handle_request(
       mcp::protocol::JsonRpcRequest{
           .method = mcp::protocol::LoggingSetLevelMethod,
           .params = Json{{"level", "debug"}},
@@ -2238,7 +2234,7 @@ void test_server_builder_peer_canonical_authoring_surface() {
   require(logging->result.has_value(), "canonical logging result missing");
   require(logging_calls == 1, "canonical logging handler call count mismatch");
 
-  const auto custom = peer.handle_request(
+  const auto custom = peer->handle_request(
       mcp::protocol::JsonRpcRequest{
           .method = "custom/echo",
           .params = Json::object(),
@@ -3012,7 +3008,7 @@ void test_app_builder_rejects_empty_std_function_handlers() {
   std::function<std::string()> empty_resource;
   bool threw = false;
   try {
-    (void)mcp::server::App::builder().resource("file:///empty", empty_resource);
+    (void)mcp::ServerPeer::builder().resource("file:///empty", empty_resource);
   } catch (const std::invalid_argument& ex) {
     threw = std::string_view(ex.what()) == "resource handler must not be empty";
   }
@@ -3022,7 +3018,7 @@ void test_app_builder_rejects_empty_std_function_handlers() {
       empty_completion;
   threw = false;
   try {
-    (void)mcp::server::App::builder().completion(empty_completion);
+    (void)mcp::ServerPeer::builder().completion(empty_completion);
   } catch (const std::invalid_argument& ex) {
     threw =
         std::string_view(ex.what()) == "completion handler must not be empty";
@@ -3033,7 +3029,7 @@ void test_app_builder_rejects_empty_std_function_handlers() {
       const mcp::protocol::Json&) = nullptr;
   threw = false;
   try {
-    (void)mcp::server::App::builder().sampling(empty_sampling);
+    (void)mcp::ServerPeer::builder().sampling(empty_sampling);
   } catch (const std::invalid_argument& ex) {
     threw = std::string_view(ex.what()) == "sampling handler must not be empty";
   }
@@ -3657,7 +3653,7 @@ void test_public_error_helpers_assign_stable_categories() {
   require(closed.category == "transport", "transport category mismatch");
   require(closed.message == "transport closed",
           "transport closed message mismatch");
-  require_error_object(closed, mcp::protocol::ErrorCode::InvalidRequest,
+  require_error_object(closed, mcp::protocol::ErrorCode::InternalError,
                        "transport closed", "stdio");
 
   const auto timed_out =

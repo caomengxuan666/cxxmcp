@@ -85,17 +85,17 @@ inline core::Error transport_failed(std::string detail = {}) {
 }
 
 inline core::Error transport_closed(std::string detail = {}) {
-  return make(protocol::ErrorCode::InvalidRequest, "transport closed",
+  return make(protocol::ErrorCode::InternalError, "transport closed",
               std::move(detail), "transport");
 }
 
 inline core::Error transport_unexpected_response(std::string detail = {}) {
-  return make(protocol::ErrorCode::InvalidRequest, "unexpected response",
+  return make(protocol::ErrorCode::InternalError, "unexpected response",
               std::move(detail), "transport");
 }
 
 inline core::Error transport_duplicate_request(std::string detail = {}) {
-  return make(protocol::ErrorCode::InvalidRequest, "duplicate request id",
+  return make(protocol::ErrorCode::InternalError, "duplicate request id",
               std::move(detail), "transport");
 }
 

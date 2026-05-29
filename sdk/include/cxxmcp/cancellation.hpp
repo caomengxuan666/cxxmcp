@@ -29,8 +29,14 @@ struct CancellationState {
 /// @brief Copyable token observed by cancellation-aware SDK operations.
 class CancellationToken {
  public:
-  /// @brief Constructs a token with its own private cancellation state.
-  CancellationToken() : state_(std::make_shared<CancellationState>()) {}
+  /// @brief Constructs a detached token that is never cancelled.
+  ///
+  /// Use this when no cancellation source is needed. The token's cancelled()
+  /// always returns false and wait_for_cancel() returns false immediately.
+  static CancellationToken none() { return CancellationToken(nullptr); }
+
+  /// @brief Constructs a detached token (same as none()).
+  CancellationToken() : CancellationToken(nullptr) {}
 
   /// @brief Returns true after the associated source has requested
   /// cancellation.
@@ -39,10 +45,13 @@ class CancellationToken {
            state_->cancelled.load(std::memory_order_acquire);
   }
 
+  /// @brief Returns true when this token is attached to a cancellation source.
+  bool cancellable() const noexcept { return state_ != nullptr; }
+
   /// @brief Block until cancellation is requested. Returns true when
   /// cancelled. CV-based, no polling.
   bool wait_for_cancel() const {
-    if (!state_) return true;
+    if (!state_) return false;
     // Fast path: already cancelled
     if (state_->cancelled.load(std::memory_order_acquire)) return true;
     std::unique_lock<std::mutex> lock(state_->mutex);
@@ -55,7 +64,7 @@ class CancellationToken {
   /// @brief Block until cancellation is requested or timeout expires.
   /// Returns true if cancelled, false if timeout.
   bool wait_for_cancel(std::chrono::milliseconds timeout) const {
-    if (!state_) return true;
+    if (!state_) return false;
     if (state_->cancelled.load(std::memory_order_acquire)) return true;
     std::unique_lock<std::mutex> lock(state_->mutex);
     if (state_->cv.wait_for(lock, timeout, [this]() {
@@ -69,7 +78,7 @@ class CancellationToken {
   /// @brief Block until cancellation is requested or deadline is reached.
   /// Returns true if cancelled, false if deadline passed.
   bool wait_for_cancel(std::chrono::steady_clock::time_point deadline) const {
-    if (!state_) return true;
+    if (!state_) return false;
     if (state_->cancelled.load(std::memory_order_acquire)) return true;
     std::unique_lock<std::mutex> lock(state_->mutex);
     if (state_->cv.wait_until(lock, deadline, [this]() {

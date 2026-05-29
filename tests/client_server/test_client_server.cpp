@@ -2567,7 +2567,7 @@ void test_completion_and_sampling_handlers_observe_cancellation_token() {
     std::atomic_bool started{false};
     std::atomic_bool observed_cancelled{false};
     auto built =
-        mcp::server::App::builder()
+        mcp::ServerPeer::builder()
             .sampling(
                 [&](const Json&, mcp::server::CancellationToken cancellation) {
                   started.store(true);
@@ -2581,7 +2581,7 @@ void test_completion_and_sampling_handlers_observe_cancellation_token() {
 
     std::optional<mcp::core::Result<mcp::protocol::JsonRpcResponse>> response;
     std::thread worker([&] {
-      response = (*built)->handle_request(
+      response = built->handle_request(
           mcp::protocol::JsonRpcRequest{
               .method = mcp::protocol::SamplingCreateMessageMethod,
               .params = Json::object(),
@@ -2592,7 +2592,7 @@ void test_completion_and_sampling_handlers_observe_cancellation_token() {
 
     wait_until([&] { return started.load(); },
                "sampling cancellation handler should start");
-    const auto cancelled = (*built)->handle_notification(
+    const auto cancelled = built->handle_notification(
         mcp::protocol::JsonRpcNotification{
             .method = mcp::protocol::CancelledNotificationMethod,
             .params = mcp::protocol::cancelled_notification_params_to_json(
@@ -4689,7 +4689,7 @@ void test_default_server_initialize_omits_inactive_capabilities() {
 void test_server_app_builder_registers_parity_surface() {
   int logging_calls = 0;
   auto built =
-      mcp::server::App::builder()
+      mcp::ServerPeer::builder()
           .name("FacadeServer")
           .version("2.1.0")
           .instructions("test instructions")
@@ -4790,7 +4790,7 @@ void test_server_app_builder_registers_parity_surface() {
           })
           .build();
   require(built.has_value(), "facade builder should build");
-  auto& server = **built;
+  auto& server = *built;
   const auto info = server.get_info();
   require(info.name == "FacadeServer", "facade server info name mismatch");
   require(info.version == "2.1.0", "facade server info version mismatch");
@@ -5011,7 +5011,7 @@ void test_server_app_builder_registers_parity_surface() {
 
 void test_server_app_builder_registers_typed_completion() {
   auto built =
-      mcp::server::App::builder()
+      mcp::ServerPeer::builder()
           .completion([](const mcp::protocol::CompleteParams& params,
                          const mcp::server::CompletionContext& context) {
             require(!context.cancelled(),
@@ -5030,7 +5030,7 @@ void test_server_app_builder_registers_typed_completion() {
   params.ref = mcp::protocol::prompt_completion_reference("summarize");
   params.argument = mcp::protocol::CompletionArgument{"text", "he"};
 
-  const auto response = (*built)->handle_request(
+  const auto response = built->handle_request(
       mcp::protocol::JsonRpcRequest{
           .method = mcp::protocol::CompletionCompleteMethod,
           .params = mcp::protocol::complete_params_to_json(params),
@@ -5048,7 +5048,7 @@ void test_server_app_builder_registers_typed_completion() {
           "typed completion hasMore mismatch");
 
   auto argument_built =
-      mcp::server::App::builder()
+      mcp::ServerPeer::builder()
           .completion([](const mcp::server::CompletionContext& context,
                          const mcp::protocol::CompletionArgument& argument) {
             return std::vector<std::string>{context.session_id + ":" +
@@ -5058,15 +5058,13 @@ void test_server_app_builder_registers_typed_completion() {
   require(argument_built.has_value(),
           "argument completion server should build");
 
-  const auto argument_response =
-      (*argument_built)
-          ->handle_request(
-              mcp::protocol::JsonRpcRequest{
-                  .method = mcp::protocol::CompletionCompleteMethod,
-                  .params = mcp::protocol::complete_params_to_json(params),
-                  .id = std::int64_t{2},
-              },
-              mcp::server::SessionContext{.session_id = "argument"});
+  const auto argument_response = argument_built->handle_request(
+      mcp::protocol::JsonRpcRequest{
+          .method = mcp::protocol::CompletionCompleteMethod,
+          .params = mcp::protocol::complete_params_to_json(params),
+          .id = std::int64_t{2},
+      },
+      mcp::server::SessionContext{.session_id = "argument"});
   require(argument_response.has_value(),
           "argument completion request should succeed");
   require(argument_response->result->at("completion").at("values").at(0) ==
@@ -5074,26 +5072,24 @@ void test_server_app_builder_registers_typed_completion() {
           "argument completion value mismatch");
 
   auto value_built =
-      mcp::server::App::builder()
+      mcp::ServerPeer::builder()
           .completion([](std::string value) { return value + "-value"; })
           .build();
   require(value_built.has_value(), "value completion server should build");
-  const auto value_response =
-      (*value_built)
-          ->handle_request(
-              mcp::protocol::JsonRpcRequest{
-                  .method = mcp::protocol::CompletionCompleteMethod,
-                  .params = mcp::protocol::complete_params_to_json(params),
-                  .id = std::int64_t{3},
-              },
-              {});
+  const auto value_response = value_built->handle_request(
+      mcp::protocol::JsonRpcRequest{
+          .method = mcp::protocol::CompletionCompleteMethod,
+          .params = mcp::protocol::complete_params_to_json(params),
+          .id = std::int64_t{3},
+      },
+      {});
   require(value_response.has_value(),
           "value completion request should succeed");
   require(
       value_response->result->at("completion").at("values").at(0) == "he-value",
       "value completion mismatch");
 
-  const auto invalid = (*built)->handle_request(
+  const auto invalid = built->handle_request(
       mcp::protocol::JsonRpcRequest{
           .method = mcp::protocol::CompletionCompleteMethod,
           .params = Json{{"ref",
@@ -5113,7 +5109,7 @@ void test_server_app_builder_registers_typed_prompt_and_resource() {
   using typed_tool_fixture::ResourceArgs;
 
   auto built =
-      mcp::server::App::builder()
+      mcp::ServerPeer::builder()
           .prompt<PromptArgs>(
               "typed-summary",
               [](PromptArgs args, const mcp::server::PromptContext& context) {
@@ -5133,7 +5129,7 @@ void test_server_app_builder_registers_typed_prompt_and_resource() {
           .build();
   require(built.has_value(), "typed prompt/resource server should build");
 
-  const auto prompt = (*built)->handle_request(
+  const auto prompt = built->handle_request(
       mcp::protocol::JsonRpcRequest{
           .method = mcp::protocol::PromptsGetMethod,
           .params = Json{{"name", "typed-summary"},
@@ -5147,7 +5143,7 @@ void test_server_app_builder_registers_typed_prompt_and_resource() {
               "typed:hello",
           "typed prompt result mismatch");
 
-  const auto resource = (*built)->handle_request(
+  const auto resource = built->handle_request(
       mcp::protocol::JsonRpcRequest{
           .method = mcp::protocol::ResourcesReadMethod,
           .params =
@@ -5160,7 +5156,7 @@ void test_server_app_builder_registers_typed_prompt_and_resource() {
   require(resource->result->at("contents").at(0).at("text") == "typed:intro",
           "typed resource result mismatch");
 
-  const auto invalid_prompt = (*built)->handle_request(
+  const auto invalid_prompt = built->handle_request(
       mcp::protocol::JsonRpcRequest{
           .method = mcp::protocol::PromptsGetMethod,
           .params =
@@ -5175,7 +5171,7 @@ void test_server_app_builder_registers_typed_prompt_and_resource() {
               static_cast<int>(mcp::protocol::ErrorCode::InvalidParams),
           "invalid typed prompt code mismatch");
 
-  const auto invalid_resource = (*built)->handle_request(
+  const auto invalid_resource = built->handle_request(
       mcp::protocol::JsonRpcRequest{
           .method = mcp::protocol::ResourcesReadMethod,
           .params = Json{{"uri", "file:///tmp/typed.txt"},
@@ -5197,7 +5193,7 @@ void test_server_app_builder_registers_typed_tool() {
   using typed_tool_fixture::SumResult;
 
   auto built =
-      mcp::server::App::builder()
+      mcp::ServerPeer::builder()
           .tool(mcp::server::tool<SumArgs, SumResult>("sum")
                     .description("Add two integers")
                     .task_support(mcp::protocol::TaskSupport::Optional)
@@ -5226,7 +5222,7 @@ void test_server_app_builder_registers_typed_tool() {
                     }))
           .build();
   require(built.has_value(), "typed tool server should build");
-  auto& server = **built;
+  auto& server = *built;
 
   const auto listed = server.list_tools();
   require(listed.size() == 3, "typed tool count mismatch");
@@ -5287,7 +5283,7 @@ void test_server_tool_schema_validator_hooks() {
 
   auto validator = std::make_shared<RecordingSchemaValidator>();
   auto built =
-      mcp::server::App::builder()
+      mcp::ServerPeer::builder()
           .schema_validator(validator)
           .tool<SumArgs, SumResult>(
               "sum",
@@ -5296,7 +5292,7 @@ void test_server_tool_schema_validator_hooks() {
   require(built.has_value(), "schema validator server should build");
 
   const auto result =
-      (*built)->call_tool("sum", Json{{"a", 2}, {"b", 3}}, "schema-session");
+      built->call_tool("sum", Json{{"a", 2}, {"b", 3}}, "schema-session");
   require(result.has_value(), "schema validator tool call should succeed");
   require(validator->contexts.size() == 2,
           "schema validator should see input and output");
@@ -5316,7 +5312,7 @@ void test_server_tool_schema_validator_hooks() {
   auto input_rejector = std::make_shared<RecordingSchemaValidator>();
   input_rejector->reject_input = true;
   auto input_built =
-      mcp::server::App::builder()
+      mcp::ServerPeer::builder()
           .schema_validator(input_rejector)
           .tool<SumArgs, SumResult>(
               "sum",
@@ -5324,16 +5320,14 @@ void test_server_tool_schema_validator_hooks() {
           .build();
   require(input_built.has_value(),
           "input schema validator server should build");
-  const auto input_response =
-      (*input_built)
-          ->handle_request(
-              mcp::protocol::JsonRpcRequest{
-                  .method = mcp::protocol::ToolsCallMethod,
-                  .params = Json{{"name", "sum"},
-                                 {"arguments", Json{{"a", 2}, {"b", 3}}}},
-                  .id = std::int64_t{1},
-              },
-              {});
+  const auto input_response = input_built->handle_request(
+      mcp::protocol::JsonRpcRequest{
+          .method = mcp::protocol::ToolsCallMethod,
+          .params =
+              Json{{"name", "sum"}, {"arguments", Json{{"a", 2}, {"b", 3}}}},
+          .id = std::int64_t{1},
+      },
+      {});
   require(input_response.has_value(), "input schema failure should respond");
   require(input_response->error.has_value(),
           "input schema failure should be an error response");
@@ -5344,7 +5338,7 @@ void test_server_tool_schema_validator_hooks() {
   auto output_rejector = std::make_shared<RecordingSchemaValidator>();
   output_rejector->reject_output = true;
   auto output_built =
-      mcp::server::App::builder()
+      mcp::ServerPeer::builder()
           .schema_validator(output_rejector)
           .tool<SumArgs, SumResult>(
               "sum",
@@ -5352,16 +5346,14 @@ void test_server_tool_schema_validator_hooks() {
           .build();
   require(output_built.has_value(),
           "output schema validator server should build");
-  const auto output_response =
-      (*output_built)
-          ->handle_request(
-              mcp::protocol::JsonRpcRequest{
-                  .method = mcp::protocol::ToolsCallMethod,
-                  .params = Json{{"name", "sum"},
-                                 {"arguments", Json{{"a", 2}, {"b", 3}}}},
-                  .id = std::int64_t{2},
-              },
-              {});
+  const auto output_response = output_built->handle_request(
+      mcp::protocol::JsonRpcRequest{
+          .method = mcp::protocol::ToolsCallMethod,
+          .params =
+              Json{{"name", "sum"}, {"arguments", Json{{"a", 2}, {"b", 3}}}},
+          .id = std::int64_t{2},
+      },
+      {});
   require(output_response.has_value(), "output schema failure should respond");
   require(output_response->error.has_value(),
           "output schema failure should be an error response");
@@ -5371,13 +5363,13 @@ void test_server_tool_schema_validator_hooks() {
 }
 
 void test_server_app_builder_typed_scalar_tool_rejects_empty_args() {
-  auto built = mcp::server::App::builder()
+  auto built = mcp::ServerPeer::builder()
                    .tool<std::string, std::string>(
                        "shout", [](std::string text) { return text + "!"; })
                    .build();
   require(built.has_value(), "typed scalar tool server should build");
 
-  auto& server = **built;
+  auto& server = *built;
   const auto result = server.call_tool("shout", Json::object());
   require(!result.has_value(), "typed scalar empty args should fail");
   require(result.error().code ==

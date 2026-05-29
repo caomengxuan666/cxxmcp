@@ -300,6 +300,16 @@ class RunningService<RoleServer> {
 
   const ServerPeer& peer() const noexcept { return *peer_; }
 
+  /// @brief Blocks until the server is ready to accept connections.
+  ///
+  /// For HTTP transports, this waits until the listening socket is bound.
+  /// For other transports, returns immediately.
+  void wait_until_ready() {
+    if (peer_) {
+      peer_->wait_until_ready();
+    }
+  }
+
   bool running() const noexcept { return detail::service_running(state_); }
 
   /// @brief Returns the service cancellation token.

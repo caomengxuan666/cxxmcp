@@ -185,6 +185,13 @@ class Transport {
   /// @return A static string view owned by the transport implementation.
   virtual std::string_view name() const noexcept = 0;
 
+  /// @brief Blocks until the transport is ready to process messages.
+  ///
+  /// The default is a no-op. Transports that need asynchronous startup
+  /// (e.g. binding a socket) override this to block until the underlying
+  /// resource is available.
+  virtual void wait_until_ready() {}
+
  private:
   std::shared_ptr<void> lifetime_token_ = std::make_shared<int>(0);
 };

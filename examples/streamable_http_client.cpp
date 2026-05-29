@@ -3,12 +3,10 @@
 // Self-contained example: starts an in-process HTTP server, then connects
 // a client peer over Streamable HTTP and exercises initialize + tools/list.
 
-#include <chrono>
 #include <iostream>
 #include <stdexcept>
 #include <string>
 #include <string_view>
-#include <thread>
 
 #include "cxxmcp/peer.hpp"
 #include "cxxmcp/server.hpp"
@@ -43,8 +41,8 @@ int main() {
     auto running = mcp::serve(std::move(*server));
     require(running.has_value(), "HTTP server failed to start");
 
-    // Give the server time to bind.
-    std::this_thread::sleep_for(std::chrono::milliseconds(200));
+    // Wait until the HTTP server socket is bound.
+    running->wait_until_ready();
 
     // Connect a client peer to the server.
     auto peer = mcp::ClientPeer::builder()

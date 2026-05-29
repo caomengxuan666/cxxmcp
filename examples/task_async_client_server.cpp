@@ -29,7 +29,7 @@ void require(bool condition, std::string_view message) {
 
 class LoopbackTransport final : public mcp::client::Transport {
  public:
-  explicit LoopbackTransport(mcp::server::Server& server) : server_(server) {}
+  explicit LoopbackTransport(mcp::ServerPeer& server) : server_(server) {}
 
   mcp::core::Result<mcp::protocol::JsonRpcResponse> send(
       const mcp::protocol::JsonRpcRequest& request) override {
@@ -42,7 +42,7 @@ class LoopbackTransport final : public mcp::client::Transport {
   }
 
  private:
-  mcp::server::Server& server_;
+  mcp::ServerPeer& server_;
   mcp::server::SessionContext context_{
       .session_id = "task-example-session",
       .remote_address = "loopback",
@@ -66,10 +66,10 @@ bool wait_for_task_status(mcp::ClientPeer& peer, std::string_view task_id,
 int main() {
   try {
     auto built =
-        mcp::server::App::builder()
+        mcp::ServerPeer::builder()
             .name("cxxmcp-example-task-server")
             .version("1.0.0")
-            .tasks(mcp::server::TaskOperationProcessorOptions{
+            .task_manager(mcp::server::TaskOperationProcessorOptions{
                 .worker_count = 1,
                 .queue_size = 8,
                 .poll_interval = std::int64_t{1},
@@ -90,7 +90,7 @@ int main() {
     require(built.has_value(), "task server build failed");
 
     mcp::ClientPeer peer(
-        mcp::client::Client(std::make_unique<LoopbackTransport>(**built)));
+        mcp::client::Client(std::make_unique<LoopbackTransport>(*built)));
 
     mcp::RequestOptions options;
     options.timeout = std::chrono::milliseconds(500);

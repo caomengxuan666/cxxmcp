@@ -1,10 +1,10 @@
 // Copyright (c) 2025 [caomengxuan666]
 
-#include <cxxmcp/server.hpp>
+#include <cxxmcp/peer.hpp>
 
 int main() {
   auto built =
-      mcp::server::App::builder()
+      mcp::ServerPeer::builder()
           .tool(mcp::server::tool<mcp::protocol::Json, mcp::protocol::Json>(
                     "echo")
                     .handler(
@@ -13,5 +13,5 @@ int main() {
   if (!built) {
     return 1;
   }
-  return (*built)->list_tools().size() == 1 ? 0 : 1;
+  return built->list_tools().size() == 1 ? 0 : 1;
 }

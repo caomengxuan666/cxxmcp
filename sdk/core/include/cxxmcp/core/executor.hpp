@@ -23,7 +23,7 @@
 
 namespace mcp::core {
 
-/// @brief Task priority levels for the executor's work-stealing queues.
+/// @brief Task priority levels for the executor's priority queues.
 ///
 /// IO_BOUND tasks are dispatched first and are intended for blocking transport
 /// calls. DEFAULT is for normal request processing. BACKGROUND is for
@@ -172,7 +172,10 @@ class Executor {
     work_cv_.notify_all();
     {
       std::lock_guard<std::mutex> lock(timer_mutex_);
-      // Clear pending timers so timer thread can exit
+      // Clear pending timers so timer thread can exit without dispatching
+      // stale tasks into a shutting-down executor.
+      decltype(timers_) empty;
+      timers_.swap(empty);
     }
     timer_cv_.notify_all();
 
@@ -205,7 +208,7 @@ class Executor {
     work_cv_.notify_all();
     {
       std::lock_guard<std::mutex> lock(timer_mutex_);
-      // Clear timer heap
+      // Pop all pending timers so the timer thread wakes and exits.
       while (!timers_.empty()) {
         timers_.pop();
       }
@@ -329,7 +332,7 @@ class Executor {
   std::deque<std::function<void()>> queues_[3];
   std::vector<std::thread> workers_;
   std::atomic<bool> stopping_ = false;
-  bool drain_mode_ = false;
+  std::atomic<bool> drain_mode_ = false;
 
   std::mutex timer_mutex_;
   std::condition_variable timer_cv_;
