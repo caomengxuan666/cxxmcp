@@ -581,12 +581,6 @@ if(NOT CXXMCP_USE_SYSTEM_DEPS)
         third_party/nlohmann/json.hpp
         DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/nlohmann
     )
-    if(MCP_ENABLE_HTTP)
-        install(FILES
-            third_party/httplib/httplib.h
-            DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}
-        )
-    endif()
 endif()
 
 write_basic_package_version_file(

@@ -146,7 +146,10 @@ cmake --preset examples && cmake --build --preset examples && ctest --preset exa
 - [GitHub Pages](https://caomengxuan666.github.io/cxxmcp/) — API 参考
 - [Conformance evidence](docs/conformance_evidence.md) — 测试结果和已知例外
 - [Compatibility policy](docs/compatibility_policy.md) — 版本策略、编译器矩阵、ABI
+- [HTTP transport backend evidence](docs/compatibility_policy.md#http-transport-backend-evidence)
 - [Release gates](docs/release_gates.md) — release-blocking 检查
+- [Runtime gateway](docs/runtime_gateway.md) — 外部 gateway 边界
+- [Examples](docs/examples.md) — 完整示例列表
 - [Auth design](docs/auth_design.md) — OAuth 2.1 / DPoP 方向
 - [Request lifecycle](docs/request_lifecycle.md) — 超时、取消、进度、关闭
 - [Contributing](CONTRIBUTING.md) | [Security](SECURITY.md) | [Changelog](CHANGELOG.md)
@@ -154,3 +157,7 @@ cmake --preset examples && cmake --build --preset examples && ctest --preset exa
 ## 项目状态
 
 cxxmcp 是正在准备 official SDK candidate 证据的社区 C++ MCP SDK。Peer/Service boundary、transport 层和 conformance gates 已接近 release candidate 状态。除非被 MCP maintainers 接受，否则它不是官方 MCP SDK。
+
+### 编译器兼容性
+
+MinGW UCRT64 GCC 和 MinGW CLANG64 Clang 作为 provisional、best-effort 编译器兼容性证据进行跟踪。这些目标不是 release-supported。`compiler-compat` workflow 在它们保持 provisional 期间以 `continue-on-error: true` 运行。

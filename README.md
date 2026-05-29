@@ -146,7 +146,10 @@ See [examples.md](docs/examples.md) for the full list. The separate [cxxmcp-exam
 - [GitHub Pages](https://caomengxuan666.github.io/cxxmcp/) — API reference
 - [Conformance evidence](docs/conformance_evidence.md) — test results and known exceptions
 - [Compatibility policy](docs/compatibility_policy.md) — versioning, compiler matrix, ABI
+- [HTTP transport backend evidence](docs/compatibility_policy.md#http-transport-backend-evidence)
 - [Release gates](docs/release_gates.md) — release-blocking checks
+- [Runtime gateway](docs/runtime_gateway.md) — external gateway boundary
+- [Examples](docs/examples.md) — full example list
 - [Auth design](docs/auth_design.md) — OAuth 2.1 / DPoP direction
 - [Request lifecycle](docs/request_lifecycle.md) — timeout, cancellation, progress, shutdown
 - [Contributing](CONTRIBUTING.md) | [Security](SECURITY.md) | [Changelog](CHANGELOG.md)
@@ -154,3 +157,7 @@ See [examples.md](docs/examples.md) for the full list. The separate [cxxmcp-exam
 ## Status
 
 cxxmcp is a community C++ MCP SDK preparing official SDK candidate evidence. The Peer/Service boundary, transport layer, and conformance gates are in release-candidate shape. It is not an official MCP SDK unless accepted by the MCP maintainers.
+
+### Compiler Compatibility
+
+MinGW UCRT64 GCC and MinGW CLANG64 Clang are tracked as provisional, best-effort compiler compatibility evidence. These targets are not release-supported. The `compiler-compat` workflow runs them with `continue-on-error: true` while they remain provisional.

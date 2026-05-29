@@ -32,12 +32,22 @@ def project_version(source: Path, errors: list[str]) -> str:
         text,
         re.DOTALL,
     )
-    if not match:
-        errors.append(
-            f"{path}: must declare project(cxxmcp VERSION <major.minor.patch>)"
-        )
-        return ""
-    return match.group(1)
+    if match:
+        return match.group(1)
+    # Support VERSION loaded from a file variable: project(cxxmcp VERSION ${VAR})
+    var_match = re.search(
+        r"project\s*\(\s*cxxmcp\b(?:(?!\)).)*?\bVERSION\s+\$\{[^}]+\}",
+        text,
+        re.DOTALL,
+    )
+    if var_match:
+        version_file = source / "VERSION"
+        if version_file.is_file():
+            return version_file.read_text(encoding="utf-8").strip()
+    errors.append(
+        f"{path}: must declare project(cxxmcp VERSION <major.minor.patch>)"
+    )
+    return ""
 
 
 def require_equal(
@@ -67,7 +77,7 @@ def check_conanfile(source: Path, version: str, errors: list[str]) -> None:
 
 
 def check_vcpkg_json(source: Path, version: str, errors: list[str]) -> None:
-    path = source / "packaging/vcpkg/ports/cxxmcp/vcpkg.json"
+    path = source / "packaging/vcpkg/ports/cxxmcp-sdk/vcpkg.json"
     text = read_text(path, errors)
     if not text:
         return
