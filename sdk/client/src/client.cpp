@@ -10,7 +10,9 @@
 #include <utility>
 #include <variant>
 
+#if defined(CXXMCP_ENABLE_HTTP)
 #include "cxxmcp/client/http_transport.hpp"
+#endif
 #include "cxxmcp/client/process_stdio_transport.hpp"
 #include "cxxmcp/client/session.hpp"
 #include "cxxmcp/client/stdio_transport.hpp"
@@ -389,6 +391,7 @@ Client::server_capabilities_snapshot() const {
   return server_capabilities_;
 }
 
+#if defined(CXXMCP_ENABLE_HTTP)
 Client Client::connect_streamable_http(StreamableHttpEndpoint endpoint) {
   HttpTransportOptions options;
   options.uri = std::move(endpoint.uri);
@@ -418,6 +421,7 @@ Client Client::connect_legacy_sse(std::string uri) {
   endpoint.uri = std::move(uri);
   return connect_legacy_sse(std::move(endpoint));
 }
+#endif
 
 Client Client::connect_stdio(StdioEndpoint endpoint) {
   if (endpoint.command.empty()) {
@@ -449,6 +453,7 @@ core::Result<protocol::JsonRpcResponse> Client::send_rpc_request(
     return mcp::core::unexpected(started.error());
   }
 
+#if defined(CXXMCP_ENABLE_HTTP)
   if (request.method != std::string(protocol::InitializeMethod) &&
       dynamic_cast<HttpTransport*>(transport_.get()) != nullptr) {
     std::optional<protocol::Json> initialize_request;
@@ -478,6 +483,7 @@ core::Result<protocol::JsonRpcResponse> Client::send_rpc_request(
       // proceed with the actual request anyway.
     }
   }
+#endif
 
   bool retried_after_session_reset = false;
   while (true) {
@@ -632,9 +638,11 @@ core::Result<protocol::Json> Client::initialize(std::string client_name,
     }
     // Update the transport's protocol version so subsequent requests
     // (like notifications) use the negotiated version in headers.
+#if defined(CXXMCP_ENABLE_HTTP)
     if (auto* http = dynamic_cast<HttpTransport*>(transport_.get())) {
       http->set_negotiated_protocol_version(server_ver);
     }
+#endif
   }
 
   const auto payload = require_initialize_payload(*response);

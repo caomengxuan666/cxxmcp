@@ -596,7 +596,9 @@ jobs:
             "-DCXXMCP_BUILD_CLIENT=ON",
             "-DCXXMCP_BUILD_SERVER=ON",
             "-DCXXMCP_BUILD_EXAMPLES=ON",
-            "-DCXXMCP_BUILD_TESTS=ON"
+            "-DCXXMCP_BUILD_TESTS=ON",
+            "-DCXXMCP_ENABLE_HTTP=ON",
+            "-DCXXMCP_ENABLE_AUTH=ON"
           )
           if ("${{ matrix.build_type }}") {
             $cmakeArgs += "-DCMAKE_BUILD_TYPE=${{ matrix.build_type }}"

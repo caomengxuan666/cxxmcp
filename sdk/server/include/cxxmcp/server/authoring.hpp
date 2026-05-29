@@ -301,6 +301,7 @@ class CXXMCP_DEPRECATED(
     /// @brief Adds a stdio server transport.
     Builder& stdio();
 
+#if defined(CXXMCP_ENABLE_HTTP)
     /// @brief Adds a streamable HTTP server transport.
     /// @param host Host/interface to bind.
     /// @param port TCP port to bind.
@@ -314,6 +315,7 @@ class CXXMCP_DEPRECATED(
     /// @param path HTTP path for MCP requests.
     Builder& legacy_sse(std::string host, std::uint16_t port,
                         std::string path = "/mcp");
+#endif
 
     /// @brief Adds a caller-supplied transport.
     /// @param value Transport owned by the built server.

@@ -40,7 +40,9 @@
 #include "cxxmcp/server/authoring.hpp"
 #include "cxxmcp/server/peer.hpp"
 #include "cxxmcp/server/transport_adapter_fwd.hpp"
+#if defined(CXXMCP_ENABLE_HTTP)
 #include "cxxmcp/transport/http_transport.hpp"
+#endif
 #include "cxxmcp/transport/process_stdio_transport.hpp"
 #include "cxxmcp/transport/stdio_transport.hpp"
 #include "cxxmcp/transport/transport.hpp"
@@ -160,6 +162,7 @@ inline server::SessionContext context_for_received_server_message(
     transport::ServerTransport& transport,
     const server::SessionContext& fallback) {
   server::SessionContext context = fallback;
+#if defined(CXXMCP_ENABLE_HTTP)
   auto* http_transport =
       dynamic_cast<transport::StreamableHttpServerTransport*>(&transport);
   if (http_transport == nullptr) {
@@ -178,6 +181,7 @@ inline server::SessionContext context_for_received_server_message(
   context.headers = http_context->headers;
   context.http_method = http_context->http_method;
   context.http_url = http_context->http_url;
+#endif
   return context;
 }
 
@@ -451,6 +455,7 @@ class Peer<RoleClient> {
   /// @brief Creates a client peer from an existing client implementation.
   explicit Peer(client::Client client) : client_(std::move(client)) {}
 
+#if defined(CXXMCP_ENABLE_HTTP)
   static Peer connect_streamable_http(
       client::Client::StreamableHttpEndpoint endpoint) {
     return Peer(client::Client::connect_streamable_http(std::move(endpoint)));
@@ -460,6 +465,7 @@ class Peer<RoleClient> {
       client::Client::StreamableHttpEndpoint endpoint) {
     return Peer(client::Client::connect_legacy_sse(std::move(endpoint)));
   }
+#endif
 
   static Peer connect_stdio(client::Client::StdioEndpoint endpoint) {
     return Peer(client::Client::connect_stdio(std::move(endpoint)));
@@ -2488,6 +2494,7 @@ class Peer<RoleClient>::Builder {
     return *this;
   }
 
+#if defined(CXXMCP_ENABLE_HTTP)
   Builder& streamable_http(client::Client::StreamableHttpEndpoint endpoint) {
     reset_transport();
     http_endpoint_ = std::move(endpoint);
@@ -2513,6 +2520,7 @@ class Peer<RoleClient>::Builder {
     endpoint.uri = std::move(uri);
     return legacy_sse(std::move(endpoint));
   }
+#endif
 
   Builder& stdio(client::Client::StdioEndpoint endpoint) {
     reset_transport();
@@ -2538,6 +2546,7 @@ class Peer<RoleClient>::Builder {
     return *this;
   }
 
+#if defined(CXXMCP_ENABLE_HTTP)
   Builder& header(std::string name, std::string value) {
     http_headers_[std::move(name)] = std::move(value);
     return *this;
@@ -2552,6 +2561,7 @@ class Peer<RoleClient>::Builder {
     auth_refresh_handler_ = std::move(handler);
     return *this;
   }
+#endif
 
   Builder& timeout(std::chrono::milliseconds value) {
     timeout_ = value;
@@ -2713,19 +2723,24 @@ class Peer<RoleClient>::Builder {
     None,
     Concrete,
     Native,
+#if defined(CXXMCP_ENABLE_HTTP)
     StreamableHttp,
     LegacySse,
+#endif
     Stdio,
   };
 
   void reset_transport() {
     concrete_transport_.reset();
     native_transport_.reset();
+#if defined(CXXMCP_ENABLE_HTTP)
     http_endpoint_ = client::Client::StreamableHttpEndpoint{};
+#endif
     stdio_endpoint_ = client::Client::StdioEndpoint{};
     transport_kind_ = TransportKind::None;
   }
 
+#if defined(CXXMCP_ENABLE_HTTP)
   client::Client::StreamableHttpEndpoint configured_http_endpoint() {
     auto endpoint = std::move(http_endpoint_);
     for (auto& header : http_headers_) {
@@ -2742,6 +2757,7 @@ class Peer<RoleClient>::Builder {
     }
     return endpoint;
   }
+#endif
 
   core::Result<Peer> make_peer() {
     switch (transport_kind_) {
@@ -2755,10 +2771,12 @@ class Peer<RoleClient>::Builder {
           return missing_transport("client transport is null");
         }
         return Peer(std::move(native_transport_));
+#if defined(CXXMCP_ENABLE_HTTP)
       case TransportKind::StreamableHttp:
         return Peer::connect_streamable_http(configured_http_endpoint());
       case TransportKind::LegacySse:
         return Peer::connect_legacy_sse(configured_http_endpoint());
+#endif
       case TransportKind::Stdio:
         return Peer::connect_stdio(std::move(stdio_endpoint_));
       case TransportKind::None:
@@ -2855,11 +2873,13 @@ class Peer<RoleClient>::Builder {
   TransportKind transport_kind_ = TransportKind::None;
   std::unique_ptr<client::Transport> concrete_transport_;
   std::unique_ptr<transport::ClientTransport> native_transport_;
+#if defined(CXXMCP_ENABLE_HTTP)
   client::Client::StreamableHttpEndpoint http_endpoint_;
-  client::Client::StdioEndpoint stdio_endpoint_;
   std::unordered_map<std::string, std::string> http_headers_;
   std::optional<std::string> auth_header_;
   client::HttpAuthRefreshHandler auth_refresh_handler_;
+#endif
+  client::Client::StdioEndpoint stdio_endpoint_;
   std::optional<std::chrono::milliseconds> timeout_;
   std::optional<protocol::ClientCapabilities> capabilities_;
   std::optional<std::vector<protocol::Root>> roots_;
@@ -4064,6 +4084,7 @@ class Peer<RoleServer>::Builder {
 
   Builder& stdio() { return stdio(std::cin, std::cout); }
 
+#if defined(CXXMCP_ENABLE_HTTP)
   Builder& streamable_http(
       transport::StreamableHttpServerTransportOptions options) {
     return transport(std::make_unique<transport::StreamableHttpServerTransport>(
@@ -4084,6 +4105,7 @@ class Peer<RoleServer>::Builder {
     options.path = std::move(path);
     return streamable_http(std::move(options));
   }
+#endif
 
   Builder& auth_provider(std::unique_ptr<server::AuthProvider> value) {
     builder_.with_auth_provider(std::move(value));

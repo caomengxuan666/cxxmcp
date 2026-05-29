@@ -130,6 +130,7 @@ class Transport {
 /// compatibility surface.
 class Client {
  public:
+#if defined(CXXMCP_ENABLE_HTTP)
   /// @brief Endpoint options for streamable HTTP and legacy SSE client
   /// transports.
   struct StreamableHttpEndpoint {
@@ -159,6 +160,7 @@ class Client {
     /// Per-request HTTP timeout.
     std::chrono::milliseconds timeout{30000};
   };
+#endif
 
   /// @brief Endpoint options for launching a child process over stdio.
   struct StdioEndpoint {
@@ -251,6 +253,7 @@ class Client {
   using RawNotificationHandler =
       std::function<void(const protocol::JsonRpcNotification&)>;
 
+#if defined(CXXMCP_ENABLE_HTTP)
   /// @brief Creates a client connected to a streamable HTTP MCP endpoint.
   /// @param endpoint Remote HTTP endpoint options.
   /// @return Client owning the configured HTTP transport.
@@ -270,6 +273,7 @@ class Client {
   /// @param uri Remote HTTP or HTTPS endpoint URI.
   /// @return Client owning the configured SSE-compatible transport.
   static Client connect_legacy_sse(std::string uri);
+#endif
 
   /// @brief Creates a client connected to a child process over stdio.
   /// @param endpoint Child process command, arguments, working directory, and

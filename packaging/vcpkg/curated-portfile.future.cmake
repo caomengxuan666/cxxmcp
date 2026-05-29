@@ -40,6 +40,7 @@ vcpkg_cmake_configure(
         -DCXXMCP_ENABLE_AUTH=${CXXMCP_VCPKG_ENABLE_AUTH}
         -DCXXMCP_AUTH_CRYPTO=${CXXMCP_VCPKG_AUTH_CRYPTO}
         -DCXXMCP_USE_SYSTEM_DEPS=ON
+        # after-jsonrpcpp-vcpkg-acceptance
         -DCXXMCP_USE_SYSTEM_JSONRPCPP=ON
 )
 

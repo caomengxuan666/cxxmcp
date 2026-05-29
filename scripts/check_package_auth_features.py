@@ -49,7 +49,7 @@ def main() -> None:
     args = parser.parse_args()
     source = Path(args.source).resolve()
 
-    vcpkg_manifest = source / "packaging/vcpkg/ports/cxxmcp/vcpkg.json"
+    vcpkg_manifest = source / "packaging/vcpkg/ports/cxxmcp-sdk/vcpkg.json"
     data = json.loads(vcpkg_manifest.read_text(encoding="utf-8"))
     default_features = data.get("default-features", [])
     if "auth" in default_features:
@@ -72,7 +72,7 @@ def main() -> None:
             if {"openssl", "ssl"} & dependency_features(dep):
                 fail("vcpkg default cpp-httplib dependency must not enable OpenSSL")
 
-    vcpkg_portfile = source / "packaging/vcpkg/ports/cxxmcp/portfile.cmake"
+    vcpkg_portfile = source / "packaging/vcpkg/ports/cxxmcp-sdk/portfile.cmake"
     require_contains(vcpkg_portfile, '"auth" IN_LIST FEATURES')
     require_contains(vcpkg_portfile, "-DCXXMCP_ENABLE_AUTH=${CXXMCP_VCPKG_ENABLE_AUTH}")
     require_contains(vcpkg_portfile, "vcpkg_check_linkage(ONLY_STATIC_LIBRARY)")

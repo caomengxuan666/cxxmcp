@@ -36,14 +36,16 @@ if(TARGET mcp_sdk)
     cxxmcp_example(mcp_example_typed_stdio_server)
 endif()
 
-if(TARGET mcp_client AND TARGET mcp_server)
+if(MCP_ENABLE_HTTP AND TARGET mcp_client AND TARGET mcp_server)
     add_executable(mcp_example_auth_bearer_http auth_bearer_http.cpp)
     target_link_libraries(mcp_example_auth_bearer_http PRIVATE mcp_client
                                                                mcp_server)
     cxxmcp_example(mcp_example_auth_bearer_http)
     cxxmcp_example_smoke_test(example_auth_bearer_http
                               mcp_example_auth_bearer_http)
+endif()
 
+if(TARGET mcp_client AND TARGET mcp_server)
     add_executable(mcp_example_server_stdio_peer server_stdio_peer.cpp)
     target_link_libraries(mcp_example_server_stdio_peer PRIVATE mcp_client
                                                                 mcp_server)
@@ -117,7 +119,7 @@ if(TARGET mcp_client AND TARGET mcp_server AND TARGET mcp_example_stdio_server)
                               mcp_example_process_stdio_client)
 endif()
 
-if(TARGET mcp_client AND TARGET mcp_server)
+if(MCP_ENABLE_HTTP AND TARGET mcp_client AND TARGET mcp_server)
     add_executable(mcp_example_streamable_http_client
                    streamable_http_client.cpp)
     target_link_libraries(mcp_example_streamable_http_client PRIVATE

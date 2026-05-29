@@ -173,9 +173,18 @@ def project_version(source: Path) -> str:
         r"project\s*\(\s*cxxmcp\s+VERSION\s+([0-9]+(?:\.[0-9]+)*)",
         cmake,
     )
-    if not match:
-        fail("CMakeLists.txt must declare project(cxxmcp VERSION <version>)")
-    return match.group(1)
+    if match:
+        return match.group(1)
+    # Support VERSION loaded from a file variable: project(cxxmcp VERSION ${VAR})
+    var_match = re.search(
+        r"project\s*\(\s*cxxmcp\s+VERSION\s+\$\{[^}]+\}",
+        cmake,
+    )
+    if var_match:
+        version_file = source / "VERSION"
+        if version_file.is_file():
+            return version_file.read_text(encoding="utf-8").strip()
+    fail("CMakeLists.txt must declare project(cxxmcp VERSION <version>)")
 
 
 def check_source_tree(source: Path) -> None:

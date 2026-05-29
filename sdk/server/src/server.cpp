@@ -20,7 +20,9 @@
 #include "cxxmcp/protocol/serialization.hpp"
 #include "cxxmcp/server/authoring.hpp"
 #include "cxxmcp/server/handler.hpp"
+#if defined(CXXMCP_ENABLE_HTTP)
 #include "cxxmcp/server/http_transport.hpp"
+#endif
 #include "cxxmcp/server/stdio_transport.hpp"
 
 namespace mcp::server {
@@ -1871,6 +1873,7 @@ App::Builder& App::Builder::stdio() {
   return *this;
 }
 
+#if defined(CXXMCP_ENABLE_HTTP)
 App::Builder& App::Builder::streamable_http(std::string host,
                                             std::uint16_t port,
                                             std::string path) {
@@ -1886,6 +1889,7 @@ App::Builder& App::Builder::legacy_sse(std::string host, std::uint16_t port,
                                        std::string path) {
   return streamable_http(std::move(host), port, std::move(path));
 }
+#endif
 
 App::Builder& App::Builder::transport(std::unique_ptr<Transport> value) {
   builder_.with_transport(std::move(value));

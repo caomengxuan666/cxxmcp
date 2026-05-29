@@ -36,6 +36,7 @@ class CxxmcpConan(ConanFile):
     exports_sources = (
         "CMakeLists.txt",
         "CMakePresets.json",
+        "VERSION",
         "cmake/*",
         "sdk/*",
         "extensions/*",
