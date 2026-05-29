@@ -4,404 +4,121 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>cxxmcp Documentation</title>
-    <meta
-      name="description"
-      content="cxxmcp is a community C++17 SDK for building Model Context Protocol clients and servers.">
+    <meta name="description" content="cxxmcp is a community C++17 SDK for building Model Context Protocol clients and servers.">
+    <link rel="stylesheet" href="style.css">
     <style>
-      :root {
-        color-scheme: light dark;
-        --bg: #f7f8fa;
-        --panel: #ffffff;
-        --text: #17202a;
-        --muted: #596579;
-        --line: #d9dee7;
-        --accent: #0f766e;
-        --accent-strong: #0b5f59;
-        --code: #eef3f5;
-      }
-
-      @media (prefers-color-scheme: dark) {
-        :root {
-          --bg: #101317;
-          --panel: #171b21;
-          --text: #edf2f7;
-          --muted: #aab4c3;
-          --line: #2a313a;
-          --accent: #2dd4bf;
-          --accent-strong: #5eead4;
-          --code: #20262e;
-        }
-      }
-
-      * {
-        box-sizing: border-box;
-      }
-
-      body {
-        margin: 0;
-        font-family:
-          Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont,
-          "Segoe UI", sans-serif;
-        line-height: 1.6;
-        color: var(--text);
-        background: var(--bg);
-      }
-
-      a {
-        color: var(--accent-strong);
-        text-decoration-thickness: 0.08em;
-        text-underline-offset: 0.18em;
-      }
-
-      header,
-      main,
-      footer {
-        width: min(1120px, calc(100% - 32px));
-        margin: 0 auto;
-      }
-
-      header {
-        padding: 28px 0 18px;
-        display: flex;
-        justify-content: space-between;
-        gap: 16px;
-        align-items: center;
-      }
-
-      .brand {
-        font-weight: 750;
-        font-size: 1.05rem;
-        letter-spacing: 0;
-      }
-
-      nav {
-        display: flex;
-        flex-wrap: wrap;
-        gap: 14px;
-        font-size: 0.95rem;
-      }
-
-      .hero {
-        padding: 58px 0 42px;
-        border-top: 1px solid var(--line);
-        border-bottom: 1px solid var(--line);
-      }
-
-      .eyebrow {
-        color: var(--accent-strong);
-        font-size: 0.9rem;
-        font-weight: 700;
-        text-transform: uppercase;
-        letter-spacing: 0;
-      }
-
-      h1 {
-        max-width: 840px;
-        margin: 12px 0 16px;
-        font-size: clamp(2.4rem, 6vw, 4.8rem);
-        line-height: 1.02;
-        letter-spacing: 0;
-      }
-
-      .lede {
-        max-width: 780px;
-        margin: 0;
-        color: var(--muted);
-        font-size: 1.18rem;
-      }
-
-      .actions {
-        margin-top: 28px;
-        display: flex;
-        flex-wrap: wrap;
-        gap: 12px;
-      }
-
-      .button {
-        display: inline-flex;
-        align-items: center;
-        justify-content: center;
-        min-height: 44px;
-        padding: 0 16px;
-        border-radius: 6px;
-        border: 1px solid var(--line);
-        background: var(--panel);
-        color: var(--text);
-        font-weight: 650;
-        text-decoration: none;
-      }
-
-      .button.primary {
-        border-color: var(--accent);
-        background: var(--accent);
-        color: #ffffff;
-      }
-
-      .grid {
-        display: grid;
-        grid-template-columns: repeat(3, minmax(0, 1fr));
-        gap: 16px;
-        padding: 32px 0;
-      }
-
-      .card {
-        border: 1px solid var(--line);
-        border-radius: 8px;
-        background: var(--panel);
-        padding: 20px;
-      }
-
-      .card h2 {
-        margin: 0 0 10px;
-        font-size: 1.05rem;
-        letter-spacing: 0;
-      }
-
-      .card p {
-        margin: 0;
-        color: var(--muted);
-      }
-
-      .section {
-        padding: 12px 0 40px;
-      }
-
-      .section h2 {
-        margin: 0 0 14px;
-        font-size: 1.4rem;
-        letter-spacing: 0;
-      }
-
-      pre {
-        overflow-x: auto;
-        border: 1px solid var(--line);
-        border-radius: 8px;
-        background: var(--code);
-        padding: 18px;
-      }
-
-      code {
-        font-family:
-          ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono",
-          monospace;
-        font-size: 0.95em;
-      }
-
-      footer {
-        padding: 24px 0 36px;
-        color: var(--muted);
-        border-top: 1px solid var(--line);
-        font-size: 0.95rem;
-      }
-
-      @media (max-width: 760px) {
-        header {
-          align-items: flex-start;
-          flex-direction: column;
-        }
-
-        .hero {
-          padding: 38px 0 32px;
-        }
-
-        .grid {
-          grid-template-columns: 1fr;
-        }
-      }
+      .grid-highlights { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+      @media (max-width: 800px) { .grid-highlights { grid-template-columns: 1fr; } }
     </style>
   </head>
   <body>
-    <header>
-      <div class="brand">cxxmcp</div>
-      <nav aria-label="Primary">
+    <button class="sidebar-toggle" onclick="document.querySelector('.sidebar').classList.toggle('open')">&#9776;</button>
+    <div class="page">
+      <nav class="sidebar">
+        <div class="sidebar-brand"><a href="./">cxxmcp</a></div>
+        <div class="sidebar-section">Guide</div>
         <a href="./getting-started.html">Getting Started</a>
         <a href="./tutorials.html">Tutorials</a>
         <a href="./concepts.html">Concepts</a>
         <a href="./cookbook.html">Cookbook</a>
         <a href="./transports.html">Transports</a>
+        <div class="sidebar-section">Reference</div>
+        <a href="./api/">API Reference</a>
         <a href="./troubleshooting.html">Troubleshooting</a>
+        <a href="./migration.html">Migration</a>
+        <a href="./changelog.html">Changelog</a>
+        <div class="sidebar-section">Project</div>
         <a href="./auth.html">Auth</a>
         <a href="./security.html">Security</a>
         <a href="./stability.html">Stability</a>
-        <a href="./api/">API Reference</a>
+        <a href="./contributing.html">Contributing</a>
+        <a href="./roadmap.html">Roadmap</a>
+        <div class="sidebar-section">External</div>
         <a href="https://github.com/caomengxuan666/cxxmcp">GitHub</a>
-        <a href="https://modelcontextprotocol.io/">MCP</a>
+        <a href="https://modelcontextprotocol.io/">MCP Spec</a>
       </nav>
-    </header>
 
-    <main>
-      <section class="hero">
-        <div class="eyebrow">Community C++ MCP SDK</div>
-        <h1>Build Model Context Protocol clients and servers in C++.</h1>
-        <p class="lede">
-          cxxmcp is a production-ready C++17 SDK with full protocol coverage,
-          cross-SDK conformance validation, and support for both 2025-11-25 stable
-          and 2026 draft spec versions.
-        </p>
-        <div class="actions">
-          <a class="button primary" href="./getting-started.html">Get Started</a>
-          <a class="button" href="./api/">API Reference</a>
-          <a class="button" href="https://github.com/caomengxuan666/cxxmcp/blob/master/docs/conformance_evidence.md">Conformance</a>
-        </div>
-      </section>
-
-      <section class="grid" aria-label="Highlights">
-        <article class="card">
-          <h2>SDK-first API</h2>
-          <p>
-            Public headers and package targets are centered on protocol,
-            transport, handler, peer, service, client, server, and sdk layers.
-          </p>
-        </article>
-        <article class="card">
-          <h2>Transport Coverage</h2>
-          <p>
-            Built-in stdio, process stdio, Streamable HTTP, and legacy
-            SSE-compatible paths support client and server integration.
-          </p>
-        </article>
-        <article class="card">
-          <h2>OAuth 2.1</h2>
-          <p>
-            Optional auth layer with PKCE, dynamic client registration,
-            token revocation, and server-side authorization endpoints.
-          </p>
-        </article>
-      </section>
-
-      <section class="section">
-        <h2>Conformance Results</h2>
-        <p class="lede">
-          Validated against the official
-          <a href="https://github.com/modelcontextprotocol/conformance"><code>modelcontextprotocol/conformance</code></a>
-          runner with <code>--suite all</code>.
-        </p>
-        <div class="grid" style="padding-top: 16px;">
-          <article class="card">
-            <h2>Server</h2>
-            <p><strong>109 / 110</strong> (99%)</p>
-          </article>
-          <article class="card">
-            <h2>Client</h2>
-            <p><strong>447 / 447</strong> (100%)</p>
-          </article>
-          <article class="card">
-            <h2>vs RMCP</h2>
-            <p>RMCP server 48/95 (51%); client runner crashed. cxxmcp leads on both.</p>
-          </article>
-        </div>
-      </section>
-
-      <section class="section">
-        <h2>CMake Consumption</h2>
-        <pre><code>find_package(cxxmcp CONFIG REQUIRED)
-target_link_libraries(my_server PRIVATE cxxmcp::server)
-target_link_libraries(my_client PRIVATE cxxmcp::client)</code></pre>
-      </section>
-
-      <section class="grid" aria-label="Manual guides">
-        <article class="card">
-          <h2><a href="./tutorials.html">Tutorials</a></h2>
-          <p>
-            Step-by-step guides: build your first server, add HTTP, auth,
-            typed tools with reflection, and async tasks.
-          </p>
-        </article>
-        <article class="card">
-          <h2><a href="./concepts.html">Concepts</a></h2>
-          <p>
-            Peer/Service architecture, transport layer, capability negotiation,
-            and the reflection system explained.
-          </p>
-        </article>
-        <article class="card">
-          <h2><a href="./cookbook.html">Cookbook</a></h2>
-          <p>
-            Copy-paste code snippets for common tasks: tools, resources,
-            prompts, auth, tasks, and CMake configuration.
-          </p>
-        </article>
-        <article class="card">
-          <h2><a href="./auth.html">Auth</a></h2>
-          <p>
-            Bearer-token hooks, server auth providers, OAuth 2.1 authorization
-            server endpoints, and client-side PKCE orchestration.
-          </p>
-        </article>
-        <article class="card">
-          <h2><a href="./stability.html">Release and API Stability</a></h2>
-          <p>
-            Read the public SDK contract, source compatibility rules, ABI note,
-            and release evidence requirements.
-          </p>
-        </article>
-        <article class="card">
-          <h2><a href="https://github.com/caomengxuan666/cxxmcp/blob/master/docs/conformance_evidence.md">Conformance Evidence</a></h2>
-          <p>
-            Full test results from the official MCP conformance runner,
-            including known exceptions and the RMCP comparison.
-          </p>
-        </article>
-      </section>
-    </main>
-
-      <section class="section">
-        <h2>More</h2>
-        <div class="grid">
-          <article class="card">
-            <h2><a href="./transports.html">Transports</a></h2>
-            <p>
-              Detailed reference for stdio, process stdio, Streamable HTTP,
-              and custom transport implementations.
+      <div class="main-wrap">
+        <main>
+          <section class="hero">
+            <div class="eyebrow">Community C++ MCP SDK</div>
+            <h1>Build Model Context Protocol clients and servers in C++.</h1>
+            <p class="lede">
+              cxxmcp is a production-ready C++17 SDK with full protocol coverage,
+              cross-SDK conformance validation, and support for both 2025-11-25 stable
+              and 2026 draft spec versions.
             </p>
-          </article>
-          <article class="card">
-            <h2><a href="./troubleshooting.html">Troubleshooting</a></h2>
-            <p>
-              Common build errors, runtime issues, and conformance testing
-              problems with solutions.
-            </p>
-          </article>
-          <article class="card">
-            <h2><a href="./migration.html">Migration Guide</a></h2>
-            <p>
-              API mapping tables for migrating from TypeScript, Python, and
-              Rust MCP SDKs to cxxmcp.
-            </p>
-          </article>
-          <article class="card">
-            <h2><a href="./changelog.html">Changelog</a></h2>
-            <p>Release history and what changed in each version.</p>
-          </article>
-          <article class="card">
-            <h2><a href="./contributing.html">Contributing</a></h2>
-            <p>
-              Development flow, public API rules, protocol compatibility,
-              and testing requirements.
-            </p>
-          </article>
-          <article class="card">
-            <h2><a href="./roadmap.html">Roadmap</a></h2>
-            <p>
-              Current focus, near-term plans, and longer-term goals for
-              cxxmcp development.
-            </p>
-          </article>
-          <article class="card">
-            <h2><a href="./security.html">Security</a></h2>
-            <p>
-              Vulnerability reporting, scope, security-related design
-              decisions, and supported versions.
-            </p>
-          </article>
-        </div>
-      </section>
+            <div class="actions">
+              <a class="button primary" href="./getting-started.html">Get Started</a>
+              <a class="button" href="./tutorials.html">Tutorials</a>
+              <a class="button" href="./api/">API Reference</a>
+              <a class="button" href="https://github.com/caomengxuan666/cxxmcp/blob/master/docs/conformance_evidence.md">Conformance</a>
+            </div>
+          </section>
 
-    </main>
+          <section class="grid grid-highlights" aria-label="Highlights">
+            <article class="card">
+              <h2>Full Protocol Coverage</h2>
+              <p>Tool, prompt, resource, sampling, elicitation, tasks, progress, cancellation — all MCP capabilities.</p>
+            </article>
+            <article class="card">
+              <h2>109/110 Server, 447/447 Client</h2>
+              <p>Validated against the official conformance runner. Only failure is an upstream TS SDK issue.</p>
+            </article>
+            <article class="card">
+              <h2>Zero Runtime Dependencies</h2>
+              <p>C++17 public API. HTTP (cpp-httplib) and OpenSSL are opt-in via compile-time flags.</p>
+            </article>
+          </section>
 
-    <footer>
-      cxxmcp is a community C++ MCP SDK. It is not an official MCP SDK unless
-      accepted or listed by the MCP maintainers.
-    </footer>
+          <section class="section">
+            <h2>Quick Start</h2>
+            <pre><code>find_package(cxxmcp CONFIG REQUIRED)
+target_link_libraries(my_server PRIVATE cxxmcp::server)</code></pre>
+            <pre><code>#include &lt;cxxmcp/peer.hpp&gt;
+#include &lt;cxxmcp/run.hpp&gt;
+
+int main() {
+    return mcp::ServerPeer::builder()
+        .name("demo-server").version("1.0.0").stdio()
+        .tool&lt;mcp::protocol::Json, mcp::protocol::Json&gt;("echo",
+            [](const mcp::protocol::Json&amp; input) {
+                return mcp::protocol::Json{{"echo", input}};
+            })
+        .run();
+}</code></pre>
+          </section>
+
+          <section class="section">
+            <h2>Conformance Results</h2>
+            <div class="grid grid-highlights">
+              <article class="card"><h2>Server</h2><p><strong>109 / 110</strong> (99%)</p></article>
+              <article class="card"><h2>Client</h2><p><strong>447 / 447</strong> (100%)</p></article>
+              <article class="card"><h2>vs RMCP</h2><p>RMCP server 48/95 (51%); client runner crashed.</p></article>
+            </div>
+          </section>
+
+          <section class="section">
+            <h2>Explore the Docs</h2>
+            <div class="grid">
+              <article class="card"><h2><a href="./tutorials.html">Tutorials</a></h2><p>Step-by-step guides: build servers, add HTTP, auth, typed tools, async tasks.</p></article>
+              <article class="card"><h2><a href="./concepts.html">Concepts</a></h2><p>Peer/Service architecture, transports, capability negotiation, reflection system.</p></article>
+              <article class="card"><h2><a href="./cookbook.html">Cookbook</a></h2><p>Copy-paste code snippets for common tasks and CMake configuration.</p></article>
+              <article class="card"><h2><a href="./transports.html">Transports</a></h2><p>stdio, process stdio, Streamable HTTP, and custom transport reference.</p></article>
+              <article class="card"><h2><a href="./auth.html">Auth</a></h2><p>Bearer tokens, OAuth 2.1, DPoP, OpenSSL crypto backend.</p></article>
+              <article class="card"><h2><a href="./troubleshooting.html">Troubleshooting</a></h2><p>Common build errors, runtime issues, and conformance problems.</p></article>
+              <article class="card"><h2><a href="./migration.html">Migration</a></h2><p>API mapping from TypeScript, Python, and Rust MCP SDKs.</p></article>
+              <article class="card"><h2><a href="./roadmap.html">Roadmap</a></h2><p>Current focus, near-term plans, and longer-term goals.</p></article>
+              <article class="card"><h2><a href="./security.html">Security</a></h2><p>Vulnerability reporting and security design decisions.</p></article>
+            </div>
+          </section>
+        </main>
+
+        <footer>
+          cxxmcp is a community C++ MCP SDK. It is not an official MCP SDK unless
+          accepted or listed by the MCP maintainers.
+        </footer>
+      </div>
+    </div>
   </body>
 </html>
