@@ -981,6 +981,7 @@ class Peer<RoleClient> {
     if (!page) {
       return mcp::core::unexpected(page.error());
     }
+    cache_tool_schemas(page->tools);
     return page->tools;
   }
 
@@ -1003,7 +1004,7 @@ class Peer<RoleClient> {
   }
 
   core::Result<std::vector<protocol::ToolDefinition>> list_all_tools() {
-    return list_all_pages<protocol::ToolDefinition>(
+    auto result = list_all_pages<protocol::ToolDefinition>(
         std::string(protocol::ToolsListMethod),
         [](const protocol::Json& payload) {
           return protocol::tools_list_result_from_json(payload);
@@ -1012,11 +1013,18 @@ class Peer<RoleClient> {
            std::vector<protocol::ToolDefinition>& all) {
           all.insert(all.end(), page.tools.begin(), page.tools.end());
         });
+    if (result) {
+      cache_tool_schemas(*result);
+    }
+    return result;
   }
 
   core::Result<protocol::ToolResult> call_tool(const protocol::ToolCall& call) {
-    auto payload = request_json(std::string(protocol::ToolsCallMethod),
-                                protocol::tool_call_to_json(call));
+    auto request = protocol::make_request(
+        std::string(protocol::ToolsCallMethod), next_peer_request_id(),
+        protocol::tool_call_to_json(call));
+    apply_x_mcp_headers(request, call);
+    auto payload = raw_request(request);
     if (!payload) {
       return mcp::core::unexpected(payload.error());
     }
@@ -1900,6 +1908,25 @@ class Peer<RoleClient> {
     return next_request_id_->fetch_add(1, std::memory_order_relaxed);
   }
 
+  void cache_tool_schemas(const std::vector<protocol::ToolDefinition>& tools) {
+    for (const auto& tool : tools) {
+      tool_schema_cache_[tool.name] = tool.input_schema;
+    }
+  }
+
+  void apply_x_mcp_headers(protocol::JsonRpcRequest& request,
+                           const protocol::ToolCall& call) {
+    auto it = tool_schema_cache_.find(call.name);
+    if (it == tool_schema_cache_.end()) return;
+    auto entries = protocol::extract_x_mcp_headers(it->second);
+    if (entries.empty()) return;
+    auto param_headers =
+        protocol::build_tool_param_headers(call.arguments, entries);
+    for (auto& [key, value] : param_headers) {
+      request.transport_headers.emplace(std::move(key), std::move(value));
+    }
+  }
+
   bool native_receive_loop_active() const {
     std::lock_guard<std::mutex> lock(native_receive_state_->mutex);
     return native_receive_state_->loop_active;
@@ -2469,6 +2496,7 @@ class Peer<RoleClient> {
       client_request_cancellations_ = std::make_shared<
           std::unordered_map<std::string, CancellationSource>>();
   client::Client client_;
+  std::unordered_map<std::string, protocol::Json> tool_schema_cache_;
 };
 
 /// @brief Fluent builder for common client peer construction.

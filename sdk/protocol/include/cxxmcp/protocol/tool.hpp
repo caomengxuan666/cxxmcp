@@ -9,9 +9,14 @@
 /// Definitions are returned by listing or lookup methods, calls carry JSON
 /// arguments, and results return content blocks plus optional structured data.
 
+#include <algorithm>
+#include <cctype>
+#include <cstdint>
 #include <optional>
 #include <string>
 #include <string_view>
+#include <unordered_map>
+#include <unordered_set>
 #include <utility>
 #include <vector>
 
@@ -1016,6 +1021,144 @@ inline core::Result<ToolResult> tool_result_from_json(const Json& json) {
              "inputRequests", "requestState"});
 
   return result;
+}
+
+// ── SEP-2243: x-mcp-header support ──────────────────────────────────────────
+
+/// @brief One x-mcp-header annotation extracted from a tool input schema.
+struct XHeaderEntry {
+  std::string header_name;  // x-mcp-header value, e.g. "Region"
+  std::string param_name;   // property key, e.g. "region"
+  std::string type;         // JSON Schema type: "string", "number", etc.
+};
+
+/// @brief Extracts x-mcp-header annotations from a tool inputSchema.
+inline std::vector<XHeaderEntry> extract_x_mcp_headers(
+    const Json& input_schema) {
+  std::vector<XHeaderEntry> result;
+  if (!input_schema.is_object() || !input_schema.contains("properties") ||
+      !input_schema.at("properties").is_object()) {
+    return result;
+  }
+  for (auto& [key, prop] : input_schema.at("properties").items()) {
+    if (!prop.is_object() || !prop.contains("x-mcp-header") ||
+        !prop.at("x-mcp-header").is_string()) {
+      continue;
+    }
+    std::string type_str;
+    if (prop.contains("type") && prop.at("type").is_string()) {
+      type_str = prop.at("type").get<std::string>();
+    }
+    result.push_back({prop.at("x-mcp-header").get<std::string>(),
+                      std::string(key), std::move(type_str)});
+  }
+  return result;
+}
+
+/// @brief Validates x-mcp-header annotations per SEP-2243 constraints.
+/// Returns true if all headers are valid (tool should be kept).
+inline bool validate_tool_x_headers(const std::vector<XHeaderEntry>& entries) {
+  std::unordered_set<std::string> seen_lower;
+  for (const auto& entry : entries) {
+    if (entry.header_name.empty()) return false;
+    for (char ch : entry.header_name) {
+      const auto c = static_cast<unsigned char>(ch);
+      if (c < 0x21 || c > 0x7E || c == ':') return false;
+    }
+    if (entry.type == "object" || entry.type == "array" ||
+        entry.type == "null" || entry.type.empty()) {
+      return false;
+    }
+    std::string lower = entry.header_name;
+    std::transform(
+        lower.begin(), lower.end(), lower.begin(),
+        [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+    if (!seen_lower.insert(lower).second) return false;
+  }
+  return true;
+}
+
+/// @brief Checks if a string value needs Base64 encoding per SEP-2243.
+inline bool needs_base64_encoding(std::string_view value) {
+  for (const char ch : value) {
+    const auto c = static_cast<unsigned char>(ch);
+    if (c < 0x20 || c > 0x7E) return true;
+  }
+  if (!value.empty() && (value.front() == ' ' || value.back() == ' ')) {
+    return true;
+  }
+  return false;
+}
+
+/// @brief Standard RFC 4648 base64 encoding.
+inline std::string base64_encode(std::string_view input) {
+  static constexpr char kAlphabet[] =
+      "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+  std::string result;
+  result.reserve(((input.size() + 2) / 3) * 4);
+  const auto* data = reinterpret_cast<const unsigned char*>(input.data());
+  std::size_t i = 0;
+  while (i + 2 < input.size()) {
+    result.push_back(kAlphabet[(data[i] >> 2) & 0x3F]);
+    result.push_back(
+        kAlphabet[((data[i] & 0x03) << 4) | ((data[i + 1] >> 4) & 0x0F)]);
+    result.push_back(
+        kAlphabet[((data[i + 1] & 0x0F) << 2) | ((data[i + 2] >> 6) & 0x03)]);
+    result.push_back(kAlphabet[data[i + 2] & 0x3F]);
+    i += 3;
+  }
+  if (i + 1 == input.size()) {
+    result.push_back(kAlphabet[(data[i] >> 2) & 0x3F]);
+    result.push_back(kAlphabet[(data[i] & 0x03) << 4]);
+    result.push_back('=');
+    result.push_back('=');
+  } else if (i + 2 == input.size()) {
+    result.push_back(kAlphabet[(data[i] >> 2) & 0x3F]);
+    result.push_back(
+        kAlphabet[((data[i] & 0x03) << 4) | ((data[i + 1] >> 4) & 0x0F)]);
+    result.push_back(kAlphabet[(data[i + 1] & 0x0F) << 2]);
+    result.push_back('=');
+  }
+  return result;
+}
+
+/// @brief Encodes a string value for an Mcp-Param-* header per SEP-2243.
+inline std::string encode_header_value(std::string_view value) {
+  if (needs_base64_encoding(value)) {
+    return "=?base64?" + base64_encode(value) + "?=";
+  }
+  return std::string(value);
+}
+
+/// @brief Converts a JSON number to its string representation.
+inline std::string number_to_header_string(const Json& value) {
+  if (value.is_number_integer()) {
+    return std::to_string(value.get<std::int64_t>());
+  }
+  return value.dump();
+}
+
+/// @brief Builds Mcp-Param-* transport headers from tool arguments and schema.
+///
+/// Inspects the tool inputSchema for x-mcp-header annotations and converts
+/// matching argument values to HTTP header values per SEP-2243.
+inline std::unordered_map<std::string, std::string> build_tool_param_headers(
+    const Json& arguments, const std::vector<XHeaderEntry>& entries) {
+  std::unordered_map<std::string, std::string> headers;
+  for (const auto& entry : entries) {
+    if (!arguments.contains(entry.param_name)) continue;
+    const auto& value = arguments.at(entry.param_name);
+    if (value.is_null()) continue;
+    std::string header_key = "Mcp-Param-" + entry.header_name;
+    if (value.is_boolean()) {
+      headers[header_key] = value.get<bool>() ? "true" : "false";
+    } else if (value.is_number()) {
+      headers[header_key] = number_to_header_string(value);
+    } else if (value.is_string()) {
+      headers[header_key] = encode_header_value(value.get<std::string>());
+    }
+  }
+  return headers;
 }
 
 }  // namespace mcp::protocol

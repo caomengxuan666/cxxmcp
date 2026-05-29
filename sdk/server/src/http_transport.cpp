@@ -1073,6 +1073,13 @@ core::Result<core::Unit> HttpTransport::start(
                        meta.contains("io.modelcontextprotocol/protocolVersion");
     }
 
+    // Detect whether the request uses stateless-style headers (Mcp-Method
+    // present). When Mcp-Method is present, the request is from a client that
+    // understands the stateless protocol, so _meta validation should run even
+    // if _meta is missing from the body (to return the correct error code).
+    const bool has_method_header =
+        rpc_request && request.has_header(std::string(MethodHeader));
+
     // In stateless mode, reject methods that require a session.
     if (stateless_mode && rpc_request) {
       using SV = std::string_view;
@@ -1088,6 +1095,53 @@ core::Result<core::Unit> HttpTransport::start(
                       static_cast<int>(protocol::ErrorCode::MethodNotFound),
                       "method not available in stateless mode",
                       std::optional<protocol::RequestId>{rpc_request->id});
+          return;
+        }
+      }
+    }
+
+    // Validate _meta for stateless requests. This must run before session
+    // validation so that requests with Mcp-Method but missing _meta get the
+    // correct InvalidParams error (-32602) instead of a session error (-32001).
+    if ((stateless_mode || has_method_header) && rpc_request &&
+        !initialize_request) {
+      const auto error_id = std::optional<protocol::RequestId>{rpc_request->id};
+      if (!rpc_request->params.is_object() ||
+          !rpc_request->params.contains("_meta")) {
+        response.status = 400;
+        write_error(response,
+                    static_cast<int>(protocol::ErrorCode::InvalidParams),
+                    "stateless request requires _meta object", error_id);
+        return;
+      }
+      const auto& meta = rpc_request->params.at("_meta");
+      constexpr std::array<const char*, 3> kRequiredMetaKeys{
+          "io.modelcontextprotocol/protocolVersion",
+          "io.modelcontextprotocol/clientInfo",
+          "io.modelcontextprotocol/clientCapabilities"};
+      for (const auto* key : kRequiredMetaKeys) {
+        if (!meta.contains(key)) {
+          response.status = 400;
+          write_error(
+              response, static_cast<int>(protocol::ErrorCode::InvalidParams),
+              std::string("stateless request _meta missing ") + key, error_id);
+          return;
+        }
+      }
+      // Validate _meta.protocolVersion matches MCP-Protocol-Version header.
+      if (meta.contains("io.modelcontextprotocol/protocolVersion") &&
+          request.has_header(std::string(ProtocolVersionHeader))) {
+        const auto meta_version =
+            meta.at("io.modelcontextprotocol/protocolVersion")
+                .get<std::string>();
+        const auto header_version =
+            request.get_header_value(std::string(ProtocolVersionHeader));
+        if (meta_version != header_version) {
+          response.status = 400;
+          write_error(response, HeaderMismatchCode,
+                      "http transport request MCP-Protocol-Version header "
+                      "mismatch with _meta",
+                      error_id);
           return;
         }
       }
@@ -1138,50 +1192,6 @@ core::Result<core::Unit> HttpTransport::start(
                     protocol_version.error().message, error_id,
                     std::move(error_data));
         return;
-      }
-    }
-
-    // In stateless mode, validate _meta on all requests.
-    if (stateless_mode && rpc_request) {
-      const auto error_id = std::optional<protocol::RequestId>{rpc_request->id};
-      if (!rpc_request->params.is_object() ||
-          !rpc_request->params.contains("_meta")) {
-        response.status = 400;
-        write_error(response,
-                    static_cast<int>(protocol::ErrorCode::InvalidParams),
-                    "stateless request requires _meta object", error_id);
-        return;
-      }
-      const auto& meta = rpc_request->params.at("_meta");
-      constexpr std::array<const char*, 3> kRequiredMetaKeys{
-          "io.modelcontextprotocol/protocolVersion",
-          "io.modelcontextprotocol/clientInfo",
-          "io.modelcontextprotocol/clientCapabilities"};
-      for (const auto* key : kRequiredMetaKeys) {
-        if (!meta.contains(key)) {
-          response.status = 400;
-          write_error(
-              response, static_cast<int>(protocol::ErrorCode::InvalidParams),
-              std::string("stateless request _meta missing ") + key, error_id);
-          return;
-        }
-      }
-      // Validate _meta.protocolVersion matches MCP-Protocol-Version header.
-      if (meta.contains("io.modelcontextprotocol/protocolVersion") &&
-          request.has_header(std::string(ProtocolVersionHeader))) {
-        const auto meta_version =
-            meta.at("io.modelcontextprotocol/protocolVersion")
-                .get<std::string>();
-        const auto header_version =
-            request.get_header_value(std::string(ProtocolVersionHeader));
-        if (meta_version != header_version) {
-          response.status = 400;
-          write_error(response, HeaderMismatchCode,
-                      "http transport request MCP-Protocol-Version header "
-                      "mismatch with _meta",
-                      error_id);
-          return;
-        }
       }
     }
 
