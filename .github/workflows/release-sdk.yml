@@ -13,7 +13,7 @@ on:
 
 permissions:
   contents: write
-  actions: write
+  actions: read
 
 jobs:
   sdk-source-release:
@@ -50,7 +50,7 @@ jobs:
             echo "commit=${commit}"
           } >> "${GITHUB_OUTPUT}"
 
-      - name: Trigger release-gates if needed
+      - name: Wait for release-gates to pass
         id: trigger_gates
         shell: bash
         env:
@@ -58,26 +58,21 @@ jobs:
           RELEASE_COMMIT: ${{ steps.release_identity.outputs.commit }}
         run: |
           set -euo pipefail
-          existing="$(
-            gh api \
-              "/repos/${GITHUB_REPOSITORY}/actions/workflows/release-gates.yml/runs?status=success&head_sha=${RELEASE_COMMIT}&per_page=1" \
-              --jq '.workflow_runs[0].id // empty'
-          )"
-          if [[ -n "${existing}" ]]; then
-            echo "skip_trigger=true" >> "${GITHUB_OUTPUT}"
-          else
-            echo "Triggering release-gates for ${RELEASE_COMMIT}..."
-            gh workflow run release-gates.yml --ref "${RELEASE_COMMIT}"
-            sleep 10
-            gates_run_id="$(
+          for i in $(seq 1 60); do
+            existing="$(
               gh api \
-                "/repos/${GITHUB_REPOSITORY}/actions/workflows/release-gates.yml/runs?head_sha=${RELEASE_COMMIT}&per_page=1&sort=created_at&direction=desc" \
+                "/repos/${GITHUB_REPOSITORY}/actions/workflows/release-gates.yml/runs?status=success&head_sha=${RELEASE_COMMIT}&per_page=1" \
                 --jq '.workflow_runs[0].id // empty'
             )"
-            echo "Waiting for release-gates run ${gates_run_id}..."
-            gh run watch "${gates_run_id}" --exit-status
-            echo "skip_trigger=false" >> "${GITHUB_OUTPUT}"
-          fi
+            if [[ -n "${existing}" ]]; then
+              echo "release-gates passed (run ${existing})"
+              exit 0
+            fi
+            echo "Waiting for release-gates... (${i}/60)"
+            sleep 30
+          done
+          echo "Timed out waiting for release-gates to pass for ${RELEASE_COMMIT}" >&2
+          exit 1
 
       - name: Verify matching release-gates run
         id: release_gates
