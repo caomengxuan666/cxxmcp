@@ -358,19 +358,21 @@ core::Result<core::Unit> validate_get_http_headers(
 core::Result<core::Unit> validate_post_headers(
     const httplib::Request& request,
     const protocol::JsonRpcRequest& rpc_request) {
-  if (request.has_header(std::string(MethodHeader))) {
-    const auto method_header =
-        trim_ows(request.get_header_value(std::string(MethodHeader)));
-    if (method_header != rpc_request.method) {
-      return mcp::core::unexpected(make_transport_error(
-          HeaderMismatchCode,
-          "http transport request Mcp-Method header mismatch", method_header));
-    }
+  if (!request.has_header(std::string(MethodHeader))) {
+    return mcp::core::unexpected(make_transport_error(
+        HeaderMismatchCode,
+        "http transport request missing required Mcp-Method header"));
+  }
+  const auto method_header =
+      trim_ows(request.get_header_value(std::string(MethodHeader)));
+  if (method_header != rpc_request.method) {
+    return mcp::core::unexpected(make_transport_error(
+        HeaderMismatchCode, "http transport request Mcp-Method header mismatch",
+        method_header));
   }
 
   const auto expected_name = header_name_from_request(rpc_request);
-  if (expected_name.has_value() &&
-      request.has_header(std::string(MethodHeader))) {
+  if (expected_name.has_value()) {
     if (!request.has_header(std::string(NameHeader))) {
       return mcp::core::unexpected(make_transport_error(
           HeaderMismatchCode,

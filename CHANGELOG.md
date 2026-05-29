@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.1.1
+
+- Implemented SEP-1699 SSE retry/reconnection in the SDK client HTTP transport.
+- Fixed SSEClient `last_event_id_` tracking for priming events with empty data.
+- Updated conformance status: server 109/1, client 447/0 (OpenSSL).
+
 ## 1.1.0
 
 - Separated HTTP transport behind the `CXXMCP_ENABLE_HTTP` compile-time flag

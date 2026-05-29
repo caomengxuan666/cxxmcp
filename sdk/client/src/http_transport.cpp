@@ -8,6 +8,7 @@
 #include <deque>
 #include <exception>
 #include <functional>
+#include <future>
 #include <map>
 #include <mutex>
 #include <optional>
@@ -221,9 +222,16 @@ core::Result<ResolvedEndpoint> resolve_endpoint(
   return ResolvedEndpoint{std::move(origin), std::move(path)};
 }
 
-std::vector<std::string> parse_sse_data_events(std::string_view body) {
-  std::vector<std::string> events;
-  std::string data;
+struct SseEvent {
+  std::string event;  // event type (default: "message")
+  std::string data;   // concatenated data lines
+  std::string id;     // event ID
+  int retry_ms = -1;  // retry interval, -1 if not set
+};
+
+std::vector<SseEvent> parse_sse_events(std::string_view body) {
+  std::vector<SseEvent> events;
+  SseEvent current;
 
   std::size_t line_start = 0;
   while (line_start <= body.size()) {
@@ -238,26 +246,37 @@ std::vector<std::string> parse_sse_data_events(std::string_view body) {
     }
 
     if (line.empty()) {
-      if (!data.empty()) {
-        events.push_back(std::move(data));
-        data.clear();
-      }
-    } else if (!line.empty() && line.front() != ':') {
+      // Blank line = dispatch event (even if data is empty, for priming events)
+      events.push_back(std::move(current));
+      current = {};
+    } else if (line.front() != ':') {
       const auto colon = line.find(':');
       const auto field =
           colon == std::string_view::npos ? line : line.substr(0, colon);
+      std::string_view value;
+      if (colon != std::string_view::npos && colon + 1 < line.size()) {
+        value = line.substr(colon + 1);
+        if (!value.empty() && value.front() == ' ') {
+          value.remove_prefix(1);
+        }
+      }
       if (field == "data") {
-        std::string_view value;
-        if (colon != std::string_view::npos && colon + 1 < line.size()) {
-          value = line.substr(colon + 1);
-          if (!value.empty() && value.front() == ' ') {
-            value.remove_prefix(1);
-          }
+        if (!current.data.empty()) {
+          current.data.push_back('\n');
         }
-        if (!data.empty()) {
-          data.push_back('\n');
+        current.data.append(value.begin(), value.end());
+      } else if (field == "event") {
+        current.event.assign(value.begin(), value.end());
+      } else if (field == "id") {
+        current.id.assign(value.begin(), value.end());
+      } else if (field == "retry") {
+        // Parse integer retry value
+        std::string retry_str(value.begin(), value.end());
+        try {
+          current.retry_ms = std::stoi(retry_str);
+        } catch (...) {
+          // ignore unparseable retry
         }
-        data.append(value.begin(), value.end());
       }
     }
 
@@ -267,8 +286,9 @@ std::vector<std::string> parse_sse_data_events(std::string_view body) {
     line_start = line_end + 1;
   }
 
-  if (!data.empty()) {
-    events.push_back(std::move(data));
+  // Flush any trailing event (no trailing blank line)
+  if (!current.data.empty() || !current.id.empty() || current.retry_ms >= 0) {
+    events.push_back(std::move(current));
   }
 
   return events;
@@ -322,6 +342,8 @@ struct HttpTransport::Impl {
 
   core::Result<protocol::JsonRpcResponse> send(
       const protocol::JsonRpcRequest& request) {
+    sse_reconnected_ = false;
+
     if (options_error.has_value()) {
       return mcp::core::unexpected(*options_error);
     }
@@ -405,7 +427,8 @@ struct HttpTransport::Impl {
       // Only start the SSE stream if the response is successful.
       // For error responses (e.g. version negotiation), skip stream setup
       // so the error response can be returned for retry logic.
-      if (!decoded_response->error.has_value()) {
+      // Also skip if POST→GET reconnection was already handled (SEP-1699).
+      if (!decoded_response->error.has_value() && !sse_reconnected_) {
         const auto stream_started = ensure_stream_started();
         if (!stream_started) {
           return mcp::core::unexpected(stream_started.error());
@@ -480,8 +503,9 @@ struct HttpTransport::Impl {
     }
 
     if (has_event_stream_content_type(*response) && !response->body.empty()) {
-      for (const auto& event : parse_sse_data_events(response->body)) {
-        const auto handled = dispatch_event_payload(event, std::nullopt);
+      for (const auto& event : parse_sse_events(response->body)) {
+        if (event.data.empty()) continue;
+        const auto handled = dispatch_event_payload(event.data, std::nullopt);
         if (!handled) {
           return mcp::core::unexpected(handled.error());
         }
@@ -636,6 +660,7 @@ struct HttpTransport::Impl {
       sse_client = std::make_unique<httplib::sse::SSEClient>(*stream_client,
                                                              path, headers);
       sse_client->set_reconnect_interval(250);
+      sse_client->set_max_reconnect_attempts(-1);
       sse_client->on_message([this](const httplib::sse::SSEMessage& message) {
         const auto handled = dispatch_event_payload(message.data, std::nullopt);
         (void)handled;
@@ -688,14 +713,69 @@ struct HttpTransport::Impl {
     }
 
     std::optional<protocol::JsonRpcResponse> final_response;
-    for (const auto& event : parse_sse_data_events(response.body)) {
-      const auto handled = dispatch_event_payload(event, request_id);
+    const auto events = parse_sse_events(response.body);
+    int retry_ms = -1;
+    std::string last_event_id;
+
+    for (const auto& event : events) {
+      if (!event.id.empty()) {
+        last_event_id = event.id;
+      }
+      if (event.retry_ms >= 0) {
+        retry_ms = event.retry_ms;
+      }
+      if (event.data.empty()) continue;
+      const auto handled = dispatch_event_payload(event.data, request_id);
       if (!handled) {
         return mcp::core::unexpected(handled.error());
       }
       if (handled->has_value()) {
         final_response = std::move(**handled);
       }
+    }
+
+    // SEP-1699: If no response found but a retry hint was provided,
+    // reconnect via GET with Last-Event-ID to receive the response.
+    if (!final_response.has_value() && retry_ms > 0 && !last_event_id.empty()) {
+      std::this_thread::sleep_for(std::chrono::milliseconds(retry_ms));
+
+      auto get_client = make_client();
+      auto get_headers =
+          make_headers(std::nullopt, std::nullopt, /*json_body=*/false,
+                       /*event_stream=*/true);
+      get_headers.emplace("Last-Event-ID", last_event_id);
+
+      auto sse = std::make_unique<httplib::sse::SSEClient>(get_client, path,
+                                                           get_headers);
+      sse->set_reconnect_interval(0);
+      sse->set_max_reconnect_attempts(1);
+
+      std::promise<protocol::JsonRpcResponse> promise;
+      auto future = promise.get_future();
+      std::atomic<bool> promise_set{false};
+
+      sse->on_event("message", [&](const httplib::sse::SSEMessage& msg) {
+        if (msg.data.empty() || promise_set.load()) return;
+        auto handled = dispatch_event_payload(msg.data, request_id);
+        if (handled && handled->has_value()) {
+          promise_set.store(true);
+          promise.set_value(std::move(**handled));
+        }
+      });
+      sse->on_error([](httplib::Error) {});
+      sse->start_async();
+
+      if (future.wait_for(std::chrono::seconds(10)) ==
+          std::future_status::timeout) {
+        sse->stop();
+        return mcp::core::unexpected(make_transport_error(
+            static_cast<int>(protocol::ErrorCode::InternalError),
+            "SSE retry reconnection timed out",
+            request_id_to_string(request_id)));
+      }
+      sse->stop();
+      sse_reconnected_ = true;
+      return future.get();
     }
 
     if (!final_response.has_value()) {
@@ -853,6 +933,7 @@ struct HttpTransport::Impl {
   std::string session_id;
   std::string protocol_version = std::string(protocol::McpProtocolVersion);
   bool stream_started = false;
+  bool sse_reconnected_ = false;  // POST→GET reconnection was handled
   std::unique_ptr<httplib::Client> stream_client;
   std::unique_ptr<httplib::sse::SSEClient> sse_client;
 };
