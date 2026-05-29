@@ -65,7 +65,14 @@ int main() {
 
 **Protocol coverage:** tool, prompt, resource, resource template, completion, logging, roots, sampling, elicitation, task lifecycle, progress, cancellation, and raw JSON-RPC escape hatches for vendor extensions.
 
-**Conformance:** 428/436 client tests passed (latest suite with OpenSSL auth), 108/109 server tests passed. Validated against the official `modelcontextprotocol/conformance` runner. Full details in [conformance evidence](docs/conformance_evidence.md).
+**Conformance:** Validated against the official `modelcontextprotocol/conformance` runner (`--suite all`).
+
+| | cxxmcp | RMCP |
+|---|---|---|
+| Server | **108/109** (99%) | 48/95 (51%) |
+| Client | **428/436** (98%) | — (runner crashed) |
+
+Full details in [conformance evidence](docs/conformance_evidence.md).
 
 ## Install
 

@@ -65,7 +65,14 @@ int main() {
 
 **协议覆盖：** tool、prompt、resource、resource template、completion、logging、roots、sampling、elicitation、task lifecycle、progress、cancellation，以及用于 vendor extension 的 raw JSON-RPC escape hatch。
 
-**Conformance：** client 最新套件 428/436 通过（OpenSSL auth），server 最新套件 108/109 通过。基于官方 `modelcontextprotocol/conformance` runner 验证。完整结果见 [conformance evidence](docs/conformance_evidence.md)。
+**Conformance：** 基于官方 `modelcontextprotocol/conformance` runner（`--suite all`）验证。
+
+| | cxxmcp | RMCP |
+|---|---|---|
+| Server | **108/109** (99%) | 48/95 (51%) |
+| Client | **428/436** (98%) | — (runner 崩溃) |
+
+完整结果见 [conformance evidence](docs/conformance_evidence.md)。
 
 ## 安装
 
