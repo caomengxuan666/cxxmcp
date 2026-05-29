@@ -69,8 +69,8 @@ int main() {
 
 | | cxxmcp | RMCP |
 |---|---|---|
-| Server | **108/109** (99%) | 48/95 (51%) |
-| Client | **428/436** (98%) | — (runner 崩溃) |
+| Server | **109/110** (99%) | 48/95 (51%) |
+| Client | **447/447** (100%) | — (runner 崩溃) |
 
 完整结果见 [conformance evidence](docs/conformance_evidence.md)。
 
