@@ -342,7 +342,7 @@ struct HttpTransport::Impl {
 
   core::Result<protocol::JsonRpcResponse> send(
       const protocol::JsonRpcRequest& request) {
-    sse_reconnected_ = false;
+    bool sse_reconnected = false;
 
     if (options_error.has_value()) {
       return mcp::core::unexpected(*options_error);
@@ -416,7 +416,8 @@ struct HttpTransport::Impl {
         return mcp::core::unexpected(remembered_session.error());
       }
 
-      auto decoded_response = decode_request_response(*response, request.id);
+      auto decoded_response =
+          decode_request_response(*response, request.id, sse_reconnected);
       if (!decoded_response) {
         return mcp::core::unexpected(decoded_response.error());
       }
@@ -428,7 +429,7 @@ struct HttpTransport::Impl {
       // For error responses (e.g. version negotiation), skip stream setup
       // so the error response can be returned for retry logic.
       // Also skip if POST→GET reconnection was already handled (SEP-1699).
-      if (!decoded_response->error.has_value() && !sse_reconnected_) {
+      if (!decoded_response->error.has_value() && !sse_reconnected) {
         const auto stream_started = ensure_stream_started();
         if (!stream_started) {
           return mcp::core::unexpected(stream_started.error());
@@ -673,8 +674,8 @@ struct HttpTransport::Impl {
   }
 
   core::Result<protocol::JsonRpcResponse> decode_request_response(
-      const httplib::Response& response,
-      const protocol::RequestId& request_id) {
+      const httplib::Response& response, const protocol::RequestId& request_id,
+      bool& sse_reconnected) {
     if (response.status < 200 || response.status >= 300) {
       // Try to parse a JSON-RPC error from the response body.
       // Some servers (e.g. conformance) return version-negotiation errors
@@ -774,7 +775,7 @@ struct HttpTransport::Impl {
             request_id_to_string(request_id)));
       }
       sse->stop();
-      sse_reconnected_ = true;
+      sse_reconnected = true;
       return future.get();
     }
 
@@ -933,7 +934,6 @@ struct HttpTransport::Impl {
   std::string session_id;
   std::string protocol_version = std::string(protocol::McpProtocolVersion);
   bool stream_started = false;
-  bool sse_reconnected_ = false;  // POST→GET reconnection was handled
   std::unique_ptr<httplib::Client> stream_client;
   std::unique_ptr<httplib::sse::SSEClient> sse_client;
 };
