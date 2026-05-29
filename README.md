@@ -74,6 +74,10 @@ int main() {
 
 Full details in [conformance evidence](docs/conformance_evidence.md).
 
+## Capability Snapshot
+
+cxxmcp is a release-candidate-quality C++ MCP SDK with full protocol coverage, cross-SDK conformance validation, and multiple transport options. See [conformance evidence](docs/conformance_evidence.md) and [ecosystem maturity evidence](docs/ecosystem_maturity_evidence.md) for details.
+
 ## Install
 
 ```cmake

@@ -74,6 +74,10 @@ int main() {
 
 完整结果见 [conformance evidence](docs/conformance_evidence.md)。
 
+## 能力快照
+
+cxxmcp 是具备完整协议覆盖、跨 SDK conformance 验证和多种 transport 选项的 release-candidate 质量 C++ MCP SDK。详见 [conformance evidence](docs/conformance_evidence.md) 和 [ecosystem maturity evidence](docs/ecosystem_maturity_evidence.md)。
+
 ## 安装
 
 ```cmake
