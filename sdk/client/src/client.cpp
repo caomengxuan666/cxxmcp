@@ -2161,8 +2161,7 @@ void Client::stop() noexcept {
 
 Client::~Client() {
   std::unique_lock lock(in_flight_mutex_);
-  in_flight_cv_.wait(lock,
-                     [this] { return in_flight_requests_.load() == 0; });
+  in_flight_cv_.wait(lock, [this] { return in_flight_requests_.load() == 0; });
 }
 
 McpClientSession::McpClientSession(std::unique_ptr<Transport> transport,
