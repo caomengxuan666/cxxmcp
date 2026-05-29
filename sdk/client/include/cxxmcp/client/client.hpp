@@ -13,6 +13,7 @@
 
 #include <atomic>
 #include <chrono>
+#include <condition_variable>
 #include <cstdint>
 #include <functional>
 #include <memory>
@@ -523,18 +524,31 @@ class Client {
     request.protocol_version_override = std::move(options.protocol_version);
 
     const auto request_id = request.id;
+    ++in_flight_requests_;
+    auto in_flight_mutex = &in_flight_mutex_;
+    auto in_flight_cv = &in_flight_cv_;
+    auto in_flight_count = &in_flight_requests_;
     return RequestHandle<T>::spawn(
         request_id, options.timeout, options.cancellation_token,
         [this, request_id](std::string reason) mutable {
           return notify_cancelled(std::move(request_id), std::move(reason));
         },
-        [this, request = std::move(request),
-         parser = std::move(parser)]() mutable -> core::Result<T> {
+        [this, request = std::move(request), parser = std::move(parser),
+         in_flight_mutex, in_flight_cv,
+         in_flight_count]() mutable -> core::Result<T> {
           auto payload = raw_request(request);
+          core::Result<T> result;
           if (!payload) {
-            return mcp::core::unexpected(payload.error());
+            result = mcp::core::unexpected(payload.error());
+          } else {
+            result = parser(*payload);
           }
-          return parser(*payload);
+          {
+            std::lock_guard lock(*in_flight_mutex);
+            --(*in_flight_count);
+          }
+          in_flight_cv->notify_one();
+          return result;
         });
   }
 
@@ -766,6 +780,10 @@ class Client {
   /// @brief Stops the underlying transport and clears receive-side state.
   void stop() noexcept;
 
+  /// @brief Waits for in-flight async requests to complete, then destroys the
+  /// client.
+  ~Client();
+
  private:
   template <typename Handler>
   Handler copy_handler(Handler Client::* slot) const {
@@ -842,6 +860,10 @@ class Client {
   std::shared_ptr<std::unordered_map<std::string, CancellationSource>>
       active_request_cancellations_ = std::make_shared<
           std::unordered_map<std::string, CancellationSource>>();
+
+  std::atomic<int> in_flight_requests_{0};
+  mutable std::mutex in_flight_mutex_;
+  std::condition_variable in_flight_cv_;
 };
 
 }  // namespace mcp::client

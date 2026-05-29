@@ -1817,13 +1817,24 @@ RequestHandle<protocol::Json> Client::request_async(std::string method,
   request.protocol_version_override = std::move(options.protocol_version);
 
   const auto request_id = request.id;
+  ++in_flight_requests_;
+  auto in_flight_mutex = &in_flight_mutex_;
+  auto in_flight_cv = &in_flight_cv_;
+  auto in_flight_count = &in_flight_requests_;
   return RequestHandle<protocol::Json>::spawn(
       request_id, options.timeout, options.cancellation_token,
       [this, request_id](std::string reason) mutable {
         return notify_cancelled(std::move(request_id), std::move(reason));
       },
-      [this, request = std::move(request)]() mutable {
-        return raw_request(request);
+      [this, request = std::move(request), in_flight_mutex, in_flight_cv,
+       in_flight_count]() mutable {
+        auto result = raw_request(request);
+        {
+          std::lock_guard lock(*in_flight_mutex);
+          --(*in_flight_count);
+        }
+        in_flight_cv->notify_one();
+        return result;
       });
 }
 
@@ -2146,6 +2157,12 @@ void Client::stop() noexcept {
   }
   std::lock_guard<std::mutex> lock(*state_mutex_);
   transport_started_ = false;
+}
+
+Client::~Client() {
+  std::unique_lock lock(in_flight_mutex_);
+  in_flight_cv_.wait(lock,
+                     [this] { return in_flight_requests_.load() == 0; });
 }
 
 McpClientSession::McpClientSession(std::unique_ptr<Transport> transport,
