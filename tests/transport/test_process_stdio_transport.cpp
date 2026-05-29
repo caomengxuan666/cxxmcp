@@ -39,6 +39,16 @@ std::filesystem::path typescript_stdio_child_bootstrap_script() {
          "process_stdio_child_node.mjs";
 }
 
+mcp::client::ProcessStdioTransportOptions typescript_stdio_child_options() {
+  mcp::client::ProcessStdioTransportOptions options;
+  options.command = "node";
+  options.args = {typescript_stdio_child_bootstrap_script().string()};
+  // Cold Windows runners can spend more than the default request timeout
+  // installing the Node fixture dependencies before the child server responds.
+  options.request_timeout = std::chrono::seconds(120);
+  return options;
+}
+
 std::filesystem::path rust_stdio_child_manifest() {
   return std::filesystem::path(MCP_TEST_SOURCE_DIR) / "tests" / "fixtures" /
          "rust_process_stdio_child" / "Cargo.toml";
@@ -564,12 +574,7 @@ void test_process_stdio_transport_runs_python_mcp_server() {
 
 void test_process_stdio_transport_runs_typescript_mcp_server() {
   auto transport = std::make_unique<mcp::client::ProcessStdioTransport>(
-      mcp::client::ProcessStdioTransportOptions{
-          .command = "node",
-          .args = {typescript_stdio_child_bootstrap_script().string()},
-          .cwd = {},
-          .env = {},
-      });
+      typescript_stdio_child_options());
   mcp::client::McpClientSession session(std::move(transport));
 
   const auto initialized = session.initialize();
@@ -590,12 +595,7 @@ void test_process_stdio_transport_runs_typescript_mcp_server() {
 
 void test_process_stdio_transport_calls_typescript_tool() {
   auto transport = std::make_unique<mcp::client::ProcessStdioTransport>(
-      mcp::client::ProcessStdioTransportOptions{
-          .command = "node",
-          .args = {typescript_stdio_child_bootstrap_script().string()},
-          .cwd = {},
-          .env = {},
-      });
+      typescript_stdio_child_options());
   mcp::client::Client client(std::move(transport));
 
   const auto result = client.call_tool(mcp::protocol::ToolCall{
