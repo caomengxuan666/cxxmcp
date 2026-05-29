@@ -3,13 +3,9 @@
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>cxxmcp Documentation</title>
-    <meta name="description" content="cxxmcp is a community C++17 SDK for building Model Context Protocol clients and servers.">
+    <title>cxxmcp — C++ MCP SDK</title>
+    <meta name="description" content="cxxmcp is a production-ready C++17 SDK for building Model Context Protocol clients and servers.">
     <link rel="stylesheet" href="style.css">
-    <style>
-      .grid-highlights { grid-template-columns: repeat(3, minmax(0, 1fr)); }
-      @media (max-width: 800px) { .grid-highlights { grid-template-columns: 1fr; } }
-    </style>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.11.1/styles/github.min.css" media="(prefers-color-scheme: light)">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.11.1/styles/github-dark.min.css" media="(prefers-color-scheme: dark)">
     <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.11.1/highlight.min.js"></script>
@@ -46,79 +42,215 @@
 
       <div class="main-wrap">
         <main>
-          <section class="hero">
-            <div class="eyebrow">Community C++ MCP SDK</div>
-            <h1>Build Model Context Protocol clients and servers in C++.</h1>
-            <p class="lede">
-              cxxmcp is a production-ready C++17 SDK with full protocol coverage,
-              cross-SDK conformance validation, and support for both 2025-11-25 stable
-              and 2026 draft spec versions.
+
+      <!-- ═══ Hero ═══ -->
+      <section class="home-hero">
+        <div class="eyebrow">Community C++ MCP SDK</div>
+        <h1>Build MCP clients and servers in C++.</h1>
+        <hr>
+        <p class="lede">
+          A production-ready C++17 SDK with full protocol coverage,
+          cross-SDK conformance validation, and support for both 2025-11-25 stable
+          and 2026 draft spec versions.
+        </p>
+        <hr>
+        <div class="actions">
+          <a class="button primary" href="./getting-started.html">Get Started</a>
+          <a class="button" href="https://github.com/caomengxuan666/cxxmcp">GitHub</a>
+          <a class="button" href="https://github.com/caomengxuan666/cxxmcp/blob/master/docs/conformance_evidence.md">Conformance</a>
+        </div>
+      </section>
+
+      <!-- ═══ Feature Cards ═══ -->
+      <section class="feature-grid" aria-label="Features">
+        <div class="feature-card">
+          <span class="icon">&#9889;</span>
+          <hr class="icon-line">
+          <h3>Full Protocol</h3>
+          <p>Tools, prompts, resources, sampling, tasks, progress, cancellation</p>
+        </div>
+        <div class="feature-card">
+          <span class="icon">&#9989;</span>
+          <hr class="icon-line">
+          <h3>109/110 Server</h3>
+          <p>447/447 client conformance against the official runner</p>
+        </div>
+        <div class="feature-card">
+          <span class="icon">&#128230;</span>
+          <hr class="icon-line">
+          <h3>Zero Dependencies</h3>
+          <p>C++17 public API. HTTP and OpenSSL are opt-in flags</p>
+        </div>
+        <div class="feature-card">
+          <span class="icon">&#128274;</span>
+          <hr class="icon-line">
+          <h3>OAuth 2.1</h3>
+          <p>PKCE, DPoP, JWKS, bearer tokens — optional auth target</p>
+        </div>
+      </section>
+
+      <!-- ═══ Conformance ═══ -->
+      <section class="conf-grid" aria-label="Conformance">
+        <div class="conf-badge">
+          <div class="num">109/110</div>
+          <div class="label">Server</div>
+        </div>
+        <div class="conf-badge">
+          <div class="num">447/447</div>
+          <div class="label">Client</div>
+        </div>
+        <div class="conf-badge">
+          <div class="num">99%</div>
+          <div class="label">Pass Rate</div>
+        </div>
+      </section>
+
+      <hr class="section-divider">
+
+      <!-- ═══ Code Showcase (alternating) ═══ -->
+      <section class="showcase">
+
+        <div class="section-title">
+          <h2>Easy to get started</h2>
+          <p>A complete MCP server in under 15 lines of C++.</p>
+        </div>
+
+        <div class="showcase-row">
+          <div class="showcase-text">
+            <h2>Builder Pattern</h2>
+            <p>
+              Chain <code>.name()</code>, <code>.version()</code>, <code>.stdio()</code>
+              and register typed handlers. The builder compiles to a single
+              <code>.run()</code> call — no boilerplate, no runtime dependency.
             </p>
-            <div class="actions">
-              <a class="button primary" href="./getting-started.html">Get Started</a>
-              <a class="button" href="./tutorials.html">Tutorials</a>
-              <a class="button" href="./api/">API Reference</a>
-              <a class="button" href="https://github.com/caomengxuan666/cxxmcp/blob/master/docs/conformance_evidence.md">Conformance</a>
-            </div>
-          </section>
-
-          <section class="grid grid-highlights" aria-label="Highlights">
-            <article class="card">
-              <h2>Full Protocol Coverage</h2>
-              <p>Tool, prompt, resource, sampling, elicitation, tasks, progress, cancellation — all MCP capabilities.</p>
-            </article>
-            <article class="card">
-              <h2>109/110 Server, 447/447 Client</h2>
-              <p>Validated against the official conformance runner. Only failure is an upstream TS SDK issue.</p>
-            </article>
-            <article class="card">
-              <h2>Zero Runtime Dependencies</h2>
-              <p>C++17 public API. HTTP (cpp-httplib) and OpenSSL are opt-in via compile-time flags.</p>
-            </article>
-          </section>
-
-          <section class="section">
-            <h2>Quick Start</h2>
-            <pre><code class="language-cmake">find_package(cxxmcp CONFIG REQUIRED)
-target_link_libraries(my_server PRIVATE cxxmcp::server)</code></pre>
+          </div>
+          <div class="showcase-code">
             <pre><code class="language-cpp">#include &lt;cxxmcp/peer.hpp&gt;
 #include &lt;cxxmcp/run.hpp&gt;
 
 int main() {
     return mcp::ServerPeer::builder()
-        .name("demo-server").version("1.0.0").stdio()
-        .tool&lt;mcp::protocol::Json, mcp::protocol::Json&gt;("echo",
-            [](const mcp::protocol::Json&amp; input) {
-                return mcp::protocol::Json{{"echo", input}};
+        .name("demo").version("1.0.0").stdio()
+        .tool&lt;mcp::protocol::Json, mcp::protocol::Json&gt;(
+            "echo", [](const mcp::protocol::Json&amp; in) {
+                return mcp::protocol::Json{{"echo", in}};
             })
         .run();
 }</code></pre>
-          </section>
+          </div>
+        </div>
 
-          <section class="section">
-            <h2>Conformance Results</h2>
-            <div class="grid grid-highlights">
-              <article class="card"><h2>Server</h2><p><strong>109 / 110</strong> (99%)</p></article>
-              <article class="card"><h2>Client</h2><p><strong>447 / 447</strong> (100%)</p></article>
-              <article class="card"><h2>vs RMCP</h2><p>RMCP server 48/95 (51%); client runner crashed.</p></article>
-            </div>
-          </section>
+        <div class="showcase-row reverse">
+          <div class="showcase-text">
+            <h2>Typed DTOs with Reflection</h2>
+            <p>
+              Use <code>CXXMCP_REFLECT</code> to define request/response types.
+              Zero-boilerplate serialization — the macro generates everything
+              at compile time.
+            </p>
+          </div>
+          <div class="showcase-code">
+            <pre><code class="language-cpp">struct SearchArgs {
+    std::string query;
+    int limit = 10;
+    CXXMCP_REFLECT(SearchArgs, query, limit)
+};
 
-          <section class="section">
-            <h2>Explore the Docs</h2>
-            <div class="grid">
-              <article class="card"><h2><a href="./tutorials.html">Tutorials</a></h2><p>Step-by-step guides: build servers, add HTTP, auth, typed tools, async tasks.</p></article>
-              <article class="card"><h2><a href="./concepts.html">Concepts</a></h2><p>Peer/Service architecture, transports, capability negotiation, reflection system.</p></article>
-              <article class="card"><h2><a href="./cookbook.html">Cookbook</a></h2><p>Copy-paste code snippets for common tasks and CMake configuration.</p></article>
-              <article class="card"><h2><a href="./transports.html">Transports</a></h2><p>stdio, process stdio, Streamable HTTP, and custom transport reference.</p></article>
-              <article class="card"><h2><a href="./auth.html">Auth</a></h2><p>Bearer tokens, OAuth 2.1, DPoP, OpenSSL crypto backend.</p></article>
-              <article class="card"><h2><a href="./troubleshooting.html">Troubleshooting</a></h2><p>Common build errors, runtime issues, and conformance problems.</p></article>
-              <article class="card"><h2><a href="./migration.html">Migration</a></h2><p>API mapping from TypeScript, Python, and Rust MCP SDKs.</p></article>
-              <article class="card"><h2><a href="./roadmap.html">Roadmap</a></h2><p>Current focus, near-term plans, and longer-term goals.</p></article>
-              <article class="card"><h2><a href="./security.html">Security</a></h2><p>Vulnerability reporting and security design decisions.</p></article>
-            </div>
-          </section>
-        </main>
+struct SearchResult {
+    std::string title;
+    std::string url;
+    CXXMCP_REFLECT(SearchResult, title, url)
+};
+
+// Register a typed tool
+.tool&lt;SearchArgs, SearchResult&gt;("search",
+    [](const SearchArgs&amp; args) {
+        return SearchResult{"Found", "https://..."};
+    })</code></pre>
+          </div>
+        </div>
+
+        <div class="showcase-row">
+          <div class="showcase-text">
+            <h2>Streamable HTTP Transport</h2>
+            <p>
+              Enable HTTP with a single CMake flag. The server supports
+              SSE streaming, session management, and bearer token auth
+              out of the box.
+            </p>
+          </div>
+          <div class="showcase-code">
+            <pre><code class="language-bash"># Build with HTTP transport
+cmake -S . -B build -DCXXMCP_ENABLE_HTTP=ON
+cmake --build build</code></pre>
+            <pre><code class="language-cpp">// Server — listen on HTTP
+ServerPeer::builder()
+    .name("api").version("1.0.0")
+    .streamable_http("0.0.0.0", 8080, "/mcp")
+    .tool&lt;Json, Json&gt;("ping",
+        [](const Json&amp;) { return Json{{"ok", true}}; })
+    .run();</code></pre>
+          </div>
+        </div>
+
+      </section>
+
+      <hr class="section-divider">
+
+      <!-- ═══ Install ═══ -->
+      <section>
+        <div class="section-title">
+          <h2>Get cxxmcp</h2>
+          <p>Install via your preferred method.</p>
+        </div>
+
+        <div class="install-grid">
+          <div class="install-card">
+            <h3><a href="./getting-started.html">CMake FetchContent</a></h3>
+            <p>Drop into any CMake project — no pre-install needed.</p>
+            <code>include(FetchContent)</code>
+          </div>
+          <div class="install-card">
+            <h3><a href="https://github.com/caomengxuan666/cxxmcp">vcpkg</a></h3>
+            <p>Overlay port available in the repository.</p>
+            <code>vcpkg install cxxmcp --overlay-ports=ports/</code>
+          </div>
+          <div class="install-card">
+            <h3><a href="./getting-started.html">System Install</a></h3>
+            <p>Build, install, then <code>find_package</code>.</p>
+            <code>cmake --install build</code>
+          </div>
+          <div class="install-card">
+            <h3><a href="https://github.com/caomengxuan666/cxxmcp">Git Clone</a></h3>
+            <p>Clone the repo and build directly.</p>
+            <code>git clone https://github.com/caomengxuan666/cxxmcp</code>
+          </div>
+        </div>
+      </section>
+
+      <hr class="section-divider">
+
+      <!-- ═══ Explore Docs ═══ -->
+      <section>
+        <div class="section-title">
+          <h2>Learn cxxmcp</h2>
+          <p>Guides, references, and recipes for every use case.</p>
+        </div>
+
+        <div class="grid" style="margin-top:20px">
+          <article class="card"><h2><a href="./tutorials.html">Tutorials</a></h2><p>Build servers, add HTTP, auth, typed tools, async tasks.</p></article>
+          <article class="card"><h2><a href="./concepts.html">Concepts</a></h2><p>Peer/Service architecture, transports, capability negotiation.</p></article>
+          <article class="card"><h2><a href="./cookbook.html">Cookbook</a></h2><p>Copy-paste code snippets for common tasks.</p></article>
+          <article class="card"><h2><a href="./transports.html">Transports</a></h2><p>stdio, process stdio, Streamable HTTP reference.</p></article>
+          <article class="card"><h2><a href="./auth.html">Auth</a></h2><p>Bearer tokens, OAuth 2.1, DPoP, OpenSSL.</p></article>
+          <article class="card"><h2><a href="./migration.html">Migration</a></h2><p>API mapping from TypeScript, Python, and Rust SDKs.</p></article>
+          <article class="card"><h2><a href="./troubleshooting.html">Troubleshooting</a></h2><p>Common build errors and runtime issues.</p></article>
+          <article class="card"><h2><a href="./roadmap.html">Roadmap</a></h2><p>Current focus and longer-term goals.</p></article>
+          <article class="card"><h2><a href="./security.html">Security</a></h2><p>Vulnerability reporting and design decisions.</p></article>
+        </div>
+      </section>
+
+    </main>
 
         <footer>
           cxxmcp is a community C++ MCP SDK. It is not an official MCP SDK unless

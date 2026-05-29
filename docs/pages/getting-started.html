@@ -298,7 +298,9 @@ CXXMCP_REFLECT(SearchResult, session, hits)
               Use the repository-hosted overlay port until cxxmcp is accepted
               into a curated registry.
             </p>
-            <pre><code class="language-bash">vcpkg install cxxmcp --overlay-ports=C:\path\to\MCPServer.cpp\packaging\vcpkg\ports</code></pre>
+            <pre><code class="language-bash"># Clone the repo first, then:
+vcpkg install cxxmcp \
+  --overlay-ports=packaging/vcpkg/ports</code></pre>
           </article>
           <article class="card">
             <h3>FetchContent or CPM</h3>

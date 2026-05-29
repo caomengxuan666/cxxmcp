@@ -380,6 +380,243 @@ footer {
   margin-top: 40px;
 }
 
+/* ── Homepage: Crow-inspired ───────────────────── */
+
+.home-hero {
+  text-align: center;
+  padding: 48px 0 36px;
+  border-bottom: 1px solid var(--line);
+  margin-bottom: 40px;
+}
+
+.home-hero h1 {
+  margin: 16px auto 18px;
+  font-size: clamp(2.2rem, 5vw, 3.4rem);
+  line-height: 1.1;
+}
+
+.home-hero .lede {
+  max-width: 640px;
+  margin: 0 auto;
+}
+
+.home-hero hr {
+  border: none;
+  border-top: 1px solid var(--line);
+  margin: 24px auto;
+  max-width: 600px;
+}
+
+.home-hero .actions {
+  justify-content: center;
+  margin-top: 28px;
+}
+
+/* Feature cards with icons */
+.feature-grid {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 20px;
+  margin: 40px 0;
+}
+
+.feature-card {
+  width: 180px;
+  text-align: center;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--panel);
+  padding: 28px 16px 20px;
+  box-shadow: var(--shadow);
+  transition: transform 0.3s, box-shadow 0.3s;
+  cursor: default;
+}
+
+.feature-card:hover {
+  transform: scale(1.08);
+  box-shadow: var(--shadow-hover);
+}
+
+.feature-card .icon {
+  font-size: 2.4rem;
+  margin-bottom: 12px;
+  display: block;
+}
+
+.feature-card .icon-line {
+  height: 2px;
+  background: linear-gradient(90deg, transparent, var(--accent), transparent);
+  margin: 12px auto 14px;
+  width: 80%;
+  border: none;
+}
+
+.feature-card h3 {
+  font-size: 0.92rem;
+  font-weight: 650;
+  margin: 0;
+  color: var(--text);
+}
+
+.feature-card p {
+  font-size: 0.8rem;
+  color: var(--muted);
+  margin-top: 6px;
+}
+
+/* Alternating showcase sections */
+.showcase {
+  margin: 48px 0;
+}
+
+.showcase-row {
+  display: flex;
+  align-items: center;
+  gap: 32px;
+  margin: 36px 0;
+}
+
+.showcase-row.reverse {
+  flex-direction: row-reverse;
+}
+
+.showcase-text {
+  flex: 1;
+  min-width: 0;
+}
+
+.showcase-text h2 {
+  font-size: 1.35rem;
+  margin: 0 0 10px;
+}
+
+.showcase-text p {
+  color: var(--muted);
+  margin: 0;
+  line-height: 1.6;
+}
+
+.showcase-code {
+  flex: 1.2;
+  min-width: 0;
+}
+
+.showcase-code pre {
+  margin: 0;
+}
+
+@media (max-width: 700px) {
+  .showcase-row, .showcase-row.reverse {
+    flex-direction: column;
+    gap: 16px;
+  }
+}
+
+/* Install cards */
+.install-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 14px;
+  margin: 20px 0;
+}
+
+.install-card {
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--panel);
+  padding: 16px 18px;
+  box-shadow: var(--shadow);
+  transition: transform 0.3s, box-shadow 0.3s;
+  text-decoration: none;
+  display: block;
+}
+
+.install-card:hover {
+  transform: scale(1.05);
+  box-shadow: var(--shadow-hover);
+}
+
+.install-card h3 {
+  font-size: 0.95rem;
+  margin: 0 0 4px;
+}
+
+.install-card h3 a {
+  text-decoration: none;
+}
+
+.install-card p {
+  font-size: 0.82rem;
+  color: var(--muted);
+  margin: 0;
+}
+
+.install-card code {
+  display: inline-block;
+  margin-top: 8px;
+  font-size: 0.78rem;
+  background: var(--code);
+  padding: 3px 8px;
+  border-radius: 4px;
+  word-break: break-all;
+}
+
+/* Conformance badges */
+.conf-grid {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 16px;
+  margin: 24px 0;
+}
+
+.conf-badge {
+  text-align: center;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--panel);
+  padding: 20px 28px;
+  box-shadow: var(--shadow);
+  min-width: 140px;
+}
+
+.conf-badge .num {
+  font-size: 2rem;
+  font-weight: 800;
+  color: var(--accent);
+  line-height: 1;
+}
+
+.conf-badge .label {
+  font-size: 0.82rem;
+  color: var(--muted);
+  margin-top: 4px;
+}
+
+/* Section divider */
+.section-divider {
+  border: none;
+  border-top: 1px solid var(--line);
+  margin: 48px 0;
+}
+
+.section-title {
+  text-align: center;
+  margin-bottom: 8px;
+}
+
+.section-title h2 {
+  font-size: 1.5rem;
+  margin: 0;
+}
+
+.section-title p {
+  color: var(--muted);
+  margin-top: 6px;
+  font-size: 0.95rem;
+}
+
 /* ── Mobile ────────────────────────────────────── */
 
 .sidebar-toggle {
