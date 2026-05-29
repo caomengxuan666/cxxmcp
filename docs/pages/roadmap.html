@@ -6,6 +6,12 @@
     <title>Roadmap | cxxmcp</title>
     <meta name="description" content="Development roadmap for cxxmcp.">
     <link rel="stylesheet" href="style.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.11.1/styles/github.min.css" media="(prefers-color-scheme: light)">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.11.1/styles/github-dark.min.css" media="(prefers-color-scheme: dark)">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.11.1/highlight.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.11.1/languages/cmake.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.11.1/languages/bash.min.js"></script>
+    <script>document.addEventListener('DOMContentLoaded',()=>hljs.highlightAll());</script>
   </head>
   <body>
     <button class="sidebar-toggle" onclick="document.querySelector('.sidebar').classList.toggle('open')">&#9776;</button>
@@ -90,12 +96,6 @@
         <h3>WebSocket transport support</h3>
         <span class="label later">Longer Term</span>
         <p>Full-duplex WebSocket transport as an alternative to Streamable HTTP for real-time use cases.</p>
-      </div>
-
-      <div class="phase">
-        <h3>Language bindings for Python and Rust via C FFI</h3>
-        <span class="label later">Longer Term</span>
-        <p>Expose cxxmcp through a C-compatible FFI layer so Python and Rust applications can use the SDK natively.</p>
       </div>
 
       <div class="phase">

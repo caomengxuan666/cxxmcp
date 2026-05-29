@@ -6,6 +6,12 @@
     <title>Tutorials | cxxmcp</title>
     <meta name="description" content="Step-by-step tutorials for building MCP servers and clients with cxxmcp.">
     <link rel="stylesheet" href="style.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.11.1/styles/github.min.css" media="(prefers-color-scheme: light)">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.11.1/styles/github-dark.min.css" media="(prefers-color-scheme: dark)">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.11.1/highlight.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.11.1/languages/cmake.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.11.1/languages/bash.min.js"></script>
+    <script>document.addEventListener('DOMContentLoaded',()=>hljs.highlightAll());</script>
   </head>
   <body>
     <button class="sidebar-toggle" onclick="document.querySelector('.sidebar').classList.toggle('open')">&#9776;</button>
@@ -55,7 +61,7 @@
 
         <div class="step">
           <p><span class="step-num">1</span><strong>Create the CMake project</strong></p>
-          <pre><code>cmake_minimum_required(VERSION 3.16)
+          <pre><code class="language-cmake">cmake_minimum_required(VERSION 3.16)
 project(my-mcp-server LANGUAGES CXX)
 set(CMAKE_CXX_STANDARD 17)
 
@@ -66,7 +72,7 @@ target_link_libraries(server PRIVATE cxxmcp::server)</code></pre>
 
         <div class="step">
           <p><span class="step-num">2</span><strong>Write the server</strong></p>
-          <pre><code>// server.cpp
+          <pre><code class="language-cpp">// server.cpp
 #include &lt;cxxmcp/peer.hpp&gt;
 #include &lt;cxxmcp/run.hpp&gt;
 
@@ -88,7 +94,7 @@ int main() {
 
         <div class="step">
           <p><span class="step-num">3</span><strong>Build and test</strong></p>
-          <pre><code>cmake -S . -B build
+          <pre><code class="language-bash">cmake -S . -B build
 cmake --build build
 echo '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-11-25","capabilities":{},"clientInfo":{"name":"test","version":"1.0"}}}' | ./build/server</code></pre>
         </div>
@@ -96,7 +102,7 @@ echo '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":
         <div class="note">
           <strong>Tip:</strong> The <code>.run()</code> call builds, serves, and
           blocks until shutdown — all in one line. For more control, use
-          <code>.build()</code> + <code>mcp::serve()</code> separately.
+          <code>.build()</code> + <code class="language-cpp">mcp::serve()</code> separately.
         </div>
       </section>
 
@@ -110,7 +116,7 @@ echo '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":
 
         <div class="step">
           <p><span class="step-num">1</span><strong>Build with HTTP enabled</strong></p>
-          <pre><code>cmake -S . -B build \
+          <pre><code class="language-bash">cmake -S . -B build \
   -DCXXMCP_ENABLE_HTTP=ON \
   -DCXXMCP_BUILD_SERVER=ON \
   -DCXXMCP_BUILD_CLIENT=ON
@@ -119,7 +125,7 @@ cmake --build build</code></pre>
 
         <div class="step">
           <p><span class="step-num">2</span><strong>HTTP server</strong></p>
-          <pre><code>// http_server.cpp
+          <pre><code class="language-cpp">// http_server.cpp
 #include &lt;cxxmcp/peer.hpp&gt;
 #include &lt;cxxmcp/run.hpp&gt;
 
@@ -142,7 +148,7 @@ int main() {
 
         <div class="step">
           <p><span class="step-num">3</span><strong>HTTP client</strong></p>
-          <pre><code>// http_client.cpp
+          <pre><code class="language-cpp">// http_client.cpp
 #include &lt;iostream&gt;
 #include &lt;cxxmcp/peer.hpp&gt;
 #include &lt;cxxmcp/run.hpp&gt;
@@ -173,7 +179,7 @@ int main() {
 
         <div class="step">
           <p><span class="step-num">1</span><strong>Define your types</strong></p>
-          <pre><code>#include &lt;string&gt;
+          <pre><code class="language-cpp">#include &lt;string&gt;
 #include &lt;vector&gt;
 #include &lt;cxxmcp/protocol/reflect.hpp&gt;
 
@@ -203,7 +209,7 @@ CXXMCP_REFLECT(SearchResponse, results, total)
 
         <div class="step">
           <p><span class="step-num">2</span><strong>Register the typed tool</strong></p>
-          <pre><code>#include &lt;cxxmcp/peer.hpp&gt;
+          <pre><code class="language-cpp">#include &lt;cxxmcp/peer.hpp&gt;
 #include &lt;cxxmcp/run.hpp&gt;
 
 int main() {
@@ -249,7 +255,7 @@ int main() {
 
         <div class="step">
           <p><span class="step-num">1</span><strong>Server with bearer auth</strong></p>
-          <pre><code>#include &lt;memory&gt;
+          <pre><code class="language-cpp">#include &lt;memory&gt;
 #include &lt;cxxmcp/peer.hpp&gt;
 #include &lt;cxxmcp/run.hpp&gt;
 
@@ -286,7 +292,7 @@ int main() {
 
         <div class="step">
           <p><span class="step-num">2</span><strong>Client with bearer token</strong></p>
-          <pre><code>auto client = mcp::ClientPeer::builder()
+          <pre><code class="language-cpp">auto client = mcp::ClientPeer::builder()
     .streamable_http("http://127.0.0.1:3001/mcp")
     .bearer_token("secret-token-123")
     .build();</code></pre>
@@ -294,7 +300,7 @@ int main() {
 
         <div class="step">
           <p><span class="step-num">3</span><strong>Upgrade to DPoP with OpenSSL</strong></p>
-          <pre><code>cmake -S . -B build \
+          <pre><code class="language-bash">cmake -S . -B build \
   -DCXXMCP_ENABLE_AUTH=ON \
   -DCXXMCP_AUTH_CRYPTO=OpenSSL
 
@@ -321,7 +327,7 @@ auto auth =
 
         <div class="step">
           <p><span class="step-num">1</span><strong>Server with task support</strong></p>
-          <pre><code>#include &lt;cxxmcp/peer.hpp&gt;
+          <pre><code class="language-cpp">#include &lt;cxxmcp/peer.hpp&gt;
 #include &lt;cxxmcp/run.hpp&gt;
 
 using Json = mcp::protocol::Json;
@@ -350,7 +356,7 @@ int main() {
 
         <div class="step">
           <p><span class="step-num">2</span><strong>Client calling a task</strong></p>
-          <pre><code>svc.peer().initialize();
+          <pre><code class="language-cpp">svc.peer().initialize();
 
 // Start an async task
 auto task = svc.peer().call_tool(
@@ -378,7 +384,7 @@ svc.peer().cancel_task(task->task_id);</code></pre>
 
         <div class="step">
           <p><span class="step-num">1</span><strong>Register resources and prompts</strong></p>
-          <pre><code>return mcp::ServerPeer::builder()
+          <pre><code class="language-cpp">return mcp::ServerPeer::builder()
     .name("full-demo")
     .version("1.0.0")
     .stdio()

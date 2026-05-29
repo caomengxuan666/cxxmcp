@@ -6,6 +6,12 @@
     <title>Auth | cxxmcp</title>
     <meta name="description" content="OAuth 2.1, bearer tokens, DPoP, and OpenSSL auth in cxxmcp.">
     <link rel="stylesheet" href="style.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.11.1/styles/github.min.css" media="(prefers-color-scheme: light)">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.11.1/styles/github-dark.min.css" media="(prefers-color-scheme: dark)">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.11.1/highlight.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.11.1/languages/cmake.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.11.1/languages/bash.min.js"></script>
+    <script>document.addEventListener('DOMContentLoaded',()=>hljs.highlightAll());</script>
   </head>
   <body>
     <button class="sidebar-toggle" onclick="document.querySelector('.sidebar').classList.toggle('open')">&#9776;</button>
@@ -56,7 +62,7 @@
         <ul>
           <li><code>CXXMCP_ENABLE_AUTH=OFF</code> is the default.</li>
           <li>The default package does not export <code>cxxmcp::auth</code> or <code>cxxmcp::auth_openssl</code>.</li>
-          <li>The default package does not call <code>find_package(OpenSSL)</code>.</li>
+          <li>The default package does not call <code class="language-cmake">find_package(OpenSSL)</code>.</li>
           <li>HTTP server auth hooks remain available through <code>cxxmcp::server</code>.</li>
         </ul>
       </section>
@@ -69,9 +75,9 @@
           and DPoP contract headers exposed by the <code>cxxmcp::auth</code>
           target. This option does not require OpenSSL by itself.
         </p>
-        <pre><code>cmake -S . -B build-auth -DCXXMCP_ENABLE_AUTH=ON
+        <pre><code class="language-bash">cmake -S . -B build-auth -DCXXMCP_ENABLE_AUTH=ON
 cmake --build build-auth</code></pre>
-        <pre><code>vcpkg install "cxxmcp[auth]" --overlay-ports=C:\path\to\MCPServer.cpp\packaging\vcpkg\ports</code></pre>
+        <pre><code class="language-bash">vcpkg install "cxxmcp[auth]" --overlay-ports=C:\path\to\MCPServer.cpp\packaging\vcpkg\ports</code></pre>
       </section>
 
       <section class="section">
@@ -94,7 +100,7 @@ cmake --build build-auth</code></pre>
         <h2>Server-Side Auth Hook</h2>
         <p>
           Server authentication is implemented by application code through
-          <code>mcp::server::AuthProvider</code>. The dispatcher authenticates
+          <code class="language-cpp">mcp::server::AuthProvider</code>. The dispatcher authenticates
           the request before invoking typed tool, prompt, and resource handlers.
         </p>
         <div class="grid">
@@ -148,7 +154,7 @@ cmake --build build-auth</code></pre>
           authorization logic through <code>std::function</code> callbacks
           configured in <code>AuthorizationServerConfig</code>.
         </p>
-        <pre><code>mcp::auth::AuthorizationServerConfig as_config;
+        <pre><code class="language-cpp">mcp::auth::AuthorizationServerConfig as_config;
 as_config.issuer = "https://auth.example.com";
 as_config.authorization_handler = [](const auto&amp; params) { /* ... */ };
 as_config.token_handler = [](const auto&amp; params) { /* ... */ };
@@ -160,8 +166,8 @@ options.authorization_server = std::move(as_config);</code></pre>
       <section class="section">
         <h2>Client Bearer Token Helper</h2>
         <p>
-          <code>mcp::client::HttpTransportOptions::auth_header</code> and
-          <code>mcp::transport::StreamableHttpClientTransportOptions::auth_header</code>
+          <code class="language-cpp">mcp::client::HttpTransportOptions::auth_header</code> and
+          <code class="language-cpp">mcp::transport::StreamableHttpClientTransportOptions::auth_header</code>
           accept a token value, not a raw header. When set, the transport sends
           <code>Authorization: Bearer &lt;token&gt;</code> on outbound
           Streamable HTTP requests.

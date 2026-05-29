@@ -220,9 +220,26 @@ pre {
   margin: 12px 0;
 }
 
+pre code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
+  font-size: 0.88em;
+  background: transparent;
+  padding: 0;
+}
+
 code {
   font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
   font-size: 0.88em;
+}
+
+/* highlight.js overrides */
+pre code.hljs {
+  padding: 0;
+  background: transparent;
+}
+
+.hljs {
+  background: transparent;
 }
 
 /* ── Tables ────────────────────────────────────── */

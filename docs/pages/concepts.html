@@ -6,6 +6,12 @@
     <title>Concepts | cxxmcp</title>
     <meta name="description" content="Core concepts of the cxxmcp C++ SDK.">
     <link rel="stylesheet" href="style.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.11.1/styles/github.min.css" media="(prefers-color-scheme: light)">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.11.1/styles/github-dark.min.css" media="(prefers-color-scheme: dark)">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.11.1/highlight.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.11.1/languages/cmake.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.11.1/languages/bash.min.js"></script>
+    <script>document.addEventListener('DOMContentLoaded',()=>hljs.highlightAll());</script>
   </head>
   <body>
     <button class="sidebar-toggle" onclick="document.querySelector('.sidebar').classList.toggle('open')">&#9776;</button>
@@ -126,7 +132,7 @@
             </p>
           </article>
         </div>
-        <pre><code>// Server lifecycle
+        <pre><code class="language-cpp">// Server lifecycle
 auto server = mcp::ServerPeer::builder()
     .name("my-server").version("1.0.0")
     .stdio()
@@ -181,7 +187,7 @@ svc->peer().call_tool("echo", Json{{"value", "hi"}});</code></pre>
           </tr>
           <tr>
             <td>Custom</td>
-            <td>implement <code>mcp::transport::Transport</code></td>
+            <td>implement <code class="language-cpp">mcp::transport::Transport</code></td>
             <td>—</td>
             <td>WebSocket, Unix socket, etc.</td>
           </tr>
@@ -196,7 +202,7 @@ svc->peer().call_tool("echo", Json{{"value", "hi"}});</code></pre>
           capability declarations. This tells each side what the other
           supports.
         </p>
-        <pre><code>// Server declares capabilities via builder
+        <pre><code class="language-cpp">// Server declares capabilities via builder
 auto server = mcp::ServerPeer::builder()
     .name("my-server")
     .version("1.0.0")
@@ -258,7 +264,7 @@ if (caps.tools) {
           One macro replaces hand-written <code>to_json</code>/<code>from_json</code>
           for every struct.
         </p>
-        <pre><code>#include &lt;cxxmcp/protocol/reflect.hpp&gt;
+        <pre><code class="language-cpp">#include &lt;cxxmcp/protocol/reflect.hpp&gt;
 
 struct MyInput {
     std::string name;

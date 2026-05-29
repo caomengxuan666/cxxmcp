@@ -6,6 +6,12 @@
     <title>Transports | cxxmcp</title>
     <meta name="description" content="Transport layer reference for cxxmcp.">
     <link rel="stylesheet" href="style.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.11.1/styles/github.min.css" media="(prefers-color-scheme: light)">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.11.1/styles/github-dark.min.css" media="(prefers-color-scheme: dark)">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.11.1/highlight.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.11.1/languages/cmake.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.11.1/languages/bash.min.js"></script>
+    <script>document.addEventListener('DOMContentLoaded',()=>hljs.highlightAll());</script>
   </head>
   <body>
     <button class="sidebar-toggle" onclick="document.querySelector('.sidebar').classList.toggle('open')">&#9776;</button>
@@ -67,7 +73,7 @@
         </p>
 
         <h3>Server</h3>
-        <pre><code>#include &lt;cxxmcp/peer.hpp&gt;
+        <pre><code class="language-cpp">#include &lt;cxxmcp/peer.hpp&gt;
 #include &lt;cxxmcp/run.hpp&gt;
 
 int main() {
@@ -79,7 +85,7 @@ int main() {
 }</code></pre>
 
         <h3>Client</h3>
-        <pre><code>// Launch a server process and talk to it via stdin/stdout
+        <pre><code class="language-cpp">// Launch a server process and talk to it via stdin/stdout
 auto client = mcp::ClientPeer::builder()
     .process_stdio("./my-server")        // launches the process
     .build();</code></pre>
@@ -103,7 +109,7 @@ auto client = mcp::ClientPeer::builder()
         </p>
 
         <h3>Usage</h3>
-        <pre><code>// Simple command
+        <pre><code class="language-cpp">// Simple command
 auto client = mcp::ClientPeer::builder()
     .process_stdio("node my-server.js")
     .build();
@@ -140,10 +146,10 @@ auto client = mcp::ClientPeer::builder()
         </p>
 
         <h3>Build</h3>
-        <pre><code>cmake -S . -B build -DCXXMCP_ENABLE_HTTP=ON -DCXXMCP_BUILD_SERVER=ON -DCXXMCP_BUILD_CLIENT=ON</code></pre>
+        <pre><code class="language-bash">cmake -S . -B build -DCXXMCP_ENABLE_HTTP=ON -DCXXMCP_BUILD_SERVER=ON -DCXXMCP_BUILD_CLIENT=ON</code></pre>
 
         <h3>Server</h3>
-        <pre><code>#include &lt;cxxmcp/peer.hpp&gt;
+        <pre><code class="language-cpp">#include &lt;cxxmcp/peer.hpp&gt;
 #include &lt;cxxmcp/run.hpp&gt;
 
 auto server = mcp::ServerPeer::builder()
@@ -157,7 +163,7 @@ running->wait_until_ready();
 running->wait();</code></pre>
 
         <h3>Server Options</h3>
-        <pre><code>mcp::transport::StreamableHttpServerTransportOptions opts;
+        <pre><code class="language-cpp">mcp::transport::StreamableHttpServerTransportOptions opts;
 opts.listen_host = "0.0.0.0";         // Bind address
 opts.listen_port = 8080;               // Port
 opts.path = "/mcp";                    // Endpoint path
@@ -169,7 +175,7 @@ auto server = mcp::ServerPeer::builder()
     .build();</code></pre>
 
         <h3>Client</h3>
-        <pre><code>auto client = mcp::ClientPeer::builder()
+        <pre><code class="language-cpp">auto client = mcp::ClientPeer::builder()
     .streamable_http("http://127.0.0.1:3000/mcp")
     .build();
 
@@ -180,7 +186,7 @@ auto client = mcp::ClientPeer::builder()
     .build();</code></pre>
 
         <h3>Client Options</h3>
-        <pre><code>mcp::transport::StreamableHttpClientTransportOptions opts;
+        <pre><code class="language-cpp">mcp::transport::StreamableHttpClientTransportOptions opts;
 opts.base_url = "http://127.0.0.1:3000/mcp";
 opts.timeout = std::chrono::seconds(30);
 opts.bearer_token = "my-secret-token";
@@ -208,7 +214,7 @@ auto client = mcp::ClientPeer::builder()
           your own transport (WebSocket, Unix socket, in-memory loopback, etc.).
         </p>
 
-        <pre><code>#include &lt;cxxmcp/transport/transport.hpp&gt;
+        <pre><code class="language-cpp">#include &lt;cxxmcp/transport/transport.hpp&gt;
 
 // Client transport
 class MyClientTransport : public mcp::transport::ClientTransport {

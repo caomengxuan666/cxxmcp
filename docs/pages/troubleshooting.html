@@ -6,6 +6,12 @@
     <title>Troubleshooting | cxxmcp</title>
     <meta name="description" content="Common issues and solutions when building with cxxmcp.">
     <link rel="stylesheet" href="style.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.11.1/styles/github.min.css" media="(prefers-color-scheme: light)">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.11.1/styles/github-dark.min.css" media="(prefers-color-scheme: dark)">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.11.1/highlight.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.11.1/languages/cmake.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.11.1/languages/bash.min.js"></script>
+    <script>document.addEventListener('DOMContentLoaded',()=>hljs.highlightAll());</script>
   </head>
   <body>
     <button class="sidebar-toggle" onclick="document.querySelector('.sidebar').classList.toggle('open')">&#9776;</button>
@@ -52,7 +58,7 @@
           <h3>CMake cannot find cxxmcp</h3>
           <p><strong>Error:</strong> <code>Could not find a package configuration file provided by "cxxmcp"</code></p>
           <p><strong>Solution:</strong> Install the SDK first, or use FetchContent:</p>
-          <pre><code># Option 1: Install then consume
+          <pre><code class="language-bash"># Option 1: Install then consume
 cmake --install build --prefix /path/to/install
 cmake -S myapp -B build -DCMAKE_PREFIX_PATH=/path/to/install
 
@@ -66,14 +72,14 @@ FetchContent_MakeAvailable(cxxmcp)</code></pre>
           <h3>HTTP transport symbols not found</h3>
           <p><strong>Error:</strong> <code>undefined reference to mcp::transport::StreamableHttpServerTransport</code></p>
           <p><strong>Solution:</strong> HTTP transport is off by default. Enable it:</p>
-          <pre><code>cmake -S . -B build -DCXXMCP_ENABLE_HTTP=ON</code></pre>
+          <pre><code class="language-bash">cmake -S . -B build -DCXXMCP_ENABLE_HTTP=ON</code></pre>
         </div>
 
         <div class="faq">
           <h3>Auth target not found</h3>
           <p><strong>Error:</strong> <code>Target "cxxmcp::auth" not found</code></p>
           <p><strong>Solution:</strong> Auth is opt-in:</p>
-          <pre><code>cmake -S . -B build -DCXXMCP_ENABLE_AUTH=ON
+          <pre><code class="language-bash">cmake -S . -B build -DCXXMCP_ENABLE_AUTH=ON
 
 # With OpenSSL DPoP/JWKS support
 cmake -S . -B build -DCXXMCP_ENABLE_AUTH=ON -DCXXMCP_AUTH_CRYPTO=OpenSSL</code></pre>
@@ -83,7 +89,7 @@ cmake -S . -B build -DCXXMCP_ENABLE_AUTH=ON -DCXXMCP_AUTH_CRYPTO=OpenSSL</code><
           <h3>OpenSSL not found</h3>
           <p><strong>Error:</strong> <code>Could not find a package configuration file provided by "OpenSSL"</code></p>
           <p><strong>Solution:</strong> Tell CMake where OpenSSL is:</p>
-          <pre><code># Windows (vcpkg)
+          <pre><code class="language-bash"># Windows (vcpkg)
 cmake -S . -B build -DCMAKE_TOOLCHAIN_FILE=C:/vcpkg/scripts/buildsystems/vcpkg.cmake
 
 # Linux (system package)
@@ -98,7 +104,7 @@ cmake -S . -B build -DOPENSSL_ROOT_DIR=/path/to/openssl</code></pre>
           <h3>C++17 compiler errors</h3>
           <p><strong>Error:</strong> <code>error: 'optional' is not a member of 'std'</code></p>
           <p><strong>Solution:</strong> Ensure C++17 is enabled:</p>
-          <pre><code>set(CMAKE_CXX_STANDARD 17)
+          <pre><code class="language-cmake">set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)</code></pre>
         </div>
 
@@ -106,7 +112,7 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)</code></pre>
           <h3>vcpkg cannot find cxxmcp</h3>
           <p><strong>Error:</strong> <code>error: Unable to find package cxxmcp</code></p>
           <p><strong>Solution:</strong> Use the overlay port from the repository:</p>
-          <pre><code>vcpkg install cxxmcp --overlay-ports=path/to/cxxmcp/packaging/vcpkg/ports</code></pre>
+          <pre><code class="language-bash">vcpkg install cxxmcp --overlay-ports=path/to/cxxmcp/packaging/vcpkg/ports</code></pre>
         </div>
       </section>
 
@@ -118,7 +124,7 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)</code></pre>
           <h3>Server does not respond to tools/list</h3>
           <p><strong>Symptom:</strong> Client sends <code>tools/list</code> but gets method-not-found.</p>
           <p><strong>Solution:</strong> You must register at least one tool with the builder. An empty server has no tools capability:</p>
-          <pre><code>auto server = mcp::ServerPeer::builder()
+          <pre><code class="language-cpp">auto server = mcp::ServerPeer::builder()
     .name("my-server").version("1.0.0").stdio()
     .tool&lt;Json, Json&gt;("echo", handler)  // This enables the tools capability
     .build();</code></pre>
@@ -128,7 +134,7 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)</code></pre>
           <h3>HTTP server connection refused</h3>
           <p><strong>Symptom:</strong> Client gets <code>connection refused</code> on HTTP.</p>
           <p><strong>Solution:</strong> Call <code>wait_until_ready()</code> before connecting:</p>
-          <pre><code>auto running = mcp::serve(std::move(*server));
+          <pre><code class="language-cpp">auto running = mcp::serve(std::move(*server));
 running->wait_until_ready();  // Wait for socket to bind
 // Now safe to connect clients</code></pre>
         </div>
@@ -137,7 +143,7 @@ running->wait_until_ready();  // Wait for socket to bind
           <h3>Bearer token rejected</h3>
           <p><strong>Symptom:</strong> Server returns <code>401 Unauthorized</code>.</p>
           <p><strong>Solution:</strong> Ensure the auth provider is set before building:</p>
-          <pre><code>auto auth = std::make_unique&lt;mcp::server::StaticBearerAuthProvider&gt;();
+          <pre><code class="language-cpp">auto auth = std::make_unique&lt;mcp::server::StaticBearerAuthProvider&gt;();
 auth->add_token("my-token", mcp::server::AuthIdentity{"user", {}});
 
 auto server = mcp::ServerPeer::builder()
@@ -151,7 +157,7 @@ auto server = mcp::ServerPeer::builder()
           <h3>Tool handler not called</h3>
           <p><strong>Symptom:</strong> <code>tools/call</code> returns method-not-found.</p>
           <p><strong>Solution:</strong> Tool name in <code>call_tool()</code> must match the registered name exactly (case-sensitive):</p>
-          <pre><code>// Registration
+          <pre><code class="language-cpp">// Registration
 .tool&lt;Json, Json&gt;("my_tool", handler)
 
 // Call — must match exactly
@@ -163,7 +169,7 @@ svc.peer().call_tool("My_Tool", Json{{}});  // FAILS</code></pre>
           <h3>Process stdio server exits immediately</h3>
           <p><strong>Symptom:</strong> Client launches server process but it exits right away.</p>
           <p><strong>Solution:</strong> The server must block on <code>wait()</code>:</p>
-          <pre><code>auto running = mcp::serve(std::move(*server));
+          <pre><code class="language-cpp">auto running = mcp::serve(std::move(*server));
 running->wait();  // Blocks until stdin closes or shutdown</code></pre>
         </div>
       </section>
@@ -176,7 +182,7 @@ running->wait();  // Blocks until stdin closes or shutdown</code></pre>
           <h3>CXXMCP_REFLECT compilation error</h3>
           <p><strong>Error:</strong> <code>no matching function for call to 'Reflect'</code></p>
           <p><strong>Solution:</strong> The macro must be used inside <code>namespace mcp::protocol</code>:</p>
-          <pre><code>struct MyType { std::string name; int value; };
+          <pre><code class="language-cpp">struct MyType { std::string name; int value; };
 
 namespace mcp::protocol {
 CXXMCP_REFLECT(MyType, name, value)
@@ -187,7 +193,7 @@ CXXMCP_REFLECT(MyType, name, value)
           <h3>JSON deserialization returns empty fields</h3>
           <p><strong>Symptom:</strong> Fields are default-initialized after <code>reflect_from_json</code>.</p>
           <p><strong>Solution:</strong> JSON keys must match the C++ field names exactly:</p>
-          <pre><code>// C++ field: std::string query;
+          <pre><code class="language-cpp">// C++ field: std::string query;
 // JSON must have: {"query": "value"}
 // NOT: {"q": "value"}</code></pre>
         </div>
@@ -206,7 +212,7 @@ CXXMCP_REFLECT(MyType, name, value)
         <div class="faq">
           <h3>Conformance runner not found</h3>
           <p><strong>Solution:</strong> The runner is a separate tool. See <a href="https://github.com/modelcontextprotocol/conformance">modelcontextprotocol/conformance</a>:</p>
-          <pre><code>git clone https://github.com/modelcontextprotocol/conformance.git
+          <pre><code class="language-bash">git clone https://github.com/modelcontextprotocol/conformance.git
 cd conformance
 npm install
 npm run build

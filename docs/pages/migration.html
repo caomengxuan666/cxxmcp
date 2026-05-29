@@ -6,6 +6,12 @@
     <title>Migration Guide | cxxmcp</title>
     <meta name="description" content="Migrate from other MCP SDKs to cxxmcp.">
     <link rel="stylesheet" href="style.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.11.1/styles/github.min.css" media="(prefers-color-scheme: light)">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.11.1/styles/github-dark.min.css" media="(prefers-color-scheme: dark)">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.11.1/highlight.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.11.1/languages/cmake.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.11.1/languages/bash.min.js"></script>
+    <script>document.addEventListener('DOMContentLoaded',()=>hljs.highlightAll());</script>
   </head>
   <body>
     <button class="sidebar-toggle" onclick="document.querySelector('.sidebar').classList.toggle('open')">&#9776;</button>
@@ -84,7 +90,7 @@
         </table>
 
         <h3>Side-by-Side: Echo Server</h3>
-        <pre><code>// TypeScript
+        <pre><code class="language-cpp">// TypeScript
 import { McpServer } from "@modelcontextprotocol/sdk/server";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio";
 
@@ -94,7 +100,7 @@ server.tool("echo", { input: { type: "object" } }, async ({ input }) => ({
 }));
 const transport = new StdioServerTransport();
 await server.connect(transport);</code></pre>
-        <pre><code>// cxxmcp
+        <pre><code class="language-cpp">// cxxmcp
 #include &lt;cxxmcp/peer.hpp&gt;
 #include &lt;cxxmcp/run.hpp&gt;
 
@@ -127,15 +133,15 @@ int main() {
             <td><code>ServerPeer::builder().name("name")</code></td>
           </tr>
           <tr>
-            <td><code>@server.tool()</code></td>
+            <td><code class="language-python">@server.tool()</code></td>
             <td><code>.tool&lt;In, Out&gt;(name, handler)</code></td>
           </tr>
           <tr>
-            <td><code>@server.resource(uri)</code></td>
+            <td><code class="language-python">@server.resource(uri)</code></td>
             <td><code>.resource(uri, handler)</code></td>
           </tr>
           <tr>
-            <td><code>@server.prompt()</code></td>
+            <td><code class="language-python">@server.prompt()</code></td>
             <td><code>.prompt(Prompt{...}, handler)</code></td>
           </tr>
           <tr>
@@ -145,7 +151,7 @@ int main() {
         </table>
 
         <h3>Side-by-Side: Echo Server</h3>
-        <pre><code># Python
+        <pre><code class="language-bash"># Python
 from mcp.server import Server
 from mcp.server.stdio import stdio_server
 
@@ -158,7 +164,7 @@ async def echo(input: dict) -&gt; dict:
 async def main():
     async with stdio_server() as (read, write):
         await server.run(read, write)</code></pre>
-        <pre><code>// cxxmcp
+        <pre><code class="language-cpp">// cxxmcp
 #include &lt;cxxmcp/peer.hpp&gt;
 #include &lt;cxxmcp/run.hpp&gt;
 
@@ -172,7 +178,7 @@ int main() {
 
         <h3>Key Differences</h3>
         <ul>
-          <li><strong>Decorators vs builder:</strong> Python uses <code>@server.tool()</code> decorators; cxxmcp uses method chaining on a builder</li>
+          <li><strong>Decorators vs builder:</strong> Python uses <code class="language-python">@server.tool()</code> decorators; cxxmcp uses method chaining on a builder</li>
           <li><strong>Async:</strong> Python is async-first; cxxmcp is synchronous-first with optional async tasks</li>
           <li><strong>Types:</strong> Python uses type hints; cxxmcp uses compile-time <code>CXXMCP_REFLECT</code></li>
           <li><strong>Deployment:</strong> Python needs a runtime; cxxmcp compiles to a native binary</li>
@@ -196,7 +202,7 @@ int main() {
           </tr>
           <tr>
             <td><code>serve_server()</code></td>
-            <td><code>mcp::serve(peer)</code></td>
+            <td><code class="language-cpp">mcp::serve(peer)</code></td>
           </tr>
           <tr>
             <td><code>axum</code> / <code>tower</code></td>

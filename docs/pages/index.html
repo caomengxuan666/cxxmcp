@@ -10,6 +10,12 @@
       .grid-highlights { grid-template-columns: repeat(3, minmax(0, 1fr)); }
       @media (max-width: 800px) { .grid-highlights { grid-template-columns: 1fr; } }
     </style>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.11.1/styles/github.min.css" media="(prefers-color-scheme: light)">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.11.1/styles/github-dark.min.css" media="(prefers-color-scheme: dark)">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.11.1/highlight.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.11.1/languages/cmake.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.11.1/languages/bash.min.js"></script>
+    <script>document.addEventListener('DOMContentLoaded',()=>hljs.highlightAll());</script>
   </head>
   <body>
     <button class="sidebar-toggle" onclick="document.querySelector('.sidebar').classList.toggle('open')">&#9776;</button>
@@ -73,9 +79,9 @@
 
           <section class="section">
             <h2>Quick Start</h2>
-            <pre><code>find_package(cxxmcp CONFIG REQUIRED)
+            <pre><code class="language-cmake">find_package(cxxmcp CONFIG REQUIRED)
 target_link_libraries(my_server PRIVATE cxxmcp::server)</code></pre>
-            <pre><code>#include &lt;cxxmcp/peer.hpp&gt;
+            <pre><code class="language-cpp">#include &lt;cxxmcp/peer.hpp&gt;
 #include &lt;cxxmcp/run.hpp&gt;
 
 int main() {

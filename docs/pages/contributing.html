@@ -6,6 +6,12 @@
     <title>Contributing | cxxmcp</title>
     <meta name="description" content="How to contribute to cxxmcp.">
     <link rel="stylesheet" href="style.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.11.1/styles/github.min.css" media="(prefers-color-scheme: light)">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.11.1/styles/github-dark.min.css" media="(prefers-color-scheme: dark)">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.11.1/highlight.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.11.1/languages/cmake.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.11.1/languages/bash.min.js"></script>
+    <script>document.addEventListener('DOMContentLoaded',()=>hljs.highlightAll());</script>
   </head>
   <body>
     <button class="sidebar-toggle" onclick="document.querySelector('.sidebar').classList.toggle('open')">&#9776;</button>
@@ -51,7 +57,7 @@
         <p>Use topic branches from <code>master</code>. Keep changes scoped to one behavior, capability family, or documentation concern.</p>
 
         <h3>Before Opening a PR</h3>
-        <pre><code># Format check
+        <pre><code class="language-bash"># Format check
 pwsh -NoProfile -File scripts\format.ps1 -Check
 
 # Build and test
@@ -60,7 +66,7 @@ ctest --test-dir build-package-prep -R "^(protocol|client_server|sdk|package_smo
 
         <h3>Transport Changes</h3>
         <p>Also run the relevant transport tests:</p>
-        <pre><code>ctest --test-dir build -R "transport" --output-on-failure</code></pre>
+        <pre><code class="language-bash">ctest --test-dir build -R "transport" --output-on-failure</code></pre>
 
         <h3>Package Changes</h3>
         <p>Run <code>package_smoke</code> for both bundled and <code>CXXMCP_USE_SYSTEM_DEPS=ON</code> builds.</p>
@@ -113,7 +119,7 @@ ctest --test-dir build-package-prep -R "^(protocol|client_server|sdk|package_smo
         <ul>
           <li>C++17 public API — no C++20 features in public headers</li>
           <li>Follow the existing naming conventions (<code>snake_case</code> for functions, <code>PascalCase</code> for types)</li>
-          <li>Use <code>mcp::</code> namespace; sub-namespaces for protocol, transport, etc.</li>
+          <li>Use <code class="language-cpp">mcp::</code> namespace; sub-namespaces for protocol, transport, etc.</li>
           <li>Keep headers self-contained — include what you use</li>
         </ul>
       </section>
