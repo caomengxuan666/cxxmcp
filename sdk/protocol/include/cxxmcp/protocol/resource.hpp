@@ -117,6 +117,10 @@ struct ResourcesListResult {
   std::optional<Json> meta;
   /// Unknown JSON members preserved for forward-compatible round trips.
   Json extensions = Json::object();
+  /// Cache time-to-live hint in milliseconds (SEP-2549).
+  std::optional<std::int64_t> ttl_ms;
+  /// Cache scope hint: "public" or "private" (SEP-2549).
+  std::optional<std::string> cache_scope;
 };
 
 /// @brief URI template advertised by `resources/templates/list`.
@@ -213,6 +217,10 @@ struct ResourceTemplatesListResult {
   std::optional<Json> meta;
   /// Unknown JSON members preserved for forward-compatible round trips.
   Json extensions = Json::object();
+  /// Cache time-to-live hint in milliseconds (SEP-2549).
+  std::optional<std::int64_t> ttl_ms;
+  /// Cache scope hint: "public" or "private" (SEP-2549).
+  std::optional<std::string> cache_scope;
 };
 
 /// @brief Parameters for `resources/read`.
@@ -281,6 +289,10 @@ struct ResourcesReadResult {
   std::optional<Json> meta;
   /// Unknown JSON members preserved for forward-compatible round trips.
   Json extensions = Json::object();
+  /// Cache time-to-live hint in milliseconds (SEP-2549).
+  std::optional<std::int64_t> ttl_ms;
+  /// Cache scope hint: "public" or "private" (SEP-2549).
+  std::optional<std::string> cache_scope;
 };
 
 /// @brief Parameters for `notifications/resources/updated`.
@@ -572,6 +584,12 @@ inline Json resources_list_result_to_json(const ResourcesListResult& result) {
   if (result.meta.has_value()) {
     json["_meta"] = *result.meta;
   }
+  if (result.ttl_ms.has_value()) {
+    json["ttlMs"] = *result.ttl_ms;
+  }
+  if (result.cache_scope.has_value()) {
+    json["cacheScope"] = *result.cache_scope;
+  }
   append_json_extensions(json, result.extensions);
   return json;
 }
@@ -630,6 +648,12 @@ inline Json resource_templates_list_result_to_json(
   }
   if (result.meta.has_value()) {
     json["_meta"] = *result.meta;
+  }
+  if (result.ttl_ms.has_value()) {
+    json["ttlMs"] = *result.ttl_ms;
+  }
+  if (result.cache_scope.has_value()) {
+    json["cacheScope"] = *result.cache_scope;
   }
   append_json_extensions(json, result.extensions);
   return json;
@@ -790,6 +814,12 @@ inline Json resources_read_result_to_json(const ResourcesReadResult& result) {
   }
   if (result.meta.has_value()) {
     json["_meta"] = *result.meta;
+  }
+  if (result.ttl_ms.has_value()) {
+    json["ttlMs"] = *result.ttl_ms;
+  }
+  if (result.cache_scope.has_value()) {
+    json["cacheScope"] = *result.cache_scope;
   }
   append_json_extensions(json, result.extensions);
   return json;

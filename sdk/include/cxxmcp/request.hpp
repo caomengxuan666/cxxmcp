@@ -13,6 +13,7 @@
 #include <mutex>
 #include <optional>
 #include <string>
+#include <unordered_map>
 #include <utility>
 
 #include "cxxmcp/cancellation.hpp"
@@ -108,6 +109,13 @@ struct RequestOptions {
   /// Optional cooperative cancellation token observed while awaiting the
   /// response.
   std::optional<CancellationToken> cancellation_token;
+
+  /// Per-request HTTP headers merged into the transport layer.
+  std::unordered_map<std::string, std::string> headers;
+
+  /// Optional override for the MCP-Protocol-Version header sent on this
+  /// request.
+  std::optional<std::string> protocol_version;
 };
 
 template <class T>

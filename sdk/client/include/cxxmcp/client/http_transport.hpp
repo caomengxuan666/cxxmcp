@@ -29,15 +29,6 @@ struct HttpAuthChallenge {
   std::optional<std::string> www_authenticate;
 };
 
-/// @brief Application hook used for one-shot bearer refresh on HTTP 401.
-///
-/// Return a new raw bearer token to retry the failed request once. Returning
-/// `std::nullopt` leaves the original auth failure intact. The transport does
-/// not perform OAuth itself; full OAuth lifecycle remains in the optional auth
-/// layer and application code.
-using HttpAuthRefreshHandler =
-    std::function<std::optional<std::string>(const HttpAuthChallenge&)>;
-
 /// @brief Configuration for the client HTTP transport.
 struct HttpTransportOptions {
   /// Full HTTP or HTTPS URI for the MCP endpoint.
@@ -102,6 +93,11 @@ class HttpTransport final : public Transport {
 
   /// @brief Stops background receive activity and releases transport resources.
   void stop() noexcept override;
+
+  /// @brief Updates the negotiated protocol version for subsequent requests.
+  /// Called after version negotiation to ensure headers reflect the agreed
+  /// version.
+  void set_negotiated_protocol_version(std::string version);
 
  private:
   struct Impl;

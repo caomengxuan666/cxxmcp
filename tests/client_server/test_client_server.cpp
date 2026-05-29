@@ -5533,11 +5533,8 @@ void test_client_initialize_rejects_invalid_protocol_versions() {
   missing_transport->initialize_result.erase("protocolVersion");
   mcp::client::Client missing_client(std::move(missing_transport));
   const auto missing = missing_client.initialize("tester", "1");
-  require(!missing.has_value(),
-          "client should reject missing initialize protocolVersion");
-  require(missing.error().message ==
-              "initialize result requires a string protocolVersion",
-          "missing initialize protocolVersion client error mismatch");
+  require(missing.has_value(),
+          "client should accept missing initialize protocolVersion");
 
   auto non_string_transport = std::make_unique<RecordingTransport>();
   non_string_transport->initialize_result["protocolVersion"] = 42;

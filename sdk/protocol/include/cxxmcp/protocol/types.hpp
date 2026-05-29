@@ -17,6 +17,7 @@
 #include <optional>
 #include <string>
 #include <string_view>
+#include <unordered_map>
 #include <utility>
 #include <variant>
 #include <vector>
@@ -104,6 +105,10 @@ struct JsonRpcRequest {
   RequestId id;
   /// Optional protocol metadata, serialized outside the feature payload.
   std::optional<Json> meta;
+  /// Per-request HTTP headers merged into the transport layer.
+  std::unordered_map<std::string, std::string> transport_headers;
+  /// Optional override for the MCP-Protocol-Version header.
+  std::optional<std::string> protocol_version_override;
 };
 
 /// @brief JSON-RPC response envelope for either success or failure.

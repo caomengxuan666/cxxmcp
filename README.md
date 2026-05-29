@@ -40,6 +40,7 @@ core SDK contract.
 - [Capability Snapshot](#capability-snapshot)
 - [SDK Map](#sdk-map)
 - [Quality Signals](#quality-signals)
+- [Conformance Evidence](#conformance-evidence)
 - [Using As A Library](#using-as-a-library)
 - [Build From Source](#build-from-source)
 - [Package Targets](#package-targets)
@@ -64,6 +65,8 @@ core SDK contract.
   progress, and cancellation surfaces
 - Raw JSON-RPC escape hatches for vendor-specific or future MCP behavior
 - Package-smoke and cross-SDK interoperability tests used as release gates
+- Downstream `modelcontextprotocol/conformance` coverage for current MCP
+  draft scenarios and dated 2025 snapshots through `cxxmcp-examples`
 
 ## Quick Install
 
@@ -188,6 +191,52 @@ flowchart TD
 Project status: `cxxmcp` is a community C++ MCP SDK preparing official SDK
 candidate evidence. It is not an official MCP SDK unless accepted or listed by
 the MCP maintainers.
+
+## Conformance Evidence
+
+The SDK is validated downstream by
+[`cxxmcp-examples`](https://github.com/caomengxuan666/cxxmcp-examples) using
+the upstream `modelcontextprotocol/conformance` runner. Current local evidence
+against the latest runner includes:
+
+| Area | Current local result |
+|---|---|
+| Server `2025-11-25` all suite | 47 passed, 0 failed |
+| Server latest all suite | 108 passed, 1 failed |
+| Client `2025-11-25` all suite | 224 passed, 1 failed |
+| Client latest all suite with OpenSSL auth | 428 passed, 8 failed |
+
+The client auth harness passes the current tier, back-compat, draft, and
+extension auth scenarios when `CXXMCP_AUTH_CRYPTO=OpenSSL` is enabled,
+including private_key_jwt client credentials and enterprise-managed
+authorization. This gives cxxmcp coverage ahead of the current TypeScript SDK
+client in those auth paths.
+
+Known exceptions are kept explicit rather than hidden by baselines:
+
+- Server latest all-suite has one SEP-2243 header failure:
+  `ServerRejectsMissingMethodHeader`. Enforcing `Mcp-Method` by default would
+  currently break the TypeScript SDK v1.29.0 conformance client, which does not
+  send that required header. The C++ client transport sends `Mcp-Method`;
+  strict server enforcement is tracked as a compatibility-controlled mode.
+  Upstream tracking:
+  [typescript-sdk#2176](https://github.com/modelcontextprotocol/typescript-sdk/issues/2176)
+  and
+  [conformance#323](https://github.com/modelcontextprotocol/conformance/issues/323).
+- Client latest all-suite still has SSE retry / `Last-Event-ID` and SEP-2243
+  custom-header validation gaps.
+
+Local RMCP comparison, same conformance runner:
+
+- C++ server latest all suite: 108 passed, 1 failed.
+- RMCP server latest all suite: 48 passed, 47 failed.
+- C++ client latest all suite with OpenSSL auth: 428 passed, 8 failed.
+- RMCP client latest all suite did not produce an all-suite summary; the
+  conformance runner crashed after RMCP returned an empty/non-JSON response.
+
+The stable evidence summary lives in
+[Conformance evidence](docs/conformance_evidence.md). The full command log and
+failure inventory live in the examples repository's `CONFORMANCE_STATUS.md`.
 
 ## Using As A Library
 
@@ -572,6 +621,7 @@ fixtures for RMCP, TypeScript SDK, and Python SDK clients.
 - [Security policy](SECURITY.md)
 - [Compatibility policy](docs/compatibility_policy.md)
 - [Dependency and reference policy](docs/dependency_policy.md)
+- [Conformance evidence](docs/conformance_evidence.md)
 - External gateway boundary: `docs/runtime_gateway.md`
 - [Protocol model audit](docs/protocol_model_audit.md)
 - [External consumer template](templates/external_consumer)

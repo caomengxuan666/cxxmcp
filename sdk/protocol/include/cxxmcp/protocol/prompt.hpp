@@ -171,6 +171,10 @@ struct PromptsListResult {
   std::optional<Json> meta;
   /// Unknown JSON members preserved for forward-compatible round trips.
   Json extensions = Json::object();
+  /// Cache time-to-live hint in milliseconds (SEP-2549).
+  std::optional<std::int64_t> ttl_ms;
+  /// Cache scope hint: "public" or "private" (SEP-2549).
+  std::optional<std::string> cache_scope;
 };
 
 /// @brief Parameters for `prompts/get`.
@@ -213,6 +217,13 @@ struct PromptsGetResult {
   std::vector<PromptMessage> messages;
   /// Optional `_meta` extension object preserved on the wire.
   std::optional<Json> meta;
+  /// Result type discriminator. "input_required" for MRTR (SEP-2322).
+  /// Missing means the result is complete.
+  std::optional<std::string> result_type;
+  /// Server input requests for MRTR (SEP-2322).
+  std::optional<Json> input_requests;
+  /// Opaque request state for MRTR retries (SEP-2322).
+  std::optional<std::string> request_state;
   /// Unknown JSON members preserved for forward-compatible round trips.
   Json extensions = Json::object();
 };
@@ -426,6 +437,12 @@ inline Json prompts_list_result_to_json(const PromptsListResult& result) {
   if (result.meta.has_value()) {
     json["_meta"] = *result.meta;
   }
+  if (result.ttl_ms.has_value()) {
+    json["ttlMs"] = *result.ttl_ms;
+  }
+  if (result.cache_scope.has_value()) {
+    json["cacheScope"] = *result.cache_scope;
+  }
   append_json_extensions(json, result.extensions);
   return json;
 }
@@ -569,15 +586,26 @@ inline core::Result<PromptMessage> prompt_message_from_json(const Json& json) {
 /// @brief Serializes a `prompts/get` result.
 inline Json prompts_get_result_to_json(const PromptsGetResult& result) {
   Json json = Json::object();
+  if (result.result_type.has_value()) {
+    json["resultType"] = *result.result_type;
+  }
   if (!result.description.empty()) {
     json["description"] = result.description;
   }
-  json["messages"] = Json::array();
-  for (const auto& message : result.messages) {
-    json["messages"].push_back(prompt_message_to_json(message));
+  if (!result.messages.empty()) {
+    json["messages"] = Json::array();
+    for (const auto& message : result.messages) {
+      json["messages"].push_back(prompt_message_to_json(message));
+    }
   }
   if (result.meta.has_value()) {
     json["_meta"] = *result.meta;
+  }
+  if (result.input_requests.has_value()) {
+    json["inputRequests"] = *result.input_requests;
+  }
+  if (result.request_state.has_value()) {
+    json["requestState"] = *result.request_state;
   }
   append_json_extensions(json, result.extensions);
   return json;
@@ -591,12 +619,16 @@ inline core::Result<PromptsGetResult> prompts_get_result_from_json(
     return mcp::core::unexpected(
         prompt_json_error("prompts/get result must be an object"));
   }
-  if (!json.contains("messages") || !json.at("messages").is_array()) {
-    return mcp::core::unexpected(
-        prompt_json_error("prompts/get result requires a messages array"));
+  if (!json.contains("messages") && !json.contains("resultType") &&
+      !json.contains("inputRequests")) {
+    return mcp::core::unexpected(prompt_json_error(
+        "prompts/get result requires messages, resultType, or inputRequests"));
   }
 
   PromptsGetResult result;
+  if (json.contains("resultType")) {
+    result.result_type = json.at("resultType").get<std::string>();
+  }
   if (json.contains("description")) {
     if (!json.at("description").is_string()) {
       return mcp::core::unexpected(
@@ -604,12 +636,18 @@ inline core::Result<PromptsGetResult> prompts_get_result_from_json(
     }
     result.description = json.at("description").get<std::string>();
   }
-  for (const auto& item : json.at("messages")) {
-    const auto message = prompt_message_from_json(item);
-    if (!message) {
-      return mcp::core::unexpected(message.error());
+  if (json.contains("messages")) {
+    if (!json.at("messages").is_array()) {
+      return mcp::core::unexpected(
+          prompt_json_error("prompts/get messages must be an array"));
     }
-    result.messages.push_back(*message);
+    for (const auto& item : json.at("messages")) {
+      const auto message = prompt_message_from_json(item);
+      if (!message) {
+        return mcp::core::unexpected(message.error());
+      }
+      result.messages.push_back(*message);
+    }
   }
   if (json.contains("_meta")) {
     if (!json.at("_meta").is_object()) {
@@ -618,8 +656,15 @@ inline core::Result<PromptsGetResult> prompts_get_result_from_json(
     }
     result.meta = json.at("_meta");
   }
-  result.extensions =
-      collect_json_extensions(json, {"description", "messages", "_meta"});
+  if (json.contains("inputRequests")) {
+    result.input_requests = json.at("inputRequests");
+  }
+  if (json.contains("requestState")) {
+    result.request_state = json.at("requestState").get<std::string>();
+  }
+  result.extensions = collect_json_extensions(
+      json, {"description", "messages", "_meta", "resultType", "inputRequests",
+             "requestState"});
   return result;
 }
 

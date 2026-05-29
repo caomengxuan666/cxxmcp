@@ -186,37 +186,46 @@ if(TARGET mcp_client AND TARGET mcp_server)
     add_test(NAME transport_adapters COMMAND mcp_transport_adapter_tests)
     cxxmcp_mark_release_blocking(transport_adapters transport)
 
-    add_executable(mcp_http_transport_tests
-        transport/test_http_transport.cpp
-    )
+    if(MCP_ENABLE_HTTP)
+        add_executable(mcp_http_transport_tests
+            transport/test_http_transport.cpp
+        )
 
-    target_link_libraries(mcp_http_transport_tests PRIVATE
-        mcp_client
-        mcp_server
-        cpp_httplib
-    )
-    if(WIN32)
-        target_link_libraries(mcp_http_transport_tests PRIVATE ws2_32)
+        target_link_libraries(mcp_http_transport_tests PRIVATE
+            mcp_client
+            mcp_server
+        )
+        if(CXXMCP_USE_SYSTEM_DEPS)
+            target_link_libraries(mcp_http_transport_tests PRIVATE
+                "${CXXMCP_HTTPLIB_TARGET}")
+        else()
+            target_link_libraries(mcp_http_transport_tests PRIVATE cpp_httplib)
+        endif()
+
+        add_test(NAME http_transport COMMAND mcp_http_transport_tests)
+        cxxmcp_mark_release_blocking(http_transport transport http)
+
+        add_executable(mcp_rmcp_conformance_tests
+            interop/test_rmcp_conformance.cpp
+        )
+
+        target_link_libraries(mcp_rmcp_conformance_tests PRIVATE
+            mcp_client
+            mcp_server
+        )
+        if(CXXMCP_USE_SYSTEM_DEPS)
+            target_link_libraries(mcp_rmcp_conformance_tests PRIVATE
+                "${CXXMCP_HTTPLIB_TARGET}")
+        else()
+            target_link_libraries(mcp_rmcp_conformance_tests PRIVATE cpp_httplib)
+        endif()
+        target_compile_definitions(mcp_rmcp_conformance_tests PRIVATE
+            MCP_TEST_SOURCE_DIR="${PROJECT_SOURCE_DIR}"
+        )
+
+        add_test(NAME rmcp_conformance COMMAND mcp_rmcp_conformance_tests)
+        cxxmcp_mark_release_blocking(rmcp_conformance interop)
     endif()
-
-    add_test(NAME http_transport COMMAND mcp_http_transport_tests)
-    cxxmcp_mark_release_blocking(http_transport transport http)
-
-    add_executable(mcp_rmcp_conformance_tests
-        interop/test_rmcp_conformance.cpp
-    )
-
-    target_link_libraries(mcp_rmcp_conformance_tests PRIVATE
-        mcp_client
-        mcp_server
-        cpp_httplib
-    )
-    target_compile_definitions(mcp_rmcp_conformance_tests PRIVATE
-        MCP_TEST_SOURCE_DIR="${PROJECT_SOURCE_DIR}"
-    )
-
-    add_test(NAME rmcp_conformance COMMAND mcp_rmcp_conformance_tests)
-    cxxmcp_mark_release_blocking(rmcp_conformance interop)
 
     add_executable(mcp_sdk_tests
         sdk/test_sdk.cpp

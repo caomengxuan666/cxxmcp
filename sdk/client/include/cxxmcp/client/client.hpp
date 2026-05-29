@@ -40,6 +40,10 @@
 
 namespace mcp::client {
 
+struct HttpAuthChallenge;
+using HttpAuthRefreshHandler =
+    std::function<std::optional<std::string>(const HttpAuthChallenge&)>;
+
 /// @brief Basic options for endpoint-oriented client construction.
 struct ClientOptions {
   /// Remote endpoint URI or implementation-defined endpoint string.
@@ -147,6 +151,10 @@ class Client {
     /// every outbound HTTP request unless `headers` already contains
     /// `Authorization`.
     std::optional<std::string> auth_header;
+
+    /// Optional refresh hook invoked once after a 401 response before the
+    /// transport surfaces the auth failure.
+    HttpAuthRefreshHandler auth_refresh_handler;
 
     /// Per-request HTTP timeout.
     std::chrono::milliseconds timeout{30000};
@@ -283,6 +291,15 @@ class Client {
   /// @return Raw initialize result JSON, or an MCP/transport error.
   core::Result<protocol::Json> initialize(std::string client_name = "cxxmcp",
                                           std::string client_version = "0");
+
+  /// @brief Sends the MCP initialize request with per-request options.
+  /// @param client_name Name advertised to the server.
+  /// @param client_version Version advertised to the server.
+  /// @param options Per-request options (meta, headers, protocol_version).
+  /// @return Raw initialize result JSON, or an MCP/transport error.
+  core::Result<protocol::Json> initialize(std::string client_name,
+                                          std::string client_version,
+                                          RequestOptions options);
 
   /// @brief Returns server capabilities learned from initialize(), if known.
   std::optional<protocol::ServerCapabilities> server_capabilities() const;
@@ -498,6 +515,8 @@ class Client {
     if (options.meta.has_value()) {
       request.meta = std::move(options.meta);
     }
+    request.transport_headers = std::move(options.headers);
+    request.protocol_version_override = std::move(options.protocol_version);
 
     const auto request_id = request.id;
     return RequestHandle<T>::spawn(

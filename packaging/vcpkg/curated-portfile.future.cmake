@@ -14,14 +14,21 @@ vcpkg_from_github(
     HEAD_REF master
 )
 
+set(CXXMCP_VCPKG_ENABLE_HTTP OFF)
+if("http" IN_LIST FEATURES OR "http-openssl" IN_LIST FEATURES)
+    set(CXXMCP_VCPKG_ENABLE_HTTP ON)
+endif()
+
 set(CXXMCP_VCPKG_ENABLE_AUTH OFF)
 if("auth" IN_LIST FEATURES)
     set(CXXMCP_VCPKG_ENABLE_AUTH ON)
 endif()
 
-# This sketch is for after-jsonrpcpp-vcpkg-acceptance curated registry work.
-# The repository overlay port intentionally keeps using the bundled private
-# jsonrpcpp header and must not pass CXXMCP_USE_SYSTEM_JSONRPCPP.
+set(CXXMCP_VCPKG_AUTH_CRYPTO NONE)
+if("openssl" IN_LIST FEATURES)
+    set(CXXMCP_VCPKG_AUTH_CRYPTO OpenSSL)
+endif()
+
 vcpkg_cmake_configure(
     SOURCE_PATH "${SOURCE_PATH}"
     OPTIONS
@@ -29,7 +36,9 @@ vcpkg_cmake_configure(
         -DCXXMCP_BUILD_EXAMPLES=OFF
         -DCXXMCP_BUILD_TESTS=OFF
         -DCXXMCP_BUILD_DOCS=OFF
+        -DCXXMCP_ENABLE_HTTP=${CXXMCP_VCPKG_ENABLE_HTTP}
         -DCXXMCP_ENABLE_AUTH=${CXXMCP_VCPKG_ENABLE_AUTH}
+        -DCXXMCP_AUTH_CRYPTO=${CXXMCP_VCPKG_AUTH_CRYPTO}
         -DCXXMCP_USE_SYSTEM_DEPS=ON
         -DCXXMCP_USE_SYSTEM_JSONRPCPP=ON
 )

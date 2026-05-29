@@ -225,6 +225,62 @@ inline MetadataMap dpop_claim_metadata(const nlohmann::json& payload) {
 
 }  // namespace detail
 
+struct PrivateKeyJwtAssertionRequest {
+  std::string private_key_pem;
+  std::string algorithm = "ES256";
+  std::string client_id;
+  std::string audience;
+  std::optional<std::string> key_id;
+  std::optional<std::string> jwt_id;
+  TimePoint issued_at = SystemClock::now();
+  std::chrono::seconds lifetime = std::chrono::minutes(5);
+};
+
+inline core::Result<std::string> sign_private_key_jwt_assertion(
+    PrivateKeyJwtAssertionRequest request) {
+  if (request.client_id.empty()) {
+    return core::unexpected(make_jose_error(
+        JoseErrorCode::kJwtClaimValidationFailed, "client_id is required"));
+  }
+  if (request.audience.empty()) {
+    return core::unexpected(make_jose_error(
+        JoseErrorCode::kJwtClaimValidationFailed, "audience is required"));
+  }
+
+  auto private_key = detail::private_key_from_pem(request.private_key_pem);
+  if (!private_key.has_value()) {
+    return core::unexpected(private_key.error());
+  }
+
+  nlohmann::json header;
+  header["alg"] = request.algorithm;
+  if (request.key_id.has_value()) {
+    header["kid"] = *request.key_id;
+  }
+
+  core::Result<std::string> jwt_id =
+      request.jwt_id.has_value() ? core::Result<std::string>(*request.jwt_id)
+                                 : detail::random_jwt_id();
+  if (!jwt_id.has_value()) {
+    return core::unexpected(jwt_id.error());
+  }
+
+  const auto issued_at = detail::unix_seconds_from_time(request.issued_at);
+  const auto expires_at =
+      detail::unix_seconds_from_time(request.issued_at + request.lifetime);
+
+  nlohmann::json payload;
+  payload["iss"] = request.client_id;
+  payload["sub"] = request.client_id;
+  payload["aud"] = request.audience;
+  payload["jti"] = *jwt_id;
+  payload["iat"] = issued_at;
+  payload["exp"] = expires_at;
+
+  return detail::sign_compact_jws(private_key->get(), request.algorithm, header,
+                                  payload);
+}
+
 struct OpenSslDpopSignerOptions {
   std::function<TimePoint()> now;
   std::function<core::Result<std::string>()> jwt_id_generator;

@@ -34,6 +34,9 @@ all of the following evidence:
 - Public header compile tests pass under the configured SDK C++ standard.
 - RMCP, TypeScript SDK, and Python SDK interoperability evidence is available
   for the advertised transport paths.
+- Server and client `modelcontextprotocol/conformance --suite all` results are
+  recorded in `docs/conformance_evidence.md`; subset suites such as auth or
+  active are clearly labeled as supporting evidence.
 - Generated Doxygen API documentation is uploaded for the same commit.
 - A source archive and checksums are uploaded for the same commit.
 - Release evidence includes the README, README_zh, changelog, compatibility

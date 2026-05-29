@@ -109,7 +109,8 @@ jobs:
             -DCXXMCP_BUILD_SERVER=ON \
             -DCXXMCP_BUILD_EXAMPLES=ON \
             -DCXXMCP_BUILD_TESTS=OFF \
-            -DCXXMCP_BUILD_DOCS=OFF
+            -DCXXMCP_BUILD_DOCS=OFF \
+            -DCXXMCP_ENABLE_HTTP=ON
 
       - name: Build SDK
         run: cmake --build build-config-smoke --parallel
@@ -398,7 +399,8 @@ jobs:
             -DCXXMCP_BUILD_SERVER=ON `
             -DCXXMCP_BUILD_EXAMPLES=OFF `
             -DCXXMCP_BUILD_TESTS=ON `
-            -DCXXMCP_ENABLE_AUTH=ON
+            -DCXXMCP_ENABLE_AUTH=ON `
+            -DCXXMCP_ENABLE_HTTP=ON
 
       - name: Build auth tests
         shell: pwsh
@@ -454,6 +456,7 @@ jobs:
             -DCXXMCP_BUILD_EXAMPLES=OFF \
             -DCXXMCP_BUILD_TESTS=ON \
             -DCXXMCP_ENABLE_AUTH=ON \
+            -DCXXMCP_ENABLE_HTTP=ON \
             -DCXXMCP_AUTH_CRYPTO=OpenSSL
 
       - name: Build OpenSSL auth tests
@@ -652,8 +655,17 @@ jobs:
           - name: default
             feature: ""
             auth_enabled: "OFF"
-          - name: auth
-            feature: "[auth]"
+          - name: http
+            feature: "[http]"
+            auth_enabled: "OFF"
+          - name: http-openssl
+            feature: "[http-openssl]"
+            auth_enabled: "OFF"
+          - name: http-auth
+            feature: "[http,auth]"
+            auth_enabled: "ON"
+          - name: http-auth-openssl
+            feature: "[http-openssl,auth,openssl]"
             auth_enabled: "ON"
 
     steps:
@@ -676,7 +688,7 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p "build-package-vcpkg-${{ matrix.name }}"
-          "${RUNNER_TEMP}/vcpkg/vcpkg" install "cxxmcp${{ matrix.feature }}" \
+          "${RUNNER_TEMP}/vcpkg/vcpkg" install "cxxmcp-sdk${{ matrix.feature }}" \
             --overlay-ports="${GITHUB_WORKSPACE}/packaging/vcpkg/ports" \
             --triplet x64-linux \
             2>&1 | tee "build-package-vcpkg-${{ matrix.name }}/vcpkg-install.log"
@@ -716,9 +728,15 @@ jobs:
       matrix:
         include:
           - name: default
+            with_http: "False"
             with_auth: "False"
             auth_enabled: "OFF"
-          - name: auth
+          - name: http
+            with_http: "True"
+            with_auth: "False"
+            auth_enabled: "OFF"
+          - name: http-auth
+            with_http: "True"
             with_auth: "True"
             auth_enabled: "ON"
 
@@ -742,6 +760,7 @@ jobs:
           conan profile detect --force
           conan create . \
             -s build_type=Release \
+            -o cxxmcp/*:with_http=${{ matrix.with_http }} \
             -o cxxmcp/*:with_auth=${{ matrix.with_auth }} \
             2>&1 | tee "build-package-conan-${{ matrix.name }}/conan-create.log"
 
@@ -749,12 +768,13 @@ jobs:
         run: |
           set -euo pipefail
           conan install \
-            --requires=cxxmcp/1.0.0 \
+            --requires=cxxmcp/1.1.0 \
             --generator=CMakeDeps \
             --generator=CMakeToolchain \
             --output-folder="build-package-conan-${{ matrix.name }}-deps" \
             --build=missing \
             -s build_type=Release \
+            -o cxxmcp/*:with_http=${{ matrix.with_http }} \
             -o cxxmcp/*:with_auth=${{ matrix.with_auth }} \
             2>&1 | tee "build-package-conan-${{ matrix.name }}/conan-install.log"
 
@@ -795,9 +815,15 @@ jobs:
       matrix:
         include:
           - name: default
+            http_enabled: "false"
             auth_enabled: "false"
             auth_define: ""
-          - name: auth
+          - name: http
+            http_enabled: "true"
+            auth_enabled: "false"
+            auth_define: ""
+          - name: http-auth
+            http_enabled: "true"
             auth_enabled: "true"
             auth_define: "add_defines(\"CXXMCP_PACKAGE_SMOKE_AUTH\")"
 
@@ -844,14 +870,14 @@ jobs:
               text,
           )
           text, version_count = re.subn(
-              r'add_versions\("v1\.0\.0",\s*".*?"\)',
-              f'add_versions("v1.0.0", "{digest}")',
+              r'add_versions\("v1\.1\.0",\s*".*?"\)',
+              f'add_versions("v1.1.0", "{digest}")',
               text,
           )
           if url_count != 1:
               raise SystemExit(f"expected one add_urls rewrite, got {url_count}")
           if version_count != 1:
-              raise SystemExit(f"expected one v1.0.0 add_versions rewrite, got {version_count}")
+              raise SystemExit(f"expected one v1.1.0 add_versions rewrite, got {version_count}")
           if f'file://{archive.as_posix()}' not in text:
               raise SystemExit("xmake recipe was not rewritten to the generated source archive")
           if "github.com" in text or "releases/download" in text:
@@ -862,7 +888,7 @@ jobs:
           add_rules("mode.release")
           set_languages("c++17")
           add_repositories("cxxmcp-local repo")
-          add_requires("cxxmcp v1.0.0", {configs = {auth = ${{ matrix.auth_enabled }}}})
+          add_requires("cxxmcp v1.1.0", {configs = {http = ${{ matrix.http_enabled }}, auth = ${{ matrix.auth_enabled }}}})
 
           target("consumer")
               set_kind("binary")

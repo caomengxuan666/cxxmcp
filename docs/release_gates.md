@@ -167,6 +167,10 @@ Each matrix leg uploads a `cxxmcp-release-gates-*` artifact containing the
 link or attach those artifacts so package-smoke, public-header, transport,
 conformance, and interoperability results are auditable after the workflow run
 expires from the Actions UI.
+When conformance status is advertised, refresh `docs/conformance_evidence.md`
+from current server and client `--suite all` runs. Sub-suite results may be
+included as supporting notes, but they must not replace all-suite server/client
+comparisons.
 `scripts/check_release_artifacts.py` validates more than file presence: it
 parses the uploaded JUnit XML and requires the expected release-blocking,
 public-header, auth, OpenSSL auth, package-smoke, and interop testcase names to

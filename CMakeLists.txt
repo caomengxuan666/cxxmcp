@@ -1,7 +1,8 @@
 cmake_minimum_required(VERSION 3.23)
 
+file(STRINGS "${CMAKE_CURRENT_SOURCE_DIR}/VERSION" CXXMCP_VERSION)
 project(cxxmcp
-    VERSION 1.0.0
+    VERSION ${CXXMCP_VERSION}
     LANGUAGES CXX
 )
 
@@ -86,6 +87,8 @@ cxxmcp_build_option(CXXMCP_BUILD_DOCS MCP_BUILD_DOCS
     "Build Doxygen API documentation" OFF)
 cxxmcp_build_option(CXXMCP_ENABLE_AUTH MCP_ENABLE_AUTH
     "Build optional OAuth 2.1 / DPoP authorization scaffolding" OFF)
+cxxmcp_build_option(CXXMCP_ENABLE_HTTP MCP_ENABLE_HTTP
+    "Build HTTP/SSE transport (requires cpp-httplib)" OFF)
 cxxmcp_build_option(CXXMCP_ENABLE_PLUGIN_SDK MCP_ENABLE_PLUGIN_SDK
     "Build optional plugin SDK extension target" OFF)
 cxxmcp_build_option(CXXMCP_ENABLE_ADAPTERS MCP_ENABLE_ADAPTERS
@@ -110,6 +113,7 @@ set(MCP_ENABLE_CLIENT ${CXXMCP_BUILD_CLIENT})
 set(MCP_ENABLE_SERVER ${CXXMCP_BUILD_SERVER})
 set(MCP_ENABLE_SDK ${CXXMCP_BUILD_SDK})
 set(MCP_ENABLE_AUTH ${CXXMCP_ENABLE_AUTH})
+set(MCP_ENABLE_HTTP ${CXXMCP_ENABLE_HTTP})
 set(MCP_ENABLE_PLUGIN_SDK ${CXXMCP_ENABLE_PLUGIN_SDK})
 set(MCP_ENABLE_ADAPTERS ${CXXMCP_ENABLE_ADAPTERS})
 
@@ -153,12 +157,16 @@ cxxmcp_require_sdk_cxx(mcp_core)
 
 if(CXXMCP_USE_SYSTEM_DEPS)
     find_package(nlohmann_json CONFIG REQUIRED)
-    find_package(httplib CONFIG REQUIRED)
 
     set(CXXMCP_JSON_TARGET nlohmann_json::nlohmann_json)
-    set(CXXMCP_HTTPLIB_TARGET httplib::httplib)
 else()
     set(CXXMCP_JSON_TARGET "")
+endif()
+
+if(MCP_ENABLE_HTTP AND CXXMCP_USE_SYSTEM_DEPS)
+    find_package(httplib CONFIG REQUIRED)
+    set(CXXMCP_HTTPLIB_TARGET httplib::httplib)
+else()
     set(CXXMCP_HTTPLIB_TARGET "")
 endif()
 
@@ -181,19 +189,16 @@ endif()
 
 # Internal implementation dependency for HTTP transports and tests. It is not
 # installed or exported as part of the public SDK package contract.
-add_library(cpp_httplib INTERFACE)
-if(CXXMCP_USE_SYSTEM_DEPS)
-    target_link_libraries(cpp_httplib INTERFACE "${CXXMCP_HTTPLIB_TARGET}")
-else()
+if(MCP_ENABLE_HTTP AND NOT CXXMCP_USE_SYSTEM_DEPS)
+    add_library(cpp_httplib INTERFACE)
     target_include_directories(cpp_httplib INTERFACE
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/third_party/httplib>
     )
+    target_link_libraries(cpp_httplib INTERFACE
+        $<$<PLATFORM_ID:Windows>:ws2_32>
+    )
+    cxxmcp_require_sdk_cxx(cpp_httplib)
 endif()
-target_link_libraries(cpp_httplib INTERFACE
-    $<$<PLATFORM_ID:Windows>:ws2_32>
-)
-
-cxxmcp_require_sdk_cxx(cpp_httplib)
 
 if(MCP_ENABLE_PROTOCOL)
     add_library(mcp_protocol STATIC)
@@ -220,20 +225,23 @@ if(MCP_ENABLE_PROTOCOL)
 endif()
 
 if(MCP_ENABLE_CLIENT)
-    add_library(mcp_client STATIC
+    set(CXXMCP_CLIENT_SOURCES
         sdk/client/src/client.cpp
-        sdk/client/src/http_transport.cpp
         sdk/client/src/process_stdio_transport.cpp
         sdk/client/src/stdio_transport.cpp
         sdk/client/src/transport_adapter.cpp
     )
+    if(MCP_ENABLE_HTTP)
+        list(APPEND CXXMCP_CLIENT_SOURCES sdk/client/src/http_transport.cpp)
+    endif()
+    add_library(mcp_client STATIC ${CXXMCP_CLIENT_SOURCES})
     set_target_properties(mcp_client PROPERTIES EXPORT_NAME client)
     target_include_directories(mcp_client PUBLIC
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/sdk/include>
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/sdk/client/include>
         $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>
     )
-    if(NOT CXXMCP_USE_SYSTEM_DEPS)
+    if(MCP_ENABLE_HTTP AND NOT CXXMCP_USE_SYSTEM_DEPS)
         target_include_directories(mcp_client PRIVATE
             ${CMAKE_CURRENT_SOURCE_DIR}/third_party/httplib
         )
@@ -242,30 +250,39 @@ if(MCP_ENABLE_CLIENT)
         PUBLIC
             mcp_core
             mcp_protocol
-            $<$<PLATFORM_ID:Windows>:ws2_32>
         PRIVATE
             Threads::Threads
-            ${CXXMCP_HTTPLIB_TARGET}
     )
+    if(MCP_ENABLE_HTTP)
+        if(CXXMCP_USE_SYSTEM_DEPS)
+            target_link_libraries(mcp_client PRIVATE "${CXXMCP_HTTPLIB_TARGET}")
+        else()
+            target_link_libraries(mcp_client PRIVATE cpp_httplib)
+        endif()
+        target_compile_definitions(mcp_client PUBLIC CXXMCP_ENABLE_HTTP=1)
+    endif()
     cxxmcp_require_sdk_cxx(mcp_client)
 endif()
 
 if(MCP_ENABLE_SERVER)
-    add_library(mcp_server STATIC
-        sdk/server/src/http_transport.cpp
+    set(CXXMCP_SERVER_SOURCES
         sdk/server/src/registry.cpp
         sdk/server/src/server.cpp
         sdk/server/src/stdio_transport.cpp
         sdk/server/src/task_manager.cpp
         sdk/server/src/transport_adapter.cpp
     )
+    if(MCP_ENABLE_HTTP)
+        list(APPEND CXXMCP_SERVER_SOURCES sdk/server/src/http_transport.cpp)
+    endif()
+    add_library(mcp_server STATIC ${CXXMCP_SERVER_SOURCES})
     set_target_properties(mcp_server PROPERTIES EXPORT_NAME server)
     target_include_directories(mcp_server PUBLIC
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/sdk/include>
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/sdk/server/include>
         $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>
     )
-    if(NOT CXXMCP_USE_SYSTEM_DEPS)
+    if(MCP_ENABLE_HTTP AND NOT CXXMCP_USE_SYSTEM_DEPS)
         target_include_directories(mcp_server PRIVATE
             ${CMAKE_CURRENT_SOURCE_DIR}/third_party/httplib
         )
@@ -274,10 +291,17 @@ if(MCP_ENABLE_SERVER)
         PUBLIC
             mcp_core
             mcp_protocol
-            $<$<PLATFORM_ID:Windows>:ws2_32>
         PRIVATE
-            ${CXXMCP_HTTPLIB_TARGET}
+            Threads::Threads
     )
+    if(MCP_ENABLE_HTTP)
+        if(CXXMCP_USE_SYSTEM_DEPS)
+            target_link_libraries(mcp_server PRIVATE "${CXXMCP_HTTPLIB_TARGET}")
+        else()
+            target_link_libraries(mcp_server PRIVATE cpp_httplib)
+        endif()
+        target_compile_definitions(mcp_server PUBLIC CXXMCP_ENABLE_HTTP=1)
+    endif()
     cxxmcp_require_sdk_cxx(mcp_server)
 endif()
 
@@ -334,6 +358,9 @@ if(MCP_ENABLE_AUTH)
 
     if(TARGET mcp_server)
         target_link_libraries(mcp_server PUBLIC mcp_auth)
+    endif()
+    if(TARGET mcp_client)
+        target_link_libraries(mcp_client PUBLIC mcp_auth)
     endif()
 endif()
 

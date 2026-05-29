@@ -54,9 +54,8 @@ class HttpOAuthTokenEndpoint final : public OAuthTokenEndpoint {
     form.add("code", request.authorization_code);
     form.add("redirect_uri", request.client.redirect_uri);
     form.add("client_id", request.client.client_id);
-    if (request.client.client_secret.has_value()) {
-      form.add("client_secret", *request.client.client_secret);
-    }
+    HeaderMap headers;
+    apply_client_auth(&form, &headers, request.client);
     form.add("code_verifier", request.state.pkce.code_verifier);
     if (!request.resource.empty()) {
       form.add("resource", request.resource);
@@ -64,7 +63,7 @@ class HttpOAuthTokenEndpoint final : public OAuthTokenEndpoint {
     append_additional_parameters(&form, request.additional_parameters);
 
     auto response = post_form(request.authorization_server.token_endpoint,
-                              std::move(form).body());
+                              std::move(form).body(), std::move(headers));
     if (!response.has_value()) {
       return mcp::core::unexpected(response.error());
     }
@@ -82,9 +81,8 @@ class HttpOAuthTokenEndpoint final : public OAuthTokenEndpoint {
     form.add("grant_type", "refresh_token");
     form.add("refresh_token", request.refresh_token);
     form.add("client_id", request.client.client_id);
-    if (request.client.client_secret.has_value()) {
-      form.add("client_secret", *request.client.client_secret);
-    }
+    HeaderMap headers;
+    apply_client_auth(&form, &headers, request.client);
     if (!request.resource.empty()) {
       form.add("resource", request.resource);
     }
@@ -95,7 +93,7 @@ class HttpOAuthTokenEndpoint final : public OAuthTokenEndpoint {
     append_additional_parameters(&form, request.additional_parameters);
 
     auto response = post_form(request.authorization_server.token_endpoint,
-                              std::move(form).body());
+                              std::move(form).body(), std::move(headers));
     if (!response.has_value()) {
       return mcp::core::unexpected(response.error());
     }
@@ -121,7 +119,12 @@ class HttpOAuthTokenEndpoint final : public OAuthTokenEndpoint {
     auto form = FormBuilder{};
     form.add("grant_type", "client_credentials");
     form.add("client_id", request.credentials.client_id);
-    form.add("client_secret", request.credentials.client_secret);
+    OAuthClientConfig client;
+    client.client_id = request.credentials.client_id;
+    client.client_secret = request.credentials.client_secret;
+    client.metadata = request.credentials.metadata;
+    HeaderMap headers;
+    apply_client_auth(&form, &headers, client);
     form.add("resource", request.credentials.resource);
     const auto scope = detail::join_scopes(request.credentials.scopes);
     if (!scope.empty()) {
@@ -130,11 +133,40 @@ class HttpOAuthTokenEndpoint final : public OAuthTokenEndpoint {
     append_additional_parameters(&form, request.additional_parameters);
 
     auto response = post_form(request.authorization_server.token_endpoint,
-                              std::move(form).body());
+                              std::move(form).body(), std::move(headers));
     if (!response.has_value()) {
       return mcp::core::unexpected(response.error());
     }
     return parse_token_set(*response, OAuthErrorCode::kClientCredentialsFailed);
+  }
+
+  core::Result<TokenSet> exchange_token_grant(
+      const AuthorizationServerMetadata& authorization_server,
+      const OAuthClientConfig& client, const MetadataMap& parameters,
+      OAuthErrorCode error_code = OAuthErrorCode::kTokenExchangeFailed) {
+    if (authorization_server.token_endpoint.empty()) {
+      return mcp::core::unexpected(
+          make_oauth_error(error_code, "token endpoint is required"));
+    }
+    if (parameters.find("grant_type") == parameters.end()) {
+      return mcp::core::unexpected(
+          make_oauth_error(error_code, "grant_type is required"));
+    }
+
+    auto form = FormBuilder{};
+    if (!client.client_id.empty()) {
+      form.add("client_id", client.client_id);
+    }
+    HeaderMap headers;
+    apply_client_auth(&form, &headers, client);
+    append_additional_parameters(&form, parameters);
+
+    auto response = post_form(authorization_server.token_endpoint,
+                              std::move(form).body(), std::move(headers));
+    if (!response.has_value()) {
+      return mcp::core::unexpected(response.error());
+    }
+    return parse_token_set(*response, error_code);
   }
 
  private:
@@ -164,8 +196,67 @@ class HttpOAuthTokenEndpoint final : public OAuthTokenEndpoint {
     }
   }
 
-  core::Result<OAuthHttpResponse> post_form(std::string url,
-                                            std::string body) const {
+  static std::string client_auth_method(const OAuthClientConfig& client) {
+    const auto iter = client.metadata.find("token_endpoint_auth_method");
+    if (iter != client.metadata.end() && !iter->second.empty()) {
+      return iter->second;
+    }
+    return client.client_secret.has_value() ? "client_secret_post" : "none";
+  }
+
+  static std::string base64_encode(std::string_view input) {
+    static constexpr char alphabet[] =
+        "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    std::string output;
+    output.reserve(((input.size() + 2) / 3) * 4);
+    std::size_t index = 0;
+    while (index + 3 <= input.size()) {
+      const auto b0 = static_cast<unsigned char>(input[index++]);
+      const auto b1 = static_cast<unsigned char>(input[index++]);
+      const auto b2 = static_cast<unsigned char>(input[index++]);
+      output.push_back(alphabet[b0 >> 2]);
+      output.push_back(alphabet[((b0 & 0x03) << 4) | (b1 >> 4)]);
+      output.push_back(alphabet[((b1 & 0x0F) << 2) | (b2 >> 6)]);
+      output.push_back(alphabet[b2 & 0x3F]);
+    }
+    const auto remaining = input.size() - index;
+    if (remaining == 1) {
+      const auto b0 = static_cast<unsigned char>(input[index]);
+      output.push_back(alphabet[b0 >> 2]);
+      output.push_back(alphabet[(b0 & 0x03) << 4]);
+      output.push_back('=');
+      output.push_back('=');
+    } else if (remaining == 2) {
+      const auto b0 = static_cast<unsigned char>(input[index]);
+      const auto b1 = static_cast<unsigned char>(input[index + 1]);
+      output.push_back(alphabet[b0 >> 2]);
+      output.push_back(alphabet[((b0 & 0x03) << 4) | (b1 >> 4)]);
+      output.push_back(alphabet[(b1 & 0x0F) << 2]);
+      output.push_back('=');
+    }
+    return output;
+  }
+
+  static void apply_client_auth(FormBuilder* form, HeaderMap* headers,
+                                const OAuthClientConfig& client) {
+    if (form == nullptr || headers == nullptr || !client.client_secret) {
+      return;
+    }
+    const auto method = client_auth_method(client);
+    if (method == "client_secret_basic") {
+      const auto credentials = detail::oauth_url_encode(client.client_id) +
+                               ":" +
+                               detail::oauth_url_encode(*client.client_secret);
+      headers->emplace("Authorization", "Basic " + base64_encode(credentials));
+      return;
+    }
+    if (method == "client_secret_post") {
+      form->add("client_secret", *client.client_secret);
+    }
+  }
+
+  core::Result<OAuthHttpResponse> post_form(std::string url, std::string body,
+                                            HeaderMap headers = {}) const {
     if (!post_) {
       return mcp::core::unexpected(
           make_oauth_error(OAuthErrorCode::kTokenExchangeUnavailable,
@@ -177,6 +268,9 @@ class HttpOAuthTokenEndpoint final : public OAuthTokenEndpoint {
     request.headers.emplace("Accept", "application/json");
     request.headers.emplace("Content-Type",
                             "application/x-www-form-urlencoded");
+    for (auto& header : headers) {
+      request.headers[std::move(header.first)] = std::move(header.second);
+    }
     request.body = std::move(body);
 
     auto response = post_(request);

@@ -13,7 +13,7 @@ cxxmcp is a **very strong candidate** that is not yet a de facto standard. The i
 ### What Is Already In Place
 
 - **Protocol fidelity**: Typed models for every MCP capability family (tools, prompts, resources, sampling, elicitation, tasks, completion, progress, cancellation). Tracks published MCP protocol snapshots, no custom extensions.
-- **Cross-SDK interoperability as release-blocking gate**: Tests run cxxmcp against RMCP (Rust), TypeScript SDK (`@modelcontextprotocol/sdk@1.29.0`), and Python SDK (`mcp==1.27.1`) in both directions over process stdio and Streamable HTTP.
+- **Cross-SDK interoperability as release-blocking gate**: Tests run cxxmcp against RMCP (Rust), TypeScript SDK (`@modelcontextprotocol/sdk@1.29.0`), and Python SDK (`mcp==1.27.1`) in both directions over process stdio and Streamable HTTP. Current all-suite conformance evidence is tracked in `docs/conformance_evidence.md`.
 - **6-platform release matrix**: Linux GCC, Linux Clang, macOS AppleClang, Windows MSVC (static), Windows ClangCL (static), Windows MSVC (dynamic). Each leg runs sanitizer builds, performance baselines, and public-header compile evidence.
 - **Release discipline**: 19-artifact evidence bundle, JUnit XML content verification (not just pass/fail), binding release candidate checklist.
 - **Package manager readiness**: vcpkg overlay port, Conan 2 recipe, xmake recipe, FetchContent/CPM documentation.
@@ -184,7 +184,7 @@ Adding a libsodium/BoringSSL backend requires only a new implementation director
 |----------|-------------|
 | Protocol serialization | JSON fixture round-trip + malformed input validation |
 | Transport contracts | `QueueTransport` mock validates interface semantics |
-| Cross-language interop | Rust rmcp, TypeScript SDK, Python SDK bidirectional conformance |
+| Cross-language interop | Rust rmcp, TypeScript SDK, Python SDK bidirectional conformance; all-suite conformance evidence recorded separately in `docs/conformance_evidence.md` |
 | Public header compile | 11 headers compiled independently to verify self-containment |
 | SDK boundary | Static scan forbids internal types leaking into public API |
 | Package smoke | Separate CMake project consumes installed targets |

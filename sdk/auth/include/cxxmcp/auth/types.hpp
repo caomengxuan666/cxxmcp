@@ -56,6 +56,7 @@ struct ClientCredentialsConfig {
   std::string client_secret;
   ScopeList scopes;
   std::string resource;
+  MetadataMap metadata;
 };
 
 }  // namespace mcp::auth

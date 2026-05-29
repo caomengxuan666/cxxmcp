@@ -6,7 +6,7 @@ import os
 
 class CxxmcpConan(ConanFile):
     name = "cxxmcp"
-    version = "1.0.0"
+    version = "1.0.0"  # overridden by set_version()
     package_type = "static-library"
 
     license = "MIT"
@@ -19,6 +19,7 @@ class CxxmcpConan(ConanFile):
     options = {
         "shared": [False],
         "fPIC": [True, False],
+        "with_http": [True, False],
         "with_auth": [True, False],
         "with_examples": [True, False],
         "with_tests": [True, False],
@@ -26,6 +27,7 @@ class CxxmcpConan(ConanFile):
     default_options = {
         "shared": False,
         "fPIC": True,
+        "with_http": False,
         "with_auth": False,
         "with_examples": False,
         "with_tests": False,
@@ -49,6 +51,11 @@ class CxxmcpConan(ConanFile):
         "LICENSE",
     )
 
+    def set_version(self):
+        version_file = os.path.join(self.recipe_folder, "VERSION")
+        with open(version_file) as f:
+            self.version = f.read().strip()
+
     def config_options(self):
         if self.settings.os == "Windows":
             del self.options.fPIC
@@ -67,6 +74,8 @@ class CxxmcpConan(ConanFile):
         toolchain.variables["CXXMCP_BUILD_TESTS"] = bool(
             self.options.with_tests)
         toolchain.variables["CXXMCP_BUILD_DOCS"] = False
+        toolchain.variables["CXXMCP_ENABLE_HTTP"] = bool(
+            self.options.with_http)
         toolchain.variables["CXXMCP_ENABLE_AUTH"] = bool(
             self.options.with_auth)
         toolchain.variables["BUILD_SHARED_LIBS"] = False
@@ -92,7 +101,7 @@ class CxxmcpConan(ConanFile):
         self.cpp_info.set_property("cmake_file_name", "cxxmcp")
         self.cpp_info.set_property("cmake_target_name", "cxxmcp::sdk")
         self.cpp_info.libs = ["mcp_server", "mcp_client", "mcp_protocol"]
-        if self.settings.os == "Windows":
+        if self.settings.os == "Windows" and self.options.with_http:
             self.cpp_info.system_libs.append("ws2_32")
         elif self.settings.os in ("Linux", "FreeBSD"):
             self.cpp_info.system_libs.append("pthread")
@@ -113,7 +122,7 @@ class CxxmcpConan(ConanFile):
             "cmake_target_name", "cxxmcp::client")
         self.cpp_info.components["client"].libs = ["mcp_client"]
         self.cpp_info.components["client"].requires = ["transport"]
-        if self.settings.os == "Windows":
+        if self.settings.os == "Windows" and self.options.with_http:
             self.cpp_info.components["client"].system_libs.append("ws2_32")
         elif self.settings.os in ("Linux", "FreeBSD"):
             self.cpp_info.components["client"].system_libs.append("pthread")
@@ -122,7 +131,7 @@ class CxxmcpConan(ConanFile):
             "cmake_target_name", "cxxmcp::server")
         self.cpp_info.components["server"].libs = ["mcp_server"]
         self.cpp_info.components["server"].requires = ["transport"]
-        if self.settings.os == "Windows":
+        if self.settings.os == "Windows" and self.options.with_http:
             self.cpp_info.components["server"].system_libs.append("ws2_32")
         elif self.settings.os in ("Linux", "FreeBSD"):
             self.cpp_info.components["server"].system_libs.append("pthread")

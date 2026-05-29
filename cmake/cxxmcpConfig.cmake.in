@@ -6,6 +6,9 @@ find_dependency(Threads)
 if(@CXXMCP_USE_SYSTEM_DEPS@)
     find_dependency(tl-expected CONFIG)
     find_dependency(nlohmann_json CONFIG)
+endif()
+
+if(@CXXMCP_ENABLE_HTTP@ AND @CXXMCP_USE_SYSTEM_DEPS@)
     find_dependency(httplib CONFIG)
 endif()
 

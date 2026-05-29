@@ -669,9 +669,12 @@ inline StringList build_authorization_server_metadata_urls(
     detail::append_unique(&urls,
                           origin + "/.well-known/oauth-authorization-server/" +
                               detail::trim_leading_slash(path));
+    detail::append_unique(&urls,
+                          normalized + "/.well-known/openid-configuration");
   }
   detail::append_unique(&urls,
                         origin + "/.well-known/oauth-authorization-server");
+  detail::append_unique(&urls, origin + "/.well-known/openid-configuration");
   return urls;
 }
 
@@ -803,7 +806,8 @@ inline void add_offline_access_if_supported(
 /// Checks metadata for the client credentials grant and the
 /// `client_secret_post` authentication method used by the built-in endpoint.
 inline core::Result<core::Unit> validate_client_credentials_metadata(
-    const AuthorizationServerMetadata& metadata) {
+    const AuthorizationServerMetadata& metadata,
+    std::string_view token_endpoint_auth_method = "client_secret_post") {
   if (metadata.token_endpoint.empty()) {
     return mcp::core::unexpected(
         make_oauth_error(OAuthErrorCode::kClientCredentialsFailed,
@@ -823,13 +827,15 @@ inline core::Result<core::Unit> validate_client_credentials_metadata(
     return core::Unit{};
   }
 
-  const auto has_post = std::find(methods.begin(), methods.end(),
-                                  "client_secret_post") != methods.end();
-  if (!has_post) {
+  const auto has_method =
+      std::find(methods.begin(), methods.end(), token_endpoint_auth_method) !=
+      methods.end();
+  if (!has_method) {
     return mcp::core::unexpected(make_oauth_error(
         OAuthErrorCode::kClientCredentialsFailed,
-        "authorization server does not support client_secret_post "
-        "authentication"));
+        "authorization server does not support requested client credentials "
+        "authentication method: " +
+            std::string(token_endpoint_auth_method)));
   }
 
   return core::Unit{};
@@ -875,15 +881,20 @@ inline core::Result<AuthorizationUrlResult> build_authorization_url(
         OAuthErrorCode::kInvalidRequest, "redirect_uri is required"));
   }
   if (!detail::url_uses_https(
+          request.authorization_server.authorization_endpoint) &&
+      !detail::url_uses_loopback_http(
           request.authorization_server.authorization_endpoint)) {
-    return mcp::core::unexpected(
-        make_oauth_error(OAuthErrorCode::kInvalidRequest,
-                         "authorization endpoint must use HTTPS"));
+    return mcp::core::unexpected(make_oauth_error(
+        OAuthErrorCode::kInvalidRequest,
+        "authorization endpoint must use HTTPS or loopback HTTP"));
   }
   if (!request.authorization_server.token_endpoint.empty() &&
-      !detail::url_uses_https(request.authorization_server.token_endpoint)) {
-    return mcp::core::unexpected(make_oauth_error(
-        OAuthErrorCode::kInvalidRequest, "token endpoint must use HTTPS"));
+      !detail::url_uses_https(request.authorization_server.token_endpoint) &&
+      !detail::url_uses_loopback_http(
+          request.authorization_server.token_endpoint)) {
+    return mcp::core::unexpected(
+        make_oauth_error(OAuthErrorCode::kInvalidRequest,
+                         "token endpoint must use HTTPS or loopback HTTP"));
   }
   if (!detail::redirect_uri_is_secure(request.client.redirect_uri)) {
     return mcp::core::unexpected(
@@ -1384,7 +1395,13 @@ class AuthorizationManager {
           OAuthErrorCode::kInvalidRequest, "resource is required"));
     }
 
-    auto validation = validate_client_credentials_metadata(metadata_);
+    const auto method_iter = config.metadata.find("token_endpoint_auth_method");
+    const auto token_endpoint_auth_method =
+        method_iter == config.metadata.end() || method_iter->second.empty()
+            ? std::string_view("client_secret_post")
+            : std::string_view(method_iter->second);
+    auto validation = validate_client_credentials_metadata(
+        metadata_, token_endpoint_auth_method);
     if (!validation.has_value()) {
       return mcp::core::unexpected(validation.error());
     }

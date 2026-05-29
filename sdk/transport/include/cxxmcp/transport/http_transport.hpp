@@ -151,6 +151,10 @@ struct StreamableHttpServerTransportOptions {
   /// Maximum active HTTP sessions accepted by this transport. Set to zero to
   /// disable the limit.
   std::size_t max_sessions = 1024;
+
+  /// Enable stateless MCP mode (SEP-2575). When true, the transport does not
+  /// require initialize handshake or Mcp-Session-Id headers.
+  bool stateless = false;
 };
 
 /// @brief HTTP metadata captured for the most recently received server-side

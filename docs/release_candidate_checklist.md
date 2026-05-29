@@ -124,6 +124,10 @@ workflow run URL, and release URL fields before publishing.
       classified in the public API diff review and release notes.
 - [ ] RMCP, TypeScript SDK, and Python SDK interoperability gates passed where
       those runtimes are advertised for the release.
+- [ ] `docs/conformance_evidence.md` was refreshed from current
+      `modelcontextprotocol/conformance --suite all` server and client runs;
+      any sub-suite results are labeled as supporting evidence, not headline
+      comparisons.
 - [ ] Doxygen HTML was generated from the same commit as the source artifact.
 - [ ] Source archive checksum was recorded in release notes.
 - [ ] Source archive content verification passed: SDK sources, verifier
@@ -204,6 +208,8 @@ workflow run URL, and release URL fields before publishing.
 - [ ] Include source compatibility notes and API diff classifications for
       public API changes.
 - [ ] Include dependency/reference versions used by conformance tests.
+- [ ] Include all-suite conformance results for both server and client, plus
+      accepted exceptions, if conformance support is advertised.
 - [ ] Include checksums for published source artifacts.
 - [ ] Include package metadata or package recipe references for advertised
       package-manager routes.

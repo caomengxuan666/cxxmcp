@@ -413,6 +413,16 @@ class Server {
   void set_raw_request_handler(RawRequestHandler handler);
   void set_raw_request_handler(RawRequestContextHandler handler);
 
+  /// @brief Returns the registered raw request handler, if any.
+  const RawRequestHandler& raw_request_handler() const noexcept {
+    return raw_request_handler_;
+  }
+
+  /// @brief Returns the registered raw request context handler, if any.
+  const RawRequestContextHandler& raw_request_context_handler() const noexcept {
+    return raw_request_context_handler_;
+  }
+
   /// @brief Registers a raw notification hook.
   void set_raw_notification_handler(RawNotificationHandler handler);
 

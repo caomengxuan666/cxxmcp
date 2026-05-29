@@ -38,7 +38,7 @@ constexpr std::string_view ProtocolVersionHeader = "MCP-Protocol-Version";
 constexpr std::string_view MethodHeader = "Mcp-Method";
 constexpr std::string_view NameHeader = "Mcp-Name";
 constexpr std::string_view LastEventIdHeader = "Last-Event-ID";
-constexpr int HeaderMismatchCode = -32043;
+constexpr int HeaderMismatchCode = -32001;
 
 core::Error make_transport_error(int code, std::string message,
                                  std::string detail = {}) {
@@ -50,6 +50,13 @@ std::string to_lower_ascii(std::string value) {
       value.begin(), value.end(), value.begin(),
       [](unsigned char ch) { return static_cast<char>(std::tolower(ch)); });
   return value;
+}
+
+std::string trim_ows(std::string value) {
+  const auto start = value.find_first_not_of(" \t");
+  if (start == std::string::npos) return {};
+  const auto end = value.find_last_not_of(" \t");
+  return value.substr(start, end - start + 1);
 }
 
 struct ParsedAuthority {
@@ -353,7 +360,7 @@ core::Result<core::Unit> validate_post_headers(
     const protocol::JsonRpcRequest& rpc_request) {
   if (request.has_header(std::string(MethodHeader))) {
     const auto method_header =
-        request.get_header_value(std::string(MethodHeader));
+        trim_ows(request.get_header_value(std::string(MethodHeader)));
     if (method_header != rpc_request.method) {
       return mcp::core::unexpected(make_transport_error(
           HeaderMismatchCode,
@@ -369,7 +376,8 @@ core::Result<core::Unit> validate_post_headers(
           HeaderMismatchCode,
           "http transport request missing Mcp-Name header"));
     }
-    const auto name_header = request.get_header_value(std::string(NameHeader));
+    const auto name_header =
+        trim_ows(request.get_header_value(std::string(NameHeader)));
     if (name_header != *expected_name) {
       return mcp::core::unexpected(make_transport_error(
           HeaderMismatchCode, "http transport request Mcp-Name header mismatch",
@@ -454,11 +462,13 @@ void write_response(httplib::Response& http_response,
 
 void write_error(httplib::Response& http_response, int code,
                  std::string message,
-                 std::optional<protocol::RequestId> id = std::nullopt) {
+                 std::optional<protocol::RequestId> id = std::nullopt,
+                 std::optional<protocol::Json> data = std::nullopt) {
   write_response(
       http_response,
       protocol::make_error_response(
-          std::move(id), protocol::make_error(code, std::move(message))));
+          std::move(id),
+          protocol::make_error(code, std::move(message), std::move(data))));
 }
 
 void set_auth_failure_status(httplib::Response& http_response,
@@ -775,6 +785,14 @@ protocol::JsonRpcResponse make_auth_error_response(
 
 }  // namespace
 
+std::optional<protocol::ProgressToken> HttpTransport::extract_progress_token(
+    const protocol::JsonRpcRequest& request) {
+  if (!request.params.is_object() || !request.params.contains("_meta")) {
+    return std::nullopt;
+  }
+  return protocol::meta_progress_token(request.params.at("_meta"));
+}
+
 HttpTransport::HttpTransport(HttpTransportOptions options)
     : options_(std::move(options)) {
   if (options_.path.empty()) {
@@ -1043,7 +1061,40 @@ core::Result<core::Unit> HttpTransport::start(
     const bool initialize_request =
         rpc_request != nullptr &&
         rpc_request->method == protocol::InitializeMethod;
-    if (!initialize_request) {
+
+    // Detect stateless mode: request includes _meta with protocolVersion.
+    // The MCP-Protocol-Version header alone is not sufficient for detection
+    // because it is now required on all non-initialize requests.
+    bool stateless_mode = false;
+    if (rpc_request && rpc_request->params.is_object() &&
+        rpc_request->params.contains("_meta")) {
+      const auto& meta = rpc_request->params.at("_meta");
+      stateless_mode = meta.is_object() &&
+                       meta.contains("io.modelcontextprotocol/protocolVersion");
+    }
+
+    // In stateless mode, reject methods that require a session.
+    if (stateless_mode && rpc_request) {
+      using SV = std::string_view;
+      const std::array kStatelessRemovedMethods{
+          SV(protocol::InitializeMethod), SV(protocol::PingMethod),
+          SV(protocol::LoggingSetLevelMethod),
+          SV(protocol::ResourcesSubscribeMethod),
+          SV(protocol::ResourcesUnsubscribeMethod)};
+      for (const auto removed : kStatelessRemovedMethods) {
+        if (rpc_request->method == removed) {
+          response.status = 404;
+          write_error(response,
+                      static_cast<int>(protocol::ErrorCode::MethodNotFound),
+                      "method not available in stateless mode",
+                      std::optional<protocol::RequestId>{rpc_request->id});
+          return;
+        }
+      }
+    }
+
+    // Skip session validation in stateless mode or for initialize requests.
+    if (!stateless_mode && !initialize_request) {
       std::string expected_session_id;
       {
         std::lock_guard lock(mutex_);
@@ -1060,17 +1111,77 @@ core::Result<core::Unit> HttpTransport::start(
           validate_session_header(request, expected_session_id);
       if (!session_header) {
         response.status = 404;
+        const auto error_id =
+            rpc_request ? std::optional<protocol::RequestId>{rpc_request->id}
+                        : std::nullopt;
         write_error(response, session_header.error().code,
-                    session_header.error().message, std::nullopt);
+                    session_header.error().message, error_id);
         return;
       }
+    }
 
+    // Validate protocol version header for all non-initialize requests.
+    if (!initialize_request) {
       const auto protocol_version = validate_protocol_version_header(request);
       if (!protocol_version) {
         response.status = 400;
+        const auto error_id =
+            rpc_request ? std::optional<protocol::RequestId>{rpc_request->id}
+                        : std::nullopt;
+        protocol::Json supported = protocol::Json::array();
+        for (const auto* v : protocol::McpSupportedProtocolVersions) {
+          supported.push_back(v);
+        }
+        protocol::Json error_data = protocol::Json::object();
+        error_data["supported"] = std::move(supported);
         write_error(response, protocol_version.error().code,
-                    protocol_version.error().message, std::nullopt);
+                    protocol_version.error().message, error_id,
+                    std::move(error_data));
         return;
+      }
+    }
+
+    // In stateless mode, validate _meta on all requests.
+    if (stateless_mode && rpc_request) {
+      const auto error_id = std::optional<protocol::RequestId>{rpc_request->id};
+      if (!rpc_request->params.is_object() ||
+          !rpc_request->params.contains("_meta")) {
+        response.status = 400;
+        write_error(response,
+                    static_cast<int>(protocol::ErrorCode::InvalidParams),
+                    "stateless request requires _meta object", error_id);
+        return;
+      }
+      const auto& meta = rpc_request->params.at("_meta");
+      constexpr std::array<const char*, 3> kRequiredMetaKeys{
+          "io.modelcontextprotocol/protocolVersion",
+          "io.modelcontextprotocol/clientInfo",
+          "io.modelcontextprotocol/clientCapabilities"};
+      for (const auto* key : kRequiredMetaKeys) {
+        if (!meta.contains(key)) {
+          response.status = 400;
+          write_error(
+              response, static_cast<int>(protocol::ErrorCode::InvalidParams),
+              std::string("stateless request _meta missing ") + key, error_id);
+          return;
+        }
+      }
+      // Validate _meta.protocolVersion matches MCP-Protocol-Version header.
+      if (meta.contains("io.modelcontextprotocol/protocolVersion") &&
+          request.has_header(std::string(ProtocolVersionHeader))) {
+        const auto meta_version =
+            meta.at("io.modelcontextprotocol/protocolVersion")
+                .get<std::string>();
+        const auto header_version =
+            request.get_header_value(std::string(ProtocolVersionHeader));
+        if (meta_version != header_version) {
+          response.status = 400;
+          write_error(response, HeaderMismatchCode,
+                      "http transport request MCP-Protocol-Version header "
+                      "mismatch with _meta",
+                      error_id);
+          return;
+        }
       }
     }
 
@@ -1086,7 +1197,7 @@ core::Result<core::Unit> HttpTransport::start(
         return;
       }
       std::string active_session_id;
-      {
+      if (!stateless_mode) {
         std::lock_guard lock(mutex_);
         active_session_id =
             request.has_header(std::string(SessionHeader))
@@ -1136,7 +1247,7 @@ core::Result<core::Unit> HttpTransport::start(
           return;
         }
       }
-      if (is_initialized_notification(*notification)) {
+      if (!stateless_mode && is_initialized_notification(*notification)) {
         std::lock_guard lock(mutex_);
         auto* session = find_session_locked(active_session_id);
         if (session != nullptr) {
@@ -1245,7 +1356,8 @@ core::Result<core::Unit> HttpTransport::start(
       }
     }
 
-    if (!initialize_request && !is_allowed_before_initialized(*rpc_request)) {
+    if (!stateless_mode && !initialize_request &&
+        !is_allowed_before_initialized(*rpc_request)) {
       std::lock_guard lock(mutex_);
       auto* session = find_session_locked(session_context_id);
       if (session == nullptr) {
@@ -1270,61 +1382,167 @@ core::Result<core::Unit> HttpTransport::start(
     context.http_url = absolute_request_url(request);
     context.transport = this;
     context.transport_lifetime = lifetime_token();
-    core::Result<protocol::JsonRpcResponse> rpc_response;
-    try {
-      rpc_response = handler(*rpc_request, context);
-    } catch (const std::exception& ex) {
-      rpc_response = mcp::core::unexpected(errors::handler_failed(ex.what()));
-    } catch (...) {
-      rpc_response = mcp::core::unexpected(errors::handler_unknown_exception());
-    }
-    if (!rpc_response) {
-      if (is_auth_error(rpc_response.error())) {
+
+    const auto progress_token = extract_progress_token(*rpc_request);
+    if (!progress_token.has_value()) {
+      core::Result<protocol::JsonRpcResponse> rpc_response;
+      try {
+        rpc_response = handler(*rpc_request, context);
+      } catch (const std::exception& ex) {
+        rpc_response = mcp::core::unexpected(errors::handler_failed(ex.what()));
+      } catch (...) {
+        rpc_response =
+            mcp::core::unexpected(errors::handler_unknown_exception());
+      }
+      if (!rpc_response) {
+        if (is_auth_error(rpc_response.error())) {
+          set_auth_failure_status(response, options_.auth_challenge_config,
+                                  options_.auth_challenge);
+          write_response(response, make_auth_error_response(
+                                       rpc_response.error(), rpc_request->id));
+          return;
+        }
+        rpc_response = protocol::make_error_response(
+            std::optional<protocol::RequestId>{rpc_request->id},
+            protocol::make_error(rpc_response.error().code,
+                                 rpc_response.error().message,
+                                 rpc_response.error().detail.empty()
+                                     ? std::nullopt
+                                     : std::optional<protocol::Json>{
+                                           rpc_response.error().detail}));
+      }
+
+      if (rpc_request->method == protocol::InitializeMethod) {
+        if (!rpc_response->error.has_value()) {
+          std::lock_guard guard(mutex_);
+          auto& session = sessions_[session_context_id];
+          session.session_id = session_context_id;
+          if (rpc_request->params.is_object() &&
+              rpc_request->params.contains("capabilities")) {
+            session.client_capabilities =
+                protocol::client_capabilities_from_json(
+                    rpc_request->params.at("capabilities"));
+          } else {
+            session.client_capabilities.reset();
+          }
+          if (initialize_session || default_session_id_.empty()) {
+            default_session_id_ = session_context_id;
+          }
+          response.set_header(std::string(SessionHeader), session_context_id);
+        }
+      } else {
+        std::lock_guard guard(mutex_);
+        if (!session_context_id.empty()) {
+          response.set_header(std::string(SessionHeader), session_context_id);
+        }
+      }
+
+      if (is_auth_error_response(*rpc_response)) {
         set_auth_failure_status(response, options_.auth_challenge_config,
                                 options_.auth_challenge);
-        write_response(response, make_auth_error_response(rpc_response.error(),
-                                                          rpc_request->id));
-        return;
       }
-      rpc_response = protocol::make_error_response(
-          std::optional<protocol::RequestId>{rpc_request->id},
-          protocol::make_error(rpc_response.error().code,
-                               rpc_response.error().message,
-                               rpc_response.error().detail.empty()
-                                   ? std::nullopt
-                                   : std::optional<protocol::Json>{
-                                         rpc_response.error().detail}));
+      // Map JSON-RPC error codes to HTTP status codes for stateless mode.
+      if (stateless_mode && rpc_response->error.has_value()) {
+        const auto error_code = rpc_response->error->code;
+        if (error_code ==
+            static_cast<int>(protocol::ErrorCode::MethodNotFound)) {
+          response.status = 404;
+        } else if (error_code == HeaderMismatchCode) {
+          response.status = 400;
+        }
+      }
+      write_response(response, *rpc_response);
+      return;
     }
 
-    if (rpc_request->method == protocol::InitializeMethod) {
-      if (!rpc_response->error.has_value()) {
-        std::lock_guard guard(mutex_);
-        auto& session = sessions_[session_context_id];
-        session.session_id = session_context_id;
-        if (rpc_request->params.is_object() &&
-            rpc_request->params.contains("capabilities")) {
-          session.client_capabilities = protocol::client_capabilities_from_json(
-              rpc_request->params.at("capabilities"));
-        } else {
-          session.client_capabilities.reset();
-        }
-        if (initialize_session || default_session_id_.empty()) {
-          default_session_id_ = session_context_id;
-        }
-        response.set_header(std::string(SessionHeader), session_context_id);
-      }
-    } else {
+    auto sink = std::make_shared<ProgressResponseSink>();
+    {
       std::lock_guard guard(mutex_);
-      if (!session_context_id.empty()) {
-        response.set_header(std::string(SessionHeader), session_context_id);
+      auto* session = find_session_locked(session_context_id);
+      if (session != nullptr) {
+        session->active_progress_sink = sink;
       }
     }
 
-    if (is_auth_error_response(*rpc_response)) {
-      set_auth_failure_status(response, options_.auth_challenge_config,
-                              options_.auth_challenge);
-    }
-    write_response(response, *rpc_response);
+    response.set_header(std::string(SessionHeader), session_context_id);
+    response.set_chunked_content_provider(
+        "text/event-stream",
+        [sink, &request, sink_wrote_final = false](
+            std::size_t, httplib::DataSink& data_sink) mutable {
+          while (true) {
+            std::unique_lock lock(sink->mutex);
+            sink->cv.wait(lock, [&] {
+              return sink->done || !sink->events.empty() ||
+                     request.is_connection_closed();
+            });
+
+            if (request.is_connection_closed()) {
+              data_sink.done();
+              return false;
+            }
+
+            while (!sink->events.empty()) {
+              auto event = std::move(sink->events.front());
+              sink->events.pop_front();
+              lock.unlock();
+              if (!data_sink.write(event.data(), event.size())) {
+                data_sink.done();
+                return false;
+              }
+              lock.lock();
+            }
+
+            if (sink->done) {
+              if (!sink_wrote_final) {
+                sink_wrote_final = true;
+                lock.unlock();
+                data_sink.done();
+                return false;
+              }
+              data_sink.done();
+              return false;
+            }
+          }
+        });
+
+    std::thread([this, &handler, request_copy = *rpc_request, context, sink,
+                 session_context_id]() {
+      core::Result<protocol::JsonRpcResponse> rpc_response;
+      try {
+        rpc_response = handler(request_copy, context);
+      } catch (const std::exception& ex) {
+        rpc_response = mcp::core::unexpected(errors::handler_failed(ex.what()));
+      } catch (...) {
+        rpc_response =
+            mcp::core::unexpected(errors::handler_unknown_exception());
+      }
+      if (!rpc_response) {
+        rpc_response = protocol::make_error_response(
+            std::optional<protocol::RequestId>{request_copy.id},
+            protocol::make_error(rpc_response.error().code,
+                                 rpc_response.error().message,
+                                 rpc_response.error().detail.empty()
+                                     ? std::nullopt
+                                     : std::optional<protocol::Json>{
+                                           rpc_response.error().detail}));
+      }
+      const auto serialized = protocol::serialize_response(*rpc_response);
+      {
+        std::lock_guard lock(sink->mutex);
+        if (serialized) {
+          sink->events.push_back("data: " + *serialized + "\n\n");
+        }
+        sink->done = true;
+        sink->cv.notify_all();
+      }
+      {
+        std::lock_guard guard(mutex_);
+        auto* session = find_session_locked(session_context_id);
+        if (session != nullptr) {
+          session->active_progress_sink.reset();
+        }
+      }
+    }).detach();
   });
 
   http_server->Get(options_.path, [this](const httplib::Request& request,
@@ -1673,6 +1891,13 @@ core::Result<core::Unit> HttpTransport::send_notification_to_session(
         "http transport has no active session"));
   }
 
+  if (auto sink = session->active_progress_sink) {
+    std::lock_guard sink_lock(sink->mutex);
+    sink->events.push_back("data: " + *serialized + "\n\n");
+    sink->cv.notify_all();
+    return core::Unit{};
+  }
+
   QueuedEvent event;
   event.payload = *serialized;
   const auto enqueued =
@@ -1956,6 +2181,7 @@ server::HttpTransportOptions to_legacy_options(
   legacy.max_sessions = options.max_sessions;
   legacy.enable_sse_polling = options.enable_sse_polling;
   legacy.sse_disconnect_retry = options.sse_disconnect_retry;
+  legacy.stateless = options.stateless;
   return legacy;
 }
 

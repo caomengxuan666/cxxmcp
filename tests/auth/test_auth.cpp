@@ -1078,23 +1078,33 @@ void test_metadata_discovery_url_candidates_reject_ssrf_prone_inputs() {
 void test_authorization_server_metadata_url_candidates() {
   const auto path_urls = mcp::auth::build_authorization_server_metadata_urls(
       "https://issuer.example/tenant/a?ignored=1");
-  require(path_urls.size() == 2,
+  require(path_urls.size() == 4,
           "path issuer authorization metadata URL count mismatch");
   require(path_urls[0] ==
               "https://issuer.example/.well-known/"
               "oauth-authorization-server/tenant/a",
           "path issuer metadata URL mismatch");
   require(path_urls[1] ==
+              "https://issuer.example/tenant/a/"
+              ".well-known/openid-configuration",
+          "path issuer OpenID configuration URL mismatch");
+  require(path_urls[2] ==
               "https://issuer.example/.well-known/oauth-authorization-server",
           "origin issuer metadata URL mismatch");
+  require(
+      path_urls[3] == "https://issuer.example/.well-known/openid-configuration",
+      "origin issuer OpenID configuration URL mismatch");
 
   const auto origin_urls = mcp::auth::build_authorization_server_metadata_urls(
       "https://issuer.example");
-  require(origin_urls.size() == 1,
-          "origin issuer should have one metadata URL");
+  require(origin_urls.size() == 2,
+          "origin issuer should have two metadata URLs");
   require(origin_urls[0] ==
               "https://issuer.example/.well-known/oauth-authorization-server",
           "origin-only metadata URL mismatch");
+  require(origin_urls[1] ==
+              "https://issuer.example/.well-known/openid-configuration",
+          "origin-only OpenID configuration URL mismatch");
 
   require(mcp::auth::build_authorization_server_metadata_urls(
               "http://issuer.example/tenant")
@@ -1116,7 +1126,7 @@ void test_authorization_server_metadata_url_candidates() {
   const auto loopback_urls =
       mcp::auth::build_authorization_server_metadata_urls(
           "http://127.0.0.1:8787/tenant");
-  require(loopback_urls.size() == 2,
+  require(loopback_urls.size() == 4,
           "loopback HTTP issuer metadata discovery should be allowed");
 }
 

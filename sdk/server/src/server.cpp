@@ -315,6 +315,8 @@ core::Result<protocol::ToolsListResult> Server::list_tools(
   }
   protocol::ToolsListResult result;
   result.tools = tools_.list();
+  result.ttl_ms = 300000;
+  result.cache_scope = "public";
   return result;
 }
 
@@ -385,6 +387,8 @@ core::Result<protocol::PromptsListResult> Server::list_prompts(
   }
   protocol::PromptsListResult result;
   result.prompts = prompts_.list();
+  result.ttl_ms = 300000;
+  result.cache_scope = "public";
   return result;
 }
 
@@ -419,19 +423,31 @@ core::Result<protocol::ResourcesListResult> Server::list_resources(
   }
   protocol::ResourcesListResult result;
   result.resources = resources_.list();
+  result.ttl_ms = 300000;
+  result.cache_scope = "public";
   return result;
 }
 
 core::Result<protocol::ResourcesReadResult> Server::read_resource(
     std::string_view uri, protocol::Json params,
     const std::string& session_id) const {
-  return resources_.read(uri, std::move(params), session_id);
+  auto result = resources_.read(uri, std::move(params), session_id);
+  if (result) {
+    result->ttl_ms = 300000;
+    result->cache_scope = "public";
+  }
+  return result;
 }
 
 core::Result<protocol::ResourcesReadResult> Server::read_resource(
     std::string_view uri, protocol::Json params, const SessionContext& context,
     CancellationToken cancellation) const {
-  return resources_.read(uri, std::move(params), context, cancellation);
+  auto result = resources_.read(uri, std::move(params), context, cancellation);
+  if (result) {
+    result->ttl_ms = 300000;
+    result->cache_scope = "public";
+  }
+  return result;
 }
 
 ResourceTemplateRegistry& Server::resource_templates() noexcept {
@@ -456,6 +472,8 @@ Server::list_resource_templates(const protocol::PaginatedRequestParams& params,
   }
   protocol::ResourceTemplatesListResult result;
   result.resource_templates = resource_templates_.list();
+  result.ttl_ms = 300000;
+  result.cache_scope = "public";
   return result;
 }
 
@@ -573,6 +591,19 @@ core::Result<protocol::JsonRpcResponse> Server::handle_request(
 
   if (request.method == protocol::PingMethod) {
     return protocol::make_response(request.id, protocol::Json::object());
+  }
+
+  if (request.method == protocol::ServerDiscoverMethod) {
+    protocol::Json result = protocol::Json::object();
+    protocol::Json versions = protocol::Json::array();
+    for (const auto* v : protocol::McpSupportedProtocolVersions) {
+      versions.push_back(v);
+    }
+    result["supportedVersions"] = versions;
+    result["capabilities"] =
+        protocol::server_capabilities_to_json(options_.capabilities);
+    result["serverInfo"] = server_info_to_json(options_);
+    return protocol::make_response(request.id, result);
   }
 
   if (raw_request_context_handler) {
@@ -834,8 +865,8 @@ core::Result<protocol::JsonRpcResponse> Server::handle_request(
       return make_params_error_response(request, params.error());
     }
 
-    const auto result = resources_.read(params->uri, request.params, context,
-                                        request_cancellation);
+    auto result = resources_.read(params->uri, request.params, context,
+                                  request_cancellation);
     if (!result) {
       return protocol::make_error_response(
           std::optional<protocol::RequestId>{request.id},
@@ -845,6 +876,8 @@ core::Result<protocol::JsonRpcResponse> Server::handle_request(
                   ? std::nullopt
                   : std::optional<protocol::Json>{result.error().detail}));
     }
+    result->ttl_ms = 300000;
+    result->cache_scope = "public";
 
     return protocol::make_response(
         request.id, protocol::resources_read_result_to_json(*result));

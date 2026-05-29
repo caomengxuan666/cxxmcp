@@ -189,6 +189,10 @@ JWT validation by itself. Applications that enable `cxxmcp::auth` can use
 `HttpOAuthTokenEndpoint` behind this hook, while still owning the concrete HTTP
 client and user interaction.
 
+The same refresh callback is also exposed on
+`client::Client::StreamableHttpEndpoint::auth_refresh_handler` and
+`Peer::builder().auth_refresh_handler(...)`.
+
 For the common one-shot retry case, the auth layer provides a transport-neutral
 bridge:
 

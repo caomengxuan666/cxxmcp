@@ -341,6 +341,14 @@ struct HttpTransport::Impl {
           make_headers(request.method, header_name_from_request(request),
                        /*json_body=*/true,
                        /*event_stream=*/true, include_protocol_version);
+      for (const auto& [key, value] : request.transport_headers) {
+        headers.emplace(key, value);
+      }
+      if (request.protocol_version_override.has_value()) {
+        headers.erase("MCP-Protocol-Version");
+        headers.emplace("MCP-Protocol-Version",
+                        *request.protocol_version_override);
+      }
       const auto response =
           client.Post(path, headers, *serialized, "application/json");
       if (!response) {
@@ -368,7 +376,8 @@ struct HttpTransport::Impl {
             "http transport session was terminated",
             std::to_string(response->status)));
       }
-      if (response->status == 401 && !retried_after_auth_refresh) {
+      if ((response->status == 401 || response->status == 403) &&
+          !retried_after_auth_refresh) {
         auto refreshed = refresh_bearer_token_once(*response, request.method);
         if (refreshed.has_value()) {
           retried_after_auth_refresh = true;
@@ -393,9 +402,14 @@ struct HttpTransport::Impl {
         remember_protocol_version_from_initialize_response(*decoded_response);
       }
 
-      const auto stream_started = ensure_stream_started();
-      if (!stream_started) {
-        return mcp::core::unexpected(stream_started.error());
+      // Only start the SSE stream if the response is successful.
+      // For error responses (e.g. version negotiation), skip stream setup
+      // so the error response can be returned for retry logic.
+      if (!decoded_response->error.has_value()) {
+        const auto stream_started = ensure_stream_started();
+        if (!stream_started) {
+          return mcp::core::unexpected(stream_started.error());
+        }
       }
 
       return *decoded_response;
@@ -420,7 +434,8 @@ struct HttpTransport::Impl {
       auto headers = make_headers(notification.method, std::nullopt,
                                   /*json_body=*/true, /*event_stream=*/true);
       response = client.Post(path, headers, *serialized, "application/json");
-      if (!response || response->status != 401 || retried_after_auth_refresh) {
+      if (!response || (response->status != 401 && response->status != 403) ||
+          retried_after_auth_refresh) {
         break;
       }
       auto refreshed =
@@ -550,7 +565,8 @@ struct HttpTransport::Impl {
       std::lock_guard lock(mutex);
       refresh_handler = options.auth_refresh_handler;
     }
-    if (!refresh_handler || response.status != 401) {
+    if (!refresh_handler ||
+        (response.status != 401 && response.status != 403)) {
       return std::nullopt;
     }
 
@@ -635,6 +651,15 @@ struct HttpTransport::Impl {
       const httplib::Response& response,
       const protocol::RequestId& request_id) {
     if (response.status < 200 || response.status >= 300) {
+      // Try to parse a JSON-RPC error from the response body.
+      // Some servers (e.g. conformance) return version-negotiation errors
+      // with a JSON-RPC error body on non-2xx status.
+      if (!response.body.empty()) {
+        if (auto parsed = protocol::parse_response(response.body);
+            parsed && parsed->error.has_value()) {
+          return *parsed;
+        }
+      }
       return mcp::core::unexpected(make_transport_error(
           static_cast<int>(protocol::ErrorCode::InternalError),
           "http transport request returned an error status",
@@ -855,6 +880,10 @@ core::Result<core::Unit> HttpTransport::start(
 }
 
 void HttpTransport::stop() noexcept { impl_->stop(); }
+
+void HttpTransport::set_negotiated_protocol_version(std::string version) {
+  impl_->protocol_version = std::move(version);
+}
 
 }  // namespace mcp::client
 

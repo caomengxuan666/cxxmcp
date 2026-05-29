@@ -98,6 +98,10 @@ struct HttpTransportOptions {
   /// Maximum active HTTP sessions accepted by this transport. Set to zero to
   /// disable the limit.
   std::size_t max_sessions = 1024;
+  /// Enable stateless MCP mode (SEP-2575). When true, the transport does not
+  /// require initialize handshake or Mcp-Session-Id headers. Requests proceed
+  /// without session tracking.
+  bool stateless = false;
   /// HTTP WWW-Authenticate challenge emitted when authentication fails.
   /// Empty disables the header for custom deployments that emit challenges
   /// through another layer. This is a legacy field; prefer
@@ -238,6 +242,13 @@ class HttpTransport final : public Transport {
     std::string payload;
   };
 
+  struct ProgressResponseSink {
+    std::mutex mutex;
+    std::condition_variable cv;
+    std::deque<std::string> events;
+    bool done = false;
+  };
+
   struct SessionState {
     std::string session_id;
     bool initialized = false;
@@ -250,6 +261,7 @@ class HttpTransport final : public Transport {
     std::uint64_t next_notification_event_id = 1;
     std::size_t active_sse_streams = 0;
     bool sse_disconnect_requested = false;
+    std::shared_ptr<ProgressResponseSink> active_progress_sink;
   };
 
   void abort_pending_requests_locked(SessionState& session,
@@ -264,6 +276,9 @@ class HttpTransport final : public Transport {
   SessionState* select_default_session_locked();
   void close_sse_stream(std::string_view session_id) noexcept;
 
+  static std::optional<protocol::ProgressToken> extract_progress_token(
+      const protocol::JsonRpcRequest& request);
+
   HttpTransportOptions options_;
   std::unique_ptr<HttpServerHolder> server_;
   mutable std::mutex mutex_;
@@ -271,6 +286,7 @@ class HttpTransport final : public Transport {
   std::unordered_map<std::string, SessionState> sessions_;
   std::uint64_t next_session_id_ = 1;
   bool stopped_ = false;
+  bool initialized_ = false;
   std::string default_session_id_;
 };
 

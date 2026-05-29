@@ -1,0 +1,55 @@
+{
+  "name": "cxxmcp-sdk",
+  "version-semver": "1.1.0",
+  "port-version": 1,
+  "description": "C++ MCP SDK for protocol, client, server, transport, peer, and handler APIs.",
+  "homepage": "https://github.com/caomengxuan666/cxxmcp",
+  "license": "MIT",
+  "supports": "!uwp",
+  "dependencies": [
+    "nlohmann-json",
+    "tl-expected",
+    {
+      "name": "vcpkg-cmake",
+      "host": true
+    },
+    {
+      "name": "vcpkg-cmake-config",
+      "host": true
+    }
+  ],
+  "features": {
+    "http": {
+      "description": "HTTP transport via cpp-httplib (no HTTPS).",
+      "dependencies": [
+        {
+          "name": "cpp-httplib",
+          "default-features": false
+        }
+      ]
+    },
+    "http-openssl": {
+      "description": "HTTP/HTTPS transport via cpp-httplib with OpenSSL.",
+      "dependencies": [
+        {
+          "name": "cpp-httplib",
+          "default-features": false,
+          "features": ["openssl"]
+        }
+      ]
+    },
+    "auth": {
+      "description": "Build the optional OAuth 2.1 / DPoP auth scaffold target."
+    },
+    "openssl": {
+      "description": "Enable OpenSSL crypto backend for the auth module.",
+      "dependencies": [
+        "openssl",
+        {
+          "name": "cxxmcp-sdk",
+          "features": ["auth"]
+        }
+      ]
+    }
+  }
+}

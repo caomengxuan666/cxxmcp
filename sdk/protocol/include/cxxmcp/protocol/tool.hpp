@@ -336,6 +336,10 @@ struct ToolCall {
   std::optional<TaskRequestParameters> task;
   /// Optional `_meta` extension object preserved on the wire.
   std::optional<Json> meta;
+  /// Opaque request state echoed back on MRTR retries (SEP-2322).
+  std::optional<std::string> request_state;
+  /// Client-provided responses to server input requests (MRTR).
+  std::optional<Json> input_responses;
   /// Unknown JSON members preserved for forward-compatible round trips.
   Json extensions = Json::object();
 };
@@ -348,11 +352,15 @@ struct Reflect<ToolCall> {
         field("name", &ToolCall::name),
         field("arguments", &ToolCall::arguments),
         field("task", &ToolCall::task), field("_meta", &ToolCall::meta),
+        field("requestState", &ToolCall::request_state),
+        field("inputResponses", &ToolCall::input_responses),
         extensions_field(&ToolCall::extensions,
-                         {"name", "arguments", "task", "_meta"}));
+                         {"name", "arguments", "task", "_meta", "requestState",
+                          "inputResponses"}));
   }
   static std::vector<std::string> known_keys() {
-    return {"name", "arguments", "task", "_meta"};
+    return {"name",  "arguments",    "task",
+            "_meta", "requestState", "inputResponses"};
   }
 };
 
@@ -366,6 +374,10 @@ struct ToolsListResult {
   std::optional<Json> meta;
   /// Unknown JSON members preserved for forward-compatible round trips.
   Json extensions = Json::object();
+  /// Cache time-to-live hint in milliseconds (SEP-2549).
+  std::optional<std::int64_t> ttl_ms;
+  /// Cache scope hint: "public" or "private" (SEP-2549).
+  std::optional<std::string> cache_scope;
 };
 
 /// @brief Result object for `tools/call`.
@@ -379,6 +391,13 @@ struct ToolResult {
   std::optional<bool> is_error;
   /// Optional `_meta` extension object preserved on the wire.
   std::optional<Json> meta;
+  /// Result type discriminator. "input_required" for MRTR (SEP-2322).
+  /// Missing means the result is complete.
+  std::optional<std::string> result_type;
+  /// Server input requests for MRTR (SEP-2322).
+  std::optional<Json> input_requests;
+  /// Opaque request state for MRTR retries (SEP-2322).
+  std::optional<std::string> request_state;
   /// Unknown JSON members preserved for forward-compatible round trips.
   Json extensions = Json::object();
 
@@ -782,6 +801,12 @@ inline Json tools_list_result_to_json(const ToolsListResult& result) {
   if (result.meta.has_value()) {
     json["_meta"] = *result.meta;
   }
+  if (result.ttl_ms.has_value()) {
+    json["ttlMs"] = *result.ttl_ms;
+  }
+  if (result.cache_scope.has_value()) {
+    json["cacheScope"] = *result.cache_scope;
+  }
   append_json_extensions(json, result.extensions);
   return json;
 }
@@ -839,6 +864,12 @@ inline Json tool_call_to_json(const ToolCall& call) {
   if (call.meta.has_value()) {
     json["_meta"] = *call.meta;
   }
+  if (call.request_state.has_value()) {
+    json["requestState"] = *call.request_state;
+  }
+  if (call.input_responses.has_value()) {
+    json["inputResponses"] = *call.input_responses;
+  }
   append_json_extensions(json, call.extensions);
   return json;
 }
@@ -878,17 +909,29 @@ inline core::Result<ToolCall> tool_call_from_json(const Json& json) {
     }
     call.meta = json.at("_meta");
   }
-  call.extensions =
-      collect_json_extensions(json, {"name", "arguments", "task", "_meta"});
+  if (json.contains("requestState")) {
+    call.request_state = json.at("requestState").get<std::string>();
+  }
+  if (json.contains("inputResponses")) {
+    call.input_responses = json.at("inputResponses");
+  }
+  call.extensions = collect_json_extensions(
+      json,
+      {"name", "arguments", "task", "_meta", "requestState", "inputResponses"});
   return call;
 }
 
 /// @brief Serializes a tool result.
 inline Json tool_result_to_json(const ToolResult& result) {
   Json json = Json::object();
-  json["content"] = Json::array();
-  for (const auto& block : result.content) {
-    json["content"].push_back(content_block_to_json(block));
+  if (result.result_type.has_value()) {
+    json["resultType"] = *result.result_type;
+  }
+  if (!result.content.empty()) {
+    json["content"] = Json::array();
+    for (const auto& block : result.content) {
+      json["content"].push_back(content_block_to_json(block));
+    }
   }
   if (result.structured_content.has_value()) {
     json["structuredContent"] = *result.structured_content;
@@ -898,6 +941,12 @@ inline Json tool_result_to_json(const ToolResult& result) {
   }
   if (result.meta.has_value()) {
     json["_meta"] = *result.meta;
+  }
+  if (result.input_requests.has_value()) {
+    json["inputRequests"] = *result.input_requests;
+  }
+  if (result.request_state.has_value()) {
+    json["requestState"] = *result.request_state;
   }
   append_json_extensions(json, result.extensions);
   return json;
@@ -911,12 +960,18 @@ inline core::Result<ToolResult> tool_result_from_json(const Json& json) {
         tool_json_error("tool result must be an object"));
   }
   if (!json.contains("content") && !json.contains("structuredContent") &&
-      !json.contains("isError") && !json.contains("_meta")) {
+      !json.contains("isError") && !json.contains("_meta") &&
+      !json.contains("resultType") && !json.contains("inputRequests") &&
+      !json.contains("requestState")) {
     return mcp::core::unexpected(tool_json_error(
-        "tool result requires content, structuredContent, isError, or _meta"));
+        "tool result requires content, structuredContent, isError, _meta, "
+        "resultType, inputRequests, or requestState"));
   }
 
   ToolResult result;
+  if (json.contains("resultType")) {
+    result.result_type = json.at("resultType").get<std::string>();
+  }
   if (json.contains("content")) {
     if (!json.at("content").is_array()) {
       return mcp::core::unexpected(
@@ -950,8 +1005,15 @@ inline core::Result<ToolResult> tool_result_from_json(const Json& json) {
     }
     result.meta = json.at("_meta");
   }
+  if (json.contains("inputRequests")) {
+    result.input_requests = json.at("inputRequests");
+  }
+  if (json.contains("requestState")) {
+    result.request_state = json.at("requestState").get<std::string>();
+  }
   result.extensions = collect_json_extensions(
-      json, {"content", "structuredContent", "isError", "_meta"});
+      json, {"content", "structuredContent", "isError", "_meta", "resultType",
+             "inputRequests", "requestState"});
 
   return result;
 }

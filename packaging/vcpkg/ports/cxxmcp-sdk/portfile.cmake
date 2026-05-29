@@ -2,9 +2,19 @@ get_filename_component(SOURCE_PATH "${CURRENT_PORT_DIR}/../../../.." ABSOLUTE)
 
 vcpkg_check_linkage(ONLY_STATIC_LIBRARY)
 
+set(CXXMCP_VCPKG_ENABLE_HTTP OFF)
+if("http" IN_LIST FEATURES OR "http-openssl" IN_LIST FEATURES)
+    set(CXXMCP_VCPKG_ENABLE_HTTP ON)
+endif()
+
 set(CXXMCP_VCPKG_ENABLE_AUTH OFF)
 if("auth" IN_LIST FEATURES)
     set(CXXMCP_VCPKG_ENABLE_AUTH ON)
+endif()
+
+set(CXXMCP_VCPKG_AUTH_CRYPTO NONE)
+if("openssl" IN_LIST FEATURES)
+    set(CXXMCP_VCPKG_AUTH_CRYPTO OpenSSL)
 endif()
 
 vcpkg_cmake_configure(
@@ -14,8 +24,11 @@ vcpkg_cmake_configure(
         -DCXXMCP_BUILD_EXAMPLES=OFF
         -DCXXMCP_BUILD_TESTS=OFF
         -DCXXMCP_BUILD_DOCS=OFF
+        -DCXXMCP_ENABLE_HTTP=${CXXMCP_VCPKG_ENABLE_HTTP}
         -DCXXMCP_ENABLE_AUTH=${CXXMCP_VCPKG_ENABLE_AUTH}
+        -DCXXMCP_AUTH_CRYPTO=${CXXMCP_VCPKG_AUTH_CRYPTO}
         -DCXXMCP_USE_SYSTEM_DEPS=ON
+        -DCXXMCP_USE_SYSTEM_JSONRPCPP=ON
 )
 
 vcpkg_cmake_install()

@@ -34,8 +34,8 @@ CXXMCP_PROTOCOL_STRING_CONSTANT(McpProtocolVersion2024_11_05, "2024-11-05");
 /// @brief Latest MCP protocol version advertised during initialization.
 inline constexpr core::StringConstant McpProtocolVersion{"2025-11-25"};
 /// @brief Protocol versions accepted by this SDK during initialization.
-inline constexpr std::array<const char*, 4> McpSupportedProtocolVersions{
-    "2024-11-05", "2025-03-26", "2025-06-18", "2025-11-25"};
+inline constexpr std::array<const char*, 5> McpSupportedProtocolVersions{
+    "2024-11-05", "2025-03-26", "2025-06-18", "2025-11-25", "DRAFT-2026-v1"};
 
 /// @brief Returns true when a peer protocol version is supported.
 inline bool is_supported_protocol_version(std::string_view version) noexcept {
@@ -64,6 +64,8 @@ CXXMCP_PROTOCOL_STRING_CONSTANT(InitializeMethod, "initialize");
 CXXMCP_PROTOCOL_STRING_CONSTANT(InitializedMethod, "notifications/initialized");
 /// @brief Lightweight liveness request.
 CXXMCP_PROTOCOL_STRING_CONSTANT(PingMethod, "ping");
+/// @brief Stateless server discovery (SEP-2575).
+CXXMCP_PROTOCOL_STRING_CONSTANT(ServerDiscoverMethod, "server/discover");
 /// @brief Lists available prompts.
 CXXMCP_PROTOCOL_STRING_CONSTANT(PromptsListMethod, "prompts/list");
 /// @brief Retrieves a prompt by name and arguments.
