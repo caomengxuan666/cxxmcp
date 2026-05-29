@@ -227,13 +227,13 @@ The same workflow uploads:
   target-level timings for canonical public-header compile fixtures, used to
   evaluate compile-time debt before changing the public JSON or template
   boundary.
-- `cxxmcp-package-vcpkg-default` and `cxxmcp-package-vcpkg-auth`: real vcpkg
+- `cxxmcp-package-vcpkg-default` and `cxxmcp-package-vcpkg-http-auth`: real vcpkg
   overlay package-consumption evidence for the default SDK package and optional
   auth feature.
-- `cxxmcp-package-conan-default` and `cxxmcp-package-conan-auth`: real Conan
+- `cxxmcp-package-conan-default` and `cxxmcp-package-conan-http-auth`: real Conan
   package-consumption evidence for the default SDK package and optional auth
   option.
-- `cxxmcp-package-xmake-default` and `cxxmcp-package-xmake-auth`: real xmake
+- `cxxmcp-package-xmake-default` and `cxxmcp-package-xmake-http-auth`: real xmake
   package-consumption evidence for the default SDK package and optional auth
   option. Release-gates artifacts use a temporary local xmake repository whose
   recipe points at a generated source archive from the same workflow checkout,

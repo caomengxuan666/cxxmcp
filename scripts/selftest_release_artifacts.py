@@ -169,7 +169,7 @@ def create_gate_artifacts(root: Path) -> None:
     )
     write(public_header / "public-header-compile-evidence.json", f'{{"targets":[{entries}]}}')
 
-    for feature in ["default", "auth"]:
+    for feature in ["default", "http-auth"]:
         add_package_artifact(root, f"cxxmcp-package-vcpkg-{feature}", "vcpkg")
         add_package_artifact(root, f"cxxmcp-package-conan-{feature}", "conan")
         add_package_artifact(root, f"cxxmcp-package-xmake-{feature}", "xmake")

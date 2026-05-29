@@ -42,11 +42,11 @@ Attach or link these artifacts for the same commit:
 - `cxxmcp-performance-evidence-linux-gcc-ninja`
 - `cxxmcp-public-header-compile-evidence-linux-gcc-ninja`
 - `cxxmcp-package-vcpkg-default`
-- `cxxmcp-package-vcpkg-auth`
+- `cxxmcp-package-vcpkg-http-auth`
 - `cxxmcp-package-conan-default`
-- `cxxmcp-package-conan-auth`
+- `cxxmcp-package-conan-http-auth`
 - `cxxmcp-package-xmake-default`
-- `cxxmcp-package-xmake-auth`
+- `cxxmcp-package-xmake-http-auth`
 - `cxxmcp-doxygen-html`
 - `cxxmcp-source`
 - `cxxmcp-release-evidence`
