@@ -1,5 +1,15 @@
 # Changelog
 
+## 1.1.0
+
+- Separated HTTP transport behind the `CXXMCP_ENABLE_HTTP` compile-time flag
+  (default OFF) so that the core SDK builds without cpp-httplib.
+- Added `CXXMCP_ENABLE_AUTH` flag to the release-blocking CI matrix.
+- Fixed CMake export set to include cpp_httplib when HTTP is enabled.
+- Fixed CI validation scripts for VERSION-file variable references and
+  updated vcpkg overlay port path to `cxxmcp-sdk`.
+- Added MinGW provisional compatibility policy documentation.
+
 ## 1.0.0
 
 - Added explicit protocol-version coverage for the `2025-11-25` MCP snapshot
