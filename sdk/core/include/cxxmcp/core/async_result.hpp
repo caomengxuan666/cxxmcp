@@ -100,7 +100,8 @@ class AsyncResult {
   /// @brief Block until the result is available or the timeout expires.
   ResultType wait_for(std::chrono::milliseconds timeout) const {
     std::unique_lock<std::mutex> lock(mutex_);
-    if (!cv_.wait_for(lock, timeout, [this]() { return value_.has_value(); })) {
+    if (!cv_.wait_for(lock, timeout,  // NOLINT(whitespace/newline)
+                      [this]() { return value_.has_value(); })) {
       return unexpected(Error{1, "AsyncResult wait timed out", {}, "timeout"});
     }
     return *value_;
@@ -251,7 +252,8 @@ class AsyncResult<void> {
 
   ResultType wait_for(std::chrono::milliseconds timeout) const {
     std::unique_lock<std::mutex> lock(mutex_);
-    if (!cv_.wait_for(lock, timeout, [this]() { return value_.has_value(); })) {
+    if (!cv_.wait_for(lock, timeout,  // NOLINT(whitespace/newline)
+                      [this]() { return value_.has_value(); })) {
       return unexpected(Error{1, "AsyncResult wait timed out", {}, "timeout"});
     }
     return *value_;
