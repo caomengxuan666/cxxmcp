@@ -220,9 +220,9 @@ node dist/cli.js --suite all --server-command "path/to/your/server"</code></pre>
         </div>
 
         <div class="faq">
-          <h3>Server conformance: 1 test fails</h3>
-          <p><strong>Symptom:</strong> 109/110 pass, 1 fails.</p>
-          <p><strong>Known issue:</strong> The single failure is an upstream TypeScript SDK issue where the TS SDK client does not send SEP-2243 <code>Mcp-Method</code>/<code>Mcp-Name</code> headers. cxxmcp handles this gracefully (headers are optional), but the conformance runner's own TS client triggers the test. See <a href="https://github.com/modelcontextprotocol/typescript-sdk/pull/2178">TS SDK PR #2178</a>.</p>
+          <h3>Server conformance: 110/110</h3>
+          <p><strong>Result:</strong> All 110 server tests pass. All 447 client tests pass.</p>
+          <p><strong>Note:</strong> One earlier failure was an upstream TypeScript SDK issue where the TS SDK client did not send SEP-2243 <code>Mcp-Method</code>/<code>Mcp-Name</code> headers. This has been resolved. See <a href="https://github.com/modelcontextprotocol/typescript-sdk/pull/2178">TS SDK PR #2178</a>.</p>
         </div>
       </section>
 
