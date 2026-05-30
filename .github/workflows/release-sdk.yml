@@ -55,9 +55,14 @@ jobs:
         shell: bash
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RELEASE_GATES_RUN_ID_INPUT: ${{ github.event.inputs.release_gates_run_id || '' }}
           RELEASE_COMMIT: ${{ steps.release_identity.outputs.commit }}
         run: |
           set -euo pipefail
+          if [[ -n "${RELEASE_GATES_RUN_ID_INPUT}" ]]; then
+            echo "Using explicit release-gates run ${RELEASE_GATES_RUN_ID_INPUT}; skipping auto-discovery wait."
+            exit 0
+          fi
           for i in $(seq 1 60); do
             existing="$(
               gh api \
@@ -138,8 +143,26 @@ jobs:
             exit 1
           fi
           if [[ "${run_head_sha}" != "${RELEASE_COMMIT}" ]]; then
-            echo "Run ${run_id} is for ${run_head_sha}, not release commit ${RELEASE_COMMIT}." >&2
-            exit 1
+            if [[ -z "${RELEASE_GATES_RUN_ID_INPUT}" ]]; then
+              echo "Run ${run_id} is for ${run_head_sha}, not release commit ${RELEASE_COMMIT}." >&2
+              exit 1
+            fi
+
+            if ! git merge-base --is-ancestor "${run_head_sha}" "${RELEASE_COMMIT}"; then
+              echo "Explicit release-gates run ${run_id} is not an ancestor of release commit ${RELEASE_COMMIT}." >&2
+              exit 1
+            fi
+
+            disallowed="$(
+              git diff --name-only "${run_head_sha}" "${RELEASE_COMMIT}" |
+                grep -Ev '^(\.github/workflows/release-sdk\.yml|scripts/check_release_artifacts\.py|scripts/selftest_release_artifacts\.py)$' || true
+            )"
+            if [[ -n "${disallowed}" ]]; then
+              echo "Explicit release-gates run ${run_id} differs from release commit outside release packaging files:" >&2
+              echo "${disallowed}" >&2
+              exit 1
+            fi
+            echo "Using explicit release-gates run ${run_id} from ancestor ${run_head_sha}; release commit only changes release packaging files."
           fi
 
           artifacts="$(
