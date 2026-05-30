@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import io
 import gzip
 import hashlib
 from pathlib import Path
@@ -90,6 +91,7 @@ def create_sdk_source_archive(root: Path, tag: str, output: Path) -> Path:
                 for path in included_files(root):
                     relative = relative_name(path, root)
                     arcname = f"{prefix}/{relative}"
+                    data = archive_file_bytes(path)
                     info = archive.gettarinfo(str(path), arcname)
                     info.uid = 0
                     info.gid = 0
@@ -97,9 +99,17 @@ def create_sdk_source_archive(root: Path, tag: str, output: Path) -> Path:
                     info.gname = ""
                     info.mtime = 0
                     info.mode = 0o644
-                    with path.open("rb") as handle:
+                    info.size = len(data)
+                    with io.BytesIO(data) as handle:
                         archive.addfile(info, handle)
     return output
+
+
+def archive_file_bytes(path: Path) -> bytes:
+    data = path.read_bytes()
+    if b"\0" in data:
+        return data
+    return data.replace(b"\r\n", b"\n")
 
 
 def sha256(path: Path) -> str:

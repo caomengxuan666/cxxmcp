@@ -137,7 +137,7 @@ include(FetchContent)
 FetchContent_Declare(
     cxxmcp
     URL https://github.com/caomengxuan666/cxxmcp/releases/download/v1.1.3/cxxmcp-sdk-source-v1.1.3.tar.gz
-    URL_HASH SHA256=ad4edc8333c481e3ccbe5d4fb9cfddaca664ceb68bce169e25c0f07397e6dfb4
+    URL_HASH SHA256=b4159fd9dff90482aac69dfe9a4e6491f71045c0d39fc4f8217e8e7d9d480eec
 )
 
 set(CXXMCP_BUILD_SDK ON CACHE BOOL "" FORCE)
@@ -177,7 +177,7 @@ set(CXXMCP_BUILD_DOCS OFF CACHE BOOL "" FORCE)
 CPMAddPackage(
     NAME cxxmcp
     URL https://github.com/caomengxuan666/cxxmcp/releases/download/v1.1.3/cxxmcp-sdk-source-v1.1.3.tar.gz
-    URL_HASH SHA256=ad4edc8333c481e3ccbe5d4fb9cfddaca664ceb68bce169e25c0f07397e6dfb4
+    URL_HASH SHA256=b4159fd9dff90482aac69dfe9a4e6491f71045c0d39fc4f8217e8e7d9d480eec
 )
 
 add_executable(my_client main.cpp)
