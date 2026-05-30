@@ -43,6 +43,18 @@ Each public release has one of these stages:
 
 The release candidate checklist is the binding stage review record.
 
+## Version Metadata
+
+Use `python -B scripts/prepare_release.py <version>` for release metadata
+updates. The script updates the repository version files, package references,
+release-gates examples, and package-consumption hashes from the same
+deterministic SDK source archive generator used by `release-sdk`.
+
+Do not hand-edit the xmake `add_versions` hash or FetchContent/CPM `URL_HASH`
+values for a normal release. The SDK source archive intentionally excludes the
+external package-index and package-consumption files that contain that hash, so
+the archive checksum is not self-referential.
+
 ## Required Release Artifacts
 
 Every public release must attach or link artifacts produced from the exact

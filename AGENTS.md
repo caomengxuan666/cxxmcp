@@ -162,11 +162,17 @@ python scripts/check_p2_todo_status.py --source .
 
 - Use `python -B scripts/prepare_release.py <version>` to prepare release
   metadata before tagging. Do not hand-edit version/package references when the
-  script can do it.
+  script can do it. The script computes the deterministic SDK source archive
+  SHA256 and writes that hash into package-consumption docs and the xmake
+  package recipe.
 - `scripts/prepare_release.py` intentionally stops before commit, tag, or push.
   After reviewing and committing its changes, create/push the `v<version>` tag;
   the `release-sdk` workflow publishes the SDK source archive and release
   artifacts from that exact tag.
+- The SDK source archive is produced by
+  `python -B scripts/create_sdk_source_archive.py --tag v<version> --output ...`.
+  Keep `prepare_release.py` and `.github/workflows/release-sdk.yml` on that
+  shared archive path; do not reintroduce ad hoc tar commands.
 - If a just-published release must be replaced, delete the GitHub release and
   remote tag first, then recreate the tag only after the replacement commit has
   green release evidence.

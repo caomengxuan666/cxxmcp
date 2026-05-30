@@ -205,35 +205,11 @@ jobs:
 
           tag="${{ steps.release_identity.outputs.tag }}"
           package="cxxmcp-sdk-source-${tag}.tar.gz"
-          prefix="cxxmcp-sdk-${tag}"
           mkdir -p release-artifacts
 
-          tar \
-            --exclude-vcs \
-            --exclude='./release-artifacts' \
-            --exclude='./docs/doxygen' \
-            --transform "s,^,${prefix}/," \
-            -czf "release-artifacts/${package}" \
-            CMakeLists.txt \
-            CMakePresets.json \
-            cmake \
-            sdk \
-            examples \
-            tests \
-            templates \
-            docs \
-            scripts \
-            packaging \
-            conanfile.py \
-            third_party/tl \
-            third_party/nlohmann \
-            third_party/httplib/httplib.h \
-            README.md \
-            README_zh.md \
-            CHANGELOG.md \
-            LICENSE \
-            .clang-format \
-            .clang-tidy
+          python -B scripts/create_sdk_source_archive.py \
+            --tag "${tag}" \
+            --output "release-artifacts/${package}"
 
       - name: Package release-gates evidence
         shell: bash
