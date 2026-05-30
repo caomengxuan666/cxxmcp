@@ -1188,6 +1188,51 @@ void test_running_service_moved_from_is_inert() {
           "moved server service should stop transport");
 }
 
+#if defined(CXXMCP_ENABLE_HTTP)
+void test_server_streamable_http_service_stops_while_idle() {
+  auto peer = mcp::ServerPeer::builder()
+                  .name("idle-http-service")
+                  .version("1.0.0")
+                  .streamable_http("127.0.0.1", 40230, "/idle-service-stop")
+                  .build();
+  require(peer.has_value(), "idle http server peer should build");
+
+  auto running = mcp::serve(std::move(*peer));
+  require(running.has_value(), "idle http server service should start");
+  running->wait_until_ready();
+
+  const auto started_at = std::chrono::steady_clock::now();
+  const auto stopped = running->stop();
+  const auto elapsed = std::chrono::steady_clock::now() - started_at;
+
+  require(stopped.has_value(),
+          "idle http server service should stop without a client");
+  require(elapsed < std::chrono::seconds(2),
+          "idle http server service stop should return promptly");
+}
+
+void test_server_streamable_http_service_stops_during_startup() {
+  auto peer = mcp::ServerPeer::builder()
+                  .name("startup-stop-http-service")
+                  .version("1.0.0")
+                  .streamable_http("127.0.0.1", 40231, "/startup-service-stop")
+                  .build();
+  require(peer.has_value(), "startup-stop http server peer should build");
+
+  auto running = mcp::serve(std::move(*peer));
+  require(running.has_value(), "startup-stop http server service should start");
+
+  const auto started_at = std::chrono::steady_clock::now();
+  const auto stopped = running->stop();
+  const auto elapsed = std::chrono::steady_clock::now() - started_at;
+
+  require(stopped.has_value(),
+          "startup-stop http server service should stop without waiting ready");
+  require(elapsed < std::chrono::seconds(2),
+          "startup-stop http server service stop should return promptly");
+}
+#endif
+
 void test_peer_serve_transport_observes_precancelled_token() {
   mcp::CancellationSource cancellation;
   cancellation.cancel();
@@ -3777,6 +3822,10 @@ int main() {
     test_sdk_peer_and_service_surface();
     test_client_peer_initialize_rejects_invalid_result_shape();
     test_running_service_moved_from_is_inert();
+#if defined(CXXMCP_ENABLE_HTTP)
+    test_server_streamable_http_service_stops_while_idle();
+    test_server_streamable_http_service_stops_during_startup();
+#endif
     test_peer_serve_transport_observes_precancelled_token();
     test_server_peer_initialize_dispatches_on_peer_boundary();
     test_server_peer_serve_transport_requires_initialized_notification();
