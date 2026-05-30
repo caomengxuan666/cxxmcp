@@ -2265,6 +2265,42 @@ std::string request_id_to_string_for_native_server_http(
       request_id);
 }
 
+std::string request_id_key_fragment(const protocol::RequestId& request_id) {
+  return std::visit(
+      [](const auto& value) -> std::string {
+        using Value = std::decay_t<decltype(value)>;
+        if constexpr (std::is_same_v<Value, std::string>) {
+          std::string result;
+          result.reserve(value.size() + 24);
+          result.push_back('s');
+          result.append(std::to_string(value.size()));
+          result.push_back(':');
+          result.append(value);
+          return result;
+        } else {
+          std::string result = "i";
+          result.append(std::to_string(value));
+          return result;
+        }
+      },
+      request_id);
+}
+
+std::string pending_client_request_key(std::string_view session_id,
+                                       const protocol::RequestId& request_id) {
+  auto request_id_text = request_id_key_fragment(request_id);
+  std::string key;
+  key.reserve(session_id.size() + request_id_text.size() + 32);
+  key.append(std::to_string(session_id.size()));
+  key.push_back(':');
+  key.append(session_id);
+  key.push_back(':');
+  key.append(std::to_string(request_id_text.size()));
+  key.push_back(':');
+  key.append(request_id_text);
+  return key;
+}
+
 StreamableHttpServerMessageContext to_native_server_message_context(
     const server::SessionContext& context) {
   StreamableHttpServerMessageContext result;
@@ -2363,8 +2399,7 @@ class StreamableHttpServerTransport::Impl {
   void wait_until_ready() { ready_future_.wait(); }
 
   core::Result<core::Unit> close() {
-    std::map<protocol::RequestId, std::shared_ptr<PendingClientRequest>>
-        pending;
+    std::map<std::string, std::shared_ptr<PendingClientRequest>> pending;
     std::vector<std::thread> request_threads;
     {
       std::lock_guard<std::mutex> lock(mutex_);
@@ -2509,8 +2544,10 @@ class StreamableHttpServerTransport::Impl {
             protocol::make_error(protocol::ErrorCode::InternalError,
                                  "streamable http server transport closed"));
       }
+      const auto request_key =
+          pending_client_request_key(context.session_id, request.id);
       const auto [_, inserted] =
-          pending_client_requests_.emplace(request.id, pending);
+          pending_client_requests_.emplace(request_key, pending);
       if (!inserted) {
         return protocol::make_error_response(
             std::optional<protocol::RequestId>{request.id},
@@ -2583,7 +2620,29 @@ class StreamableHttpServerTransport::Impl {
     std::shared_ptr<PendingClientRequest> pending;
     {
       std::lock_guard<std::mutex> lock(mutex_);
-      const auto it = pending_client_requests_.find(id);
+      auto it = pending_client_requests_.end();
+      if (last_context_.has_value()) {
+        it = pending_client_requests_.find(
+            pending_client_request_key(last_context_->session_id, id));
+      }
+      if (it == pending_client_requests_.end()) {
+        auto matched = pending_client_requests_.end();
+        for (auto candidate = pending_client_requests_.begin();
+             candidate != pending_client_requests_.end(); ++candidate) {
+          if (candidate->second->id != id) {
+            continue;
+          }
+          if (matched != pending_client_requests_.end()) {
+            return mcp::core::unexpected(make_native_server_http_error(
+                protocol::ErrorCode::InvalidRequest,
+                "streamable http server transport cannot disambiguate pending "
+                "client request",
+                request_id_to_string_for_native_server_http(id)));
+          }
+          matched = candidate;
+        }
+        it = matched;
+      }
       if (it == pending_client_requests_.end()) {
         return mcp::core::unexpected(make_native_server_http_error(
             protocol::ErrorCode::InvalidRequest,
@@ -2607,7 +2666,7 @@ class StreamableHttpServerTransport::Impl {
   std::condition_variable receive_cv_;
   std::deque<InboundItem> inbound_;
   std::optional<StreamableHttpServerMessageContext> last_context_;
-  std::map<protocol::RequestId, std::shared_ptr<PendingClientRequest>>
+  std::map<std::string, std::shared_ptr<PendingClientRequest>>
       pending_client_requests_;
   std::vector<std::thread> request_threads_;
   std::size_t active_request_workers_ = 0;
