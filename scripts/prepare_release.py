@@ -12,7 +12,11 @@ import argparse
 import re
 import subprocess
 import sys
+import tempfile
 from pathlib import Path
+
+from create_sdk_source_archive import create_sdk_source_archive
+from create_sdk_source_archive import sha256 as archive_sha256
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -79,7 +83,7 @@ def update_changelog(version: str) -> None:
     write(path, text.replace(marker, marker + entry, 1))
 
 
-def update_package_docs(version: str) -> None:
+def update_package_docs(version: str, sha256: str) -> None:
     tag = f"v{version}"
     files = [
         "docs/package_consumption.md",
@@ -98,6 +102,11 @@ def update_package_docs(version: str) -> None:
             text,
         )
         text = re.sub(r"`v\d+\.\d+\.\d+` URL", f"`{tag}` URL", text)
+        text = re.sub(
+            r"URL_HASH\s+SHA256=[0-9a-fA-F]{64}",
+            f"URL_HASH SHA256={sha256}",
+            text,
+        )
         write(path, text)
 
 
@@ -148,8 +157,16 @@ def update_versions(version: str, sha256: str) -> None:
         f'add_versions("{tag}", "{sha256}")',
     )
     update_changelog(version)
-    update_package_docs(version)
+    update_package_docs(version, sha256)
     update_release_gates(version)
+
+
+def computed_sdk_source_sha256(version: str) -> str:
+    tag = f"v{version}"
+    with tempfile.TemporaryDirectory(prefix="cxxmcp-release-") as temp:
+        archive = Path(temp) / f"cxxmcp-sdk-source-{tag}.tar.gz"
+        create_sdk_source_archive(ROOT, tag, archive)
+        return archive_sha256(archive)
 
 
 def run_checks(skip_format: bool) -> None:
@@ -173,18 +190,26 @@ def main() -> int:
     parser.add_argument(
         "--sdk-source-sha256",
         default=None,
-        help="SDK source archive SHA256 to write into package examples; defaults to the current xmake hash",
+        help=(
+            "SDK source archive SHA256 to write into package examples; "
+            "defaults to the deterministic SDK source archive hash"
+        ),
     )
     parser.add_argument("--skip-format", action="store_true", help="do not run scripts/format.ps1")
     parser.add_argument("--skip-checks", action="store_true", help="only update files")
     args = parser.parse_args()
 
     version = normalize_version(args.version)
-    sha256 = (args.sdk_source_sha256 or current_xmake_hash()).lower()
-    if not re.fullmatch(r"[0-9a-f]{64}", sha256):
-        raise SystemExit("--sdk-source-sha256 must be a 64-character hex digest")
+    if args.sdk_source_sha256:
+        sha256 = args.sdk_source_sha256.lower()
+        if not re.fullmatch(r"[0-9a-f]{64}", sha256):
+            raise SystemExit("--sdk-source-sha256 must be a 64-character hex digest")
+        update_versions(version, sha256)
+    else:
+        update_versions(version, current_xmake_hash())
+        sha256 = computed_sdk_source_sha256(version)
+        update_versions(version, sha256)
 
-    update_versions(version, sha256)
     if not args.skip_checks:
         run_checks(args.skip_format)
     print(f"Release metadata prepared for v{version}.")

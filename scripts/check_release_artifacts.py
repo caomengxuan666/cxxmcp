@@ -447,6 +447,10 @@ def check_sdk_source_tarball(path: Path) -> None:
 
     forbidden = [
         "docs/doxygen/html/index.html",
+        "docs/package_consumption.md",
+        "docs/package_consumption_zh.md",
+        "docs/pages/cookbook.html",
+        "packaging/xmake/packages/c/cxxmcp/xmake.lua",
         "runtime/src/gateway.cpp",
         "tools/cli/src/main.cpp",
     ]
