@@ -4,11 +4,10 @@
 
 #include <string>
 #include <string_view>
+#include <tl/expected.hpp>
 #include <type_traits>
 #include <utility>
 #include <variant>
-
-#include <tl/expected.hpp>
 
 /// @file
 /// @brief Shared result and error primitives used by the public cxxmcp SDK.

@@ -14,6 +14,7 @@ Before opening a pull request, run the narrowest checks that cover your change.
 For public SDK changes, prefer:
 
 ```powershell
+pwsh -NoProfile -File scripts\install-githooks.ps1
 pwsh -NoProfile -File scripts\format.ps1 -Check
 cmake --build build-package-prep --target mcp_protocol_tests mcp_client_server_tests mcp_sdk_tests --parallel
 ctest --test-dir build-package-prep -R "^(protocol|client_server|sdk|package_smoke)$" --output-on-failure --timeout 600
@@ -22,6 +23,16 @@ ctest --test-dir build-package-prep -R "^(protocol|client_server|sdk|package_smo
 Transport changes should also run the relevant transport tests. Package changes
 should run `package_smoke`, preferably for both bundled and
 `CXXMCP_USE_SYSTEM_DEPS=ON` builds when those build directories are available.
+
+Before creating a release tag, run:
+
+```powershell
+python -B scripts\prepare_release.py 1.2.3
+```
+
+The release preparation script updates package/version metadata, runs the
+repository format script, and runs the short release metadata checks. It does
+not commit, tag, or push.
 
 ## Public API Rules
 
