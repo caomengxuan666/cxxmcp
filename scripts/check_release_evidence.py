@@ -507,8 +507,6 @@ def check_source_tree(source: Path) -> None:
     for forbidden in [
         "runtime/include",
         "runtime/observability/include",
-        "extensions/adapters/include",
-        "extensions/plugin-sdk/include",
         "tools/cli/include",
     ]:
         require_not_contains(doxygen, forbidden)
@@ -631,8 +629,7 @@ def check_source_tree(source: Path) -> None:
     require_contains(package_smoke, "assert_optional_component_missing")
     require_contains(package_smoke, "find_package(cxxmcp CONFIG REQUIRED COMPONENTS ${component_name})")
     require_contains(package_smoke, "component '${component_name}' was requested but is not installed")
-    require_contains(package_smoke, "default package smoke must not install optional plugin headers")
-    require_contains(package_smoke, "default package smoke must not install optional adapter headers")
+    require_contains(package_smoke, "removed plugin/adapters extension headers")
     require_contains(package_smoke, "templates/external_consumer")
 
     release_artifacts = source / "scripts/check_release_artifacts.py"

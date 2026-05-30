@@ -83,16 +83,14 @@ cxxmcp_build_option(CXXMCP_BUILD_EXAMPLES MCP_BUILD_EXAMPLES
     "Build example executables" OFF)
 cxxmcp_build_option(CXXMCP_BUILD_TESTS MCP_BUILD_TESTS
     "Build tests for enabled layers" ${BUILD_TESTING})
+cxxmcp_build_option(CXXMCP_BUILD_BENCHMARKS MCP_BUILD_BENCHMARKS
+    "Build benchmark executables" OFF)
 cxxmcp_build_option(CXXMCP_BUILD_DOCS MCP_BUILD_DOCS
     "Build Doxygen API documentation" OFF)
 cxxmcp_build_option(CXXMCP_ENABLE_AUTH MCP_ENABLE_AUTH
     "Build optional OAuth 2.1 / DPoP authorization scaffolding" OFF)
 cxxmcp_build_option(CXXMCP_ENABLE_HTTP MCP_ENABLE_HTTP
     "Build HTTP/SSE transport (requires cpp-httplib)" OFF)
-cxxmcp_build_option(CXXMCP_ENABLE_PLUGIN_SDK MCP_ENABLE_PLUGIN_SDK
-    "Build optional plugin SDK extension target" OFF)
-cxxmcp_build_option(CXXMCP_ENABLE_ADAPTERS MCP_ENABLE_ADAPTERS
-    "Build optional adapter extension target" OFF)
 
 set(CXXMCP_AUTH_CRYPTO "NONE" CACHE STRING
     "Optional crypto backend for cxxmcp auth; NONE or OpenSSL")
@@ -114,8 +112,6 @@ set(MCP_ENABLE_SERVER ${CXXMCP_BUILD_SERVER})
 set(MCP_ENABLE_SDK ${CXXMCP_BUILD_SDK})
 set(MCP_ENABLE_AUTH ${CXXMCP_ENABLE_AUTH})
 set(MCP_ENABLE_HTTP ${CXXMCP_ENABLE_HTTP})
-set(MCP_ENABLE_PLUGIN_SDK ${CXXMCP_ENABLE_PLUGIN_SDK})
-set(MCP_ENABLE_ADAPTERS ${CXXMCP_ENABLE_ADAPTERS})
 
 if(MCP_ENABLE_SDK)
     set(MCP_ENABLE_PROTOCOL ON)
@@ -125,11 +121,6 @@ endif()
 
 if(MCP_ENABLE_CLIENT OR MCP_ENABLE_SERVER)
     set(MCP_ENABLE_PROTOCOL ON)
-endif()
-
-if(MCP_ENABLE_ADAPTERS AND NOT MCP_ENABLE_PLUGIN_SDK)
-    message(FATAL_ERROR
-        "CXXMCP_ENABLE_ADAPTERS requires CXXMCP_ENABLE_PLUGIN_SDK")
 endif()
 
 if(NOT MCP_ENABLE_AUTH AND NOT CXXMCP_AUTH_CRYPTO STREQUAL "NONE")
@@ -457,30 +448,6 @@ if(TARGET mcp_service)
     add_library(cxxmcp::service ALIAS mcp_service)
 endif()
 
-if(MCP_ENABLE_PLUGIN_SDK AND TARGET mcp_protocol)
-    add_library(mcp_plugin_sdk INTERFACE)
-    target_include_directories(mcp_plugin_sdk INTERFACE
-        $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/extensions/plugin-sdk/include>
-        $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>
-    )
-    target_link_libraries(mcp_plugin_sdk INTERFACE mcp_core mcp_protocol)
-    set_target_properties(mcp_plugin_sdk PROPERTIES EXPORT_NAME plugin_sdk)
-    cxxmcp_require_sdk_cxx(mcp_plugin_sdk)
-    add_library(cxxmcp::plugin_sdk ALIAS mcp_plugin_sdk)
-endif()
-
-if(MCP_ENABLE_ADAPTERS AND TARGET mcp_server AND TARGET mcp_plugin_sdk)
-    add_library(mcp_adapters INTERFACE)
-    target_include_directories(mcp_adapters INTERFACE
-        $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/extensions/adapters/include>
-        $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>
-    )
-    target_link_libraries(mcp_adapters INTERFACE mcp_core mcp_protocol mcp_server mcp_plugin_sdk)
-    set_target_properties(mcp_adapters PROPERTIES EXPORT_NAME adapters)
-    cxxmcp_require_sdk_cxx(mcp_adapters)
-    add_library(cxxmcp::adapters ALIAS mcp_adapters)
-endif()
-
 if(CXXMCP_BUILD_TESTS)
     enable_testing()
     add_subdirectory(tests)
@@ -488,6 +455,10 @@ endif()
 
 if(CXXMCP_BUILD_EXAMPLES)
     add_subdirectory(examples)
+endif()
+
+if(CXXMCP_BUILD_BENCHMARKS)
+    add_subdirectory(bench)
 endif()
 
 if(CXXMCP_BUILD_DOCS)
@@ -531,12 +502,6 @@ endif()
 if(TARGET mcp_service)
     list(APPEND CXXMCP_INSTALL_TARGETS mcp_service)
 endif()
-if(TARGET mcp_plugin_sdk)
-    list(APPEND CXXMCP_INSTALL_TARGETS mcp_plugin_sdk)
-endif()
-if(TARGET mcp_adapters)
-    list(APPEND CXXMCP_INSTALL_TARGETS mcp_adapters)
-endif()
 if(MCP_ENABLE_HTTP AND NOT CXXMCP_USE_SYSTEM_DEPS AND TARGET cpp_httplib)
     list(APPEND CXXMCP_INSTALL_TARGETS cpp_httplib)
 endif()
@@ -564,12 +529,6 @@ if(TARGET mcp_transport)
 endif()
 if(TARGET mcp_auth)
     install(DIRECTORY sdk/auth/include/ DESTINATION ${CMAKE_INSTALL_INCLUDEDIR})
-endif()
-if(TARGET mcp_plugin_sdk)
-    install(DIRECTORY extensions/plugin-sdk/include/ DESTINATION ${CMAKE_INSTALL_INCLUDEDIR})
-endif()
-if(TARGET mcp_adapters)
-    install(DIRECTORY extensions/adapters/include/ DESTINATION ${CMAKE_INSTALL_INCLUDEDIR})
 endif()
 if(NOT CXXMCP_USE_SYSTEM_DEPS)
     install(FILES

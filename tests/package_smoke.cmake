@@ -77,24 +77,12 @@ endfunction()
 
 set(negative_auth_source_dir "${BUILD_DIR}/package-smoke/negative-auth-source")
 set(negative_auth_build_dir "${BUILD_DIR}/package-smoke/negative-auth-build")
-set(negative_plugin_source_dir
-    "${BUILD_DIR}/package-smoke/negative-plugin-source")
-set(negative_plugin_build_dir
-    "${BUILD_DIR}/package-smoke/negative-plugin-build")
-set(negative_adapters_source_dir
-    "${BUILD_DIR}/package-smoke/negative-adapters-source")
-set(negative_adapters_build_dir
-    "${BUILD_DIR}/package-smoke/negative-adapters-build")
 file(REMOVE_RECURSE
     "${prefix_dir}"
     "${consumer_build_dir}"
     "${template_build_dir}"
     "${negative_auth_source_dir}"
-    "${negative_auth_build_dir}"
-    "${negative_plugin_source_dir}"
-    "${negative_plugin_build_dir}"
-    "${negative_adapters_source_dir}"
-    "${negative_adapters_build_dir}")
+    "${negative_auth_build_dir}")
 file(MAKE_DIRECTORY "${prefix_dir}")
 
 set(install_command "${CMAKE_COMMAND}" --install "${BUILD_DIR}" --prefix "${prefix_dir}")
@@ -113,8 +101,6 @@ endif()
 set(package_smoke_use_system_deps OFF)
 set(package_smoke_auth_enabled OFF)
 set(package_smoke_auth_openssl_enabled OFF)
-set(package_smoke_plugin_sdk_enabled OFF)
-set(package_smoke_adapters_enabled OFF)
 set(cache_path "${BUILD_DIR}/CMakeCache.txt")
 if(EXISTS "${cache_path}")
     file(READ "${cache_path}" cache_content)
@@ -128,14 +114,6 @@ if(EXISTS "${cache_path}")
     if(cache_content MATCHES "CXXMCP_AUTH_CRYPTO:STRING=OpenSSL" OR
        cache_content MATCHES "CXXMCP_AUTH_CRYPTO:UNINITIALIZED=OpenSSL")
         set(package_smoke_auth_openssl_enabled ON)
-    endif()
-    if(cache_content MATCHES "CXXMCP_ENABLE_PLUGIN_SDK:BOOL=(ON|TRUE|1)" OR
-       cache_content MATCHES "MCP_ENABLE_PLUGIN_SDK:BOOL=(ON|TRUE|1)")
-        set(package_smoke_plugin_sdk_enabled ON)
-    endif()
-    if(cache_content MATCHES "CXXMCP_ENABLE_ADAPTERS:BOOL=(ON|TRUE|1)" OR
-       cache_content MATCHES "MCP_ENABLE_ADAPTERS:BOOL=(ON|TRUE|1)")
-        set(package_smoke_adapters_enabled ON)
     endif()
 endif()
 
@@ -202,32 +180,10 @@ else()
     assert_optional_component_missing(
         auth "${negative_auth_source_dir}" "${negative_auth_build_dir}")
 endif()
-if(package_smoke_plugin_sdk_enabled)
-    if(NOT EXISTS "${installed_include_dir}/cxxmcp/plugin/tool.hpp")
-        message(FATAL_ERROR
-            "plugin-sdk-enabled package smoke did not install plugin headers")
-    endif()
-else()
-    if(EXISTS "${installed_include_dir}/cxxmcp/plugin")
-        message(FATAL_ERROR
-            "default package smoke must not install optional plugin headers")
-    endif()
-    assert_optional_component_missing(
-        plugin_sdk "${negative_plugin_source_dir}" "${negative_plugin_build_dir}")
-endif()
-if(package_smoke_adapters_enabled)
-    if(NOT EXISTS "${installed_include_dir}/cxxmcp/adapters/adapter.hpp")
-        message(FATAL_ERROR
-            "adapters-enabled package smoke did not install adapter headers")
-    endif()
-else()
-    if(EXISTS "${installed_include_dir}/cxxmcp/adapters")
-        message(FATAL_ERROR
-            "default package smoke must not install optional adapter headers")
-    endif()
-    assert_optional_component_missing(
-        adapters "${negative_adapters_source_dir}"
-        "${negative_adapters_build_dir}")
+if(EXISTS "${installed_include_dir}/cxxmcp/plugin" OR
+   EXISTS "${installed_include_dir}/cxxmcp/adapters")
+    message(FATAL_ERROR
+        "SDK package must not install removed plugin/adapters extension headers")
 endif()
 if(EXISTS "${installed_include_dir}/cxxmcp/third_party/jsonrpcpp/jsonrpcpp.hpp")
     message(FATAL_ERROR
@@ -262,8 +218,6 @@ set(configure_command
     "-Dcxxmcp_DIR=${installed_cxxmcp_config_dir}"
     "-DCXXMCP_PACKAGE_SMOKE_AUTH_ENABLED=${package_smoke_auth_enabled}"
     "-DCXXMCP_PACKAGE_SMOKE_AUTH_OPENSSL_ENABLED=${package_smoke_auth_openssl_enabled}"
-    "-DCXXMCP_PACKAGE_SMOKE_PLUGIN_SDK_ENABLED=${package_smoke_plugin_sdk_enabled}"
-    "-DCXXMCP_PACKAGE_SMOKE_ADAPTERS_ENABLED=${package_smoke_adapters_enabled}"
 )
 append_package_smoke_common_configure_options(configure_command)
 

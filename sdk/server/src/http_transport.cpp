@@ -791,6 +791,10 @@ std::optional<protocol::ProgressToken> HttpTransport::extract_progress_token(
   return protocol::meta_progress_token(request.params.at("_meta"));
 }
 
+struct HttpTransport::HttpServerHolder {
+  httplib::Server server;
+};
+
 HttpTransport::HttpTransport(HttpTransportOptions options)
     : options_(std::move(options)) {
   if (options_.path.empty()) {
@@ -800,10 +804,6 @@ HttpTransport::HttpTransport(HttpTransportOptions options)
     options_.path.insert(options_.path.begin(), '/');
   }
 }
-
-struct HttpTransport::HttpServerHolder {
-  httplib::Server server;
-};
 
 HttpTransport::~HttpTransport() = default;
 

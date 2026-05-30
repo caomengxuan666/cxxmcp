@@ -183,9 +183,8 @@ workflow run URL, and release URL fields before publishing.
       package targets agree on the supported compiler/generator/runtime matrix.
 - [ ] Generated API docs and release evidence present `Peer` / `Service` as the
       canonical SDK path.
-- [ ] External gateway/runtime/CLI/app tooling remains outside this SDK
-      repository and package contract; optional adapters and plugin SDK remain
-      outside the core SDK contract.
+- [ ] External gateway/runtime/CLI/app/plugin tooling remains outside this SDK
+      repository and package contract.
 
 ## Ecosystem And Registry Review
 

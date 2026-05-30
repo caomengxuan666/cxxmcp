@@ -25,8 +25,7 @@ import/export, CLI, and observability leaks in canonical SDK headers.
 SDK package-manager paths install and expose `cxxmcp::protocol`,
 `cxxmcp::client`, `cxxmcp::server`, `cxxmcp::transport`, `cxxmcp::handler`,
 `cxxmcp::peer`, `cxxmcp::service`, and `cxxmcp::sdk`. Optional
-`cxxmcp::plugin_sdk`, `cxxmcp::adapters`, and `cxxmcp::auth` targets are
-SDK-adjacent extension surfaces when explicitly enabled.
+`cxxmcp::auth` targets are SDK-adjacent auth surfaces when explicitly enabled.
 
 Gateway and CLI packages must be documented, versioned, and released by their
 own repository. Release notes for this SDK must not imply that gateway/runtime
@@ -35,27 +34,16 @@ CPM routes.
 
 ## Extension Boundary
 
-`cxxmcp::plugin_sdk` is a stable optional SDK-adjacent package surface for
-minimal plugin declarations. It depends only on `cxxmcp::protocol` and
-`cxxmcp::core` implementation support, and must not grow gateway policy,
-discovery, profile, or CLI concepts.
-
-`cxxmcp::adapters` is a stable optional adapter-helper surface for connecting
-plugin-style declarations to the server SDK. It is installed only when
-`CXXMCP_ENABLE_ADAPTERS=ON`, depends on `cxxmcp::server` and
-`cxxmcp::plugin_sdk`, remains outside the core SDK narrative, and must not pull
-gateway/runtime state into canonical SDK headers.
-
-Experimental adapter ideas that need external gateway policy, discovery,
-registry, or managed hosting state belong in the gateway repository until a
-design note promotes a narrow SDK extension.
+Plugin declarations, adapter layers, external gateway policy, discovery,
+registry, and managed hosting state belong outside this SDK repository until a
+design note promotes a narrow SDK extension with release evidence.
 
 ## Example Boundary
 
 In-tree examples should stay focused on SDK use: `Peer`, `Service`, client,
-server, protocol, transport, auth, plugin, and adapter flows. Gateway examples
-belong in the external gateway/examples repository and should not be presented
-as the first-choice SDK path in this README, release notes, or package
+server, protocol, transport, auth, and transport-adapter flows. Gateway and
+plugin examples belong in external repositories and should not be presented as
+the first-choice SDK path in this README, release notes, or package
 documentation. The former in-tree gateway runtime example is intentionally not
 part of this SDK repository.
 
@@ -94,8 +82,8 @@ Use it for worker/queue integration tests, embedded loopbacks, or application
 runtimes that want to connect their own event loop to `Peer` / `Service`
 without exposing private queues as SDK concepts.
 
-These adapters stay in the transport layer. They do not add gateway policy,
-retry orchestration, session discovery, or protocol extensions.
+These transport adapters stay in the transport layer. They do not add gateway
+policy, retry orchestration, session discovery, or protocol extensions.
 
 ### Built-In Stdio Boundaries
 

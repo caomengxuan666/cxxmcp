@@ -68,9 +68,8 @@ public `cxxmcp::protocol`, `cxxmcp::transport`, `cxxmcp::handler`,
 `cxxmcp::peer`, `cxxmcp::service`, `cxxmcp::client`, `cxxmcp::server`, and
 `cxxmcp::sdk` targets.
 
-State that gateway/runtime/CLI/app tooling is released outside this SDK
-repository, and that adapters and plugin SDK targets are optional
-SDK-adjacent layers outside the core SDK contract.
+State that gateway/runtime/CLI/app/plugin tooling is released outside this SDK
+repository and remains outside the core SDK contract.
 
 ## Compatibility Notes
 

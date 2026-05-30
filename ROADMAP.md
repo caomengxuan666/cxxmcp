@@ -1,28 +1,33 @@
 # Roadmap
 
-This document outlines the current development direction for cxxmcp.
+This roadmap is intentionally short. Release evidence, compatibility policy,
+and ecosystem readiness are tracked in `todo.md` and `docs/`.
 
 ## Current Focus
 
-- Conformance parity with the latest MCP specification draft (2026)
-- Stabilizing the public C++ SDK API surface
-- Improving cross-platform build support (Windows, Linux, macOS)
+- Keep `Peer` / `Service` as the first-choice SDK path.
+- Keep release artifacts, package docs, examples, and compatibility policy in
+  sync for each tagged release.
+- Build maturity evidence before making fact-standard or curated-registry
+  claims.
 
 ## Near Term
 
-- Automated dependency update tooling (Dependabot or Renovate)
-- Publish stable release with full conformance evidence
-- Improve test coverage for edge cases in transport layer
+- Publish generated docs and release artifacts from exact tagged release runs.
+- Keep package-consumption evidence green for vcpkg, Conan, xmake, and
+  FetchContent-style consumers.
+- Recheck conformance evidence before advertising release status.
 
 ## Longer Term
 
-- Tier 2 application with MCP conformance program
-- WebSocket transport support
-- Language bindings for Python and Rust via C FFI
+- WebSocket transport support.
+- Dependency-update automation.
 
 ## Completed
 
-- Full server and client implementation (Streamable HTTP, SSE, stdio)
-- OAuth 2.1 authorization support
-- SEP-2243 `Mcp-Method` / `Mcp-Name` header compliance
-- 108/109 server conformance, 428/436 client conformance against latest spec
+- Full server and client implementation across Streamable HTTP, SSE-compatible
+  paths, stdio, and process stdio.
+- Optional OAuth 2.1 / DPoP / JWKS auth target.
+- SEP-2243 `Mcp-Method` / `Mcp-Name` handling with current exception documented
+  in `docs/conformance_evidence.md`.
+- Cross-SDK conformance and interop gates.

@@ -64,7 +64,7 @@ cmake -S myapp -B build -DCMAKE_PREFIX_PATH=/path/to/install
 
 # Option 2: FetchContent (no install needed)
 include(FetchContent)
-FetchContent_Declare(cxxmcp URL https://github.com/caomengxuan666/cxxmcp/releases/download/v1.1.1/cxxmcp-v1.1.1.tar.gz)
+FetchContent_Declare(cxxmcp URL https://github.com/caomengxuan666/cxxmcp/releases/download/v1.1.2/cxxmcp-v1.1.2.tar.gz)
 FetchContent_MakeAvailable(cxxmcp)</code></pre>
         </div>
 
@@ -220,9 +220,9 @@ node dist/cli.js --suite all --server-command "path/to/your/server"</code></pre>
         </div>
 
         <div class="faq">
-          <h3>Server conformance: 110/110</h3>
-          <p><strong>Result:</strong> All 110 server tests pass. All 447 client tests pass.</p>
-          <p><strong>Note:</strong> One earlier failure was an upstream TypeScript SDK issue where the TS SDK client did not send SEP-2243 <code>Mcp-Method</code>/<code>Mcp-Name</code> headers. This has been resolved. See <a href="https://github.com/modelcontextprotocol/typescript-sdk/pull/2178">TS SDK PR #2178</a>.</p>
+          <h3>Server conformance: 109/110</h3>
+          <p><strong>Result:</strong> 109 of 110 server tests pass. All 447 client tests pass.</p>
+          <p><strong>Note:</strong> The remaining server exception is the SEP-2243 missing-method-header case described in <a href="https://github.com/caomengxuan666/cxxmcp/blob/master/docs/conformance_evidence.md">conformance evidence</a>.</p>
         </div>
       </section>
 

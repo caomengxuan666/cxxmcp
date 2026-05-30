@@ -112,6 +112,7 @@ cmake --install build --config Release --prefix out/install/cxxmcp
 | `CXXMCP_BUILD_SERVER` | `OFF` | 构建 MCP server library |
 | `CXXMCP_BUILD_EXAMPLES` | `OFF` | 构建示例 |
 | `CXXMCP_BUILD_TESTS` | `BUILD_TESTING` | 构建测试 |
+| `CXXMCP_BUILD_BENCHMARKS` | `OFF` | 构建 benchmark 可执行文件 |
 | `CXXMCP_ENABLE_AUTH` | `OFF` | 构建可选 OAuth 2.1 / DPoP auth target |
 
 ## Package Targets

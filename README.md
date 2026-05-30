@@ -112,6 +112,7 @@ Package managers: `conanfile.py` (Conan 2), `packaging/vcpkg/ports/cxxmcp` (vcpk
 | `CXXMCP_BUILD_SERVER` | `OFF` | Build the MCP server library |
 | `CXXMCP_BUILD_EXAMPLES` | `OFF` | Build example executables |
 | `CXXMCP_BUILD_TESTS` | `BUILD_TESTING` | Build tests |
+| `CXXMCP_BUILD_BENCHMARKS` | `OFF` | Build benchmark executables |
 | `CXXMCP_ENABLE_AUTH` | `OFF` | Build the optional OAuth 2.1 / DPoP auth target |
 
 ## Package Targets

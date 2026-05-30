@@ -782,7 +782,7 @@ jobs:
         run: |
           set -euo pipefail
           conan install \
-            --requires=cxxmcp/1.1.1 \
+            --requires=cxxmcp/1.1.2 \
             --generator=CMakeDeps \
             --generator=CMakeToolchain \
             --output-folder="build-package-conan-${{ matrix.name }}-deps" \
@@ -884,14 +884,14 @@ jobs:
               text,
           )
           text, version_count = re.subn(
-              r'add_versions\("v1\.1\.1",\s*".*?"\)',
-              f'add_versions("v1.1.1", "{digest}")',
+              r'add_versions\("v1\.1\.2",\s*".*?"\)',
+              f'add_versions("v1.1.2", "{digest}")',
               text,
           )
           if url_count != 1:
               raise SystemExit(f"expected one add_urls rewrite, got {url_count}")
           if version_count != 1:
-              raise SystemExit(f"expected one v1.1.1 add_versions rewrite, got {version_count}")
+              raise SystemExit(f"expected one v1.1.2 add_versions rewrite, got {version_count}")
           if f'file://{archive.as_posix()}' not in text:
               raise SystemExit("xmake recipe was not rewritten to the generated source archive")
           if "github.com" in text or "releases/download" in text:
@@ -902,7 +902,7 @@ jobs:
           add_rules("mode.release")
           set_languages("c++17")
           add_repositories("cxxmcp-local repo")
-          add_requires("cxxmcp v1.1.1", {configs = {http = ${{ matrix.http_enabled }}, auth = ${{ matrix.auth_enabled }}}})
+          add_requires("cxxmcp v1.1.2", {configs = {http = ${{ matrix.http_enabled }}, auth = ${{ matrix.auth_enabled }}}})
 
           target("consumer")
               set_kind("binary")

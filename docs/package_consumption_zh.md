@@ -35,7 +35,7 @@ spdlog、CLI11 等 tooling 依赖不属于 SDK package contract。面向 vcpkg/C
 一次性安装：
 
 ```powershell
-vcpkg install cxxmcp --overlay-ports=C:\path\to\MCPServer.cpp\packaging\vcpkg\ports
+vcpkg install cxxmcp --overlay-ports=C:\path\to\cxxmcp\packaging\vcpkg\ports
 ```
 
 manifest mode 下，下游应用的 manifest 保持精简：
@@ -51,7 +51,7 @@ manifest mode 下，下游应用的 manifest 保持精简：
 然后用 overlay path 安装：
 
 ```powershell
-vcpkg install --overlay-ports=C:\path\to\MCPServer.cpp\packaging\vcpkg\ports
+vcpkg install --overlay-ports=C:\path\to\cxxmcp\packaging\vcpkg\ports
 ```
 
 示例 `vcpkg-configuration.json` 形状位于：
@@ -75,7 +75,7 @@ bundled private jsonrpcpp 实现头；它不会依赖 `jsonrpcpp`，也不会传
 可选 auth scaffold 是显式 feature，不属于默认 vcpkg package 路径：
 
 ```powershell
-vcpkg install "cxxmcp[auth]" --overlay-ports=C:\path\to\MCPServer.cpp\packaging\vcpkg\ports
+vcpkg install "cxxmcp[auth]" --overlay-ports=C:\path\to\cxxmcp\packaging\vcpkg\ports
 ```
 
 `auth` feature 会映射到 `CXXMCP_ENABLE_AUTH=ON`。它当前只启用
@@ -126,7 +126,7 @@ packaging/vcpkg/vcpkg-configuration.git-registry-future-example.json
 源码包。SDK archive 包含默认 bundled 构建需要的 header-only SDK 依赖；GitHub
 自动源码包不包含 submodule 内容。
 
-下面具体的 `v1.0.0` URL 是本文档目前记录的最新已发布 SDK source archive。
+下面具体的 `v1.1.2` URL 是本文档目前记录的最新已发布 SDK source archive。
 它适用于想固定到已发布默认 SDK surface 的 consumer。不要把它当成当前 worktree
 可选 auth header surface 的证据；当前源码或 release candidate 验证必须使用那次
 release-gates run 生成的精确 source archive 和 checksum。
@@ -136,7 +136,7 @@ include(FetchContent)
 
 FetchContent_Declare(
     cxxmcp
-    URL https://github.com/caomengxuan666/cxxmcp/releases/download/v1.1.1/cxxmcp-sdk-source-v1.1.1.tar.gz
+    URL https://github.com/caomengxuan666/cxxmcp/releases/download/v1.1.2/cxxmcp-sdk-source-v1.1.2.tar.gz
     URL_HASH SHA256=3c4ad678a8612183a4f2539973328b6a85dab360991a86e6328ca032cc5e2ba8
 )
 
@@ -157,7 +157,7 @@ target_link_libraries(my_server PRIVATE cxxmcp::server)
 构建意外启用 examples、tests 或 docs。
 
 URL 和 hash 应来自你有意 pin 的那个 release。release candidate 验证要使用候选
-run 生成的精确 source artifact，不要直接复制已发布的 `v1.0.0` 示例。
+run 生成的精确 source artifact，不要直接复制以前发布版本的示例。
 
 cxxmcp 不会安装或导出 `CPM.cmake` helper。消费方项目必须自己提供它，例如把
 `cmake/CPM.cmake` vendor 到自己的源码树，或者在 `include()` 前自行 bootstrap。
@@ -173,7 +173,7 @@ set(CXXMCP_BUILD_DOCS OFF CACHE BOOL "" FORCE)
 
 CPMAddPackage(
     NAME cxxmcp
-    URL https://github.com/caomengxuan666/cxxmcp/releases/download/v1.1.1/cxxmcp-sdk-source-v1.1.1.tar.gz
+    URL https://github.com/caomengxuan666/cxxmcp/releases/download/v1.1.2/cxxmcp-sdk-source-v1.1.2.tar.gz
     URL_HASH SHA256=3c4ad678a8612183a4f2539973328b6a85dab360991a86e6328ca032cc5e2ba8
 )
 

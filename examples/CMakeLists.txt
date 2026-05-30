@@ -125,6 +125,7 @@ if(MCP_ENABLE_HTTP AND TARGET mcp_client AND TARGET mcp_server)
     target_link_libraries(mcp_example_streamable_http_client PRIVATE
                           mcp_client mcp_server)
     cxxmcp_example(mcp_example_streamable_http_client)
+
 endif()
 
 if(CXXMCP_BUILD_EXPERIMENTAL_OAUTH_EXAMPLES AND TARGET mcp_auth

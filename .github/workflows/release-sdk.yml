@@ -218,7 +218,6 @@ jobs:
             CMakePresets.json \
             cmake \
             sdk \
-            extensions \
             examples \
             tests \
             templates \
@@ -353,8 +352,8 @@ jobs:
             docs/compatibility_policy.md in the source archive.
           - Public SDK package targets remain under the cxxmcp:: namespace.
           - Static-library releases do not claim ABI stability.
-          - Runtime, gateway, CLI, app, adapters, and plugin SDK targets remain
-            optional layers outside the core SDK contract.
+          - Runtime, gateway, CLI, app, and plugin surfaces remain outside the
+            core SDK contract.
 
           ## Evidence Notes
 

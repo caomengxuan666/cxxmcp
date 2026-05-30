@@ -52,12 +52,22 @@
       </section>
 
       <div class="release">
-        <h3>v1.1.1</h3>
+        <h3>v1.1.2</h3>
         <p class="date">Latest release</p>
+        <ul>
+          <li>Kept <code>mcp::core::Result</code> on <code>tl::expected</code> for stable C++17/C++23 static-library compatibility</li>
+          <li>Removed unused plugin/adapters extension targets and unused vendored tcb span</li>
+          <li>Added an opt-in Streamable HTTP benchmark target</li>
+          <li>Cleaned stale release docs and root TODO noise</li>
+        </ul>
+      </div>
+
+      <div class="release">
+        <h3>v1.1.1</h3>
         <ul>
           <li>Implemented SEP-1699 SSE retry/reconnection in the SDK client HTTP transport</li>
           <li>Fixed SSEClient <code>last_event_id_</code> tracking for priming events with empty data</li>
-          <li>Updated conformance status: server 110/110, client 447/447 (OpenSSL)</li>
+          <li>Updated conformance status: server 109/110, client 447/447 (OpenSSL)</li>
         </ul>
       </div>
 

@@ -41,7 +41,7 @@ be consumed as an overlay port from a checkout of this repository.
 For a one-off install:
 
 ```powershell
-vcpkg install cxxmcp --overlay-ports=C:\path\to\MCPServer.cpp\packaging\vcpkg\ports
+vcpkg install cxxmcp --overlay-ports=C:\path\to\cxxmcp\packaging\vcpkg\ports
 ```
 
 For manifest mode, keep your application manifest narrow:
@@ -57,7 +57,7 @@ For manifest mode, keep your application manifest narrow:
 Then install with the overlay path:
 
 ```powershell
-vcpkg install --overlay-ports=C:\path\to\MCPServer.cpp\packaging\vcpkg\ports
+vcpkg install --overlay-ports=C:\path\to\cxxmcp\packaging\vcpkg\ports
 ```
 
 An example `vcpkg-configuration.json` shape is available at:
@@ -84,7 +84,7 @@ The optional auth scaffold is exposed as an opt-in feature and is not part of
 the default vcpkg package path:
 
 ```powershell
-vcpkg install "cxxmcp[auth]" --overlay-ports=C:\path\to\MCPServer.cpp\packaging\vcpkg\ports
+vcpkg install "cxxmcp[auth]" --overlay-ports=C:\path\to\cxxmcp\packaging\vcpkg\ports
 ```
 
 The `auth` feature maps to `CXXMCP_ENABLE_AUTH=ON`. It currently enables
@@ -146,7 +146,7 @@ The SDK archive includes the header-only SDK dependencies needed by the default
 bundled build, while GitHub generated archives do not include submodule
 contents.
 
-The concrete `v1.0.0` URL below is the latest published SDK source archive
+The concrete `v1.1.2` URL below is the latest published SDK source archive
 known to these docs. It is valid for consumers that want the published default
 SDK surface. Do not use it as evidence for the current worktree's optional auth
 header surface; current-source or release-candidate validation must use the
@@ -157,7 +157,7 @@ include(FetchContent)
 
 FetchContent_Declare(
     cxxmcp
-    URL https://github.com/caomengxuan666/cxxmcp/releases/download/v1.1.1/cxxmcp-sdk-source-v1.1.1.tar.gz
+    URL https://github.com/caomengxuan666/cxxmcp/releases/download/v1.1.2/cxxmcp-sdk-source-v1.1.2.tar.gz
     URL_HASH SHA256=3c4ad678a8612183a4f2539973328b6a85dab360991a86e6328ca032cc5e2ba8
 )
 
@@ -180,7 +180,7 @@ docs.
 
 Use the URL and hash from the release you intentionally pin. For release
 candidate validation, use the exact source artifact produced by that candidate
-run rather than copying the published `v1.0.0` example unchanged.
+run rather than copying a previously published release example unchanged.
 
 cxxmcp does not install or export a `CPM.cmake` helper. The consuming project
 must provide it, for example by vendoring `cmake/CPM.cmake` in its own source
@@ -197,7 +197,7 @@ set(CXXMCP_BUILD_DOCS OFF CACHE BOOL "" FORCE)
 
 CPMAddPackage(
     NAME cxxmcp
-    URL https://github.com/caomengxuan666/cxxmcp/releases/download/v1.1.1/cxxmcp-sdk-source-v1.1.1.tar.gz
+    URL https://github.com/caomengxuan666/cxxmcp/releases/download/v1.1.2/cxxmcp-sdk-source-v1.1.2.tar.gz
     URL_HASH SHA256=3c4ad678a8612183a4f2539973328b6a85dab360991a86e6328ca032cc5e2ba8
 )
 

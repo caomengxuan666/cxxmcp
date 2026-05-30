@@ -81,9 +81,12 @@ release commit and recorded in release notes.
 
 For the current SDK surface:
 
-- `tl::expected` may remain a vendored fallback only after the release review
-  confirms the fallback version and the package-manager `tl-expected` route are
-  both acceptable for the advertised package paths.
+- `tl::expected` is the public `mcp::core::Result` backend for this major
+  release, not only a fallback. Release review must confirm the vendored
+  version and the package-manager `tl-expected` route are both acceptable for
+  the advertised package paths. Do not switch `Result` to `std::expected` based
+  on the consumer's C++ language mode; that would break static-library symbol
+  compatibility between C++17 SDK builds and C++23 consumers.
 - `jsonrpcpp` remains private and bundled until an accepted package-manager
   route exists; release notes must not present it as a public dependency or
   exported target.
