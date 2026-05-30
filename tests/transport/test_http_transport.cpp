@@ -3876,37 +3876,53 @@ void test_http_transport_load_smoke_concurrent_sessions() {
 
 void test_http_transport_load_smoke_many_in_flight_requests() {
   constexpr int kRequestCount = 6;
+  constexpr auto kGateTimeout = std::chrono::milliseconds(5000);
   std::mutex gate_mutex;
   std::condition_variable gate_cv;
   int waiting_requests = 0;
   bool release_responses = false;
+  std::exception_ptr handler_failure;
   std::atomic<int> completed_requests{0};
 
   HttpServerFixture fixture;
   fixture.server().Post("/load-inflight", [&](const httplib::Request& request,
                                               httplib::Response& response) {
-    const auto parsed = mcp::protocol::parse_message(request.body);
-    require(parsed.has_value(), "in-flight request should parse");
-    const auto* rpc_request =
-        std::get_if<mcp::protocol::JsonRpcRequest>(&*parsed);
-    require(rpc_request != nullptr, "in-flight client should send a request");
-    require(rpc_request->method == mcp::protocol::PingMethod,
-            "in-flight client should send ping");
+    try {
+      const auto parsed = mcp::protocol::parse_message(request.body);
+      require(parsed.has_value(), "in-flight request should parse");
+      const auto* rpc_request =
+          std::get_if<mcp::protocol::JsonRpcRequest>(&*parsed);
+      require(rpc_request != nullptr, "in-flight client should send a request");
+      require(rpc_request->method == mcp::protocol::PingMethod,
+              "in-flight client should send ping");
+      const auto response_id = rpc_request->id;
 
-    {
-      std::unique_lock lock(gate_mutex);
-      ++waiting_requests;
+      {
+        std::unique_lock lock(gate_mutex);
+        ++waiting_requests;
+        gate_cv.notify_all();
+        gate_cv.wait_for(lock, kGateTimeout,
+                         [&]() { return release_responses; });
+      }
+
+      response.set_content(
+          serialize_test_response(mcp::protocol::JsonRpcResponse{
+              .id = response_id,
+              .result = Json{{"ok", true}},
+          }),
+          "application/json");
+      completed_requests.fetch_add(1);
+    } catch (...) {
+      {
+        std::lock_guard lock(gate_mutex);
+        if (!handler_failure) {
+          handler_failure = std::current_exception();
+        }
+      }
       gate_cv.notify_all();
-      gate_cv.wait_for(lock, std::chrono::milliseconds(1000),
-                       [&]() { return release_responses; });
+      response.status = 500;
+      response.set_content("handler failure", "text/plain");
     }
-
-    response.set_content(serialize_test_response(mcp::protocol::JsonRpcResponse{
-                             .id = rpc_request->id,
-                             .result = Json{{"ok", true}},
-                         }),
-                         "application/json");
-    completed_requests.fetch_add(1);
   });
 
   mcp::client::HttpTransport transport(mcp::client::HttpTransportOptions{
@@ -3946,12 +3962,12 @@ void test_http_transport_load_smoke_many_in_flight_requests() {
     });
   }
 
+  bool observed_all_requests = false;
   {
     std::unique_lock lock(gate_mutex);
-    require(
-        gate_cv.wait_for(lock, std::chrono::milliseconds(1000),
-                         [&]() { return waiting_requests == kRequestCount; }),
-        "server should observe all in-flight HTTP requests");
+    observed_all_requests = gate_cv.wait_for(lock, kGateTimeout, [&]() {
+      return waiting_requests == kRequestCount || handler_failure != nullptr;
+    });
     release_responses = true;
   }
   gate_cv.notify_all();
@@ -3959,6 +3975,11 @@ void test_http_transport_load_smoke_many_in_flight_requests() {
   for (auto& thread : threads) {
     thread.join();
   }
+  if (handler_failure) {
+    std::rethrow_exception(handler_failure);
+  }
+  require(observed_all_requests && waiting_requests == kRequestCount,
+          "server should observe all in-flight HTTP requests");
   for (const auto& failure : failures) {
     if (failure) {
       std::rethrow_exception(failure);
