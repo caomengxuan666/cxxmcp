@@ -269,7 +269,6 @@ def check_gate_artifacts(gate_artifacts: Path) -> None:
         "sdk",
         "public_targets",
         "package_smoke",
-        "process_stdio_transport",
         "interop_typescript_client_process_stdio",
         "interop_python_client_process_stdio",
         "interop_rmcp_client_process_stdio",

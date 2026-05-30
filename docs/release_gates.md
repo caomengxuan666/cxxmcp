@@ -119,13 +119,17 @@ registered through `cxxmcp_mark_release_blocking()`.
   and typed model basics.
 - `transport_contract` and `transport_stdio_contract`: role-generic transport
   contract behavior.
-- `stdio_transport`, `process_stdio_transport`, `http_transport`, and
-  `transport_adapters`: concrete and compatibility transport behavior,
-  including failure-path coverage plus short HTTP concurrent-session and
-  many-in-flight request smoke coverage. The current HTTP backend decision is
-  recorded in `docs/compatibility_policy.md#http-transport-backend-evidence`;
-  another HTTP stack requires measured load, lifecycle, sanitizer, or
-  downstream workload evidence.
+- `stdio_transport`, `http_transport`, and `transport_adapters`: concrete and
+  compatibility transport behavior, including failure-path coverage plus short
+  HTTP concurrent-session and many-in-flight request smoke coverage. The
+  current HTTP backend decision is recorded in
+  `docs/compatibility_policy.md#http-transport-backend-evidence`; another HTTP
+  stack requires measured load, lifecycle, sanitizer, or downstream workload
+  evidence.
+- `process_stdio_transport`: process-stdio diagnostic and regression coverage.
+  It is intentionally not release-blocking because it is a broad multi-runtime
+  aggregate that duplicates the dedicated process-stdio interop gates and can
+  mask the specific child process that timed out.
 - `client_server`, `sdk`: canonical Peer/Service, request lifecycle,
   cancellation, progress, and public SDK ergonomics.
 - `rmcp_conformance`, `interop_typescript_client_process_stdio`,

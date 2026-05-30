@@ -310,7 +310,8 @@ if(TARGET mcp_client AND TARGET mcp_test_stdio_child)
     add_dependencies(mcp_process_stdio_transport_tests mcp_test_stdio_child)
 
     add_test(NAME process_stdio_transport COMMAND mcp_process_stdio_transport_tests)
-    cxxmcp_mark_release_blocking(process_stdio_transport transport process-stdio)
+    set_tests_properties(process_stdio_transport PROPERTIES
+        LABELS "transport;process-stdio")
 
     add_test(NAME interop_typescript_client_process_stdio
         COMMAND node

@@ -59,7 +59,7 @@ their policy changes.
 
 | ID | Status | Primary Evidence |
 |----|--------|------------------|
-| C1 | FIXED | `stdio_transport`, process-stdio interop, release-blocking transport matrix |
+| C1 | FIXED | `stdio_transport`, process-stdio interop, release transport matrix |
 | C2 | FIXED | `stdio_transport`, ThreadSanitizer/source-style policy |
 | C3 | FIXED | `stdio_transport`, notification/response interleaving regressions |
 | H1 | ACCEPTED LIMITATION | `docs/request_lifecycle.md#recommended-signal-handling-pattern`, release notes limitation disclosure |

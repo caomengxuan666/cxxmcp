@@ -24,7 +24,6 @@ set(required_release_blocking_tests
     sdk
     public_targets
     package_smoke
-    process_stdio_transport
     interop_typescript_client_process_stdio
     interop_python_client_process_stdio
     interop_rmcp_client_process_stdio
