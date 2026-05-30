@@ -161,7 +161,8 @@ jobs:
             -R "^protocol_serialization_benchmark$" \
             --output-on-failure \
             --timeout 120 \
-            --output-junit build-performance-evidence/test-results/performance-evidence.xml
+            --output-junit test-results/performance-evidence.xml
+          test -s build-performance-evidence/test-results/performance-evidence.xml
 
       - name: Upload performance evidence
         if: always()
@@ -419,7 +420,10 @@ jobs:
             -R "^(auth|public_header_auth|package_smoke)$" `
             --output-on-failure `
             --timeout 240 `
-            --output-junit build-auth-release-gate/test-results/auth-release-gate.xml
+            --output-junit test-results/auth-release-gate.xml
+          if (!(Test-Path "build-auth-release-gate/test-results/auth-release-gate.xml")) {
+            throw "missing JUnit evidence: build-auth-release-gate/test-results/auth-release-gate.xml"
+          }
 
       - name: Upload auth release gate evidence
         if: always()
@@ -474,7 +478,8 @@ jobs:
             -R "^(auth|auth_openssl|public_header_auth|package_smoke)$" \
             --output-on-failure \
             --timeout 300 \
-            --output-junit build-auth-openssl-release-gate/test-results/auth-openssl-release-gate.xml
+            --output-junit test-results/auth-openssl-release-gate.xml
+          test -s build-auth-openssl-release-gate/test-results/auth-openssl-release-gate.xml
 
       - name: Upload OpenSSL auth release gate evidence
         if: always()
@@ -633,12 +638,15 @@ jobs:
             "-L", "release-blocking",
             "--output-on-failure",
             "--timeout", "600",
-            "--output-junit", "build-release-gates/test-results/release-blocking.xml"
+            "--output-junit", "test-results/release-blocking.xml"
           )
           if ("${{ matrix.config }}") {
             $ctestArgs += @("-C", "${{ matrix.config }}")
           }
           ctest @ctestArgs
+          if (!(Test-Path "build-release-gates/test-results/release-blocking.xml")) {
+            throw "missing JUnit evidence: build-release-gates/test-results/release-blocking.xml"
+          }
 
       - name: Upload release gate evidence
         if: always()
