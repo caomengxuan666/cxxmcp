@@ -16,6 +16,7 @@ struct TimerEntry {
   std::function<void()> task;
   std::atomic<bool> cancelled{false};
   std::uint64_t id = 0;
+  int priority = 1;
 };
 
 /// @brief Handle to a scheduled timer that can be cancelled before it fires.

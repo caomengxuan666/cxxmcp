@@ -49,6 +49,23 @@ std::optional<mcp::protocol::JsonRpcResponse> read_response() {
   return *parsed;
 }
 
+std::string get_process_env_or_empty(std::string_view key) {
+  const std::string key_string(key);
+#ifdef _WIN32
+  char* value = nullptr;
+  std::size_t size = 0;
+  if (_dupenv_s(&value, &size, key_string.c_str()) != 0 || value == nullptr) {
+    return {};
+  }
+  std::string result(value);
+  std::free(value);
+  return result;
+#else
+  const char* value = std::getenv(key_string.c_str());
+  return value == nullptr ? std::string{} : std::string(value);
+#endif
+}
+
 void write_error(const mcp::protocol::JsonRpcRequest& request,
                  mcp::protocol::ErrorCode code, std::string message) {
   write_response(mcp::protocol::make_error_response(
@@ -306,13 +323,13 @@ void handle_request(const mcp::protocol::JsonRpcRequest& request) {
   }
 
   if (request.method == "custom/options") {
-    const char* env_value = std::getenv("CXXMCP_PROCESS_TEST_ENV");
     write_response(mcp::protocol::make_response(
-        request.id, Json{
-                        {"arg", g_observed_arg},
-                        {"env", env_value == nullptr ? "" : env_value},
-                        {"cwd", std::filesystem::current_path().string()},
-                    }));
+        request.id,
+        Json{
+            {"arg", g_observed_arg},
+            {"env", get_process_env_or_empty("CXXMCP_PROCESS_TEST_ENV")},
+            {"cwd", std::filesystem::current_path().string()},
+        }));
     return;
   }
 

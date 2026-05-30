@@ -7,6 +7,7 @@
 #include <filesystem>
 #include <iostream>
 #include <memory>
+#include <optional>
 #include <stdexcept>
 #include <string>
 #include <string_view>
@@ -64,6 +65,26 @@ std::filesystem::path rust_stdio_child_executable() {
   return binary;
 }
 
+std::optional<std::string> get_process_env(std::string_view key) {
+  const std::string key_string(key);
+#ifdef _WIN32
+  char* value = nullptr;
+  std::size_t size = 0;
+  if (_dupenv_s(&value, &size, key_string.c_str()) != 0 || value == nullptr) {
+    return std::nullopt;
+  }
+  std::string result(value);
+  std::free(value);
+  return result;
+#else
+  const char* value = std::getenv(key_string.c_str());
+  if (value == nullptr) {
+    return std::nullopt;
+  }
+  return std::string(value);
+#endif
+}
+
 std::unordered_map<std::string, std::string> rust_cargo_env() {
   const auto target_dir = std::filesystem::temp_directory_path() /
                           "mcp-rust-process-stdio-child-target";
@@ -71,13 +92,13 @@ std::unordered_map<std::string, std::string> rust_cargo_env() {
       {"CARGO_TARGET_DIR", target_dir.string()},
   };
 
-  if (const char* proxy = std::getenv("CXXMCP_CARGO_PROXY");
-      proxy != nullptr && std::string_view(proxy).size() > 0) {
-    env["CARGO_HTTP_PROXY"] = proxy;
-    env["CARGO_HTTPS_PROXY"] = proxy;
-    env["HTTP_PROXY"] = proxy;
-    env["HTTPS_PROXY"] = proxy;
-    env["ALL_PROXY"] = proxy;
+  if (const auto proxy = get_process_env("CXXMCP_CARGO_PROXY");
+      proxy.has_value() && !proxy->empty()) {
+    env["CARGO_HTTP_PROXY"] = *proxy;
+    env["CARGO_HTTPS_PROXY"] = *proxy;
+    env["HTTP_PROXY"] = *proxy;
+    env["HTTPS_PROXY"] = *proxy;
+    env["ALL_PROXY"] = *proxy;
   }
   return env;
 }
@@ -101,8 +122,8 @@ void prepare_rust_stdio_child_build_env() {
 void build_rust_stdio_child() {
   prepare_rust_stdio_child_build_env();
   std::string command = "cargo build ";
-  if (const char* offline = std::getenv("CXXMCP_RUST_FIXTURE_OFFLINE");
-      offline != nullptr && std::string_view(offline) == "1") {
+  if (const auto offline = get_process_env("CXXMCP_RUST_FIXTURE_OFFLINE");
+      offline.has_value() && *offline == "1") {
     command += "--offline ";
   }
   command += "--manifest-path \"" + rust_stdio_child_manifest().string() + "\"";

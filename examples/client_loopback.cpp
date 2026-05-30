@@ -1,9 +1,8 @@
 // Copyright (c) 2025 [caomengxuan666]
 //
 // Compatibility example: exercises concrete client/server loopback plumbing.
-// The server is built via ServerPeer::builder(); the deprecated server()
-// accessor exposes the underlying Server for the client::Transport loopback
-// adapter.
+// The server is built via ServerPeer::builder(); the client::Transport
+// loopback adapter dispatches through ServerPeer::handle_request().
 
 #include <cstdint>
 #include <iostream>
@@ -29,11 +28,12 @@ void require(bool condition, std::string_view message) {
 
 class LoopbackTransport final : public mcp::client::Transport {
  public:
-  explicit LoopbackTransport(mcp::server::Server& server) : server_(server) {}
+  explicit LoopbackTransport(mcp::ServerPeer& server_peer)
+      : server_peer_(server_peer) {}
 
   mcp::core::Result<mcp::protocol::JsonRpcResponse> send(
       const mcp::protocol::JsonRpcRequest& request) override {
-    return server_.handle_request(request, context_);
+    return server_peer_.handle_request(request, context_);
   }
 
   mcp::core::Result<mcp::core::Unit> send_notification(
@@ -47,7 +47,7 @@ class LoopbackTransport final : public mcp::client::Transport {
   }
 
  private:
-  mcp::server::Server& server_;
+  mcp::ServerPeer& server_peer_;
   mcp::server::SessionContext context_{
       .session_id = "example",
       .remote_address = "127.0.0.1",
@@ -155,10 +155,7 @@ int main() {
             .build();
     require(server_peer.has_value(), "failed to build example server");
 
-    // The loopback transport needs the underlying Server object.
-    auto& server = server_peer->server();
-
-    auto transport = std::make_unique<LoopbackTransport>(server);
+    auto transport = std::make_unique<LoopbackTransport>(*server_peer);
     auto* transport_ptr = transport.get();
     mcp::ClientPeer peer(mcp::client::Client(std::move(transport)));
 
