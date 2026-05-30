@@ -63,8 +63,7 @@ For a stable API, cxxmcp must not:
 - remove names, change required include paths, or rename exported targets before
   the next major release;
 - require a C++ standard newer than the configured public SDK standard;
-- expose private implementation dependencies such as `jsonrpcpp` as public SDK
-  requirements;
+- expose private implementation dependencies as public SDK requirements;
 - replace a working source API only to make implementation structure cleaner.
 
 Stable public renames must be additive first: add the new name, keep the old

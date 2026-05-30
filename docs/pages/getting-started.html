@@ -176,7 +176,7 @@ cmake -S . -B build -DCXXMCP_ENABLE_AUTH=ON
 # With OpenSSL crypto backend
 cmake -S . -B build -DCXXMCP_ENABLE_AUTH=ON -DCXXMCP_AUTH_CRYPTO=OpenSSL</code></pre>
         <p>
-          vcpkg shortcut: <code class="language-bash">vcpkg install "cxxmcp[auth]"</code>.
+          vcpkg shortcut: <code class="language-bash">vcpkg install "cxxmcp-sdk[auth]"</code>.
         </p>
         <p>
           Add a bearer-token auth provider to the server builder:
@@ -299,7 +299,7 @@ CXXMCP_REFLECT(SearchResult, session, hits)
               into a curated registry.
             </p>
             <pre><code class="language-bash"># Clone the repo first, then:
-vcpkg install cxxmcp \
+vcpkg install cxxmcp-sdk \
   --overlay-ports=packaging/vcpkg/ports</code></pre>
           </article>
           <article class="card">

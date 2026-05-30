@@ -102,9 +102,6 @@ endif()
 option(CXXMCP_USE_SYSTEM_DEPS
     "Use package-manager provided SDK dependencies instead of bundled headers"
     OFF)
-option(CXXMCP_USE_SYSTEM_JSONRPCPP
-    "Use a package-manager provided jsonrpcpp header instead of the bundled private header"
-    OFF)
 
 set(MCP_ENABLE_PROTOCOL ${CXXMCP_BUILD_PROTOCOL})
 set(MCP_ENABLE_CLIENT ${CXXMCP_BUILD_CLIENT})
@@ -161,23 +158,6 @@ else()
     set(CXXMCP_HTTPLIB_TARGET "")
 endif()
 
-if(CXXMCP_USE_SYSTEM_DEPS)
-    if(CXXMCP_USE_SYSTEM_JSONRPCPP)
-        find_path(CXXMCP_JSONRPCPP_INCLUDE_DIR
-            NAMES jsonrpcpp.hpp
-            PATH_SUFFIXES jsonrpcpp
-            REQUIRED
-        )
-        set(CXXMCP_JSONRPCPP_INCLUDE_DIRS "${CXXMCP_JSONRPCPP_INCLUDE_DIR}")
-    else()
-        set(CXXMCP_JSONRPCPP_INCLUDE_DIRS
-            "${CMAKE_CURRENT_SOURCE_DIR}/third_party/jsonrpcpp")
-    endif()
-else()
-    set(CXXMCP_JSONRPCPP_INCLUDE_DIRS
-        "${CMAKE_CURRENT_SOURCE_DIR}/third_party/jsonrpcpp")
-endif()
-
 # Internal implementation dependency for HTTP transports and tests. It is not
 # installed or exported as part of the public SDK package contract.
 if(MCP_ENABLE_HTTP AND NOT CXXMCP_USE_SYSTEM_DEPS)
@@ -205,9 +185,6 @@ if(MCP_ENABLE_PROTOCOL)
             $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/third_party>
         )
     endif()
-    target_include_directories(mcp_protocol PRIVATE
-        ${CXXMCP_JSONRPCPP_INCLUDE_DIRS}
-    )
     target_link_libraries(mcp_protocol PUBLIC mcp_core)
     if(CXXMCP_JSON_TARGET)
         target_link_libraries(mcp_protocol PUBLIC "${CXXMCP_JSON_TARGET}")

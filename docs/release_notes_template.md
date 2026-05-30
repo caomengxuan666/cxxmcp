@@ -119,7 +119,6 @@ repository and remains outside the core SDK contract.
 - Release artifact review record:
 - Dependency review:
   - `tl::expected` fallback/package-manager route:
-  - private `jsonrpcpp` route:
   - hidden `cpp-httplib` route:
 - Package metadata or recipe references:
 

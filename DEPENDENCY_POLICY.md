@@ -9,12 +9,10 @@ external gateway tooling.
 - Source/archive builds use bundled header-only SDK dependencies so direct
   CMake, FetchContent, CPM.cmake, and source installs work without a package
   manager. The install tree includes `tl/expected.hpp` and
-  `nlohmann/json.hpp`; `jsonrpcpp` remains a private build-time implementation
-  detail and is not installed as a public SDK header.
+  `nlohmann/json.hpp`.
 - Registry builds should use `CXXMCP_USE_SYSTEM_DEPS=ON` and package-manager
   dependencies for `tl-expected`, `nlohmann-json`, and `cpp-httplib`. In this
-  mode the install tree must not vendor `tl`, `nlohmann`, or `jsonrpcpp`
-  headers.
+  mode the install tree must not vendor `tl` or `nlohmann` headers.
 
 `cpp-httplib` is used by the HTTP transport implementation. Downstream code
 should include the cxxmcp HTTP transport headers, not `httplib.h` directly.

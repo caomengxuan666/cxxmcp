@@ -65,8 +65,6 @@ gateway, or hosted runtime.
   default install path.
 - Default source/archive builds use bundled header-only SDK dependencies.
   Registry builds should use `CXXMCP_USE_SYSTEM_DEPS=ON`.
-- `jsonrpcpp` is private to the protocol implementation. Do not install or
-  expose it as a public cxxmcp dependency.
 - `cpp-httplib` is a transport implementation detail. Public consumers should
   include cxxmcp HTTP transport headers, not `httplib.h`.
 
@@ -159,6 +157,22 @@ python scripts/check_p2_todo_status.py --source .
   release-supported compiler unless the compatibility policy changes.
 - The release-supported matrix is defined by `.github/workflows/release-gates.yml`
   and `docs/release_gates.md`, not by a single local build.
+
+## Release Process
+
+- Use `python -B scripts/prepare_release.py <version>` to prepare release
+  metadata before tagging. Do not hand-edit version/package references when the
+  script can do it.
+- `scripts/prepare_release.py` intentionally stops before commit, tag, or push.
+  After reviewing and committing its changes, create/push the `v<version>` tag;
+  the `release-sdk` workflow publishes the SDK source archive and release
+  artifacts from that exact tag.
+- If a just-published release must be replaced, delete the GitHub release and
+  remote tag first, then recreate the tag only after the replacement commit has
+  green release evidence.
+- Doxygen HTML is generated output. Use `pwsh -NoProfile -File
+  scripts/build-doxygen.ps1 -Clean` or the CI Doxygen job to regenerate it; do
+  not manually edit `docs/doxygen/`.
 
 ## Editing Discipline
 
