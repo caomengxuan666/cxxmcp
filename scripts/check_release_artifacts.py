@@ -440,7 +440,6 @@ def check_sdk_source_tarball(path: Path) -> None:
         "scripts/selftest_public_api_surface.py",
         "tests/package_smoke.cmake",
         "templates/external_consumer/CMakeLists.txt",
-        "third_party/jsonrpcpp/jsonrpcpp.hpp",
     ]
     for relative in required:
         if relative not in names:

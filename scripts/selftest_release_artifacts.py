@@ -200,7 +200,6 @@ def create_sdk_source_tarball(release: Path, root: Path, tag: str) -> None:
         "scripts/selftest_public_api_surface.py",
         "tests/package_smoke.cmake",
         "templates/external_consumer/CMakeLists.txt",
-        "third_party/jsonrpcpp/jsonrpcpp.hpp",
     ]:
         write(prefix / relative)
     create_tar(release / f"cxxmcp-sdk-source-{tag}.tar.gz", root, [prefix.name])

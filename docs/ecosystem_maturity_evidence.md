@@ -18,14 +18,6 @@ closed by a maintainer on 2026-05-27 because cxxmcp did not yet meet vcpkg's
 minimum project maturity requirement. Resubmission must therefore lead with
 maturity evidence, not only a corrected portfile.
 
-`jsonrpcpp` is being tracked separately as `microsoft/vcpkg#52045`. A local
-`jsonrpcpp:x64-windows-static` vcpkg install from that branch has passed. If
-that port is accepted, the future cxxmcp curated port should depend on
-`jsonrpcpp` and configure cxxmcp with `CXXMCP_USE_SYSTEM_JSONRPCPP=ON`, while
-keeping the dependency private to the protocol implementation. Until that port
-is accepted, the repository overlay port continues to use the bundled private
-header and must not depend on `jsonrpcpp`.
-
 ## Evidence Ledger
 
 | Area | Required Evidence | Current Evidence | Status |
@@ -37,8 +29,8 @@ header and must not depend on `jsonrpcpp`.
 | Downstream examples | External consumer or example repository using normal package consumption. | `templates/external_consumer` is package-smoke checked; `../cxxmcp-examples` is the external downstream example suite and minimum green scenario list. The examples CI now has adjacent-source and installed-package modes. A local installed-package build against a Release SDK install passed all 21 CTest examples on 2026-05-27. | In progress |
 | Changelog discipline | Every release has a matching `CHANGELOG.md` section and compatibility notes. | `check_release_evidence.py` verifies the current project version appears in `CHANGELOG.md`; `release-sdk` emits compatibility notes. | In progress |
 | Public user adoption | Reproducible downstream users, issues, or integration reports that can be cited in a registry PR. | `docs/adoption_ledger.md` now records the adoption evidence rules and explicitly distinguishes project-owned examples from independent public downstream use. No independent public downstream adoption is recorded yet. | Missing |
-| Curated dependency shape | Registry build uses vcpkg dependencies where available and does not expose private implementation dependencies as cxxmcp public targets. | `CXXMCP_USE_SYSTEM_JSONRPCPP` is prepared for use after `microsoft/vcpkg#52045` or an equivalent jsonrpcpp port is accepted; the overlay port keeps bundled private jsonrpcpp until then; local `jsonrpcpp:x64-windows-static` smoke passed. | Prepared |
-| Curated port shape | Future port uses `vcpkg_from_github()`, a release tag, SHA512 source hash, SDK-only options, system jsonrpcpp after the jsonrpcpp port is accepted, and no forced `BUILD_SHARED_LIBS`. | `packaging/vcpkg/curated-portfile.future.cmake` records the intended shape. | Prepared |
+| Curated dependency shape | Registry build uses vcpkg dependencies where available and does not expose private implementation dependencies as cxxmcp public targets. | The overlay port uses `tl-expected`, `nlohmann-json`, and optional `cpp-httplib` from vcpkg. | Prepared |
+| Curated port shape | Future port uses `vcpkg_from_github()`, a release tag, SHA512 source hash, SDK-only options, and no forced `BUILD_SHARED_LIBS`. | `packaging/vcpkg/curated-portfile.future.cmake` records the intended shape. | Prepared |
 
 ## Resubmission Rule
 
@@ -52,9 +44,6 @@ true:
   release claims;
 - the curated port uses a release source archive and SHA512 hash, not the local
   overlay `SOURCE_PATH`;
-- the curated port depends on the accepted `jsonrpcpp` port and sets
-  `CXXMCP_USE_SYSTEM_JSONRPCPP=ON`, or records why that port is still
-  unavailable;
 - at least one downstream example or consumer can be cited;
 - `docs/adoption_ledger.md` contains at least one independent public downstream
   adoption entry, not only project-owned templates or examples;

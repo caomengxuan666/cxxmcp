@@ -101,7 +101,7 @@ cmake --build build --config Release
 cmake --install build --config Release --prefix out/install/cxxmcp
 ```
 
-Package managers: `conanfile.py` (Conan 2), `packaging/vcpkg/ports/cxxmcp` (vcpkg overlay), `packaging/xmake/` (xmake). See [package consumption](docs/package_consumption.md).
+Package managers: `conanfile.py` (Conan 2), `packaging/vcpkg/ports/cxxmcp-sdk` (vcpkg overlay), `packaging/xmake/` (xmake). See [package consumption](docs/package_consumption.md).
 
 ## CMake Options
 

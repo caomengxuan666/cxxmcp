@@ -7,7 +7,7 @@
       "repository": "https://github.com/caomengxuan666/cxxmcp-vcpkg-registry",
       "baseline": "0000000000000000000000000000000000000000",
       "packages": [
-        "cxxmcp"
+        "cxxmcp-sdk"
       ]
     }
   ]

@@ -185,10 +185,6 @@ if(EXISTS "${installed_include_dir}/cxxmcp/plugin" OR
     message(FATAL_ERROR
         "SDK package must not install removed plugin/adapters extension headers")
 endif()
-if(EXISTS "${installed_include_dir}/cxxmcp/third_party/jsonrpcpp/jsonrpcpp.hpp")
-    message(FATAL_ERROR
-        "jsonrpcpp must stay private and must not be installed as an SDK header")
-endif()
 if(EXISTS "${installed_include_dir}/httplib.h" OR
    EXISTS "${installed_include_dir}/httplib/httplib.h")
     message(FATAL_ERROR

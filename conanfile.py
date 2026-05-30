@@ -42,7 +42,6 @@ class CxxmcpConan(ConanFile):
         "examples/*",
         "tests/*",
         "third_party/tl/*",
-        "third_party/jsonrpcpp/*",
         "third_party/nlohmann/*",
         "third_party/httplib/httplib.h",
         "README.md",

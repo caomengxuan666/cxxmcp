@@ -11,17 +11,10 @@ The SDK has two supported dependency modes:
 - Default source/archive builds use bundled header-only SDK dependencies so
   FetchContent, CPM.cmake, and direct source installs work without a package
   manager. The install tree includes `tl/expected.hpp` and
-  `nlohmann/json.hpp`. `jsonrpcpp` is used only while building
-  `cxxmcp::protocol` and is not installed as an SDK header.
+  `nlohmann/json.hpp`.
 - Registry builds should set `CXXMCP_USE_SYSTEM_DEPS=ON` and use package
   manager dependencies for `tl-expected`, `nlohmann-json`, and `cpp-httplib`.
-  In this mode the install tree must not vendor `tl`, `nlohmann`, or
-  `jsonrpcpp` headers.
-
-`jsonrpcpp` remains a private implementation detail. Current overlay builds use
-the bundled single-header copy because the vcpkg `jsonrpcpp` port is still under
-review. Once that port is accepted, the curated cxxmcp port should depend on it
-and configure cxxmcp with `CXXMCP_USE_SYSTEM_JSONRPCPP=ON`.
+  In this mode the install tree must not vendor `tl` or `nlohmann` headers.
 
 `cpp-httplib` is a transport implementation dependency. It is intentionally not
 installed as a public SDK header. Downstream code should use
@@ -34,14 +27,14 @@ tests, and docs disabled by default.
 
 ## vcpkg Overlay Port
 
-`cxxmcp` is not in the vcpkg curated registry. The repository-hosted port at
-`packaging/vcpkg/ports/cxxmcp` is the supported vcpkg path for now, and should
+`cxxmcp-sdk` is not in the vcpkg curated registry. The repository-hosted port at
+`packaging/vcpkg/ports/cxxmcp-sdk` is the supported vcpkg path for now, and should
 be consumed as an overlay port from a checkout of this repository.
 
 For a one-off install:
 
 ```powershell
-vcpkg install cxxmcp --overlay-ports=C:\path\to\cxxmcp\packaging\vcpkg\ports
+vcpkg install cxxmcp-sdk --overlay-ports=C:\path\to\cxxmcp\packaging\vcpkg\ports
 ```
 
 For manifest mode, keep your application manifest narrow:
@@ -49,7 +42,7 @@ For manifest mode, keep your application manifest narrow:
 ```json
 {
   "dependencies": [
-    "cxxmcp"
+    "cxxmcp-sdk"
   ]
 }
 ```
@@ -74,27 +67,19 @@ Copy it next to your downstream `vcpkg.json` and replace the
 The overlay port builds only the C++17 SDK package targets. It sets
 `CXXMCP_USE_SYSTEM_DEPS=ON`, disables examples, tests, and docs, and depends on
 vcpkg packages for `tl-expected`, `nlohmann-json`, and
-`cpp-httplib`. Until `jsonrpcpp` is accepted into vcpkg, the overlay port keeps
-using the bundled private jsonrpcpp implementation header for the protocol
-library build only. It intentionally does not depend on `jsonrpcpp` or pass
-`CXXMCP_USE_SYSTEM_JSONRPCPP=ON`. It does not make spdlog, CLI11, or external
-gateway tooling part of SDK package consumption.
+`cpp-httplib`. It does not make spdlog, CLI11, or external gateway tooling part
+of SDK package consumption.
 
 The optional auth scaffold is exposed as an opt-in feature and is not part of
 the default vcpkg package path:
 
 ```powershell
-vcpkg install "cxxmcp[auth]" --overlay-ports=C:\path\to\cxxmcp\packaging\vcpkg\ports
+vcpkg install "cxxmcp-sdk[auth]" --overlay-ports=C:\path\to\cxxmcp\packaging\vcpkg\ports
 ```
 
 The `auth` feature maps to `CXXMCP_ENABLE_AUTH=ON`. It currently enables
 transport-neutral OAuth/DPoP contracts only; it must not pull OpenSSL into the
 default package path.
-
-`jsonrpcpp` remains a private implementation detail. Consumers should link
-`cxxmcp::protocol`, `cxxmcp::client`, `cxxmcp::server`, or `cxxmcp::sdk`;
-they should not include or link a public `jsonrpcpp` package surface through
-cxxmcp.
 
 ## Future vcpkg Registry Paths
 
@@ -124,12 +109,6 @@ overlay port in these ways:
   explicitly built as static libraries and shared-library ABI support is not
   claimed; do not force `-DBUILD_SHARED_LIBS=OFF` in the portfile;
 - keep SDK-only build options enabled and examples, tests, and docs disabled;
-- after `microsoft/vcpkg#52045` or an equivalent jsonrpcpp port is accepted,
-  add `jsonrpcpp` as a normal vcpkg dependency and pass
-  `CXXMCP_USE_SYSTEM_JSONRPCPP=ON`; keep it private and do not export a
-  cxxmcp-owned third-party target. If the jsonrpcpp port is still unavailable
-  when the curated cxxmcp PR is otherwise ready, leave this switch off and
-  document the exception in the PR;
 - keep default `cpp-httplib` consumption as loopback HTTP without TLS unless a
   deliberate `ssl` or `https` feature is added for `cpp-httplib[openssl]`;
 - keep OAuth/DPoP auth as a later opt-in feature after the OpenSSL-backed

@@ -345,7 +345,6 @@ def check_source_tree(source: Path) -> None:
         "Time-Sensitive Dependency Claims",
         "Dependency status statements are release-candidate evidence",
         "tl::expected",
-        "jsonrpcpp",
         "cpp-httplib",
     ]:
         require_contains(dependency_policy, needle)
@@ -405,7 +404,6 @@ def check_source_tree(source: Path) -> None:
         "unresolved source-marker",
         "Dependency review followed `docs/dependency_policy.md`",
         "vendored `tl::expected`",
-        "`jsonrpcpp`",
         "`cpp-httplib`",
         "release-gates run id",
         "release-artifact-review.md",
@@ -464,7 +462,6 @@ def check_source_tree(source: Path) -> None:
     require_contains(release_notes, "Checksums")
     require_contains(release_notes, "Dependency review")
     require_contains(release_notes, "`tl::expected` fallback/package-manager route")
-    require_contains(release_notes, "private `jsonrpcpp` route")
     require_contains(release_notes, "hidden `cpp-httplib` route")
     require_contains(release_notes, "Windows ClangCL Ninja static runtime")
     require_contains(release_notes, "cxxmcp-package-vcpkg-default")
