@@ -153,6 +153,7 @@ See [examples.md](docs/examples.md) for the full list. The separate [cxxmcp-exam
 - [GitHub Pages](https://caomengxuan666.github.io/cxxmcp/) — API reference
 - [Conformance evidence](docs/conformance_evidence.md) — test results and known exceptions
 - [Compatibility policy](docs/compatibility_policy.md) — versioning, compiler matrix, ABI
+- [Dependency policy](DEPENDENCY_POLICY.md) — update policy and package dependency boundaries
 - [HTTP transport backend evidence](docs/compatibility_policy.md#http-transport-backend-evidence)
 - [Release gates](docs/release_gates.md) — release-blocking checks
 - [Runtime gateway](docs/runtime_gateway.md) — external gateway boundary
