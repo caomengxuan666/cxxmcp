@@ -110,7 +110,7 @@ packaging/vcpkg/vcpkg-configuration.git-registry-future-example.json
 源码包。SDK archive 包含默认 bundled 构建需要的 header-only SDK 依赖；GitHub
 自动源码包不包含 submodule 内容。
 
-下面具体的 `v1.1.2` URL 是本文档目前记录的最新已发布 SDK source archive。
+下面具体的 `v1.1.3` URL 是本文档目前记录的最新已发布 SDK source archive。
 它适用于想固定到已发布默认 SDK surface 的 consumer。不要把它当成当前 worktree
 可选 auth header surface 的证据；当前源码或 release candidate 验证必须使用那次
 release-gates run 生成的精确 source archive 和 checksum。
@@ -120,8 +120,8 @@ include(FetchContent)
 
 FetchContent_Declare(
     cxxmcp
-    URL https://github.com/caomengxuan666/cxxmcp/releases/download/v1.1.2/cxxmcp-sdk-source-v1.1.2.tar.gz
-    URL_HASH SHA256=3c4ad678a8612183a4f2539973328b6a85dab360991a86e6328ca032cc5e2ba8
+    URL https://github.com/caomengxuan666/cxxmcp/releases/download/v1.1.3/cxxmcp-sdk-source-v1.1.3.tar.gz
+    URL_HASH SHA256=ad4edc8333c481e3ccbe5d4fb9cfddaca664ceb68bce169e25c0f07397e6dfb4
 )
 
 set(CXXMCP_BUILD_SDK ON CACHE BOOL "" FORCE)
@@ -157,8 +157,8 @@ set(CXXMCP_BUILD_DOCS OFF CACHE BOOL "" FORCE)
 
 CPMAddPackage(
     NAME cxxmcp
-    URL https://github.com/caomengxuan666/cxxmcp/releases/download/v1.1.2/cxxmcp-sdk-source-v1.1.2.tar.gz
-    URL_HASH SHA256=3c4ad678a8612183a4f2539973328b6a85dab360991a86e6328ca032cc5e2ba8
+    URL https://github.com/caomengxuan666/cxxmcp/releases/download/v1.1.3/cxxmcp-sdk-source-v1.1.3.tar.gz
+    URL_HASH SHA256=ad4edc8333c481e3ccbe5d4fb9cfddaca664ceb68bce169e25c0f07397e6dfb4
 )
 
 add_executable(my_client main.cpp)

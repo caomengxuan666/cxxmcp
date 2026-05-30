@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.1.3
+
+- Prepared release metadata and package references.
+
 ## 1.1.2
 
 - Fixed `mcp::core::Result` ABI stability by keeping `tl::expected` as the
