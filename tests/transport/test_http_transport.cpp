@@ -4898,9 +4898,9 @@ void test_native_streamable_http_server_transport_close_unblocks_receive() {
   require(received_end.load(), "native server receive should report end");
 }
 
-void test_native_streamable_http_server_transport_rejects_duplicate_client_request_id() {
-  constexpr int kPort = 40219;
-  const std::string kPath = "/native-server-duplicate-request";
+void test_native_streamable_http_server_transport_allows_duplicate_client_request_ids_across_sessions() {
+  constexpr int kPort = 40238;
+  const std::string kPath = "/native-server-session-request-ids";
   mcp::transport::StreamableHttpServerTransport transport(
       mcp::transport::StreamableHttpServerTransportOptions{
           .listen_host = "127.0.0.1",
@@ -4908,84 +4908,264 @@ void test_native_streamable_http_server_transport_rejects_duplicate_client_reque
           .path = kPath,
       });
 
-  const auto body = serialize_test_request(mcp::protocol::JsonRpcRequest{
+  auto initialize_session = [&](std::string client_name,
+                                std::int64_t id) -> std::string {
+    const auto body = serialize_test_request(mcp::protocol::JsonRpcRequest{
+        .method = mcp::protocol::InitializeMethod,
+        .params =
+            Json{
+                {"protocolVersion", mcp::protocol::McpProtocolVersion},
+                {"capabilities", Json::object()},
+                {"clientInfo",
+                 Json{{"name", std::move(client_name)}, {"version", "1"}}},
+            },
+        .id = id,
+    });
+    const auto headers = httplib::Headers{
+        {"Accept", "application/json, text/event-stream"},
+        {"Content-Type", "application/json"},
+        {"Mcp-Method", mcp::protocol::InitializeMethod},
+    };
+
+    std::optional<httplib::Result> posted;
+    std::thread post_thread([&]() {
+      httplib::Client client("127.0.0.1", kPort);
+      client.set_read_timeout(2, 0);
+      posted = client.Post(kPath, headers, body, "application/json");
+    });
+
+    auto received = transport.receive();
+    require(received.has_value(), "session-id init receive should succeed");
+    require(received->has_value(), "session-id init should receive request");
+    const auto* request =
+        std::get_if<mcp::protocol::JsonRpcRequest>(&received->value());
+    require(request != nullptr, "session-id init should receive request");
+    require(request->id == mcp::protocol::RequestId{id},
+            "session-id init request id mismatch");
+    const auto sent = transport.send(mcp::protocol::make_response(
+        request->id,
+        Json{
+            {"protocolVersion", mcp::protocol::McpProtocolVersion},
+            {"capabilities", Json::object()},
+            {"serverInfo", Json{{"name", "native-server"}, {"version", "1"}}},
+        }));
+    require(sent.has_value(), "session-id init response should send");
+
+    if (post_thread.joinable()) {
+      post_thread.join();
+    }
+    require(posted.has_value(), "session-id init post should complete");
+    require((*posted)->status == 200, "session-id init status mismatch");
+    require((*posted)->has_header("Mcp-Session-Id"),
+            "session-id init should return session id");
+    return (*posted)->get_header_value("Mcp-Session-Id");
+  };
+
+  auto consume_initialized = [&](const std::string& session_id) {
+    require_initialized_notification(kPort, kPath, session_id);
+    auto received = transport.receive();
+    require(received.has_value(),
+            "session-id initialized receive should succeed");
+    require(received->has_value(),
+            "session-id initialized should receive notification");
+    const auto* notification =
+        std::get_if<mcp::protocol::JsonRpcNotification>(&received->value());
+    require(notification != nullptr,
+            "session-id initialized should be a notification");
+    require(notification->method == mcp::protocol::InitializedMethod,
+            "session-id initialized method mismatch");
+  };
+
+  const auto first_session = initialize_session("first", 91);
+  const auto second_session = initialize_session("second", 92);
+  consume_initialized(first_session);
+  consume_initialized(second_session);
+
+  const auto request_body =
+      serialize_test_request(mcp::protocol::JsonRpcRequest{
+          .method = mcp::protocol::PingMethod,
+          .params = Json::object(),
+          .id = std::int64_t{93},
+      });
+  auto request_headers = [](const std::string& session_id) {
+    return httplib::Headers{
+        {"Accept", "application/json, text/event-stream"},
+        {"Content-Type", "application/json"},
+        {"MCP-Protocol-Version", mcp::protocol::McpProtocolVersion},
+        {"Mcp-Session-Id", session_id},
+        {"Mcp-Method", mcp::protocol::PingMethod},
+    };
+  };
+
+  std::optional<httplib::Result> first_post;
+  std::optional<httplib::Result> second_post;
+  std::thread first_thread([&]() {
+    httplib::Client client("127.0.0.1", kPort);
+    client.set_read_timeout(2, 0);
+    first_post = client.Post(kPath, request_headers(first_session),
+                             request_body, "application/json");
+  });
+  std::thread second_thread([&]() {
+    httplib::Client client("127.0.0.1", kPort);
+    client.set_read_timeout(2, 0);
+    second_post = client.Post(kPath, request_headers(second_session),
+                              request_body, "application/json");
+  });
+
+  for (int i = 0; i < 2; ++i) {
+    auto received = transport.receive();
+    require(received.has_value(),
+            "session-id duplicate request receive should succeed");
+    require(received->has_value(),
+            "session-id duplicate request should be received");
+    const auto* request =
+        std::get_if<mcp::protocol::JsonRpcRequest>(&received->value());
+    require(request != nullptr, "session-id duplicate should be request");
+    require(request->id == mcp::protocol::RequestId{std::int64_t{93}},
+            "session-id duplicate request id mismatch");
+    const auto sent = transport.send(
+        mcp::protocol::make_response(request->id, Json::object()));
+    require(sent.has_value(), "session-id duplicate response should send");
+  }
+
+  if (first_thread.joinable()) {
+    first_thread.join();
+  }
+  if (second_thread.joinable()) {
+    second_thread.join();
+  }
+  require(first_post.has_value(), "first session duplicate post should finish");
+  require(second_post.has_value(),
+          "second session duplicate post should finish");
+  require((*first_post)->status == 200,
+          "first session duplicate post status mismatch");
+  require((*second_post)->status == 200,
+          "second session duplicate post status mismatch");
+
+  const auto closed = transport.close();
+  require(closed.has_value(), "session-id duplicate close should succeed");
+}
+
+void test_native_streamable_http_server_transport_distinguishes_numeric_and_string_request_ids() {
+  constexpr int kPort = 40239;
+  const std::string kPath = "/native-server-request-id-types";
+  mcp::transport::StreamableHttpServerTransport transport(
+      mcp::transport::StreamableHttpServerTransportOptions{
+          .listen_host = "127.0.0.1",
+          .listen_port = kPort,
+          .path = kPath,
+      });
+
+  const auto init_body = serialize_test_request(mcp::protocol::JsonRpcRequest{
       .method = mcp::protocol::InitializeMethod,
       .params =
           Json{
               {"protocolVersion", mcp::protocol::McpProtocolVersion},
               {"capabilities", Json::object()},
-              {"clientInfo", Json{{"name", "native"}, {"version", "1"}}},
+              {"clientInfo", Json{{"name", "typed-id"}, {"version", "1"}}},
           },
-      .id = std::int64_t{81},
+      .id = std::int64_t{94},
   });
-  const auto headers = httplib::Headers{
+  const auto init_headers = httplib::Headers{
       {"Accept", "application/json, text/event-stream"},
       {"Content-Type", "application/json"},
       {"Mcp-Method", mcp::protocol::InitializeMethod},
   };
-
-  std::optional<httplib::Result> first_post;
-  std::thread first_thread([&]() {
-    for (int attempt = 0; attempt < 100; ++attempt) {
-      httplib::Client client("127.0.0.1", kPort);
-      client.set_read_timeout(2, 0);
-      auto response = client.Post(kPath, headers, body, "application/json");
-      if (response) {
-        first_post = std::move(response);
-        return;
-      }
-      std::this_thread::sleep_for(std::chrono::milliseconds(10));
-    }
+  std::optional<httplib::Result> init_post;
+  std::thread init_thread([&]() {
+    httplib::Client client("127.0.0.1", kPort);
+    client.set_read_timeout(2, 0);
+    init_post = client.Post(kPath, init_headers, init_body, "application/json");
   });
 
-  auto received = transport.receive();
-  require(received.has_value(),
-          "native duplicate server receive should succeed");
-  require(received->has_value(),
-          "native duplicate server should receive first request");
-  const auto* first_request =
-      std::get_if<mcp::protocol::JsonRpcRequest>(&received->value());
-  require(first_request != nullptr,
-          "native duplicate server should receive request message");
-  require(first_request->id == mcp::protocol::RequestId{std::int64_t{81}},
-          "native duplicate server first request id mismatch");
-
-  httplib::Client duplicate_client("127.0.0.1", kPort);
-  duplicate_client.set_read_timeout(2, 0);
-  const auto duplicate_post =
-      duplicate_client.Post(kPath, headers, body, "application/json");
-  require(static_cast<bool>(duplicate_post),
-          "native duplicate server second post should return");
-  require(duplicate_post->status == 200,
-          "native duplicate server second post status mismatch");
-  const auto duplicate_response =
-      mcp::protocol::parse_response(duplicate_post->body);
-  require(duplicate_response.has_value(),
-          "native duplicate server error response should parse");
-  require(duplicate_response->error.has_value(),
-          "native duplicate server response should contain error");
-  require(duplicate_response->error->message == "duplicate client request id",
-          "native duplicate server error message mismatch");
-
-  const auto sent = transport.send(mcp::protocol::make_response(
-      first_request->id,
+  auto init_received = transport.receive();
+  require(init_received.has_value(), "typed-id init receive should succeed");
+  require(init_received->has_value(), "typed-id init should receive request");
+  const auto* init_request =
+      std::get_if<mcp::protocol::JsonRpcRequest>(&init_received->value());
+  require(init_request != nullptr, "typed-id init should receive request");
+  const auto init_sent = transport.send(mcp::protocol::make_response(
+      init_request->id,
       Json{
           {"protocolVersion", mcp::protocol::McpProtocolVersion},
           {"capabilities", Json::object()},
           {"serverInfo", Json{{"name", "native-server"}, {"version", "1"}}},
       }));
-  require(sent.has_value(),
-          "native duplicate server first response should send");
-  if (first_thread.joinable()) {
-    first_thread.join();
+  require(init_sent.has_value(), "typed-id init response should send");
+  if (init_thread.joinable()) {
+    init_thread.join();
   }
-  require(first_post.has_value(),
-          "native duplicate server first post should complete");
-  require((*first_post)->status == 200,
-          "native duplicate server first post status mismatch");
+  require(init_post.has_value(), "typed-id init post should complete");
+  require((*init_post)->status == 200, "typed-id init status mismatch");
+  require((*init_post)->has_header("Mcp-Session-Id"),
+          "typed-id init should return session id");
+  const auto session_id = (*init_post)->get_header_value("Mcp-Session-Id");
+
+  require_initialized_notification(kPort, kPath, session_id);
+  auto initialized = transport.receive();
+  require(initialized.has_value(),
+          "typed-id initialized receive should succeed");
+  require(initialized->has_value(), "typed-id initialized should be received");
+
+  auto request_headers = [&](const std::string& method) {
+    return httplib::Headers{
+        {"Accept", "application/json, text/event-stream"},
+        {"Content-Type", "application/json"},
+        {"MCP-Protocol-Version", mcp::protocol::McpProtocolVersion},
+        {"Mcp-Session-Id", session_id},
+        {"Mcp-Method", method},
+    };
+  };
+  const auto numeric_body = serialize_test_request(
+      mcp::protocol::JsonRpcRequest{.method = mcp::protocol::PingMethod,
+                                    .params = Json::object(),
+                                    .id = std::int64_t{95}});
+  const auto string_body = serialize_test_request(
+      mcp::protocol::JsonRpcRequest{.method = mcp::protocol::PingMethod,
+                                    .params = Json::object(),
+                                    .id = std::string{"95"}});
+
+  std::optional<httplib::Result> numeric_post;
+  std::optional<httplib::Result> string_post;
+  std::thread numeric_thread([&]() {
+    httplib::Client client("127.0.0.1", kPort);
+    client.set_read_timeout(2, 0);
+    numeric_post =
+        client.Post(kPath, request_headers(mcp::protocol::PingMethod),
+                    numeric_body, "application/json");
+  });
+  std::thread string_thread([&]() {
+    httplib::Client client("127.0.0.1", kPort);
+    client.set_read_timeout(2, 0);
+    string_post = client.Post(kPath, request_headers(mcp::protocol::PingMethod),
+                              string_body, "application/json");
+  });
+
+  for (int i = 0; i < 2; ++i) {
+    auto received = transport.receive();
+    require(received.has_value(), "typed-id request receive should succeed");
+    require(received->has_value(), "typed-id request should be received");
+    const auto* request =
+        std::get_if<mcp::protocol::JsonRpcRequest>(&received->value());
+    require(request != nullptr, "typed-id should receive request");
+    const auto sent = transport.send(
+        mcp::protocol::make_response(request->id, Json::object()));
+    require(sent.has_value(), "typed-id response should send");
+  }
+
+  if (numeric_thread.joinable()) {
+    numeric_thread.join();
+  }
+  if (string_thread.joinable()) {
+    string_thread.join();
+  }
+  require(numeric_post.has_value(), "numeric typed-id post should finish");
+  require(string_post.has_value(), "string typed-id post should finish");
+  require((*numeric_post)->status == 200, "numeric typed-id status mismatch");
+  require((*string_post)->status == 200, "string typed-id status mismatch");
 
   const auto closed = transport.close();
-  require(closed.has_value(), "native duplicate server close should succeed");
+  require(closed.has_value(), "typed-id close should succeed");
 }
 
 void test_server_sse_priming_event_with_polling() {
@@ -5492,9 +5672,6 @@ int main() {
        test_native_streamable_http_server_transport_rejects_unknown_client_response_id},
       {"native streamable http server transport close unblocks receive",
        test_native_streamable_http_server_transport_close_unblocks_receive},
-      {"native streamable http server transport rejects duplicate client "
-       "request id",
-       test_native_streamable_http_server_transport_rejects_duplicate_client_request_id},
       {"server sse priming event with polling",
        test_server_sse_priming_event_with_polling},
       {"server sse disconnect and reconnect",
