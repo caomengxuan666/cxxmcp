@@ -98,7 +98,7 @@ def update_package_docs(version: str, sha256: str) -> None:
     for path in files:
         text = read(path)
         text = archive_pattern.sub(
-            lambda match: f"releases/download/{tag}/{match.group(1)}{tag}.tar.gz",
+            lambda match: f"releases/download/{tag}/cxxmcp-sdk-source-{tag}.tar.gz",
             text,
         )
         text = re.sub(r"`v\d+\.\d+\.\d+` URL", f"`{tag}` URL", text)
