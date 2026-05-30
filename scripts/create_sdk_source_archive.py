@@ -74,6 +74,8 @@ def included_files(root: Path) -> list[Path]:
             relative = relative_name(child, root)
             if relative in SDK_SOURCE_EXCLUDES:
                 continue
+            if "__pycache__/" in relative or relative.endswith(".pyc"):
+                continue
             if relative.startswith("docs/doxygen/"):
                 continue
             files.append(child)
