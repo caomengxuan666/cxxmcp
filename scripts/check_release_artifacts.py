@@ -96,13 +96,17 @@ PACKAGE_ARTIFACTS = [
     "cxxmcp-package-xmake-http-auth",
 ]
 
-REQUIRED_GATE_ARTIFACTS = [
+RELEASE_GATE_BUNDLE_ARTIFACTS = [
     *RELEASE_MATRIX_ARTIFACTS,
     *AUTH_ARTIFACTS,
     "cxxmcp-auth-openssl-release-gate-linux-gcc-ninja",
     "cxxmcp-performance-evidence-linux-gcc-ninja",
     "cxxmcp-public-header-compile-evidence-linux-gcc-ninja",
     *PACKAGE_ARTIFACTS,
+]
+
+REQUIRED_GATE_ARTIFACTS = [
+    *RELEASE_GATE_BUNDLE_ARTIFACTS,
     "cxxmcp-doxygen-html",
     "cxxmcp-source",
     "cxxmcp-release-evidence",
@@ -473,7 +477,7 @@ def require_tar_members(path: Path, required: list[str]) -> None:
 def check_release_tarball_contents(release_artifacts: Path, tag: str) -> None:
     require_tar_members(
         release_artifacts / f"cxxmcp-release-gates-{tag}.tar.gz",
-        REQUIRED_GATE_ARTIFACTS,
+        RELEASE_GATE_BUNDLE_ARTIFACTS,
     )
     require_tar_members(
         release_artifacts / f"cxxmcp-doxygen-html-{tag}.tar.gz",

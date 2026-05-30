@@ -212,7 +212,7 @@ def create_release_artifacts(release: Path, gate: Path, source_root: Path, tag: 
     create_tar(
         release / f"cxxmcp-release-gates-{tag}.tar.gz",
         gate,
-        check_release_artifacts.REQUIRED_GATE_ARTIFACTS,
+        check_release_artifacts.RELEASE_GATE_BUNDLE_ARTIFACTS,
     )
     create_tar(release / f"cxxmcp-doxygen-html-{tag}.tar.gz", gate, ["cxxmcp-doxygen-html"])
     create_tar(release / f"cxxmcp-release-gate-source-{tag}.tar.gz", gate, ["cxxmcp-source"])
