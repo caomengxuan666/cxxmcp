@@ -808,20 +808,51 @@ HttpTransport::HttpTransport(HttpTransportOptions options)
 HttpTransport::~HttpTransport() = default;
 
 void HttpTransport::wait_until_ready() {
-  std::lock_guard lock(mutex_);
-  if (server_) {
-    server_->server.wait_until_ready();
+  httplib::Server* server = nullptr;
+  {
+    std::unique_lock lock(mutex_);
+    startup_cv_.wait(lock, [this] {
+      return server_ != nullptr || stop_requested_ || startup_finished_;
+    });
+    if (server_ == nullptr) {
+      return;
+    }
+    server = &server_->server;
+  }
+  if (server != nullptr) {
+    server->wait_until_ready();
   }
 }
 
 core::Result<core::Unit> HttpTransport::start(
     RequestHandler handler, NotificationHandler notification_handler) {
+  {
+    std::lock_guard lock(mutex_);
+    if (startup_finished_) {
+      stop_requested_ = false;
+      server_.reset();
+    }
+    startup_finished_ = false;
+  }
+  startup_cv_.notify_all();
+
+  auto finish_without_server = [this]() {
+    {
+      std::lock_guard lock(mutex_);
+      stopped_ = true;
+      startup_finished_ = true;
+    }
+    startup_cv_.notify_all();
+  };
+
   if (!handler) {
+    finish_without_server();
     return mcp::core::unexpected(make_transport_error(
         static_cast<int>(protocol::ErrorCode::InvalidRequest),
         "http transport handler is not configured"));
   }
   if (options_.listen_port <= 0 || options_.listen_port > 65535) {
+    finish_without_server();
     return mcp::core::unexpected(make_transport_error(
         static_cast<int>(protocol::ErrorCode::InvalidRequest),
         "http transport listen port must be configured",
@@ -831,6 +862,7 @@ core::Result<core::Unit> HttpTransport::start(
   if (options_.allowed_origins.empty() &&
       (!is_loopback_host(options_.listen_host) ||
        has_non_loopback_host(options_.allowed_hosts))) {
+    finish_without_server();
     return mcp::core::unexpected(make_transport_error(
         static_cast<int>(protocol::ErrorCode::InvalidRequest),
         "http transport allowed_origins must be configured when the server is "
@@ -839,15 +871,8 @@ core::Result<core::Unit> HttpTransport::start(
         "requests"));
   }
 
-  {
-    std::lock_guard lock(mutex_);
-    stopped_ = false;
-    sessions_.clear();
-    default_session_id_.clear();
-    server_ = std::make_unique<HttpServerHolder>();
-  }
-
-  auto* http_server = &server_->server;
+  auto server = std::make_unique<HttpServerHolder>();
+  auto* http_server = &server->server;
   http_server->set_payload_max_length(options_.max_request_body_bytes);
   http_server->set_read_timeout(options_.read_timeout);
   http_server->set_write_timeout(options_.write_timeout);
@@ -1850,9 +1875,40 @@ core::Result<core::Unit> HttpTransport::start(
     response.status = 204;
   });
 
+  bool stop_before_listen = false;
+  {
+    std::lock_guard lock(mutex_);
+    if (stop_requested_) {
+      stopped_ = true;
+      startup_finished_ = true;
+      stop_before_listen = true;
+    } else {
+      stopped_ = false;
+      sessions_.clear();
+      default_session_id_.clear();
+      server_ = std::move(server);
+    }
+  }
+  startup_cv_.notify_all();
+  if (stop_before_listen) {
+    return core::Unit{};
+  }
+
   const auto listening =
       http_server->listen(options_.listen_host, options_.listen_port);
+  {
+    std::lock_guard lock(mutex_);
+    startup_finished_ = true;
+    if (stop_requested_) {
+      stopped_ = true;
+    }
+  }
+  startup_cv_.notify_all();
   if (!listening) {
+    std::lock_guard lock(mutex_);
+    if (stop_requested_ || stopped_) {
+      return core::Unit{};
+    }
     return mcp::core::unexpected(make_transport_error(
         static_cast<int>(protocol::ErrorCode::InternalError),
         "failed to listen for http transport",
@@ -2027,7 +2083,9 @@ void HttpTransport::stop() noexcept {
   httplib::Server* server_to_stop = nullptr;
   {
     std::lock_guard lock(mutex_);
+    stop_requested_ = true;
     if (stopped_) {
+      startup_cv_.notify_all();
       return;
     }
     stopped_ = true;
@@ -2039,6 +2097,7 @@ void HttpTransport::stop() noexcept {
     default_session_id_.clear();
     server_to_stop = server_ == nullptr ? nullptr : &server_->server;
   }
+  startup_cv_.notify_all();
   notification_cv_.notify_all();
   if (server_to_stop) {
     server_to_stop->stop();

@@ -283,9 +283,12 @@ class HttpTransport final : public Transport {
   std::unique_ptr<HttpServerHolder> server_;
   mutable std::mutex mutex_;
   std::condition_variable notification_cv_;
+  std::condition_variable startup_cv_;
   std::unordered_map<std::string, SessionState> sessions_;
   std::uint64_t next_session_id_ = 1;
   bool stopped_ = false;
+  bool stop_requested_ = false;
+  bool startup_finished_ = false;
   bool initialized_ = false;
   std::string default_session_id_;
 };
