@@ -2838,7 +2838,8 @@ class Peer<RoleClient>::Builder {
           options.headers[std::move(name)] = std::move(value);
         }
         if (auth_header_.has_value()) {
-          options.auth_header = std::move(auth_header_);
+          options.auth_header = std::string("Bearer ") + *auth_header_;
+          auth_header_.reset();
         }
         if (timeout_.has_value()) {
           options.timeout = *timeout_;

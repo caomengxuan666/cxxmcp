@@ -211,10 +211,12 @@ class WebSocketClientTransport::Impl {
     if (connected_) {
       return core::Unit{};
     }
-    return connect_locked();
+    return connect_locked(StartReaderThread::Yes);
   }
 
-  core::Result<core::Unit> connect_locked() {
+  enum class StartReaderThread { No, Yes };
+
+  core::Result<core::Unit> connect_locked(StartReaderThread start_reader) {
     // Parse URI or use host/port/path
     ParsedWsUri parsed;
     if (!options_.uri.empty()) {
@@ -262,11 +264,13 @@ class WebSocketClientTransport::Impl {
       consecutive_failures_ = 0;
       current_backoff_ = options_.reconnect_initial_delay;
 
-      // Spawn reader thread
-      if (reader_thread_.joinable()) {
-        reader_thread_.join();
+      if (start_reader == StartReaderThread::Yes) {
+        if (reader_thread_.joinable() &&
+            reader_thread_.get_id() != std::this_thread::get_id()) {
+          reader_thread_.join();
+        }
+        reader_thread_ = std::thread([this] { reader_loop(); });
       }
-      reader_thread_ = std::thread([this] { reader_loop(); });
 
       return core::Unit{};
     } catch (const std::exception& ex) {
@@ -350,7 +354,7 @@ class WebSocketClientTransport::Impl {
           options_.reconnect_max_delay);
 
       // Attempt reconnect
-      auto result = connect_locked();
+      auto result = connect_locked(StartReaderThread::No);
       if (result) {
         reconnect_count_++;
         return true;

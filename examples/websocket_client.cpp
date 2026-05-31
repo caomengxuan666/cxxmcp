@@ -40,6 +40,13 @@ int main() {
   }
   std::cout << "Connected to WebSocket MCP server\n";
 
+  auto initialized = svc->peer().notify_initialized();
+  if (!initialized) {
+    std::cerr << "Initialized notification failed: "
+              << initialized.error().message << "\n";
+    return 1;
+  }
+
   // List available tools
   auto tools = svc->peer().list_all_tools();
   if (tools) {

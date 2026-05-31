@@ -229,6 +229,8 @@ class WebSocketServerTransport::Impl {
   };
 
   void setup_server() {
+    server_.set_websocket_ping_interval(options_.ping_interval_sec);
+    server_.set_websocket_max_missed_pongs(options_.max_missed_pongs);
     server_.WebSocket(options_.path, [this](const httplib::Request& req,
                                             httplib::ws::WebSocket& ws) {
       handle_connection(req, ws);
@@ -238,14 +240,23 @@ class WebSocketServerTransport::Impl {
   void handle_connection(const httplib::Request& /*req*/,
                          httplib::ws::WebSocket& ws) {
     const auto conn_id = "conn-" + std::to_string(next_connection_id_++);
-    connection_count_++;
 
-    // Track this connection as the active one (last connected)
     {
       std::lock_guard<std::mutex> lock(mutex_);
+      if (closed_) {
+        ws.close();
+        return;
+      }
+      if (options_.max_connections > 0 &&
+          connections_.size() >= options_.max_connections) {
+        ws.close(httplib::ws::CloseStatus::PolicyViolation,
+                 "too many websocket connections");
+        return;
+      }
       active_connection_id_ = conn_id;
-      active_ws_ = &ws;
+      connections_[conn_id] = &ws;
     }
+    connection_count_++;
 
     while (true) {
       std::string raw;
@@ -292,8 +303,8 @@ class WebSocketServerTransport::Impl {
       std::lock_guard<std::mutex> lock(mutex_);
       if (active_connection_id_ == conn_id) {
         active_connection_id_.clear();
-        active_ws_ = nullptr;
       }
+      connections_.erase(conn_id);
 
       // Fail any pending requests from this connection
       std::vector<protocol::RequestId> to_erase;
@@ -351,16 +362,19 @@ class WebSocketServerTransport::Impl {
                                "failed to serialize websocket response"));
     }
 
-    // Send to the specific connection
     {
       std::lock_guard<std::mutex> lock(mutex_);
-      if (active_connection_id_ == conn_id && active_ws_) {
-        if (!active_ws_->send(*serialized)) {
-          return mcp::core::unexpected(make_ws_server_error(
-              protocol::ErrorCode::InternalError, "websocket send failed"));
-        }
-        messages_sent_++;
+      auto ws_it = connections_.find(conn_id);
+      if (ws_it == connections_.end() || ws_it->second == nullptr) {
+        return mcp::core::unexpected(make_ws_server_error(
+            protocol::ErrorCode::InternalError,
+            "websocket request connection is no longer active"));
       }
+      if (!ws_it->second->send(*serialized)) {
+        return mcp::core::unexpected(make_ws_server_error(
+            protocol::ErrorCode::InternalError, "websocket send failed"));
+      }
+      messages_sent_++;
     }
 
     return core::Unit{};
@@ -376,12 +390,13 @@ class WebSocketServerTransport::Impl {
     }
 
     std::lock_guard<std::mutex> lock(mutex_);
-    if (!active_ws_) {
+    auto ws_it = connections_.find(active_connection_id_);
+    if (ws_it == connections_.end() || ws_it->second == nullptr) {
       return mcp::core::unexpected(
           make_ws_server_error(protocol::ErrorCode::InternalError,
                                "no active websocket connection"));
     }
-    if (!active_ws_->send(*serialized)) {
+    if (!ws_it->second->send(*serialized)) {
       return mcp::core::unexpected(make_ws_server_error(
           protocol::ErrorCode::InternalError, "websocket send failed"));
     }
@@ -394,7 +409,7 @@ class WebSocketServerTransport::Impl {
     auto pending = std::make_shared<PendingClientRequest>(request.id);
     {
       std::lock_guard<std::mutex> lock(mutex_);
-      if (!active_ws_) {
+      if (connections_.find(active_connection_id_) == connections_.end()) {
         return mcp::core::unexpected(
             make_ws_server_error(protocol::ErrorCode::InternalError,
                                  "no active websocket connection"));
@@ -422,7 +437,9 @@ class WebSocketServerTransport::Impl {
 
     {
       std::lock_guard<std::mutex> lock(mutex_);
-      if (!active_ws_ || !active_ws_->send(*serialized)) {
+      auto ws_it = connections_.find(active_connection_id_);
+      if (ws_it == connections_.end() || ws_it->second == nullptr ||
+          !ws_it->second->send(*serialized)) {
         pending_client_requests_.erase(request.id);
         return mcp::core::unexpected(make_ws_server_error(
             protocol::ErrorCode::InternalError, "websocket send failed"));
@@ -453,8 +470,8 @@ class WebSocketServerTransport::Impl {
   std::map<protocol::RequestId, std::shared_ptr<PendingClientRequest>>
       pending_client_requests_;
   std::map<protocol::RequestId, std::string> connection_for_request_;
+  std::map<std::string, httplib::ws::WebSocket*> connections_;
   std::string active_connection_id_;
-  httplib::ws::WebSocket* active_ws_ = nullptr;
   bool closed_ = false;
   bool ready_ = false;
   std::optional<core::Error> startup_error_;
