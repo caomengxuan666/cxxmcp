@@ -1,0 +1,600 @@
+// Copyright (c) 2025 [arookieofc]
+
+#include "cxxmcp/transport/websocket_transport.hpp"
+
+#include <atomic>
+#include <chrono>
+#include <condition_variable>
+#include <deque>
+#include <exception>
+#include <map>
+#include <memory>
+#include <mutex>
+#include <optional>
+#include <string>
+#include <string_view>
+#include <thread>
+#include <utility>
+#include <variant>
+
+#include "cxxmcp/error.hpp"
+#include "cxxmcp/protocol/serialization.hpp"
+#include "httplib.h"
+
+namespace mcp::transport {
+
+namespace {
+
+core::Error make_ws_error(int code, std::string message,
+                          std::string detail = {}) {
+  return core::Error{code, std::move(message), std::move(detail), "transport"};
+}
+
+std::string request_id_to_string(const protocol::RequestId& request_id) {
+  return std::visit(
+      [](const auto& value) -> std::string {
+        using Value = std::decay_t<decltype(value)>;
+        if constexpr (std::is_same_v<Value, std::string>) {
+          return value;
+        } else {
+          return std::to_string(value);
+        }
+      },
+      request_id);
+}
+
+/// @brief Parsed WebSocket URI components.
+struct ParsedWsUri {
+  std::string host;
+  int port = 80;
+  std::string path = "/mcp";
+  bool ssl = false;
+};
+
+ParsedWsUri parse_ws_uri(const std::string& uri) {
+  ParsedWsUri result;
+  std::string remaining = uri;
+
+  // Strip scheme
+  if (remaining.rfind("wss://", 0) == 0) {
+    result.ssl = true;
+    result.port = 443;
+    remaining = remaining.substr(6);
+  } else if (remaining.rfind("ws://", 0) == 0) {
+    remaining = remaining.substr(5);
+  }
+
+  // Split host:port/path
+  auto slash_pos = remaining.find('/');
+  std::string host_port;
+  if (slash_pos != std::string::npos) {
+    host_port = remaining.substr(0, slash_pos);
+    result.path = remaining.substr(slash_pos);
+  } else {
+    host_port = remaining;
+    result.path = "/";
+  }
+
+  auto colon_pos = host_port.find(':');
+  if (colon_pos != std::string::npos) {
+    result.host = host_port.substr(0, colon_pos);
+    result.port = std::stoi(host_port.substr(colon_pos + 1));
+  } else {
+    result.host = host_port;
+  }
+
+  return result;
+}
+
+httplib::Headers build_headers(
+    const std::unordered_map<std::string, std::string>& headers,
+    const std::optional<std::string>& auth_header) {
+  httplib::Headers result;
+  for (const auto& [key, value] : headers) {
+    result.emplace(key, value);
+  }
+  if (auth_header.has_value() && !auth_header->empty()) {
+    result.emplace("Authorization", *auth_header);
+  }
+  return result;
+}
+
+}  // namespace
+
+// ---------------------------------------------------------------------------
+// WebSocketClientTransport::Impl
+// ---------------------------------------------------------------------------
+
+class WebSocketClientTransport::Impl {
+ public:
+  explicit Impl(WebSocketClientTransportOptions options)
+      : options_(std::move(options)),
+        current_backoff_(options_.reconnect_initial_delay) {}
+
+  ~Impl() { (void)close(); }
+
+  protocol::Json diagnostics() const {
+    std::lock_guard<std::mutex> lock(mutex_);
+    return protocol::Json{
+        {"name", "websocket-client"},
+        {"closed", closed_},
+        {"connected", connected_},
+        {"queued", inbound_.size()},
+        {"pendingRequests", pending_requests_.size()},
+        {"reconnectCount", reconnect_count_.load()},
+        {"messagesSent", messages_sent_.load()},
+        {"messagesReceived", messages_received_.load()},
+    };
+  }
+
+  core::Result<core::Unit> send(protocol::JsonRpcMessage message) {
+    {
+      std::lock_guard<std::mutex> lock(mutex_);
+      if (closed_) {
+        return mcp::core::unexpected(make_ws_error(
+            protocol::ErrorCode::InvalidRequest,
+            "websocket client transport is closed"));
+      }
+    }
+
+    // Ensure connection is established
+    auto connected = ensure_connected();
+    if (!connected) {
+      return mcp::core::unexpected(connected.error());
+    }
+
+    if (auto* request = std::get_if<protocol::JsonRpcRequest>(&message)) {
+      return send_request(std::move(*request));
+    }
+
+    if (auto* notification =
+            std::get_if<protocol::JsonRpcNotification>(&message)) {
+      return send_notification(*notification);
+    }
+
+    auto* response = std::get_if<protocol::JsonRpcResponse>(&message);
+    if (response == nullptr || !response->id.has_value()) {
+      return mcp::core::unexpected(make_ws_error(
+          protocol::ErrorCode::InvalidRequest,
+          "websocket client transport cannot send response without id"));
+    }
+    return complete_server_request(std::move(*response));
+  }
+
+  core::Result<std::optional<protocol::JsonRpcMessage>> receive() {
+    {
+      std::lock_guard<std::mutex> lock(mutex_);
+      if (closed_ && inbound_.empty()) {
+        return std::nullopt;
+      }
+    }
+
+    auto connected = ensure_connected();
+    if (!connected) {
+      return mcp::core::unexpected(connected.error());
+    }
+
+    std::unique_lock<std::mutex> lock(mutex_);
+    receive_cv_.wait(lock, [this] { return closed_ || !inbound_.empty(); });
+    if (inbound_.empty()) {
+      return std::nullopt;
+    }
+    auto message = std::move(inbound_.front());
+    inbound_.pop_front();
+    return message;
+  }
+
+  core::Result<core::Unit> close() {
+    std::map<protocol::RequestId, std::shared_ptr<PendingRequest>> pending;
+    {
+      std::lock_guard<std::mutex> lock(mutex_);
+      if (closed_) {
+        return core::Unit{};
+      }
+      closed_ = true;
+      pending.swap(pending_requests_);
+    }
+
+    // Fail all pending requests
+    for (auto& [_, req] : pending) {
+      {
+        std::lock_guard<std::mutex> req_lock(req->mutex);
+        req->response = protocol::make_error_response(
+            std::optional<protocol::RequestId>{req->id},
+            protocol::make_error(protocol::ErrorCode::InternalError,
+                                 "websocket transport closed"));
+      }
+      req->cv.notify_all();
+    }
+
+    receive_cv_.notify_all();
+
+    // Close the WebSocket connection
+    if (ws_) {
+      try {
+        ws_->close();
+      } catch (...) {
+        // Best-effort close
+      }
+    }
+
+    // Join reader thread
+    if (reader_thread_.joinable() &&
+        reader_thread_.get_id() != std::this_thread::get_id()) {
+      reader_thread_.join();
+    }
+
+    return core::Unit{};
+  }
+
+ private:
+  struct PendingRequest {
+    explicit PendingRequest(protocol::RequestId request_id)
+        : id(std::move(request_id)) {}
+
+    protocol::RequestId id;
+    std::mutex mutex;
+    std::condition_variable cv;
+    std::optional<protocol::JsonRpcResponse> response;
+  };
+
+  core::Result<core::Unit> ensure_connected() {
+    std::lock_guard<std::mutex> lock(mutex_);
+    if (closed_) {
+      return mcp::core::unexpected(make_ws_error(
+          protocol::ErrorCode::InvalidRequest,
+          "websocket client transport is closed"));
+    }
+    if (connected_) {
+      return core::Unit{};
+    }
+    return connect_locked();
+  }
+
+  core::Result<core::Unit> connect_locked() {
+    // Parse URI or use host/port/path
+    ParsedWsUri parsed;
+    if (!options_.uri.empty()) {
+      parsed = parse_ws_uri(options_.uri);
+    } else {
+      parsed.host = options_.host;
+      parsed.port = options_.port;
+      parsed.path = options_.path;
+    }
+
+    try {
+      auto headers = build_headers(options_.headers, options_.auth_header);
+      ws_ = std::make_unique<httplib::WebSocketClient>(
+          parsed.host + ":" + std::to_string(parsed.port) + parsed.path,
+          headers);
+
+      if (!ws_->is_valid()) {
+        return mcp::core::unexpected(make_ws_error(
+            protocol::ErrorCode::InternalError,
+            "failed to create websocket client"));
+      }
+
+      // Configure timeouts
+      const auto timeout_sec =
+          std::chrono::duration_cast<std::chrono::seconds>(options_.timeout);
+      ws_->set_connection_timeout(timeout_sec.count());
+      ws_->set_read_timeout(timeout_sec.count());
+      ws_->set_write_timeout(timeout_sec.count());
+
+      // Configure ping/pong
+      if (options_.ping_interval_sec > 0) {
+        ws_->set_websocket_ping_interval(options_.ping_interval_sec);
+        ws_->set_websocket_max_missed_pongs(options_.max_missed_pongs);
+      }
+
+      if (!ws_->connect()) {
+        return mcp::core::unexpected(make_ws_error(
+            protocol::ErrorCode::InternalError,
+            "websocket connection failed"));
+      }
+
+      connected_ = true;
+      consecutive_failures_ = 0;
+      current_backoff_ = options_.reconnect_initial_delay;
+
+      // Spawn reader thread
+      if (reader_thread_.joinable()) {
+        reader_thread_.join();
+      }
+      reader_thread_ = std::thread([this] { reader_loop(); });
+
+      return core::Unit{};
+    } catch (const std::exception& ex) {
+      return mcp::core::unexpected(make_ws_error(
+          protocol::ErrorCode::InternalError,
+          "websocket connection threw exception", ex.what()));
+    }
+  }
+
+  void reader_loop() {
+    while (true) {
+      {
+        std::lock_guard<std::mutex> lock(mutex_);
+        if (closed_) {
+          return;
+        }
+      }
+
+      std::string raw;
+      auto result = ws_->read(raw);
+      if (!result) {
+        // Read failed — attempt reconnect or close
+        if (!try_reconnect()) {
+          enqueue_error_and_close("websocket read failed");
+          return;
+        }
+        continue;
+      }
+
+      messages_received_++;
+
+      // Parse the message
+      auto parsed = protocol::parse_message(raw);
+      if (!parsed) {
+        // Invalid JSON-RPC, skip
+        continue;
+      }
+
+      route_message(std::move(*parsed));
+    }
+  }
+
+  bool try_reconnect() {
+    if (!options_.auto_reconnect) {
+      return false;
+    }
+
+    {
+      std::lock_guard<std::mutex> lock(mutex_);
+      if (closed_) {
+        return false;
+      }
+    }
+
+    consecutive_failures_++;
+    if (options_.max_reconnect_attempts > 0 &&
+        consecutive_failures_ > options_.max_reconnect_attempts) {
+      return false;
+    }
+
+    // Close old connection. Hold mutex_ first (consistent with send()),
+    // then ws_mutex_ for the actual WebSocket operations.
+    {
+      std::lock_guard<std::mutex> lock(mutex_);
+      std::lock_guard<std::mutex> ws_lock(ws_mutex_);
+      if (ws_) {
+        try {
+          ws_->close();
+        } catch (...) {
+        }
+        ws_.reset();
+      }
+      connected_ = false;
+
+      // Wait with backoff (holding both locks so send() blocks)
+      std::this_thread::sleep_for(current_backoff_);
+      current_backoff_ = std::min(
+          std::chrono::milliseconds(
+              static_cast<long long>(current_backoff_.count() *
+                                     options_.reconnect_backoff_multiplier)),
+          options_.reconnect_max_delay);
+
+      // Attempt reconnect
+      auto result = connect_locked();
+      if (result) {
+        reconnect_count_++;
+        return true;
+      }
+      return false;
+    }
+  }
+
+  void route_message(protocol::JsonRpcMessage message) {
+    if (auto* response =
+            std::get_if<protocol::JsonRpcResponse>(&message)) {
+      if (response->id.has_value()) {
+        // Check if this completes a pending outbound request
+        std::shared_ptr<PendingRequest> pending;
+        {
+          std::lock_guard<std::mutex> lock(mutex_);
+          auto it = pending_requests_.find(*response->id);
+          if (it != pending_requests_.end()) {
+            pending = it->second;
+            pending_requests_.erase(it);
+          }
+        }
+        if (pending) {
+          {
+            std::lock_guard<std::mutex> req_lock(pending->mutex);
+            pending->response = std::move(*response);
+          }
+          pending->cv.notify_all();
+          return;
+        }
+      }
+    }
+
+    // Not a pending response — enqueue for receive()
+    {
+      std::lock_guard<std::mutex> lock(mutex_);
+      if (closed_) {
+        return;
+      }
+      inbound_.push_back(std::move(message));
+    }
+    receive_cv_.notify_one();
+  }
+
+  void enqueue_error_and_close(const std::string& message) {
+    {
+      std::lock_guard<std::mutex> lock(mutex_);
+      if (closed_) {
+        return;
+      }
+      closed_ = true;
+    }
+
+    // Fail all pending requests
+    std::map<protocol::RequestId, std::shared_ptr<PendingRequest>> pending;
+    {
+      std::lock_guard<std::mutex> lock(mutex_);
+      pending.swap(pending_requests_);
+    }
+    for (auto& [_, req] : pending) {
+      {
+        std::lock_guard<std::mutex> req_lock(req->mutex);
+        req->response = protocol::make_error_response(
+            std::optional<protocol::RequestId>{req->id},
+            protocol::make_error(protocol::ErrorCode::InternalError, message));
+      }
+      req->cv.notify_all();
+    }
+
+    receive_cv_.notify_all();
+  }
+
+  core::Result<core::Unit> send_request(protocol::JsonRpcRequest request) {
+    auto pending = std::make_shared<PendingRequest>(request.id);
+    {
+      std::lock_guard<std::mutex> lock(mutex_);
+      if (closed_) {
+        return mcp::core::unexpected(make_ws_error(
+            protocol::ErrorCode::InvalidRequest,
+            "websocket client transport is closed"));
+      }
+      const auto [_, inserted] =
+          pending_requests_.emplace(request.id, pending);
+      if (!inserted) {
+        return mcp::core::unexpected(make_ws_error(
+            protocol::ErrorCode::InvalidRequest,
+            "duplicate websocket request id",
+            request_id_to_string(request.id)));
+      }
+    }
+
+    auto serialized = protocol::serialize_request(request);
+    if (!serialized) {
+      // Remove from pending
+      {
+        std::lock_guard<std::mutex> lock(mutex_);
+        pending_requests_.erase(request.id);
+      }
+      return mcp::core::unexpected(make_ws_error(
+          protocol::ErrorCode::InternalError,
+          "failed to serialize websocket request"));
+    }
+
+    {
+      std::lock_guard<std::mutex> ws_lock(ws_mutex_);
+      if (!ws_ || !ws_->send(*serialized)) {
+        // Remove from pending
+        {
+          std::lock_guard<std::mutex> lock(mutex_);
+          pending_requests_.erase(request.id);
+        }
+        return mcp::core::unexpected(make_ws_error(
+            protocol::ErrorCode::InternalError,
+            "websocket send failed"));
+      }
+    }
+    messages_sent_++;
+
+    // The response will be delivered through receive() by the reader thread
+    return core::Unit{};
+  }
+
+  core::Result<core::Unit> send_notification(
+      const protocol::JsonRpcNotification& notification) {
+    auto serialized = protocol::serialize_notification(notification);
+    if (!serialized) {
+      return mcp::core::unexpected(make_ws_error(
+          protocol::ErrorCode::InternalError,
+          "failed to serialize websocket notification"));
+    }
+
+    std::lock_guard<std::mutex> ws_lock(ws_mutex_);
+    if (!ws_ || !ws_->send(*serialized)) {
+      return mcp::core::unexpected(make_ws_error(
+          protocol::ErrorCode::InternalError, "websocket send failed"));
+    }
+    messages_sent_++;
+    return core::Unit{};
+  }
+
+  core::Result<core::Unit> complete_server_request(
+      protocol::JsonRpcResponse response) {
+    auto serialized = protocol::serialize_response(response);
+    if (!serialized) {
+      return mcp::core::unexpected(make_ws_error(
+          protocol::ErrorCode::InternalError,
+          "failed to serialize websocket response"));
+    }
+
+    std::lock_guard<std::mutex> ws_lock(ws_mutex_);
+    if (!ws_ || !ws_->send(*serialized)) {
+      return mcp::core::unexpected(make_ws_error(
+          protocol::ErrorCode::InternalError, "websocket send failed"));
+    }
+    messages_sent_++;
+    return core::Unit{};
+  }
+
+  WebSocketClientTransportOptions options_;
+  mutable std::mutex mutex_;
+  std::mutex ws_mutex_;  // Guards ws_->send()
+  std::condition_variable receive_cv_;
+  std::deque<protocol::JsonRpcMessage> inbound_;
+  std::map<protocol::RequestId, std::shared_ptr<PendingRequest>>
+      pending_requests_;
+  std::unique_ptr<httplib::WebSocketClient> ws_;
+  std::thread reader_thread_;
+  bool closed_ = false;
+  bool connected_ = false;
+
+  // Reconnect state
+  int consecutive_failures_ = 0;
+  std::chrono::milliseconds current_backoff_;
+
+  // Stats
+  std::atomic<std::uint64_t> reconnect_count_{0};
+  std::atomic<std::uint64_t> messages_sent_{0};
+  std::atomic<std::uint64_t> messages_received_{0};
+};
+
+// ---------------------------------------------------------------------------
+// WebSocketClientTransport forwarding methods
+// ---------------------------------------------------------------------------
+
+WebSocketClientTransport::WebSocketClientTransport(
+    WebSocketClientTransportOptions options)
+    : impl_(std::make_unique<Impl>(std::move(options))) {}
+
+WebSocketClientTransport::~WebSocketClientTransport() = default;
+
+std::string_view WebSocketClientTransport::name() const noexcept {
+  return "websocket-client";
+}
+
+protocol::Json WebSocketClientTransport::diagnostics() const {
+  return impl_->diagnostics();
+}
+
+core::Result<core::Unit> WebSocketClientTransport::send(TxMessage message) {
+  return impl_->send(std::move(message));
+}
+
+core::Result<std::optional<WebSocketClientTransport::RxMessage>>
+WebSocketClientTransport::receive() {
+  return impl_->receive();
+}
+
+core::Result<core::Unit> WebSocketClientTransport::close() {
+  return impl_->close();
+}
+
+}  // namespace mcp::transport

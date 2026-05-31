@@ -14,8 +14,9 @@ external gateway tooling.
   dependencies for `tl-expected`, `nlohmann-json`, and `cpp-httplib`. In this
   mode the install tree must not vendor `tl` or `nlohmann` headers.
 
-`cpp-httplib` is used by the HTTP transport implementation. Downstream code
-should include the cxxmcp HTTP transport headers, not `httplib.h` directly.
+`cpp-httplib` is used by the HTTP and WebSocket transport implementations.
+Downstream code should include the cxxmcp transport headers, not `httplib.h`
+directly.
 
 ## Update Cadence
 

@@ -205,6 +205,32 @@ if(TARGET mcp_client AND TARGET mcp_server)
         add_test(NAME http_transport COMMAND mcp_http_transport_tests)
         cxxmcp_mark_release_blocking(http_transport transport http)
 
+    endif()
+
+    if(MCP_ENABLE_WEBSOCKET)
+        add_executable(mcp_websocket_transport_tests
+            transport/test_websocket_transport.cpp
+        )
+
+        target_link_libraries(mcp_websocket_transport_tests PRIVATE
+            mcp_client
+            mcp_server
+        )
+        if(CXXMCP_USE_SYSTEM_DEPS)
+            target_link_libraries(mcp_websocket_transport_tests PRIVATE
+                "${CXXMCP_HTTPLIB_TARGET}")
+        else()
+            target_link_libraries(mcp_websocket_transport_tests PRIVATE
+                cpp_httplib)
+        endif()
+
+        add_test(NAME websocket_transport COMMAND mcp_websocket_transport_tests)
+        cxxmcp_mark_release_blocking(websocket_transport transport websocket)
+
+    endif()
+
+    if(MCP_ENABLE_HTTP)
+
         add_executable(mcp_rmcp_conformance_tests
             interop/test_rmcp_conformance.cpp
         )
