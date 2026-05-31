@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Validate package-manager auth features stay opt-in."""
+"""Validate package-manager optional SDK features stay opt-in."""
 
 from __future__ import annotations
 
@@ -54,9 +54,13 @@ def main() -> None:
     default_features = data.get("default-features", [])
     if "auth" in default_features:
         fail("vcpkg auth feature must not be enabled by default")
+    if "websocket" in default_features:
+        fail("vcpkg websocket feature must not be enabled by default")
     features = data.get("features", {})
     if "auth" not in features:
         fail("vcpkg port must expose an opt-in auth feature")
+    if "websocket" not in features:
+        fail("vcpkg port must expose an opt-in websocket feature")
     deps = data.get("dependencies", [])
     if any(dependency_name(dep) == "openssl" for dep in deps):
         fail("vcpkg default dependencies must not pull OpenSSL for auth")
@@ -66,20 +70,44 @@ def main() -> None:
                 fail("vcpkg cpp-httplib dependency must keep default features disabled")
             if {"openssl", "ssl"} & dependency_features(dep):
                 fail("vcpkg default cpp-httplib dependency must not enable OpenSSL")
+    websocket_deps = features["websocket"].get("dependencies", [])
+    websocket_httplib = [
+        dep for dep in websocket_deps if dependency_name(dep) == "cpp-httplib"
+    ]
+    if not websocket_httplib:
+        fail("vcpkg websocket feature must depend on cpp-httplib")
+    for dep in websocket_httplib:
+        if not isinstance(dep, dict) or dep.get("default-features", True) is not False:
+            fail("vcpkg websocket cpp-httplib dependency must disable default features")
+        if {"openssl", "ssl"} & dependency_features(dep):
+            fail("vcpkg websocket feature must not force OpenSSL")
 
     vcpkg_portfile = source / "packaging/vcpkg/ports/cxxmcp-sdk/portfile.cmake"
     require_contains(vcpkg_portfile, '"auth" IN_LIST FEATURES')
+    require_contains(vcpkg_portfile, '"websocket" IN_LIST FEATURES')
     require_contains(vcpkg_portfile, "-DCXXMCP_ENABLE_AUTH=${CXXMCP_VCPKG_ENABLE_AUTH}")
+    require_contains(
+        vcpkg_portfile,
+        "-DCXXMCP_ENABLE_WEBSOCKET=${CXXMCP_VCPKG_ENABLE_WEBSOCKET}",
+    )
     require_contains(vcpkg_portfile, "vcpkg_check_linkage(ONLY_STATIC_LIBRARY)")
     require_not_contains(vcpkg_portfile, "-DBUILD_SHARED_LIBS=OFF")
 
     curated_portfile = source / "packaging/vcpkg/curated-portfile.future.cmake"
     require_contains(curated_portfile, "vcpkg_from_github(")
     require_contains(curated_portfile, "SHA512 @CXXMCP_RELEASE_ARCHIVE_SHA512@")
+    require_contains(curated_portfile, '"websocket" IN_LIST FEATURES')
+    require_contains(
+        curated_portfile,
+        "-DCXXMCP_ENABLE_WEBSOCKET=${CXXMCP_VCPKG_ENABLE_WEBSOCKET}",
+    )
     require_contains(curated_portfile, "vcpkg_check_linkage(ONLY_STATIC_LIBRARY)")
     require_not_contains(curated_portfile, "-DBUILD_SHARED_LIBS=OFF")
 
     conanfile = source / "conanfile.py"
+    require_contains(conanfile, '"with_websocket": [True, False]')
+    require_contains(conanfile, '"with_websocket": False')
+    require_contains(conanfile, 'toolchain.variables["CXXMCP_ENABLE_WEBSOCKET"]')
     require_contains(conanfile, '"with_auth": [True, False]')
     require_contains(conanfile, '"with_auth": False')
     require_contains(conanfile, 'toolchain.variables["CXXMCP_ENABLE_AUTH"]')
@@ -89,6 +117,8 @@ def main() -> None:
     require_not_contains(conanfile, "'openssl'")
 
     xmake = source / "packaging/xmake/packages/c/cxxmcp/xmake.lua"
+    require_contains(xmake, 'add_configs("websocket"')
+    require_contains(xmake, 'package:config("websocket") and "ON" or "OFF"')
     require_contains(xmake, 'add_configs("auth"')
     require_contains(xmake, 'package:config("auth") and "ON" or "OFF"')
     require_contains(xmake, "#include <cxxmcp/auth.hpp>")

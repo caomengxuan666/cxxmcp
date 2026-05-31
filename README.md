@@ -61,7 +61,7 @@ int main() {
 | Protocol & JSON-RPC | Typed models, serialization, initialize validation, raw escape hatches |
 | Server SDK | Tool/prompt/resource registries, typed handlers, task-aware calls, notifications |
 | Client SDK | HTTP, stdio, process-stdio, async helpers, roots, sampling, elicitation, tasks |
-| Transports | stdio, process stdio, Streamable HTTP (stateful sessions), legacy SSE compat |
+| Transports | stdio, process stdio, Streamable HTTP (stateful sessions), legacy SSE compat, WebSocket (auto-reconnect) |
 | Packaging | CMake `find_package`, Conan 2, vcpkg overlay, FetchContent / CPM |
 | Peer/Service boundary | RMCP-style role-aware `Peer<Role>` and `Service<Role>` |
 
@@ -113,7 +113,9 @@ Package managers: `conanfile.py` (Conan 2), `packaging/vcpkg/ports/cxxmcp-sdk` (
 | `CXXMCP_BUILD_EXAMPLES` | `OFF` | Build example executables |
 | `CXXMCP_BUILD_TESTS` | `BUILD_TESTING` | Build tests |
 | `CXXMCP_BUILD_BENCHMARKS` | `OFF` | Build benchmark executables |
+| `CXXMCP_ENABLE_HTTP` | `OFF` | Build HTTP/SSE transport (requires `cpp-httplib`) |
 | `CXXMCP_ENABLE_AUTH` | `OFF` | Build the optional OAuth 2.1 / DPoP auth target |
+| `CXXMCP_ENABLE_WEBSOCKET` | `OFF` | Build WebSocket transport (requires `CXXMCP_ENABLE_HTTP`) |
 
 ## Package Targets
 
@@ -136,7 +138,7 @@ Package managers: `conanfile.py` (Conan 2), `packaging/vcpkg/ports/cxxmcp-sdk` (
 - Full MCP protocol coverage with typed, capability-gated helpers
 - Cross-SDK conformance validation against the official runner
 - RMCP-style Peer/Service architecture designed for embedding
-- stdio, process-stdio, and Streamable HTTP transports out of the box
+- stdio, process-stdio, Streamable HTTP, and WebSocket transports out of the box
 
 ## Examples
 

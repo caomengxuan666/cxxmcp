@@ -19,6 +19,9 @@ SDK 支持两种依赖模式：
 `cxxmcp/client/http_transport.hpp` 或 `cxxmcp/server/http_transport.hpp`，而不是
 直接包含 `httplib.h`。
 
+WebSocket transport 同样基于 `cpp-httplib`。包管理器应把它做成单独的 opt-in
+feature/config，映射到 `CXXMCP_ENABLE_WEBSOCKET=ON`，默认 SDK package 路径仍然关闭。
+
 spdlog、CLI11 等 tooling 依赖不属于 SDK package contract。面向 vcpkg/Conan
 的 SDK 包应默认关闭 examples、tests 和 docs。
 
@@ -72,6 +75,13 @@ vcpkg install "cxxmcp-sdk[auth]" --overlay-ports=C:\path\to\cxxmcp\packaging\vcp
 
 `auth` feature 会映射到 `CXXMCP_ENABLE_AUTH=ON`。它当前只启用
 transport-neutral OAuth/DPoP contracts，不允许把 OpenSSL 拉入默认 package 路径。
+
+`websocket` feature 会映射到 `CXXMCP_ENABLE_WEBSOCKET=ON`，并且因为共享
+`cpp-httplib`，会隐式开启 HTTP transport support：
+
+```powershell
+vcpkg install "cxxmcp-sdk[websocket]" --overlay-ports=C:\path\to\cxxmcp\packaging\vcpkg\ports
+```
 
 ## 后续 vcpkg Registry 路径
 
@@ -218,6 +228,9 @@ conan create . -o cxxmcp/*:with_auth=True
 component。默认 Conan package 仍然是 SDK-only，不导出 auth headers 或 OpenSSL
 requirements。
 
+`with_websocket=True` 会映射到 `CXXMCP_ENABLE_WEBSOCKET=ON`，并隐式开启
+`CXXMCP_ENABLE_HTTP=ON`。
+
 ## xmake-repo
 
 xmake-repo recipe 草案在：
@@ -226,7 +239,7 @@ xmake-repo recipe 草案在：
 packaging/xmake/packages/c/cxxmcp/xmake.lua
 ```
 
-它构建同一个 SDK source archive，并关闭 examples、tests 和 docs。recipe 有一个
-opt-in `auth` config，会映射到
-`CXXMCP_ENABLE_AUTH=ON`；默认仍然关闭 auth。等 package interface 稳定后，可以把它
-提交到 xmake-repo。
+它构建同一个 SDK source archive，并关闭 examples、tests 和 docs。recipe 有
+opt-in `auth` 和 `websocket` config；`websocket` 会映射到
+`CXXMCP_ENABLE_WEBSOCKET=ON` 并隐式打开 HTTP。默认仍然关闭这些 feature。等 package
+interface 稳定后，可以把它提交到 xmake-repo。

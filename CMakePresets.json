@@ -72,7 +72,8 @@
         "CXXMCP_BUILD_SERVER": "ON",
         "CXXMCP_BUILD_EXAMPLES": "ON",
         "CXXMCP_BUILD_TESTS": "OFF",
-        "CXXMCP_ENABLE_HTTP": "ON"
+        "CXXMCP_ENABLE_HTTP": "ON",
+        "CXXMCP_ENABLE_WEBSOCKET": "ON"
       }
     },
     {
@@ -87,7 +88,8 @@
         "CXXMCP_BUILD_SERVER": "ON",
         "CXXMCP_BUILD_EXAMPLES": "ON",
         "CXXMCP_BUILD_TESTS": "OFF",
-        "CXXMCP_ENABLE_HTTP": "ON"
+        "CXXMCP_ENABLE_HTTP": "ON",
+        "CXXMCP_ENABLE_WEBSOCKET": "ON"
       }
     },
     {
@@ -101,7 +103,8 @@
         "CXXMCP_BUILD_SERVER": "ON",
         "CXXMCP_BUILD_EXAMPLES": "OFF",
         "CXXMCP_BUILD_TESTS": "ON",
-        "CXXMCP_ENABLE_HTTP": "ON"
+        "CXXMCP_ENABLE_HTTP": "ON",
+        "CXXMCP_ENABLE_WEBSOCKET": "ON"
       }
     },
     {
@@ -115,7 +118,8 @@
         "CXXMCP_BUILD_SERVER": "ON",
         "CXXMCP_BUILD_EXAMPLES": "OFF",
         "CXXMCP_BUILD_TESTS": "ON",
-        "CXXMCP_ENABLE_HTTP": "ON"
+        "CXXMCP_ENABLE_HTTP": "ON",
+        "CXXMCP_ENABLE_WEBSOCKET": "ON"
       }
     },
     {

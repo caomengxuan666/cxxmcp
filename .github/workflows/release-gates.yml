@@ -114,7 +114,8 @@ jobs:
             -DCXXMCP_BUILD_EXAMPLES=ON \
             -DCXXMCP_BUILD_TESTS=OFF \
             -DCXXMCP_BUILD_DOCS=OFF \
-            -DCXXMCP_ENABLE_HTTP=ON
+            -DCXXMCP_ENABLE_HTTP=ON \
+            -DCXXMCP_ENABLE_WEBSOCKET=ON
 
       - name: Build SDK
         run: cmake --build build-config-smoke --parallel
@@ -203,6 +204,8 @@ jobs:
             -DCXXMCP_BUILD_EXAMPLES=OFF \
             -DCXXMCP_BUILD_TESTS=ON \
             -DCXXMCP_ENABLE_AUTH=ON \
+            -DCXXMCP_ENABLE_HTTP=ON \
+            -DCXXMCP_ENABLE_WEBSOCKET=ON \
             -DCXXMCP_BUILD_DOCS=OFF
 
       - name: Build SDK dependencies
@@ -324,6 +327,8 @@ jobs:
             -DCXXMCP_BUILD_EXAMPLES=OFF \
             -DCXXMCP_BUILD_TESTS=ON \
             -DCXXMCP_ENABLE_AUTH=ON \
+            -DCXXMCP_ENABLE_HTTP=ON \
+            -DCXXMCP_ENABLE_WEBSOCKET=ON \
             -DCXXMCP_BUILD_DOCS=OFF
 
       - name: Build public header fixtures
@@ -339,7 +344,8 @@ jobs:
             mcp_public_header_sdk \
             mcp_public_header_server \
             mcp_public_header_service \
-            mcp_public_header_transport
+            mcp_public_header_transport \
+            mcp_public_header_websocket_transport
 
       - name: Run clang-tidy
         run: |
@@ -607,6 +613,7 @@ jobs:
             "-DCXXMCP_BUILD_EXAMPLES=ON",
             "-DCXXMCP_BUILD_TESTS=ON",
             "-DCXXMCP_ENABLE_HTTP=ON",
+            "-DCXXMCP_ENABLE_WEBSOCKET=ON",
             "-DCXXMCP_ENABLE_AUTH=ON"
           )
           if ("${{ matrix.build_type }}") {
@@ -669,18 +676,31 @@ jobs:
           - name: default
             feature: ""
             auth_enabled: "OFF"
+            websocket_enabled: "OFF"
           - name: http
             feature: "[http]"
             auth_enabled: "OFF"
+            websocket_enabled: "OFF"
+          - name: websocket
+            feature: "[websocket]"
+            auth_enabled: "OFF"
+            websocket_enabled: "ON"
           - name: http-openssl
             feature: "[http-openssl]"
             auth_enabled: "OFF"
+            websocket_enabled: "OFF"
           - name: http-auth
             feature: "[http,auth]"
             auth_enabled: "ON"
+            websocket_enabled: "OFF"
+          - name: websocket-auth
+            feature: "[websocket,auth]"
+            auth_enabled: "ON"
+            websocket_enabled: "ON"
           - name: http-auth-openssl
             feature: "[http-openssl,auth,openssl]"
             auth_enabled: "ON"
+            websocket_enabled: "OFF"
 
     steps:
       - name: Checkout
@@ -718,6 +738,7 @@ jobs:
             -DCMAKE_TOOLCHAIN_FILE="${RUNNER_TEMP}/vcpkg/scripts/buildsystems/vcpkg.cmake" \
             -DVCPKG_TARGET_TRIPLET=x64-linux \
             -DCXXMCP_PACKAGE_SMOKE_AUTH_ENABLED=${{ matrix.auth_enabled }} \
+            -DCXXMCP_PACKAGE_SMOKE_WEBSOCKET_ENABLED=${{ matrix.websocket_enabled }} \
             2>&1 | tee "build-package-vcpkg-${{ matrix.name }}/cmake-configure.log"
           cmake --build "build-package-vcpkg-${{ matrix.name }}" --parallel \
             2>&1 | tee "build-package-vcpkg-${{ matrix.name }}/cmake-build.log"
@@ -743,16 +764,34 @@ jobs:
         include:
           - name: default
             with_http: "False"
+            with_websocket: "False"
             with_auth: "False"
             auth_enabled: "OFF"
+            websocket_enabled: "OFF"
           - name: http
             with_http: "True"
+            with_websocket: "False"
             with_auth: "False"
             auth_enabled: "OFF"
+            websocket_enabled: "OFF"
+          - name: websocket
+            with_http: "False"
+            with_websocket: "True"
+            with_auth: "False"
+            auth_enabled: "OFF"
+            websocket_enabled: "ON"
           - name: http-auth
             with_http: "True"
+            with_websocket: "False"
             with_auth: "True"
             auth_enabled: "ON"
+            websocket_enabled: "OFF"
+          - name: websocket-auth
+            with_http: "False"
+            with_websocket: "True"
+            with_auth: "True"
+            auth_enabled: "ON"
+            websocket_enabled: "ON"
 
     steps:
       - name: Checkout
@@ -775,6 +814,7 @@ jobs:
           conan create . \
             -s build_type=Release \
             -o cxxmcp/*:with_http=${{ matrix.with_http }} \
+            -o cxxmcp/*:with_websocket=${{ matrix.with_websocket }} \
             -o cxxmcp/*:with_auth=${{ matrix.with_auth }} \
             2>&1 | tee "build-package-conan-${{ matrix.name }}/conan-create.log"
 
@@ -789,6 +829,7 @@ jobs:
             --build=missing \
             -s build_type=Release \
             -o cxxmcp/*:with_http=${{ matrix.with_http }} \
+            -o cxxmcp/*:with_websocket=${{ matrix.with_websocket }} \
             -o cxxmcp/*:with_auth=${{ matrix.with_auth }} \
             2>&1 | tee "build-package-conan-${{ matrix.name }}/conan-install.log"
 
@@ -805,6 +846,7 @@ jobs:
             -DCMAKE_BUILD_TYPE=Release \
             -DCMAKE_TOOLCHAIN_FILE="${toolchain}" \
             -DCXXMCP_PACKAGE_SMOKE_AUTH_ENABLED=${{ matrix.auth_enabled }} \
+            -DCXXMCP_PACKAGE_SMOKE_WEBSOCKET_ENABLED=${{ matrix.websocket_enabled }} \
             2>&1 | tee "build-package-conan-${{ matrix.name }}/cmake-configure.log"
           cmake --build "build-package-conan-${{ matrix.name }}" --parallel \
             2>&1 | tee "build-package-conan-${{ matrix.name }}/cmake-build.log"
@@ -830,16 +872,34 @@ jobs:
         include:
           - name: default
             http_enabled: "false"
+            websocket_enabled: "false"
             auth_enabled: "false"
             auth_define: ""
+            websocket_define: ""
           - name: http
             http_enabled: "true"
+            websocket_enabled: "false"
             auth_enabled: "false"
             auth_define: ""
+            websocket_define: ""
+          - name: websocket
+            http_enabled: "false"
+            websocket_enabled: "true"
+            auth_enabled: "false"
+            auth_define: ""
+            websocket_define: "add_defines(\"CXXMCP_PACKAGE_SMOKE_WEBSOCKET\")"
           - name: http-auth
             http_enabled: "true"
+            websocket_enabled: "false"
             auth_enabled: "true"
             auth_define: "add_defines(\"CXXMCP_PACKAGE_SMOKE_AUTH\")"
+            websocket_define: ""
+          - name: websocket-auth
+            http_enabled: "false"
+            websocket_enabled: "true"
+            auth_enabled: "true"
+            auth_define: "add_defines(\"CXXMCP_PACKAGE_SMOKE_AUTH\")"
+            websocket_define: "add_defines(\"CXXMCP_PACKAGE_SMOKE_WEBSOCKET\")"
 
     steps:
       - name: Checkout
@@ -902,19 +962,26 @@ jobs:
           add_rules("mode.release")
           set_languages("c++17")
           add_repositories("cxxmcp-local repo")
-          add_requires("cxxmcp v1.1.3", {configs = {http = ${{ matrix.http_enabled }}, auth = ${{ matrix.auth_enabled }}}})
+          add_requires("cxxmcp v1.1.3", {configs = {http = ${{ matrix.http_enabled }}, websocket = ${{ matrix.websocket_enabled }}, auth = ${{ matrix.auth_enabled }}}})
 
           target("consumer")
               set_kind("binary")
               add_files("main.cpp")
               add_packages("cxxmcp")
               ${{ matrix.auth_define }}
+              ${{ matrix.websocket_define }}
           EOF
           cat > "build-package-xmake-${{ matrix.name }}/main.cpp" <<'EOF'
           #include <cstdint>
+          #include <memory>
+          #include <utility>
           #include <cxxmcp/protocol/serialization.hpp>
           #ifdef CXXMCP_PACKAGE_SMOKE_AUTH
           #include <cxxmcp/auth.hpp>
+          #endif
+          #ifdef CXXMCP_PACKAGE_SMOKE_WEBSOCKET
+          #include <cxxmcp/peer.hpp>
+          #include <cxxmcp/transport/websocket_transport.hpp>
           #endif
 
           int main() {
@@ -927,6 +994,16 @@ jobs:
               auto registration =
                   mcp::auth::build_client_registration_request(options);
               (void)registration;
+          #endif
+          #ifdef CXXMCP_PACKAGE_SMOKE_WEBSOCKET
+              auto builder = mcp::ClientPeer::builder();
+              builder.websocket("ws://127.0.0.1:3001/mcp");
+              mcp::transport::WebSocketClientTransportOptions client_options;
+              client_options.uri = "ws://127.0.0.1:3001/mcp";
+              auto client =
+                  std::make_unique<mcp::transport::WebSocketClientTransport>(
+                      std::move(client_options));
+              (void)client;
           #endif
               return 0;
           }

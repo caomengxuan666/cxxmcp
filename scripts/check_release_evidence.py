@@ -616,12 +616,14 @@ def check_source_tree(source: Path) -> None:
     release_gate_manifest = source / "tests/release_gate_manifest.cmake"
     require_contains(release_gate_manifest, "auth_openssl")
     require_contains(release_gate_manifest, "foreach(header_test")
+    require_contains(release_gate_manifest, "websocket_transport")
     require_contains(release_gate_manifest, "protocol error config auth transport")
 
     package_smoke = source / "tests/package_smoke.cmake"
     require_contains(package_smoke, "PACKAGE_SMOKE_GENERATOR")
     require_contains(package_smoke, "PACKAGE_SMOKE_CXX_COMPILER")
     require_contains(package_smoke, "package_smoke_auth_enabled")
+    require_contains(package_smoke, "package_smoke_websocket_enabled")
     require_contains(package_smoke, "default package smoke must not install optional auth headers")
     require_contains(package_smoke, "assert_optional_component_missing")
     require_contains(package_smoke, "find_package(cxxmcp CONFIG REQUIRED COMPONENTS ${component_name})")
@@ -646,6 +648,7 @@ def check_source_tree(source: Path) -> None:
         "\"repo\" / \"packages\" / \"c\" / \"cxxmcp\" / \"xmake.lua\"",
         "public_header_protocol",
         "public_header_sdk",
+        "public_header_websocket_transport",
         "auth_openssl",
         "cxxmcp-auth-openssl-release-gate-linux-gcc-ninja",
         "auth-openssl-release-gate.xml",
@@ -685,6 +688,7 @@ def check_source_tree(source: Path) -> None:
     compile_evidence = source / "scripts/collect_public_header_compile_evidence.py"
     require_contains(compile_evidence, "mcp_public_header_protocol")
     require_contains(compile_evidence, "mcp_public_header_auth")
+    require_contains(compile_evidence, "mcp_public_header_websocket_transport")
     require_contains(compile_evidence, "elapsed_seconds")
 
     release_artifact_selftest = source / "scripts/selftest_release_artifacts.py"

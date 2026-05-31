@@ -29,22 +29,25 @@ registered through `cxxmcp_mark_release_blocking()`.
   family as the matrix leg producing the evidence. Default package smoke must
   prove optional auth headers are not installed; auth-enabled package smoke
   must prove a clean consumer can explicitly link `cxxmcp::auth`.
-- `check_package_auth_features.py`: package-manager metadata keeps auth
-  opt-in for vcpkg, Conan, and xmake, and prevents OpenSSL-backed full auth
-  from becoming part of the default package path prematurely.
+  WebSocket-enabled package smoke must also prove the installed SDK links a
+  clean consumer that includes and references the WebSocket transport symbols.
+- `check_package_auth_features.py`: package-manager metadata keeps optional
+  auth and WebSocket support opt-in for vcpkg, Conan, and xmake, and prevents
+  OpenSSL-backed full auth from becoming part of the default package path
+  prematurely.
 - `package-manager-vcpkg`: installs the repository overlay port through a real
-  vcpkg checkout for both the default SDK and `auth` feature, then builds the
-  clean CMake `package_smoke` consumer through the vcpkg toolchain. The
+  vcpkg checkout for default, WebSocket, and auth feature combinations, then
+  builds the clean CMake `package_smoke` consumer through the vcpkg toolchain. The
   uploaded artifact must include non-empty vcpkg install log plus
   clean-consumer CMake configure/build logs.
 - `package-manager-conan`: creates the Conan package for both default and
-  `with_auth=True` options, installs a clean downstream dependency graph, and
-  builds the same external CMake `package_smoke` consumer through Conan's
-  generated toolchain. The uploaded artifact must include non-empty Conan
+  WebSocket/auth option combinations, installs a clean downstream dependency
+  graph, and builds the same external CMake `package_smoke` consumer through
+  Conan's generated toolchain. The uploaded artifact must include non-empty Conan
   create/install logs plus clean-consumer CMake configure/build logs.
 - `package-manager-xmake`: consumes the xmake-repo draft from a local xmake
-  repository for both default and auth configurations, but rewrites the CI
-  recipe to use a generated source archive from the exact workflow checkout,
+  repository for default, WebSocket, and auth configurations, but rewrites the
+  CI recipe to use a generated source archive from the exact workflow checkout,
   including checked-out submodule contents, instead of the last published
   GitHub Release archive. It then compiles a clean downstream C++17 consumer.
   The uploaded artifact must include the temporary local xmake repository,
@@ -119,9 +122,10 @@ registered through `cxxmcp_mark_release_blocking()`.
   and typed model basics.
 - `transport_contract` and `transport_stdio_contract`: role-generic transport
   contract behavior.
-- `stdio_transport`, `http_transport`, and `transport_adapters`: concrete and
-  compatibility transport behavior, including failure-path coverage plus short
-  HTTP concurrent-session and many-in-flight request smoke coverage. The
+- `stdio_transport`, `http_transport`, `websocket_transport`, and
+  `transport_adapters`: concrete and compatibility transport behavior,
+  including failure-path coverage plus short HTTP concurrent-session and
+  many-in-flight request smoke coverage. The
   current HTTP backend decision is recorded in
   `docs/compatibility_policy.md#http-transport-backend-evidence`; another HTTP
   stack requires measured load, lifecycle, sanitizer, or downstream workload

@@ -20,6 +20,7 @@ set(required_release_blocking_tests
     stdio_transport
     transport_adapters
     http_transport
+    websocket_transport
     rmcp_conformance
     sdk
     public_targets
@@ -41,7 +42,8 @@ foreach(test_name IN LISTS required_release_blocking_tests)
 endforeach()
 
 foreach(header_test
-        protocol error config auth transport client server peer handler service sdk)
+        protocol error config auth transport websocket_transport client server peer
+        handler service sdk)
     string(REGEX MATCH
         "add_cxxmcp_public_header_compile_test\\([ \t\r\n]*${header_test}([ \t\r\n]|\\))"
         has_header_test

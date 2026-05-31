@@ -128,6 +128,18 @@ if(MCP_ENABLE_HTTP AND TARGET mcp_client AND TARGET mcp_server)
 
 endif()
 
+if(MCP_ENABLE_WEBSOCKET AND TARGET mcp_client AND TARGET mcp_server)
+    add_executable(mcp_example_websocket_server websocket_server.cpp)
+    target_link_libraries(mcp_example_websocket_server PRIVATE mcp_client
+                                                               mcp_server)
+    cxxmcp_example(mcp_example_websocket_server)
+
+    add_executable(mcp_example_websocket_client websocket_client.cpp)
+    target_link_libraries(mcp_example_websocket_client PRIVATE mcp_client
+                                                               mcp_server)
+    cxxmcp_example(mcp_example_websocket_client)
+endif()
+
 if(CXXMCP_BUILD_EXPERIMENTAL_OAUTH_EXAMPLES AND TARGET mcp_auth
    AND TARGET mcp_server)
     add_executable(mcp_example_oauth_authorization_server

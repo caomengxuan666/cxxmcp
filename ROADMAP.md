@@ -20,13 +20,13 @@ and ecosystem readiness are tracked in `todo.md` and `docs/`.
 
 ## Longer Term
 
-- WebSocket transport support.
 - Dependency-update automation.
 
 ## Completed
 
 - Full server and client implementation across Streamable HTTP, SSE-compatible
-  paths, stdio, and process stdio.
+  paths, stdio, process stdio, and WebSocket.
+- WebSocket transport with built-in auto-reconnect (cpp-httplib based).
 - Optional OAuth 2.1 / DPoP / JWKS auth target.
 - SEP-2243 `Mcp-Method` / `Mcp-Name` handling with current exception documented
   in `docs/conformance_evidence.md`.

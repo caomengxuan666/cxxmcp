@@ -22,6 +22,7 @@ DEFAULT_TESTS = [
     "stdio_transport",
     "transport_adapters",
     "http_transport",
+    "websocket_transport",
     "rmcp_conformance",
     "sdk",
     "public_targets",
@@ -33,6 +34,7 @@ DEFAULT_TESTS = [
     "public_header_error",
     "public_header_config",
     "public_header_transport",
+    "public_header_websocket_transport",
     "public_header_client",
     "public_header_server",
     "public_header_peer",
@@ -47,6 +49,7 @@ PUBLIC_HEADER_TARGETS = [
     "mcp_public_header_config",
     "mcp_public_header_auth",
     "mcp_public_header_transport",
+    "mcp_public_header_websocket_transport",
     "mcp_public_header_client",
     "mcp_public_header_server",
     "mcp_public_header_peer",
@@ -168,7 +171,7 @@ def create_gate_artifacts(root: Path) -> None:
     )
     write(public_header / "public-header-compile-evidence.json", f'{{"targets":[{entries}]}}')
 
-    for feature in ["default", "http-auth"]:
+    for feature in ["default", "websocket", "websocket-auth", "http-auth"]:
         add_package_artifact(root, f"cxxmcp-package-vcpkg-{feature}", "vcpkg")
         add_package_artifact(root, f"cxxmcp-package-conan-{feature}", "conan")
         add_package_artifact(root, f"cxxmcp-package-xmake-{feature}", "xmake")
