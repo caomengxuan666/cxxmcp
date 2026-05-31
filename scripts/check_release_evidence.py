@@ -345,7 +345,6 @@ def check_source_tree(source: Path) -> None:
         "Time-Sensitive Dependency Claims",
         "Dependency status statements are release-candidate evidence",
         "tl::expected",
-        "jsonrpcpp",
         "cpp-httplib",
     ]:
         require_contains(dependency_policy, needle)
@@ -405,7 +404,6 @@ def check_source_tree(source: Path) -> None:
         "unresolved source-marker",
         "Dependency review followed `docs/dependency_policy.md`",
         "vendored `tl::expected`",
-        "`jsonrpcpp`",
         "`cpp-httplib`",
         "release-gates run id",
         "release-artifact-review.md",
@@ -464,15 +462,14 @@ def check_source_tree(source: Path) -> None:
     require_contains(release_notes, "Checksums")
     require_contains(release_notes, "Dependency review")
     require_contains(release_notes, "`tl::expected` fallback/package-manager route")
-    require_contains(release_notes, "private `jsonrpcpp` route")
     require_contains(release_notes, "hidden `cpp-httplib` route")
     require_contains(release_notes, "Windows ClangCL Ninja static runtime")
     require_contains(release_notes, "cxxmcp-package-vcpkg-default")
-    require_contains(release_notes, "cxxmcp-package-vcpkg-auth")
+    require_contains(release_notes, "cxxmcp-package-vcpkg-http-auth")
     require_contains(release_notes, "cxxmcp-package-conan-default")
-    require_contains(release_notes, "cxxmcp-package-conan-auth")
+    require_contains(release_notes, "cxxmcp-package-conan-http-auth")
     require_contains(release_notes, "cxxmcp-package-xmake-default")
-    require_contains(release_notes, "cxxmcp-package-xmake-auth")
+    require_contains(release_notes, "cxxmcp-package-xmake-http-auth")
     require_contains(release_notes, "cxxmcp-auth-openssl-release-gate-linux-gcc-ninja")
     require_contains(release_notes, "cxxmcp-performance-evidence-linux-gcc-ninja")
     require_contains(
@@ -507,8 +504,6 @@ def check_source_tree(source: Path) -> None:
     for forbidden in [
         "runtime/include",
         "runtime/observability/include",
-        "extensions/adapters/include",
-        "extensions/plugin-sdk/include",
         "tools/cli/include",
     ]:
         require_not_contains(doxygen, forbidden)
@@ -573,11 +568,11 @@ def check_source_tree(source: Path) -> None:
     require_contains(release_sdk, "cxxmcp-auth-release-gate-linux-gcc-ninja")
     require_contains(release_sdk, "cxxmcp-auth-openssl-release-gate-linux-gcc-ninja")
     require_contains(release_sdk, "cxxmcp-package-vcpkg-default")
-    require_contains(release_sdk, "cxxmcp-package-vcpkg-auth")
+    require_contains(release_sdk, "cxxmcp-package-vcpkg-http-auth")
     require_contains(release_sdk, "cxxmcp-package-conan-default")
-    require_contains(release_sdk, "cxxmcp-package-conan-auth")
+    require_contains(release_sdk, "cxxmcp-package-conan-http-auth")
     require_contains(release_sdk, "cxxmcp-package-xmake-default")
-    require_contains(release_sdk, "cxxmcp-package-xmake-auth")
+    require_contains(release_sdk, "cxxmcp-package-xmake-http-auth")
     require_contains(release_sdk, "cxxmcp-doxygen-html")
     require_contains(release_sdk, "cxxmcp-source")
     require_contains(release_sdk, "cxxmcp-release-evidence")
@@ -592,8 +587,8 @@ def check_source_tree(source: Path) -> None:
     require_contains(release_sdk, "--release-url")
     require_contains(release_sdk, "Package release-gates evidence")
     require_contains(release_sdk, "cxxmcp-sdk-source-${tag}.tar.gz")
-    require_contains(release_sdk, "-czf \"release-artifacts/${package}\"")
-    require_contains(release_sdk, "scripts \\")
+    require_contains(release_sdk, "scripts/create_sdk_source_archive.py")
+    require_contains(release_sdk, "--output \"release-artifacts/${package}\"")
     require_contains(release_sdk, "SHA256SUMS.txt")
     require_contains(release_sdk, "release-artifact-review.md")
     require_contains(release_sdk, "sha256sum *.tar.gz > SHA256SUMS.txt")
@@ -631,8 +626,7 @@ def check_source_tree(source: Path) -> None:
     require_contains(package_smoke, "assert_optional_component_missing")
     require_contains(package_smoke, "find_package(cxxmcp CONFIG REQUIRED COMPONENTS ${component_name})")
     require_contains(package_smoke, "component '${component_name}' was requested but is not installed")
-    require_contains(package_smoke, "default package smoke must not install optional plugin headers")
-    require_contains(package_smoke, "default package smoke must not install optional adapter headers")
+    require_contains(package_smoke, "removed plugin/adapters extension headers")
     require_contains(package_smoke, "templates/external_consumer")
 
     release_artifacts = source / "scripts/check_release_artifacts.py"

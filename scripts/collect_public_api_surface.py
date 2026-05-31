@@ -19,7 +19,6 @@ PUBLIC_INCLUDE_ROOTS = [
 
 OPTIONAL_INCLUDE_ROOTS = [
     "sdk/auth/include/cxxmcp",
-    "extensions/plugin-sdk/include/cxxmcp",
 ]
 
 STABLE_TARGETS = [
@@ -36,8 +35,6 @@ STABLE_TARGETS = [
 OPTIONAL_TARGETS = [
     "cxxmcp::auth",
     "cxxmcp::auth_openssl",
-    "cxxmcp::plugin_sdk",
-    "cxxmcp::adapters",
 ]
 
 OUT_OF_SCOPE_SURFACES = [

@@ -1,5 +1,21 @@
 # Changelog
 
+## 1.1.3
+
+- Prepared release metadata and package references.
+
+## 1.1.2
+
+- Fixed `mcp::core::Result` ABI stability by keeping `tl::expected` as the
+  public backend across all supported C++ standards.
+- Fixed C++23 HTTP SDK builds by making the server HTTP holder complete before
+  `std::unique_ptr` cleanup is instantiated.
+- Removed unused optional plugin/adapters extension targets and headers.
+- Removed unused vendored `tcb/span.hpp`.
+- Added an opt-in benchmark target and Streamable HTTP benchmark driver.
+- Cleaned stale root Markdown docs and compressed the root TODO to active
+  release evidence gates.
+
 ## 1.1.1
 
 - Implemented SEP-1699 SSE retry/reconnection in the SDK client HTTP transport.

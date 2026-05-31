@@ -22,7 +22,7 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           fetch-depth: 0
           submodules: recursive
@@ -50,6 +50,35 @@ jobs:
             echo "commit=${commit}"
           } >> "${GITHUB_OUTPUT}"
 
+      - name: Wait for release-gates to pass
+        id: trigger_gates
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RELEASE_GATES_RUN_ID_INPUT: ${{ github.event.inputs.release_gates_run_id || '' }}
+          RELEASE_COMMIT: ${{ steps.release_identity.outputs.commit }}
+        run: |
+          set -euo pipefail
+          if [[ -n "${RELEASE_GATES_RUN_ID_INPUT}" ]]; then
+            echo "Using explicit release-gates run ${RELEASE_GATES_RUN_ID_INPUT}; skipping auto-discovery wait."
+            exit 0
+          fi
+          for i in $(seq 1 60); do
+            existing="$(
+              gh api \
+                "/repos/${GITHUB_REPOSITORY}/actions/workflows/release-gates.yml/runs?status=success&head_sha=${RELEASE_COMMIT}&per_page=1" \
+                --jq '.workflow_runs[0].id // empty'
+            )"
+            if [[ -n "${existing}" ]]; then
+              echo "release-gates passed (run ${existing})"
+              exit 0
+            fi
+            echo "Waiting for release-gates... (${i}/60)"
+            sleep 30
+          done
+          echo "Timed out waiting for release-gates to pass for ${RELEASE_COMMIT}" >&2
+          exit 1
+
       - name: Verify matching release-gates run
         id: release_gates
         shell: bash
@@ -73,11 +102,11 @@ jobs:
             cxxmcp-auth-release-gate-windows-msvc-ninja
             cxxmcp-auth-openssl-release-gate-linux-gcc-ninja
             cxxmcp-package-vcpkg-default
-            cxxmcp-package-vcpkg-auth
+            cxxmcp-package-vcpkg-http-auth
             cxxmcp-package-conan-default
-            cxxmcp-package-conan-auth
+            cxxmcp-package-conan-http-auth
             cxxmcp-package-xmake-default
-            cxxmcp-package-xmake-auth
+            cxxmcp-package-xmake-http-auth
             cxxmcp-doxygen-html
             cxxmcp-source
             cxxmcp-release-evidence
@@ -114,8 +143,26 @@ jobs:
             exit 1
           fi
           if [[ "${run_head_sha}" != "${RELEASE_COMMIT}" ]]; then
-            echo "Run ${run_id} is for ${run_head_sha}, not release commit ${RELEASE_COMMIT}." >&2
-            exit 1
+            if [[ -z "${RELEASE_GATES_RUN_ID_INPUT}" ]]; then
+              echo "Run ${run_id} is for ${run_head_sha}, not release commit ${RELEASE_COMMIT}." >&2
+              exit 1
+            fi
+
+            if ! git merge-base --is-ancestor "${run_head_sha}" "${RELEASE_COMMIT}"; then
+              echo "Explicit release-gates run ${run_id} is not an ancestor of release commit ${RELEASE_COMMIT}." >&2
+              exit 1
+            fi
+
+            disallowed="$(
+              git diff --name-only "${run_head_sha}" "${RELEASE_COMMIT}" |
+                grep -Ev '^(\.github/workflows/release-sdk\.yml|scripts/check_release_artifacts\.py|scripts/selftest_release_artifacts\.py)$' || true
+            )"
+            if [[ -n "${disallowed}" ]]; then
+              echo "Explicit release-gates run ${run_id} differs from release commit outside release packaging files:" >&2
+              echo "${disallowed}" >&2
+              exit 1
+            fi
+            echo "Using explicit release-gates run ${run_id} from ancestor ${run_head_sha}; release commit only changes release packaging files."
           fi
 
           artifacts="$(
@@ -158,36 +205,11 @@ jobs:
 
           tag="${{ steps.release_identity.outputs.tag }}"
           package="cxxmcp-sdk-source-${tag}.tar.gz"
-          prefix="cxxmcp-sdk-${tag}"
           mkdir -p release-artifacts
 
-          tar \
-            --exclude-vcs \
-            --exclude='./release-artifacts' \
-            --exclude='./docs/doxygen' \
-            --transform "s,^,${prefix}/," \
-            -czf "release-artifacts/${package}" \
-            CMakeLists.txt \
-            CMakePresets.json \
-            cmake \
-            sdk \
-            extensions \
-            examples \
-            tests \
-            docs \
-            scripts \
-            packaging \
-            conanfile.py \
-            third_party/tl \
-            third_party/jsonrpcpp \
-            third_party/nlohmann \
-            third_party/httplib/httplib.h \
-            README.md \
-            README_zh.md \
-            CHANGELOG.md \
-            LICENSE \
-            .clang-format \
-            .clang-tidy
+          python -B scripts/create_sdk_source_archive.py \
+            --tag "${tag}" \
+            --output "release-artifacts/${package}"
 
       - name: Package release-gates evidence
         shell: bash
@@ -211,11 +233,11 @@ jobs:
             cxxmcp-auth-release-gate-windows-msvc-ninja \
             cxxmcp-auth-openssl-release-gate-linux-gcc-ninja \
             cxxmcp-package-vcpkg-default \
-            cxxmcp-package-vcpkg-auth \
+            cxxmcp-package-vcpkg-http-auth \
             cxxmcp-package-conan-default \
-            cxxmcp-package-conan-auth \
+            cxxmcp-package-conan-http-auth \
             cxxmcp-package-xmake-default \
-            cxxmcp-package-xmake-auth
+            cxxmcp-package-xmake-http-auth
 
           tar -czf "release-artifacts/cxxmcp-doxygen-html-${tag}.tar.gz" \
             -C release-gate-artifacts \
@@ -305,8 +327,8 @@ jobs:
             docs/compatibility_policy.md in the source archive.
           - Public SDK package targets remain under the cxxmcp:: namespace.
           - Static-library releases do not claim ABI stability.
-          - Runtime, gateway, CLI, app, adapters, and plugin SDK targets remain
-            optional layers outside the core SDK contract.
+          - Runtime, gateway, CLI, app, and plugin surfaces remain outside the
+            core SDK contract.
 
           ## Evidence Notes
 

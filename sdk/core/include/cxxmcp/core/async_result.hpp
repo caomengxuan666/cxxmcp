@@ -136,25 +136,28 @@ class AsyncResult {
       -> std::shared_ptr<AsyncResult<std::invoke_result_t<F, ResultType>>> {
     using R = std::invoke_result_t<F, ResultType>;
     auto next = std::make_shared<AsyncResult<R>>();
+    std::optional<ResultType> ready_value;
     {
       std::lock_guard<std::mutex> lock(mutex_);
       if (value_.has_value()) {
-        // Already resolved -- fire immediately
-        try {
-          next->set_value(callback(*value_));
-        } catch (...) {
-          next->set_exception(std::current_exception());
-        }
-        return next;
+        ready_value = *value_;
+      } else {
+        continuations_.emplace_back(
+            [next, cb = std::forward<F>(callback)](ResultType result) mutable {
+              try {
+                next->set_value(cb(std::move(result)));
+              } catch (...) {
+                next->set_exception(std::current_exception());
+              }
+            });
       }
-      continuations_.emplace_back(
-          [next, cb = std::forward<F>(callback)](ResultType result) mutable {
-            try {
-              next->set_value(cb(std::move(result)));
-            } catch (...) {
-              next->set_exception(std::current_exception());
-            }
-          });
+    }
+    if (ready_value.has_value()) {
+      try {
+        next->set_value(callback(std::move(*ready_value)));
+      } catch (...) {
+        next->set_exception(std::current_exception());
+      }
     }
     return next;
   }
@@ -278,24 +281,28 @@ class AsyncResult<void> {
       -> std::shared_ptr<AsyncResult<std::invoke_result_t<F, ResultType>>> {
     using R = std::invoke_result_t<F, ResultType>;
     auto next = std::make_shared<AsyncResult<R>>();
+    std::optional<ResultType> ready_value;
     {
       std::lock_guard<std::mutex> lock(mutex_);
       if (value_.has_value()) {
-        try {
-          next->set_value(callback(*value_));
-        } catch (...) {
-          next->set_exception(std::current_exception());
-        }
-        return next;
+        ready_value = *value_;
+      } else {
+        continuations_.emplace_back(
+            [next, cb = std::forward<F>(callback)](ResultType result) mutable {
+              try {
+                next->set_value(cb(std::move(result)));
+              } catch (...) {
+                next->set_exception(std::current_exception());
+              }
+            });
       }
-      continuations_.emplace_back(
-          [next, cb = std::forward<F>(callback)](ResultType result) mutable {
-            try {
-              next->set_value(cb(std::move(result)));
-            } catch (...) {
-              next->set_exception(std::current_exception());
-            }
-          });
+    }
+    if (ready_value.has_value()) {
+      try {
+        next->set_value(callback(std::move(*ready_value)));
+      } catch (...) {
+        next->set_exception(std::current_exception());
+      }
     }
     return next;
   }

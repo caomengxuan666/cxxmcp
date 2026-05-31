@@ -22,7 +22,6 @@ SDK package dependencies are intentionally narrow:
 - `tl-expected`
 - `nlohmann-json`
 - `cpp-httplib`
-- `jsonrpcpp` as a private protocol implementation header
 
 Default source/archive builds may vendor header-only SDK dependencies for easy
 FetchContent and CPM.cmake consumption. Registry builds should use
@@ -46,13 +45,6 @@ For vcpkg, the repository-hosted overlay port is the supported package-manager
 path until the project has enough maturity evidence for a curated-registry PR.
 That port must stay SDK-only: no external gateway/tooling, examples, tests,
 docs, spdlog, or CLI11 in the default package dependency closure.
-
-`jsonrpcpp` is private to cxxmcp package builds. The bundled copy is used only
-to compile `cxxmcp::protocol` and must not be installed as a public SDK header
-or exported as a cxxmcp-owned third-party target. Once the vcpkg `jsonrpcpp`
-port is accepted, curated-registry builds should enable
-`CXXMCP_USE_SYSTEM_JSONRPCPP=ON` and depend on that port instead of the bundled
-copy.
 
 ## Update Cadence
 
@@ -81,12 +73,12 @@ release commit and recorded in release notes.
 
 For the current SDK surface:
 
-- `tl::expected` may remain a vendored fallback only after the release review
-  confirms the fallback version and the package-manager `tl-expected` route are
-  both acceptable for the advertised package paths.
-- `jsonrpcpp` remains private and bundled until an accepted package-manager
-  route exists; release notes must not present it as a public dependency or
-  exported target.
+- `tl::expected` is the public `mcp::core::Result` backend for this major
+  release, not only a fallback. Release review must confirm the vendored
+  version and the package-manager `tl-expected` route are both acceptable for
+  the advertised package paths. Do not switch `Result` to `std::expected` based
+  on the consumer's C++ language mode; that would break static-library symbol
+  compatibility between C++17 SDK builds and C++23 consumers.
 - `cpp-httplib` remains hidden behind transport interfaces; replacement claims
   require the load/reliability evidence tracked in
   `docs/compatibility_policy.md#http-transport-backend-evidence`.

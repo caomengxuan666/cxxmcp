@@ -9,15 +9,10 @@ SDK 支持两种依赖模式：
 
 - 默认源码包 / archive 构建使用仓库内 bundled header-only SDK 依赖，让
   FetchContent、CPM.cmake 和直接源码安装不依赖包管理器。安装树会包含
-  `tl/expected.hpp` 和 `nlohmann/json.hpp`。`jsonrpcpp` 只在构建
-  `cxxmcp::protocol` 时作为私有实现头使用，不作为 SDK header 安装。
+  `tl/expected.hpp` 和 `nlohmann/json.hpp`。
 - 注册表包构建应设置 `CXXMCP_USE_SYSTEM_DEPS=ON`，并使用包管理器提供的
   `tl-expected`、`nlohmann-json` 和 `cpp-httplib`。这种模式下安装树不能再
-  vendor `tl`、`nlohmann` 或 `jsonrpcpp` 头文件。
-
-`jsonrpcpp` 仍然是私有实现细节。当前 overlay 构建继续使用 bundled
-single-header copy，因为 vcpkg 的 `jsonrpcpp` port 还在审核中。等该 port 被接受后，
-curated cxxmcp port 应依赖它，并用 `CXXMCP_USE_SYSTEM_JSONRPCPP=ON` 配置 cxxmcp。
+  vendor `tl` 或 `nlohmann` 头文件。
 
 `cpp-httplib` 是 transport 实现依赖，不作为 public SDK header 安装。下游代码应
 包含 `cxxmcp/transport/http_transport.hpp`、
@@ -29,13 +24,13 @@ spdlog、CLI11 等 tooling 依赖不属于 SDK package contract。面向 vcpkg/C
 
 ## vcpkg Overlay Port
 
-`cxxmcp` 尚未进入 vcpkg curated registry。当前支持的 vcpkg 路径是本仓库里的
-`packaging/vcpkg/ports/cxxmcp` overlay port，需要从这个仓库 checkout 消费。
+`cxxmcp-sdk` 尚未进入 vcpkg curated registry。当前支持的 vcpkg 路径是本仓库里的
+`packaging/vcpkg/ports/cxxmcp-sdk` overlay port，需要从这个仓库 checkout 消费。
 
 一次性安装：
 
 ```powershell
-vcpkg install cxxmcp --overlay-ports=C:\path\to\MCPServer.cpp\packaging\vcpkg\ports
+vcpkg install cxxmcp-sdk --overlay-ports=C:\path\to\cxxmcp\packaging\vcpkg\ports
 ```
 
 manifest mode 下，下游应用的 manifest 保持精简：
@@ -43,7 +38,7 @@ manifest mode 下，下游应用的 manifest 保持精简：
 ```json
 {
   "dependencies": [
-    "cxxmcp"
+    "cxxmcp-sdk"
   ]
 }
 ```
@@ -51,7 +46,7 @@ manifest mode 下，下游应用的 manifest 保持精简：
 然后用 overlay path 安装：
 
 ```powershell
-vcpkg install --overlay-ports=C:\path\to\MCPServer.cpp\packaging\vcpkg\ports
+vcpkg install --overlay-ports=C:\path\to\cxxmcp\packaging\vcpkg\ports
 ```
 
 示例 `vcpkg-configuration.json` 形状位于：
@@ -66,24 +61,17 @@ packaging/vcpkg/vcpkg-configuration.overlay-example.json
 
 这个 overlay port 只构建 C++17 SDK package targets。它设置
 `CXXMCP_USE_SYSTEM_DEPS=ON`，关闭 examples、tests 和 docs，并使用 vcpkg 提供的
-`tl-expected`、`nlohmann-json` 和 `cpp-httplib`。在
-`jsonrpcpp` 进入 vcpkg 之前，overlay port 仍只在 protocol library 构建阶段使用
-bundled private jsonrpcpp 实现头；它不会依赖 `jsonrpcpp`，也不会传入
-`CXXMCP_USE_SYSTEM_JSONRPCPP=ON`。它不会把 spdlog、CLI11 或外部 gateway tooling
-变成 SDK 包的默认消费面。
+`tl-expected`、`nlohmann-json` 和 `cpp-httplib`。它不会把 spdlog、CLI11 或外部
+gateway tooling 变成 SDK 包的默认消费面。
 
 可选 auth scaffold 是显式 feature，不属于默认 vcpkg package 路径：
 
 ```powershell
-vcpkg install "cxxmcp[auth]" --overlay-ports=C:\path\to\MCPServer.cpp\packaging\vcpkg\ports
+vcpkg install "cxxmcp-sdk[auth]" --overlay-ports=C:\path\to\cxxmcp\packaging\vcpkg\ports
 ```
 
 `auth` feature 会映射到 `CXXMCP_ENABLE_AUTH=ON`。它当前只启用
 transport-neutral OAuth/DPoP contracts，不允许把 OpenSSL 拉入默认 package 路径。
-
-`jsonrpcpp` 仍然是私有实现细节。消费者应该链接 `cxxmcp::protocol`、
-`cxxmcp::client`、`cxxmcp::server` 或 `cxxmcp::sdk`；不应通过 cxxmcp 包含或链接
-public `jsonrpcpp` package surface。
 
 ## 后续 vcpkg Registry 路径
 
@@ -109,10 +97,6 @@ packaging/vcpkg/vcpkg-configuration.git-registry-future-example.json
   `vcpkg_check_linkage(ONLY_STATIC_LIBRARY)`；portfile 不再强制
   `-DBUILD_SHARED_LIBS=OFF`；
 - 继续只启用 SDK 构建，并关闭 examples、tests 和 docs；
-- 在 `microsoft/vcpkg#52045` 或等价 jsonrpcpp port 被接受后，把 `jsonrpcpp` 作为
-  普通 vcpkg dependency，并传入 `CXXMCP_USE_SYSTEM_JSONRPCPP=ON`；它仍保持私有，
-  不导出 cxxmcp 自己的 third-party target。如果 curated cxxmcp PR 已经准备好但
-  jsonrpcpp port 仍不可用，则保持这个开关关闭，并在 PR 中记录例外原因；
 - 默认 `cpp-httplib` 仍按不带 TLS 的 loopback HTTP 消费，除非后续明确增加依赖
   `cpp-httplib[openssl]` 的 `ssl` 或 `https` feature；
 - OAuth/DPoP auth 等 OpenSSL-backed 实现落地之后再作为 opt-in feature，不提前把
@@ -126,7 +110,7 @@ packaging/vcpkg/vcpkg-configuration.git-registry-future-example.json
 源码包。SDK archive 包含默认 bundled 构建需要的 header-only SDK 依赖；GitHub
 自动源码包不包含 submodule 内容。
 
-下面具体的 `v1.0.0` URL 是本文档目前记录的最新已发布 SDK source archive。
+下面具体的 `v1.1.3` URL 是本文档目前记录的最新已发布 SDK source archive。
 它适用于想固定到已发布默认 SDK surface 的 consumer。不要把它当成当前 worktree
 可选 auth header surface 的证据；当前源码或 release candidate 验证必须使用那次
 release-gates run 生成的精确 source archive 和 checksum。
@@ -136,8 +120,8 @@ include(FetchContent)
 
 FetchContent_Declare(
     cxxmcp
-    URL https://github.com/caomengxuan666/cxxmcp/releases/download/v1.1.1/cxxmcp-sdk-source-v1.1.1.tar.gz
-    URL_HASH SHA256=3c4ad678a8612183a4f2539973328b6a85dab360991a86e6328ca032cc5e2ba8
+    URL https://github.com/caomengxuan666/cxxmcp/releases/download/v1.1.3/cxxmcp-sdk-source-v1.1.3.tar.gz
+    URL_HASH SHA256=ebf256c24e806301b65749ff22960b717aef46bba625c5d8a7edf9e237ccf936
 )
 
 set(CXXMCP_BUILD_SDK ON CACHE BOOL "" FORCE)
@@ -157,7 +141,7 @@ target_link_libraries(my_server PRIVATE cxxmcp::server)
 构建意外启用 examples、tests 或 docs。
 
 URL 和 hash 应来自你有意 pin 的那个 release。release candidate 验证要使用候选
-run 生成的精确 source artifact，不要直接复制已发布的 `v1.0.0` 示例。
+run 生成的精确 source artifact，不要直接复制以前发布版本的示例。
 
 cxxmcp 不会安装或导出 `CPM.cmake` helper。消费方项目必须自己提供它，例如把
 `cmake/CPM.cmake` vendor 到自己的源码树，或者在 `include()` 前自行 bootstrap。
@@ -173,8 +157,8 @@ set(CXXMCP_BUILD_DOCS OFF CACHE BOOL "" FORCE)
 
 CPMAddPackage(
     NAME cxxmcp
-    URL https://github.com/caomengxuan666/cxxmcp/releases/download/v1.1.1/cxxmcp-sdk-source-v1.1.1.tar.gz
-    URL_HASH SHA256=3c4ad678a8612183a4f2539973328b6a85dab360991a86e6328ca032cc5e2ba8
+    URL https://github.com/caomengxuan666/cxxmcp/releases/download/v1.1.3/cxxmcp-sdk-source-v1.1.3.tar.gz
+    URL_HASH SHA256=ebf256c24e806301b65749ff22960b717aef46bba625c5d8a7edf9e237ccf936
 )
 
 add_executable(my_client main.cpp)

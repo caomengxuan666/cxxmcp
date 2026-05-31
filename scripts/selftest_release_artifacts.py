@@ -26,7 +26,6 @@ DEFAULT_TESTS = [
     "sdk",
     "public_targets",
     "package_smoke",
-    "process_stdio_transport",
     "interop_typescript_client_process_stdio",
     "interop_python_client_process_stdio",
     "interop_rmcp_client_process_stdio",
@@ -169,7 +168,7 @@ def create_gate_artifacts(root: Path) -> None:
     )
     write(public_header / "public-header-compile-evidence.json", f'{{"targets":[{entries}]}}')
 
-    for feature in ["default", "auth"]:
+    for feature in ["default", "http-auth"]:
         add_package_artifact(root, f"cxxmcp-package-vcpkg-{feature}", "vcpkg")
         add_package_artifact(root, f"cxxmcp-package-conan-{feature}", "conan")
         add_package_artifact(root, f"cxxmcp-package-xmake-{feature}", "xmake")
@@ -201,7 +200,6 @@ def create_sdk_source_tarball(release: Path, root: Path, tag: str) -> None:
         "scripts/selftest_public_api_surface.py",
         "tests/package_smoke.cmake",
         "templates/external_consumer/CMakeLists.txt",
-        "third_party/jsonrpcpp/jsonrpcpp.hpp",
     ]:
         write(prefix / relative)
     create_tar(release / f"cxxmcp-sdk-source-{tag}.tar.gz", root, [prefix.name])
@@ -213,7 +211,7 @@ def create_release_artifacts(release: Path, gate: Path, source_root: Path, tag: 
     create_tar(
         release / f"cxxmcp-release-gates-{tag}.tar.gz",
         gate,
-        check_release_artifacts.REQUIRED_GATE_ARTIFACTS,
+        check_release_artifacts.RELEASE_GATE_BUNDLE_ARTIFACTS,
     )
     create_tar(release / f"cxxmcp-doxygen-html-{tag}.tar.gz", gate, ["cxxmcp-doxygen-html"])
     create_tar(release / f"cxxmcp-release-gate-source-{tag}.tar.gz", gate, ["cxxmcp-source"])

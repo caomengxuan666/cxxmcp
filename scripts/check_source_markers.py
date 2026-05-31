@@ -9,7 +9,6 @@ import re
 
 DEFAULT_ROOTS = [
     "sdk",
-    "extensions",
     "examples",
     "templates",
     "tests",

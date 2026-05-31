@@ -4,207 +4,44 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>Getting Started | cxxmcp</title>
-    <meta
-      name="description"
-      content="Install, build, and consume cxxmcp as a C++17 Model Context Protocol SDK.">
-    <style>
-      :root {
-        color-scheme: light dark;
-        --bg: #f7f8fa;
-        --panel: #ffffff;
-        --text: #17202a;
-        --muted: #596579;
-        --line: #d9dee7;
-        --accent: #0f766e;
-        --accent-strong: #0b5f59;
-        --code: #eef3f5;
-      }
-
-      @media (prefers-color-scheme: dark) {
-        :root {
-          --bg: #101317;
-          --panel: #171b21;
-          --text: #edf2f7;
-          --muted: #aab4c3;
-          --line: #2a313a;
-          --accent: #2dd4bf;
-          --accent-strong: #5eead4;
-          --code: #20262e;
-        }
-      }
-
-      * {
-        box-sizing: border-box;
-      }
-
-      body {
-        margin: 0;
-        font-family:
-          Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont,
-          "Segoe UI", sans-serif;
-        line-height: 1.6;
-        color: var(--text);
-        background: var(--bg);
-      }
-
-      a {
-        color: var(--accent-strong);
-        text-decoration-thickness: 0.08em;
-        text-underline-offset: 0.18em;
-      }
-
-      header,
-      main,
-      footer {
-        width: min(960px, calc(100% - 32px));
-        margin: 0 auto;
-      }
-
-      header {
-        padding: 28px 0 18px;
-        display: flex;
-        justify-content: space-between;
-        gap: 16px;
-        align-items: center;
-      }
-
-      .brand {
-        font-weight: 750;
-        font-size: 1.05rem;
-        letter-spacing: 0;
-      }
-
-      nav {
-        display: flex;
-        flex-wrap: wrap;
-        gap: 14px;
-        font-size: 0.95rem;
-      }
-
-      .hero {
-        padding: 46px 0 34px;
-        border-top: 1px solid var(--line);
-        border-bottom: 1px solid var(--line);
-      }
-
-      .eyebrow {
-        color: var(--accent-strong);
-        font-size: 0.9rem;
-        font-weight: 700;
-        text-transform: uppercase;
-        letter-spacing: 0;
-      }
-
-      h1 {
-        max-width: 820px;
-        margin: 12px 0 16px;
-        font-size: clamp(2.1rem, 5vw, 3.6rem);
-        line-height: 1.05;
-        letter-spacing: 0;
-      }
-
-      .lede {
-        max-width: 760px;
-        margin: 0;
-        color: var(--muted);
-        font-size: 1.12rem;
-      }
-
-      .section {
-        padding: 30px 0 8px;
-      }
-
-      .section h2 {
-        margin: 0 0 12px;
-        font-size: 1.35rem;
-        letter-spacing: 0;
-      }
-
-      .section p,
-      .section li {
-        color: var(--muted);
-      }
-
-      .grid {
-        display: grid;
-        grid-template-columns: repeat(2, minmax(0, 1fr));
-        gap: 16px;
-      }
-
-      .card {
-        border: 1px solid var(--line);
-        border-radius: 8px;
-        background: var(--panel);
-        padding: 20px;
-      }
-
-      .card h3 {
-        margin: 0 0 8px;
-        font-size: 1rem;
-        letter-spacing: 0;
-      }
-
-      .card p {
-        margin: 0;
-      }
-
-      pre {
-        overflow-x: auto;
-        border: 1px solid var(--line);
-        border-radius: 8px;
-        background: var(--code);
-        padding: 18px;
-      }
-
-      code {
-        font-family:
-          ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono",
-          monospace;
-        font-size: 0.95em;
-      }
-
-      footer {
-        padding: 24px 0 36px;
-        color: var(--muted);
-        border-top: 1px solid var(--line);
-        font-size: 0.95rem;
-        margin-top: 32px;
-      }
-
-      @media (max-width: 760px) {
-        header {
-          align-items: flex-start;
-          flex-direction: column;
-        }
-
-        .hero {
-          padding: 34px 0 28px;
-        }
-
-        .grid {
-          grid-template-columns: 1fr;
-        }
-      }
-    </style>
+    <meta name="description" content="Install, build, and consume cxxmcp as a C++17 Model Context Protocol SDK.">
+    <link rel="stylesheet" href="style.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.11.1/styles/github.min.css" media="(prefers-color-scheme: light)">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.11.1/styles/github-dark.min.css" media="(prefers-color-scheme: dark)">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.11.1/highlight.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.11.1/languages/cmake.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.11.1/languages/bash.min.js"></script>
+    <script>document.addEventListener('DOMContentLoaded',()=>hljs.highlightAll());</script>
   </head>
   <body>
-    <header>
-      <div class="brand">cxxmcp</div>
-      <nav aria-label="Primary">
-        <a href="./">Home</a>
+    <button class="sidebar-toggle" onclick="document.querySelector('.sidebar').classList.toggle('open')">&#9776;</button>
+    <div class="page">
+      <nav class="sidebar">
+        <div class="sidebar-brand"><a href="./">cxxmcp</a></div>
+        <div class="sidebar-section">Guide</div>
+        <a href="./getting-started.html">Getting Started</a>
         <a href="./tutorials.html">Tutorials</a>
         <a href="./concepts.html">Concepts</a>
         <a href="./cookbook.html">Cookbook</a>
         <a href="./transports.html">Transports</a>
+        <div class="sidebar-section">Reference</div>
+        <a href="./api/">API Reference</a>
         <a href="./troubleshooting.html">Troubleshooting</a>
+        <a href="./migration.html">Migration</a>
+        <a href="./changelog.html">Changelog</a>
+        <div class="sidebar-section">Project</div>
         <a href="./auth.html">Auth</a>
         <a href="./security.html">Security</a>
         <a href="./stability.html">Stability</a>
-        <a href="./api/">API Reference</a>
+        <a href="./contributing.html">Contributing</a>
+        <a href="./roadmap.html">Roadmap</a>
+        <div class="sidebar-section">External</div>
+        <a href="https://github.com/caomengxuan666/cxxmcp">GitHub</a>
+        <a href="https://modelcontextprotocol.io/">MCP Spec</a>
       </nav>
-    </header>
 
-    <main>
+      <div class="main-wrap">
+        <main>
       <section class="hero">
         <div class="eyebrow">Getting Started</div>
         <h1>Build a C++17 MCP client or server from the SDK package.</h1>
@@ -221,7 +58,7 @@
           A source checkout can install the SDK targets into a local prefix.
           The SDK headers and public package targets are C++17-compatible.
         </p>
-        <pre><code>cmake -S . -B build -DCXXMCP_BUILD_SDK=ON -DCXXMCP_BUILD_CLIENT=ON -DCXXMCP_BUILD_SERVER=ON
+        <pre><code class="language-bash">cmake -S . -B build -DCXXMCP_BUILD_SDK=ON -DCXXMCP_BUILD_CLIENT=ON -DCXXMCP_BUILD_SERVER=ON
 cmake --build build --config Release
 cmake --install build --config Release --prefix out/install/cxxmcp</code></pre>
       </section>
@@ -233,7 +70,7 @@ cmake --install build --config Release --prefix out/install/cxxmcp</code></pre>
           Use <code>cxxmcp::sdk</code> only when one binary intentionally needs
           protocol, client, and server APIs together.
         </p>
-        <pre><code>find_package(cxxmcp CONFIG REQUIRED)
+        <pre><code class="language-cmake">find_package(cxxmcp CONFIG REQUIRED)
 
 add_executable(my_server server.cpp)
 target_link_libraries(my_server PRIVATE cxxmcp::server)
@@ -246,9 +83,9 @@ target_link_libraries(my_client PRIVATE cxxmcp::client)</code></pre>
         <h2>Canonical Server Shape</h2>
         <p>
           Register server capabilities with the server builder, wrap the built
-          server in <code>mcp::ServerPeer</code>, add a transport, and serve it.
+          server in <code class="language-cpp">mcp::ServerPeer</code>, add a transport, and serve it.
         </p>
-        <pre><code>#include &lt;iostream&gt;
+        <pre><code class="language-cpp">#include &lt;iostream&gt;
 #include &lt;memory&gt;
 #include &lt;utility&gt;
 
@@ -299,13 +136,13 @@ int main() {
           time. The SDK bundles <code>cpp-httplib</code> as a header-only
           dependency.
         </p>
-        <pre><code># Build with HTTP transport
+        <pre><code class="language-bash"># Build with HTTP transport
 cmake -S . -B build -DCXXMCP_ENABLE_HTTP=ON -DCXXMCP_BUILD_SERVER=ON -DCXXMCP_BUILD_CLIENT=ON</code></pre>
         <p>
           Server and client builder both expose
           <code>.streamable_http(...)</code>:
         </p>
-        <pre><code>// Server — listen on HTTP
+        <pre><code class="language-cpp">// Server — listen on HTTP
 auto server = mcp::ServerPeer::builder()
     .name("my-server")
     .version("1.0.0")
@@ -316,7 +153,7 @@ auto server = mcp::ServerPeer::builder()
 
 auto running = mcp::serve(std::move(*server));
 running->wait_until_ready();</code></pre>
-        <pre><code>// Client — connect over HTTP
+        <pre><code class="language-cpp">// Client — connect over HTTP
 auto client = mcp::ClientPeer::builder()
     .streamable_http("http://127.0.0.1:3000/mcp")
     .build();
@@ -333,18 +170,18 @@ svc->peer().call_tool("echo", Json{{"value", "hello"}});</code></pre>
           <code>cxxmcp::auth</code> with PKCE, DPoP, metadata endpoints, and
           bearer-token helpers.
         </p>
-        <pre><code># Auth contracts (no OpenSSL)
+        <pre><code class="language-bash"># Auth contracts (no OpenSSL)
 cmake -S . -B build -DCXXMCP_ENABLE_AUTH=ON
 
 # With OpenSSL crypto backend
 cmake -S . -B build -DCXXMCP_ENABLE_AUTH=ON -DCXXMCP_AUTH_CRYPTO=OpenSSL</code></pre>
         <p>
-          vcpkg shortcut: <code>vcpkg install "cxxmcp[auth]"</code>.
+          vcpkg shortcut: <code class="language-bash">vcpkg install "cxxmcp-sdk[auth]"</code>.
         </p>
         <p>
           Add a bearer-token auth provider to the server builder:
         </p>
-        <pre><code>#include &lt;cxxmcp/peer.hpp&gt;
+        <pre><code class="language-cpp">#include &lt;cxxmcp/peer.hpp&gt;
 
 auto auth = std::make_unique&lt;mcp::server::StaticBearerAuthProvider&gt;();
 auth->add_token("my-secret",
@@ -366,7 +203,7 @@ auto server = mcp::ServerPeer::builder()
         <p>
           Client side — pass the bearer token:
         </p>
-        <pre><code>auto client = mcp::ClientPeer::builder()
+        <pre><code class="language-cpp">auto client = mcp::ClientPeer::builder()
     .streamable_http("http://127.0.0.1:3001/mcp")
     .bearer_token("my-secret")
     .build();</code></pre>
@@ -377,7 +214,7 @@ auto server = mcp::ServerPeer::builder()
         <p>
           When <code>CXXMCP_AUTH_CRYPTO=OpenSSL</code> is set alongside
           <code>CXXMCP_ENABLE_AUTH=ON</code>, the SDK resolves OpenSSL via
-          <code>find_package(OpenSSL)</code> and exports
+          <code class="language-cmake">find_package(OpenSSL)</code> and exports
           <code>cxxmcp::auth_openssl</code>. This enables:
         </p>
         <ul>
@@ -387,7 +224,7 @@ auto server = mcp::ServerPeer::builder()
           <li><code>StaticJwksDpopBearerAuthProvider</code></li>
           <li><code>FetchingJwksJwtVerifier</code> for remote JWKS</li>
         </ul>
-        <pre><code>#include &lt;cxxmcp/auth/openssl/server_auth_provider.hpp&gt;
+        <pre><code class="language-cpp">#include &lt;cxxmcp/auth/openssl/server_auth_provider.hpp&gt;
 
 mcp::auth::DpopAuthProviderOptions opts;
 opts.require_dpop = true;
@@ -411,7 +248,7 @@ auto auth =
           JSON serialization, deserialization, and JSON Schema generation — no
           boilerplate.
         </p>
-        <pre><code>#include &lt;cxxmcp/protocol/reflect.hpp&gt;
+        <pre><code class="language-cpp">#include &lt;cxxmcp/protocol/reflect.hpp&gt;
 
 struct SearchArgs {
     std::string query;
@@ -430,7 +267,7 @@ CXXMCP_REFLECT(SearchResult, session, hits)
         <p>
           Once reflected, use typed tool registration:
         </p>
-        <pre><code>.tool(mcp::server::tool&lt;SearchArgs, SearchResult&gt;("search")
+        <pre><code class="language-cpp">.tool(mcp::server::tool&lt;SearchArgs, SearchResult&gt;("search")
           .description("Search local documents.")
           .handler([](SearchArgs args, const mcp::server::ToolContext&amp; ctx) {
               SearchResult result;
@@ -461,7 +298,9 @@ CXXMCP_REFLECT(SearchResult, session, hits)
               Use the repository-hosted overlay port until cxxmcp is accepted
               into a curated registry.
             </p>
-            <pre><code>vcpkg install cxxmcp --overlay-ports=C:\path\to\MCPServer.cpp\packaging\vcpkg\ports</code></pre>
+            <pre><code class="language-bash"># Clone the repo first, then:
+vcpkg install cxxmcp-sdk \
+  --overlay-ports=packaging/vcpkg/ports</code></pre>
           </article>
           <article class="card">
             <h3>FetchContent or CPM</h3>
@@ -483,9 +322,11 @@ CXXMCP_REFLECT(SearchResult, session, hits)
       </section>
     </main>
 
-    <footer>
-      cxxmcp is a community C++ MCP SDK. It is not an official MCP SDK unless
-      accepted or listed by the MCP maintainers.
-    </footer>
+        <footer>
+          cxxmcp is a community C++ MCP SDK. It is not an official MCP SDK unless
+          accepted or listed by the MCP maintainers.
+        </footer>
+      </div>
+    </div>
   </body>
 </html>

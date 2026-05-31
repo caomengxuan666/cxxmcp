@@ -4,193 +4,44 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>Tutorials | cxxmcp</title>
-    <meta
-      name="description"
-      content="Step-by-step tutorials for building MCP servers and clients with cxxmcp.">
-    <style>
-      :root {
-        color-scheme: light dark;
-        --bg: #f7f8fa;
-        --panel: #ffffff;
-        --text: #17202a;
-        --muted: #596579;
-        --line: #d9dee7;
-        --accent: #0f766e;
-        --accent-strong: #0b5f59;
-        --code: #eef3f5;
-      }
-
-      @media (prefers-color-scheme: dark) {
-        :root {
-          --bg: #101317;
-          --panel: #171b21;
-          --text: #edf2f7;
-          --muted: #aab4c3;
-          --line: #2a313a;
-          --accent: #2dd4bf;
-          --accent-strong: #5eead4;
-          --code: #20262e;
-        }
-      }
-
-      * { box-sizing: border-box; }
-
-      body {
-        margin: 0;
-        font-family:
-          Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont,
-          "Segoe UI", sans-serif;
-        line-height: 1.6;
-        color: var(--text);
-        background: var(--bg);
-      }
-
-      a {
-        color: var(--accent-strong);
-        text-decoration-thickness: 0.08em;
-        text-underline-offset: 0.18em;
-      }
-
-      header, main, footer {
-        width: min(960px, calc(100% - 32px));
-        margin: 0 auto;
-      }
-
-      header {
-        padding: 28px 0 18px;
-        display: flex;
-        justify-content: space-between;
-        gap: 16px;
-        align-items: center;
-      }
-
-      .brand { font-weight: 750; font-size: 1.05rem; letter-spacing: 0; }
-
-      nav { display: flex; flex-wrap: wrap; gap: 14px; font-size: 0.95rem; }
-
-      .hero {
-        padding: 46px 0 34px;
-        border-top: 1px solid var(--line);
-        border-bottom: 1px solid var(--line);
-      }
-
-      .eyebrow {
-        color: var(--accent-strong);
-        font-size: 0.9rem;
-        font-weight: 700;
-        text-transform: uppercase;
-        letter-spacing: 0;
-      }
-
-      h1 {
-        max-width: 820px;
-        margin: 12px 0 16px;
-        font-size: clamp(2.1rem, 5vw, 3.6rem);
-        line-height: 1.05;
-        letter-spacing: 0;
-      }
-
-      .lede {
-        max-width: 760px;
-        margin: 0;
-        color: var(--muted);
-        font-size: 1.12rem;
-      }
-
-      .section { padding: 30px 0 8px; }
-
-      .section h2 {
-        margin: 0 0 12px;
-        font-size: 1.35rem;
-        letter-spacing: 0;
-      }
-
-      .section h3 {
-        margin: 20px 0 8px;
-        font-size: 1.1rem;
-        letter-spacing: 0;
-      }
-
-      .section p, .section li { color: var(--muted); }
-
-      pre {
-        overflow-x: auto;
-        border: 1px solid var(--line);
-        border-radius: 8px;
-        background: var(--code);
-        padding: 18px;
-      }
-
-      code {
-        font-family:
-          ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono",
-          monospace;
-        font-size: 0.95em;
-      }
-
-      .step {
-        border-left: 3px solid var(--accent);
-        padding-left: 20px;
-        margin: 24px 0;
-      }
-
-      .step-num {
-        display: inline-block;
-        width: 28px;
-        height: 28px;
-        border-radius: 50%;
-        background: var(--accent);
-        color: #fff;
-        text-align: center;
-        line-height: 28px;
-        font-size: 0.85rem;
-        font-weight: 700;
-        margin-right: 8px;
-      }
-
-      .note {
-        border: 1px solid var(--line);
-        border-radius: 8px;
-        background: var(--panel);
-        padding: 14px 18px;
-        margin: 16px 0;
-        font-size: 0.95rem;
-      }
-
-      .note strong { color: var(--text); }
-
-      footer {
-        padding: 24px 0 36px;
-        color: var(--muted);
-        border-top: 1px solid var(--line);
-        font-size: 0.95rem;
-        margin-top: 32px;
-      }
-
-      @media (max-width: 760px) {
-        header { align-items: flex-start; flex-direction: column; }
-        .hero { padding: 34px 0 28px; }
-      }
-    </style>
+    <meta name="description" content="Step-by-step tutorials for building MCP servers and clients with cxxmcp.">
+    <link rel="stylesheet" href="style.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.11.1/styles/github.min.css" media="(prefers-color-scheme: light)">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.11.1/styles/github-dark.min.css" media="(prefers-color-scheme: dark)">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.11.1/highlight.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.11.1/languages/cmake.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.11.1/languages/bash.min.js"></script>
+    <script>document.addEventListener('DOMContentLoaded',()=>hljs.highlightAll());</script>
   </head>
   <body>
-    <header>
-      <div class="brand">cxxmcp</div>
-      <nav aria-label="Primary">
-        <a href="./">Home</a>
+    <button class="sidebar-toggle" onclick="document.querySelector('.sidebar').classList.toggle('open')">&#9776;</button>
+    <div class="page">
+      <nav class="sidebar">
+        <div class="sidebar-brand"><a href="./">cxxmcp</a></div>
+        <div class="sidebar-section">Guide</div>
         <a href="./getting-started.html">Getting Started</a>
+        <a href="./tutorials.html">Tutorials</a>
         <a href="./concepts.html">Concepts</a>
         <a href="./cookbook.html">Cookbook</a>
         <a href="./transports.html">Transports</a>
+        <div class="sidebar-section">Reference</div>
+        <a href="./api/">API Reference</a>
         <a href="./troubleshooting.html">Troubleshooting</a>
+        <a href="./migration.html">Migration</a>
+        <a href="./changelog.html">Changelog</a>
+        <div class="sidebar-section">Project</div>
         <a href="./auth.html">Auth</a>
         <a href="./security.html">Security</a>
         <a href="./stability.html">Stability</a>
-        <a href="./api/">API Reference</a>
+        <a href="./contributing.html">Contributing</a>
+        <a href="./roadmap.html">Roadmap</a>
+        <div class="sidebar-section">External</div>
+        <a href="https://github.com/caomengxuan666/cxxmcp">GitHub</a>
+        <a href="https://modelcontextprotocol.io/">MCP Spec</a>
       </nav>
-    </header>
 
-    <main>
+      <div class="main-wrap">
+        <main>
       <section class="hero">
         <div class="eyebrow">Tutorials</div>
         <h1>Build your first MCP server and client in C++.</h1>
@@ -210,7 +61,7 @@
 
         <div class="step">
           <p><span class="step-num">1</span><strong>Create the CMake project</strong></p>
-          <pre><code>cmake_minimum_required(VERSION 3.16)
+          <pre><code class="language-cmake">cmake_minimum_required(VERSION 3.16)
 project(my-mcp-server LANGUAGES CXX)
 set(CMAKE_CXX_STANDARD 17)
 
@@ -221,7 +72,7 @@ target_link_libraries(server PRIVATE cxxmcp::server)</code></pre>
 
         <div class="step">
           <p><span class="step-num">2</span><strong>Write the server</strong></p>
-          <pre><code>// server.cpp
+          <pre><code class="language-cpp">// server.cpp
 #include &lt;cxxmcp/peer.hpp&gt;
 #include &lt;cxxmcp/run.hpp&gt;
 
@@ -243,7 +94,7 @@ int main() {
 
         <div class="step">
           <p><span class="step-num">3</span><strong>Build and test</strong></p>
-          <pre><code>cmake -S . -B build
+          <pre><code class="language-bash">cmake -S . -B build
 cmake --build build
 echo '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-11-25","capabilities":{},"clientInfo":{"name":"test","version":"1.0"}}}' | ./build/server</code></pre>
         </div>
@@ -251,7 +102,7 @@ echo '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":
         <div class="note">
           <strong>Tip:</strong> The <code>.run()</code> call builds, serves, and
           blocks until shutdown — all in one line. For more control, use
-          <code>.build()</code> + <code>mcp::serve()</code> separately.
+          <code>.build()</code> + <code class="language-cpp">mcp::serve()</code> separately.
         </div>
       </section>
 
@@ -265,7 +116,7 @@ echo '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":
 
         <div class="step">
           <p><span class="step-num">1</span><strong>Build with HTTP enabled</strong></p>
-          <pre><code>cmake -S . -B build \
+          <pre><code class="language-bash">cmake -S . -B build \
   -DCXXMCP_ENABLE_HTTP=ON \
   -DCXXMCP_BUILD_SERVER=ON \
   -DCXXMCP_BUILD_CLIENT=ON
@@ -274,7 +125,7 @@ cmake --build build</code></pre>
 
         <div class="step">
           <p><span class="step-num">2</span><strong>HTTP server</strong></p>
-          <pre><code>// http_server.cpp
+          <pre><code class="language-cpp">// http_server.cpp
 #include &lt;cxxmcp/peer.hpp&gt;
 #include &lt;cxxmcp/run.hpp&gt;
 
@@ -297,7 +148,7 @@ int main() {
 
         <div class="step">
           <p><span class="step-num">3</span><strong>HTTP client</strong></p>
-          <pre><code>// http_client.cpp
+          <pre><code class="language-cpp">// http_client.cpp
 #include &lt;iostream&gt;
 #include &lt;cxxmcp/peer.hpp&gt;
 #include &lt;cxxmcp/run.hpp&gt;
@@ -328,7 +179,7 @@ int main() {
 
         <div class="step">
           <p><span class="step-num">1</span><strong>Define your types</strong></p>
-          <pre><code>#include &lt;string&gt;
+          <pre><code class="language-cpp">#include &lt;string&gt;
 #include &lt;vector&gt;
 #include &lt;cxxmcp/protocol/reflect.hpp&gt;
 
@@ -358,7 +209,7 @@ CXXMCP_REFLECT(SearchResponse, results, total)
 
         <div class="step">
           <p><span class="step-num">2</span><strong>Register the typed tool</strong></p>
-          <pre><code>#include &lt;cxxmcp/peer.hpp&gt;
+          <pre><code class="language-cpp">#include &lt;cxxmcp/peer.hpp&gt;
 #include &lt;cxxmcp/run.hpp&gt;
 
 int main() {
@@ -404,7 +255,7 @@ int main() {
 
         <div class="step">
           <p><span class="step-num">1</span><strong>Server with bearer auth</strong></p>
-          <pre><code>#include &lt;memory&gt;
+          <pre><code class="language-cpp">#include &lt;memory&gt;
 #include &lt;cxxmcp/peer.hpp&gt;
 #include &lt;cxxmcp/run.hpp&gt;
 
@@ -441,7 +292,7 @@ int main() {
 
         <div class="step">
           <p><span class="step-num">2</span><strong>Client with bearer token</strong></p>
-          <pre><code>auto client = mcp::ClientPeer::builder()
+          <pre><code class="language-cpp">auto client = mcp::ClientPeer::builder()
     .streamable_http("http://127.0.0.1:3001/mcp")
     .bearer_token("secret-token-123")
     .build();</code></pre>
@@ -449,7 +300,7 @@ int main() {
 
         <div class="step">
           <p><span class="step-num">3</span><strong>Upgrade to DPoP with OpenSSL</strong></p>
-          <pre><code>cmake -S . -B build \
+          <pre><code class="language-bash">cmake -S . -B build \
   -DCXXMCP_ENABLE_AUTH=ON \
   -DCXXMCP_AUTH_CRYPTO=OpenSSL
 
@@ -476,7 +327,7 @@ auto auth =
 
         <div class="step">
           <p><span class="step-num">1</span><strong>Server with task support</strong></p>
-          <pre><code>#include &lt;cxxmcp/peer.hpp&gt;
+          <pre><code class="language-cpp">#include &lt;cxxmcp/peer.hpp&gt;
 #include &lt;cxxmcp/run.hpp&gt;
 
 using Json = mcp::protocol::Json;
@@ -505,7 +356,7 @@ int main() {
 
         <div class="step">
           <p><span class="step-num">2</span><strong>Client calling a task</strong></p>
-          <pre><code>svc.peer().initialize();
+          <pre><code class="language-cpp">svc.peer().initialize();
 
 // Start an async task
 auto task = svc.peer().call_tool(
@@ -533,7 +384,7 @@ svc.peer().cancel_task(task->task_id);</code></pre>
 
         <div class="step">
           <p><span class="step-num">1</span><strong>Register resources and prompts</strong></p>
-          <pre><code>return mcp::ServerPeer::builder()
+          <pre><code class="language-cpp">return mcp::ServerPeer::builder()
     .name("full-demo")
     .version("1.0.0")
     .stdio()
@@ -602,9 +453,11 @@ svc.peer().cancel_task(task->task_id);</code></pre>
       </section>
     </main>
 
-    <footer>
-      cxxmcp is a community C++ MCP SDK. It is not an official MCP SDK unless
-      accepted or listed by the MCP maintainers.
-    </footer>
+        <footer>
+          cxxmcp is a community C++ MCP SDK. It is not an official MCP SDK unless
+          accepted or listed by the MCP maintainers.
+        </footer>
+      </div>
+    </div>
   </body>
 </html>

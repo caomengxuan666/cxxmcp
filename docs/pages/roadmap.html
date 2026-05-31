@@ -5,58 +5,43 @@
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>Roadmap | cxxmcp</title>
     <meta name="description" content="Development roadmap for cxxmcp.">
-    <style>
-      :root { color-scheme: light dark; --bg: #f7f8fa; --panel: #ffffff; --text: #17202a; --muted: #596579; --line: #d9dee7; --accent: #0f766e; --accent-strong: #0b5f59; --code: #eef3f5; }
-      @media (prefers-color-scheme: dark) { :root { --bg: #101317; --panel: #171b21; --text: #edf2f7; --muted: #aab4c3; --line: #2a313a; --accent: #2dd4bf; --accent-strong: #5eead4; --code: #20262e; } }
-      * { box-sizing: border-box; }
-      body { margin: 0; font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; line-height: 1.6; color: var(--text); background: var(--bg); }
-      a { color: var(--accent-strong); text-decoration-thickness: 0.08em; text-underline-offset: 0.18em; }
-      header, main, footer { width: min(960px, calc(100% - 32px)); margin: 0 auto; }
-      header { padding: 28px 0 18px; display: flex; justify-content: space-between; gap: 16px; align-items: center; }
-      .brand { font-weight: 750; font-size: 1.05rem; letter-spacing: 0; }
-      nav { display: flex; flex-wrap: wrap; gap: 14px; font-size: 0.95rem; }
-      .hero { padding: 46px 0 34px; border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); }
-      .eyebrow { color: var(--accent-strong); font-size: 0.9rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0; }
-      h1 { max-width: 820px; margin: 12px 0 16px; font-size: clamp(2.1rem, 5vw, 3.6rem); line-height: 1.05; letter-spacing: 0; }
-      .lede { max-width: 760px; margin: 0; color: var(--muted); font-size: 1.12rem; }
-      .section { padding: 30px 0 8px; }
-      .section h2 { margin: 0 0 12px; font-size: 1.35rem; letter-spacing: 0; }
-      .section p, .section li { color: var(--muted); }
-      .phase { border: 1px solid var(--line); border-radius: 8px; background: var(--panel); padding: 20px; margin: 16px 0; }
-      .phase h3 { margin: 0 0 4px; font-size: 1.1rem; }
-      .phase .label { display: inline-block; padding: 2px 8px; border-radius: 4px; font-size: 0.8rem; font-weight: 600; margin: 0 0 10px; }
-      .label.current { background: #d1fae5; color: #065f46; }
-      .label.near { background: #dbeafe; color: #1e40af; }
-      .label.later { background: #f3e8ff; color: #6b21a8; }
-      .label.done { background: #e5e7eb; color: #374151; }
-      @media (prefers-color-scheme: dark) {
-        .label.current { background: #065f46; color: #d1fae5; }
-        .label.near { background: #1e40af; color: #dbeafe; }
-        .label.later { background: #6b21a8; color: #f3e8ff; }
-        .label.done { background: #374151; color: #e5e7eb; }
-      }
-      footer { padding: 24px 0 36px; color: var(--muted); border-top: 1px solid var(--line); font-size: 0.95rem; margin-top: 32px; }
-      @media (max-width: 760px) { header { align-items: flex-start; flex-direction: column; } .hero { padding: 34px 0 28px; } }
-    </style>
+    <link rel="stylesheet" href="style.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.11.1/styles/github.min.css" media="(prefers-color-scheme: light)">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.11.1/styles/github-dark.min.css" media="(prefers-color-scheme: dark)">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.11.1/highlight.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.11.1/languages/cmake.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.11.1/languages/bash.min.js"></script>
+    <script>document.addEventListener('DOMContentLoaded',()=>hljs.highlightAll());</script>
   </head>
   <body>
-    <header>
-      <div class="brand">cxxmcp</div>
-      <nav aria-label="Primary">
-        <a href="./">Home</a>
+    <button class="sidebar-toggle" onclick="document.querySelector('.sidebar').classList.toggle('open')">&#9776;</button>
+    <div class="page">
+      <nav class="sidebar">
+        <div class="sidebar-brand"><a href="./">cxxmcp</a></div>
+        <div class="sidebar-section">Guide</div>
         <a href="./getting-started.html">Getting Started</a>
         <a href="./tutorials.html">Tutorials</a>
         <a href="./concepts.html">Concepts</a>
         <a href="./cookbook.html">Cookbook</a>
         <a href="./transports.html">Transports</a>
-        <a href="./troubleshooting.html">Troubleshooting</a>
-        <a href="./auth.html">Auth</a>
-        <a href="./stability.html">Stability</a>
+        <div class="sidebar-section">Reference</div>
         <a href="./api/">API Reference</a>
+        <a href="./troubleshooting.html">Troubleshooting</a>
+        <a href="./migration.html">Migration</a>
+        <a href="./changelog.html">Changelog</a>
+        <div class="sidebar-section">Project</div>
+        <a href="./auth.html">Auth</a>
+        <a href="./security.html">Security</a>
+        <a href="./stability.html">Stability</a>
+        <a href="./contributing.html">Contributing</a>
+        <a href="./roadmap.html">Roadmap</a>
+        <div class="sidebar-section">External</div>
+        <a href="https://github.com/caomengxuan666/cxxmcp">GitHub</a>
+        <a href="https://modelcontextprotocol.io/">MCP Spec</a>
       </nav>
-    </header>
 
-    <main>
+      <div class="main-wrap">
+        <main>
       <section class="hero">
         <div class="eyebrow">Roadmap</div>
         <h1>Where cxxmcp is headed.</h1>
@@ -68,7 +53,7 @@
       <div class="phase">
         <h3>Conformance parity with latest MCP spec (2026 draft)</h3>
         <span class="label current">In Progress</span>
-        <p>Track and implement protocol changes from the 2026 spec draft. Already support both 2025-11-25 stable and 2026 draft versions.</p>
+        <p>Track and implement protocol changes from the 2026 spec draft. Already support all MCP spec versions: 2024-11-05, 2025-03-26, 2025-06-18, 2025-11-25, and DRAFT-2026-v1.</p>
       </div>
 
       <div class="phase">
@@ -90,9 +75,9 @@
       </div>
 
       <div class="phase">
-        <h3>Publish stable release with full conformance evidence</h3>
+        <h3>Publish exact-commit release evidence</h3>
         <span class="label near">Near Term</span>
-        <p>v1.2.0 with complete conformance evidence, release gates, and vcpkg/Conan packages.</p>
+        <p>Attach generated docs, release artifacts, checksums, compatibility notes, and package evidence from the exact tagged release run.</p>
       </div>
 
       <div class="phase">
@@ -102,21 +87,9 @@
       </div>
 
       <div class="phase">
-        <h3>Tier 2 application with MCP conformance program</h3>
-        <span class="label near">Near Term</span>
-        <p>Submit tier application with conformance evidence, policy docs, and community validation.</p>
-      </div>
-
-      <div class="phase">
         <h3>WebSocket transport support</h3>
         <span class="label later">Longer Term</span>
         <p>Full-duplex WebSocket transport as an alternative to Streamable HTTP for real-time use cases.</p>
-      </div>
-
-      <div class="phase">
-        <h3>Language bindings for Python and Rust via C FFI</h3>
-        <span class="label later">Longer Term</span>
-        <p>Expose cxxmcp through a C-compatible FFI layer so Python and Rust applications can use the SDK natively.</p>
       </div>
 
       <div class="phase">
@@ -140,13 +113,15 @@
       <div class="phase">
         <h3>109/110 server, 447/447 client conformance</h3>
         <span class="label done">Done</span>
-        <p>Validated against official <code>modelcontextprotocol/conformance</code> runner. Only failure is upstream TS SDK issue.</p>
+        <p>Validated against official <code>modelcontextprotocol/conformance</code> runner. The remaining server exception is documented in conformance evidence.</p>
       </div>
     </main>
 
-    <footer>
-      cxxmcp is a community C++ MCP SDK. It is not an official MCP SDK unless
-      accepted or listed by the MCP maintainers.
-    </footer>
+        <footer>
+          cxxmcp is a community C++ MCP SDK. It is not an official MCP SDK unless
+          accepted or listed by the MCP maintainers.
+        </footer>
+      </div>
+    </div>
   </body>
 </html>

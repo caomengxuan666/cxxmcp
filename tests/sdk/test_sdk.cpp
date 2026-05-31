@@ -17,6 +17,7 @@
 #include <variant>
 #include <vector>
 
+#include "cxxmcp/core/async_result.hpp"
 #include "cxxmcp/core/executor.hpp"
 #include "cxxmcp/sdk.hpp"
 
@@ -1186,6 +1187,51 @@ void test_running_service_moved_from_is_inert() {
   require(server_transport_ptr->stopped,
           "moved server service should stop transport");
 }
+
+#if defined(CXXMCP_ENABLE_HTTP)
+void test_server_streamable_http_service_stops_while_idle() {
+  auto peer = mcp::ServerPeer::builder()
+                  .name("idle-http-service")
+                  .version("1.0.0")
+                  .streamable_http("127.0.0.1", 40230, "/idle-service-stop")
+                  .build();
+  require(peer.has_value(), "idle http server peer should build");
+
+  auto running = mcp::serve(std::move(*peer));
+  require(running.has_value(), "idle http server service should start");
+  running->wait_until_ready();
+
+  const auto started_at = std::chrono::steady_clock::now();
+  const auto stopped = running->stop();
+  const auto elapsed = std::chrono::steady_clock::now() - started_at;
+
+  require(stopped.has_value(),
+          "idle http server service should stop without a client");
+  require(elapsed < std::chrono::seconds(2),
+          "idle http server service stop should return promptly");
+}
+
+void test_server_streamable_http_service_stops_during_startup() {
+  auto peer = mcp::ServerPeer::builder()
+                  .name("startup-stop-http-service")
+                  .version("1.0.0")
+                  .streamable_http("127.0.0.1", 40231, "/startup-service-stop")
+                  .build();
+  require(peer.has_value(), "startup-stop http server peer should build");
+
+  auto running = mcp::serve(std::move(*peer));
+  require(running.has_value(), "startup-stop http server service should start");
+
+  const auto started_at = std::chrono::steady_clock::now();
+  const auto stopped = running->stop();
+  const auto elapsed = std::chrono::steady_clock::now() - started_at;
+
+  require(stopped.has_value(),
+          "startup-stop http server service should stop without waiting ready");
+  require(elapsed < std::chrono::seconds(2),
+          "startup-stop http server service stop should return promptly");
+}
+#endif
 
 void test_peer_serve_transport_observes_precancelled_token() {
   mcp::CancellationSource cancellation;
@@ -3309,6 +3355,105 @@ void test_executor_reports_task_exceptions() {
           "executor exception handler message mismatch");
 }
 
+void test_async_result_ready_then_runs_callback_outside_lock() {
+  auto result = std::make_shared<mcp::core::AsyncResult<int>>();
+  result->set_value(42);
+
+  auto next = result->then([&](mcp::core::Result<int> value) {
+    require(value.has_value() && *value == 42,
+            "ready async result value should be forwarded");
+    return result->ready() ? 7 : 0;
+  });
+
+  const auto chained = next->wait_for(std::chrono::seconds(1));
+  require(chained.has_value(), "ready async continuation should not fail");
+  require(*chained == 7, "ready async continuation result mismatch");
+}
+
+void test_executor_timer_preserves_task_priority() {
+  mcp::core::Executor executor(mcp::core::Executor::Options{1, 16, {}});
+
+  std::mutex mutex;
+  std::condition_variable cv;
+  bool release_worker = false;
+  std::vector<std::string> order;
+
+  const auto blocker = executor.post(
+      [&] {
+        std::unique_lock<std::mutex> lock(mutex);
+        cv.wait(lock, [&] { return release_worker; });
+      },
+      mcp::core::TaskPriority::IO_BOUND);
+  require(blocker.has_value(), "blocking executor task should enqueue");
+
+  auto timer = executor.post_after(
+      std::chrono::milliseconds(10),
+      [&] {
+        std::lock_guard<std::mutex> lock(mutex);
+        order.push_back("timer-background");
+      },
+      mcp::core::TaskPriority::BACKGROUND);
+  require(timer.valid(), "delayed executor task should return timer handle");
+
+  std::this_thread::sleep_for(std::chrono::milliseconds(200));
+
+  const auto queued = executor.post(
+      [&] {
+        std::lock_guard<std::mutex> lock(mutex);
+        order.push_back("plain-default");
+      },
+      mcp::core::TaskPriority::DEFAULT);
+  require(queued.has_value(), "default executor task should enqueue");
+
+  {
+    std::lock_guard<std::mutex> lock(mutex);
+    release_worker = true;
+  }
+  cv.notify_all();
+  executor.shutdown();
+
+  require(order.size() == 2, "executor should drain both queued tasks");
+  require(order[0] == "plain-default" && order[1] == "timer-background",
+          "delayed background task should keep background priority");
+}
+
+void test_executor_timer_scheduling_is_thread_safe() {
+  constexpr int kPosterCount = 4;
+  constexpr int kTimersPerPoster = 25;
+  constexpr int kExpectedTimers = kPosterCount * kTimersPerPoster;
+
+  mcp::core::Executor executor(mcp::core::Executor::Options{4, 256, {}});
+  std::atomic<int> completed{0};
+  std::vector<std::thread> posters;
+  posters.reserve(kPosterCount);
+
+  for (int poster = 0; poster < kPosterCount; ++poster) {
+    posters.emplace_back([&] {
+      for (int i = 0; i < kTimersPerPoster; ++i) {
+        auto timer = executor.post_after(
+            std::chrono::milliseconds(1),
+            [&] { completed.fetch_add(1, std::memory_order_relaxed); },
+            mcp::core::TaskPriority::BACKGROUND);
+        require(timer.valid(), "concurrent delayed task should return handle");
+      }
+    });
+  }
+
+  for (auto& poster : posters) {
+    poster.join();
+  }
+
+  for (int i = 0;
+       i < 100 && completed.load(std::memory_order_relaxed) < kExpectedTimers;
+       ++i) {
+    std::this_thread::sleep_for(std::chrono::milliseconds(10));
+  }
+  executor.shutdown();
+
+  require(completed.load(std::memory_order_relaxed) == kExpectedTimers,
+          "all concurrently scheduled timers should run");
+}
+
 void test_server_routers_apply_to_builders() {
   int router_changes = 0;
   mcp::server::ToolRouter base_tools;
@@ -3677,6 +3822,10 @@ int main() {
     test_sdk_peer_and_service_surface();
     test_client_peer_initialize_rejects_invalid_result_shape();
     test_running_service_moved_from_is_inert();
+#if defined(CXXMCP_ENABLE_HTTP)
+    test_server_streamable_http_service_stops_while_idle();
+    test_server_streamable_http_service_stops_during_startup();
+#endif
     test_peer_serve_transport_observes_precancelled_token();
     test_server_peer_initialize_dispatches_on_peer_boundary();
     test_server_peer_serve_transport_requires_initialized_notification();
@@ -3708,6 +3857,9 @@ int main() {
     test_registries_invoke_handlers_outside_internal_locks();
     test_executor_rejects_empty_task();
     test_executor_reports_task_exceptions();
+    test_async_result_ready_then_runs_callback_outside_lock();
+    test_executor_timer_preserves_task_priority();
+    test_executor_timer_scheduling_is_thread_safe();
     test_server_routers_apply_to_builders();
     test_server_routers_emit_bound_list_changed_notifications();
     test_public_error_helpers_assign_stable_categories();

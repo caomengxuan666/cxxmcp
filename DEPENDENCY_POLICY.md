@@ -1,28 +1,43 @@
 # Dependency Policy
 
-This document describes how cxxmcp manages its dependencies.
+cxxmcp keeps the public SDK dependency surface intentionally small and
+separates SDK package dependencies from examples, tests, documentation, and
+external gateway tooling.
 
-## Direct Dependencies
+## Supported Modes
 
-| Dependency | Version | License | Purpose |
-|---|---|---|---|
-| nlohmann/json | ^3.11 | MIT | JSON parsing and serialization |
-| cpp-httplib | ^0.15 | MIT | HTTP client/server and WebSocket transport |
-| OpenSSL | ^3.0 | Apache-2.0 | TLS and cryptographic operations (optional) |
+- Source/archive builds use bundled header-only SDK dependencies so direct
+  CMake, FetchContent, CPM.cmake, and source installs work without a package
+  manager. The install tree includes `tl/expected.hpp` and
+  `nlohmann/json.hpp`.
+- Registry builds should use `CXXMCP_USE_SYSTEM_DEPS=ON` and package-manager
+  dependencies for `tl-expected`, `nlohmann-json`, and `cpp-httplib`. In this
+  mode the install tree must not vendor `tl` or `nlohmann` headers.
 
-All direct dependencies are vendored under `third_party/` or resolved via vcpkg when building with `CXXMCP_USE_SYSTEM_DEPS=ON`.
+`cpp-httplib` is used by the HTTP and WebSocket transport implementations.
+Downstream code should include the cxxmcp transport headers, not `httplib.h`
+directly.
 
-## Update Policy
+## Update Cadence
 
-- Security patches for dependencies are applied within 7 days of disclosure.
-- Non-security dependency updates are evaluated monthly and included in the next minor or patch release.
-- Dependencies are pinned to known-good versions in CMakeLists.txt. Renovate or Dependabot automation is planned but not yet enabled.
+- GitHub Actions and the `third_party/httplib` submodule are monitored by
+  Dependabot.
+- Bundled header-only dependencies are updated deliberately through normal pull
+  requests with package-smoke and release-gate evidence.
+- Security updates that affect public SDK builds are treated as priority fixes
+  under the project security and release policies.
 
-## Adding New Dependencies
+## Package Registry Guidance
 
-New dependencies require a justification in the pull request describing:
+Package recipes should keep the default SDK package narrow:
 
-1. Why the functionality cannot be implemented in-tree.
-2. The dependency's license compatibility (must be MIT, Apache-2.0, BSD, or ISC).
-3. The dependency's maintenance status and known CVE history.
-4. Whether the dependency can be vendored or must be fetched at build time.
+- build SDK libraries and public headers only;
+- disable examples, tests, and docs by default;
+- avoid pulling OpenSSL or other optional auth dependencies into default
+  installs;
+- keep gateway/runtime tooling outside the SDK package contract.
+
+The detailed package-consumption policy is maintained in
+[`docs/package_consumption.md`](docs/package_consumption.md#dependency-policy).
+Release-time dependency and reference review rules are maintained in
+[`docs/dependency_policy.md`](docs/dependency_policy.md).

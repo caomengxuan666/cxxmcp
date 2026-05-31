@@ -42,11 +42,11 @@ Attach or link these artifacts for the same commit:
 - `cxxmcp-performance-evidence-linux-gcc-ninja`
 - `cxxmcp-public-header-compile-evidence-linux-gcc-ninja`
 - `cxxmcp-package-vcpkg-default`
-- `cxxmcp-package-vcpkg-auth`
+- `cxxmcp-package-vcpkg-http-auth`
 - `cxxmcp-package-conan-default`
-- `cxxmcp-package-conan-auth`
+- `cxxmcp-package-conan-http-auth`
 - `cxxmcp-package-xmake-default`
-- `cxxmcp-package-xmake-auth`
+- `cxxmcp-package-xmake-http-auth`
 - `cxxmcp-doxygen-html`
 - `cxxmcp-source`
 - `cxxmcp-release-evidence`
@@ -68,9 +68,8 @@ public `cxxmcp::protocol`, `cxxmcp::transport`, `cxxmcp::handler`,
 `cxxmcp::peer`, `cxxmcp::service`, `cxxmcp::client`, `cxxmcp::server`, and
 `cxxmcp::sdk` targets.
 
-State that gateway/runtime/CLI/app tooling is released outside this SDK
-repository, and that adapters and plugin SDK targets are optional
-SDK-adjacent layers outside the core SDK contract.
+State that gateway/runtime/CLI/app/plugin tooling is released outside this SDK
+repository and remains outside the core SDK contract.
 
 ## Compatibility Notes
 
@@ -120,7 +119,6 @@ SDK-adjacent layers outside the core SDK contract.
 - Release artifact review record:
 - Dependency review:
   - `tl::expected` fallback/package-manager route:
-  - private `jsonrpcpp` route:
   - hidden `cpp-httplib` route:
 - Package metadata or recipe references:
 

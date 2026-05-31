@@ -51,7 +51,7 @@ def main() -> None:
     ]
     additive["optional_headers"] = [
         "sdk/auth/include/cxxmcp/auth.hpp",
-        "extensions/plugin-sdk/include/cxxmcp/plugin/tool.hpp",
+        "sdk/auth/include/cxxmcp/auth/metadata.hpp",
     ]
     assert compare_public_api_surface.compare_manifests(BASE_MANIFEST, additive) == []
 

@@ -83,6 +83,8 @@ cxxmcp_build_option(CXXMCP_BUILD_EXAMPLES MCP_BUILD_EXAMPLES
     "Build example executables" OFF)
 cxxmcp_build_option(CXXMCP_BUILD_TESTS MCP_BUILD_TESTS
     "Build tests for enabled layers" ${BUILD_TESTING})
+cxxmcp_build_option(CXXMCP_BUILD_BENCHMARKS MCP_BUILD_BENCHMARKS
+    "Build benchmark executables" OFF)
 cxxmcp_build_option(CXXMCP_BUILD_DOCS MCP_BUILD_DOCS
     "Build Doxygen API documentation" OFF)
 cxxmcp_build_option(CXXMCP_ENABLE_AUTH MCP_ENABLE_AUTH
@@ -91,10 +93,6 @@ cxxmcp_build_option(CXXMCP_ENABLE_HTTP MCP_ENABLE_HTTP
     "Build HTTP/SSE transport (requires cpp-httplib)" OFF)
 cxxmcp_build_option(CXXMCP_ENABLE_WEBSOCKET MCP_ENABLE_WEBSOCKET
     "Build WebSocket transport (requires cpp-httplib)" OFF)
-cxxmcp_build_option(CXXMCP_ENABLE_PLUGIN_SDK MCP_ENABLE_PLUGIN_SDK
-    "Build optional plugin SDK extension target" OFF)
-cxxmcp_build_option(CXXMCP_ENABLE_ADAPTERS MCP_ENABLE_ADAPTERS
-    "Build optional adapter extension target" OFF)
 
 set(CXXMCP_AUTH_CRYPTO "NONE" CACHE STRING
     "Optional crypto backend for cxxmcp auth; NONE or OpenSSL")
@@ -106,9 +104,6 @@ endif()
 option(CXXMCP_USE_SYSTEM_DEPS
     "Use package-manager provided SDK dependencies instead of bundled headers"
     OFF)
-option(CXXMCP_USE_SYSTEM_JSONRPCPP
-    "Use a package-manager provided jsonrpcpp header instead of the bundled private header"
-    OFF)
 
 set(MCP_ENABLE_PROTOCOL ${CXXMCP_BUILD_PROTOCOL})
 set(MCP_ENABLE_CLIENT ${CXXMCP_BUILD_CLIENT})
@@ -117,8 +112,6 @@ set(MCP_ENABLE_SDK ${CXXMCP_BUILD_SDK})
 set(MCP_ENABLE_AUTH ${CXXMCP_ENABLE_AUTH})
 set(MCP_ENABLE_HTTP ${CXXMCP_ENABLE_HTTP})
 set(MCP_ENABLE_WEBSOCKET ${CXXMCP_ENABLE_WEBSOCKET})
-set(MCP_ENABLE_PLUGIN_SDK ${CXXMCP_ENABLE_PLUGIN_SDK})
-set(MCP_ENABLE_ADAPTERS ${CXXMCP_ENABLE_ADAPTERS})
 
 if(MCP_ENABLE_SDK)
     set(MCP_ENABLE_PROTOCOL ON)
@@ -128,11 +121,6 @@ endif()
 
 if(MCP_ENABLE_CLIENT OR MCP_ENABLE_SERVER)
     set(MCP_ENABLE_PROTOCOL ON)
-endif()
-
-if(MCP_ENABLE_ADAPTERS AND NOT MCP_ENABLE_PLUGIN_SDK)
-    message(FATAL_ERROR
-        "CXXMCP_ENABLE_ADAPTERS requires CXXMCP_ENABLE_PLUGIN_SDK")
 endif()
 
 if(MCP_ENABLE_WEBSOCKET AND NOT MCP_ENABLE_HTTP)
@@ -178,23 +166,6 @@ else()
     set(CXXMCP_HTTPLIB_TARGET "")
 endif()
 
-if(CXXMCP_USE_SYSTEM_DEPS)
-    if(CXXMCP_USE_SYSTEM_JSONRPCPP)
-        find_path(CXXMCP_JSONRPCPP_INCLUDE_DIR
-            NAMES jsonrpcpp.hpp
-            PATH_SUFFIXES jsonrpcpp
-            REQUIRED
-        )
-        set(CXXMCP_JSONRPCPP_INCLUDE_DIRS "${CXXMCP_JSONRPCPP_INCLUDE_DIR}")
-    else()
-        set(CXXMCP_JSONRPCPP_INCLUDE_DIRS
-            "${CMAKE_CURRENT_SOURCE_DIR}/third_party/jsonrpcpp")
-    endif()
-else()
-    set(CXXMCP_JSONRPCPP_INCLUDE_DIRS
-        "${CMAKE_CURRENT_SOURCE_DIR}/third_party/jsonrpcpp")
-endif()
-
 # Internal implementation dependency for HTTP transports and tests. It is not
 # installed or exported as part of the public SDK package contract.
 if(MCP_ENABLE_HTTP AND NOT CXXMCP_USE_SYSTEM_DEPS)
@@ -222,9 +193,6 @@ if(MCP_ENABLE_PROTOCOL)
             $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/third_party>
         )
     endif()
-    target_include_directories(mcp_protocol PRIVATE
-        ${CXXMCP_JSONRPCPP_INCLUDE_DIRS}
-    )
     target_link_libraries(mcp_protocol PUBLIC mcp_core)
     if(CXXMCP_JSON_TARGET)
         target_link_libraries(mcp_protocol PUBLIC "${CXXMCP_JSON_TARGET}")
@@ -477,30 +445,6 @@ if(TARGET mcp_service)
     add_library(cxxmcp::service ALIAS mcp_service)
 endif()
 
-if(MCP_ENABLE_PLUGIN_SDK AND TARGET mcp_protocol)
-    add_library(mcp_plugin_sdk INTERFACE)
-    target_include_directories(mcp_plugin_sdk INTERFACE
-        $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/extensions/plugin-sdk/include>
-        $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>
-    )
-    target_link_libraries(mcp_plugin_sdk INTERFACE mcp_core mcp_protocol)
-    set_target_properties(mcp_plugin_sdk PROPERTIES EXPORT_NAME plugin_sdk)
-    cxxmcp_require_sdk_cxx(mcp_plugin_sdk)
-    add_library(cxxmcp::plugin_sdk ALIAS mcp_plugin_sdk)
-endif()
-
-if(MCP_ENABLE_ADAPTERS AND TARGET mcp_server AND TARGET mcp_plugin_sdk)
-    add_library(mcp_adapters INTERFACE)
-    target_include_directories(mcp_adapters INTERFACE
-        $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/extensions/adapters/include>
-        $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>
-    )
-    target_link_libraries(mcp_adapters INTERFACE mcp_core mcp_protocol mcp_server mcp_plugin_sdk)
-    set_target_properties(mcp_adapters PROPERTIES EXPORT_NAME adapters)
-    cxxmcp_require_sdk_cxx(mcp_adapters)
-    add_library(cxxmcp::adapters ALIAS mcp_adapters)
-endif()
-
 if(CXXMCP_BUILD_TESTS)
     enable_testing()
     add_subdirectory(tests)
@@ -508,6 +452,10 @@ endif()
 
 if(CXXMCP_BUILD_EXAMPLES)
     add_subdirectory(examples)
+endif()
+
+if(CXXMCP_BUILD_BENCHMARKS)
+    add_subdirectory(bench)
 endif()
 
 if(CXXMCP_BUILD_DOCS)
@@ -551,12 +499,6 @@ endif()
 if(TARGET mcp_service)
     list(APPEND CXXMCP_INSTALL_TARGETS mcp_service)
 endif()
-if(TARGET mcp_plugin_sdk)
-    list(APPEND CXXMCP_INSTALL_TARGETS mcp_plugin_sdk)
-endif()
-if(TARGET mcp_adapters)
-    list(APPEND CXXMCP_INSTALL_TARGETS mcp_adapters)
-endif()
 if(MCP_ENABLE_HTTP AND NOT CXXMCP_USE_SYSTEM_DEPS AND TARGET cpp_httplib)
     list(APPEND CXXMCP_INSTALL_TARGETS cpp_httplib)
 endif()
@@ -584,12 +526,6 @@ if(TARGET mcp_transport)
 endif()
 if(TARGET mcp_auth)
     install(DIRECTORY sdk/auth/include/ DESTINATION ${CMAKE_INSTALL_INCLUDEDIR})
-endif()
-if(TARGET mcp_plugin_sdk)
-    install(DIRECTORY extensions/plugin-sdk/include/ DESTINATION ${CMAKE_INSTALL_INCLUDEDIR})
-endif()
-if(TARGET mcp_adapters)
-    install(DIRECTORY extensions/adapters/include/ DESTINATION ${CMAKE_INSTALL_INCLUDEDIR})
 endif()
 if(NOT CXXMCP_USE_SYSTEM_DEPS)
     install(FILES

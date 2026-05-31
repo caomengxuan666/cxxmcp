@@ -89,20 +89,24 @@ AUTH_ARTIFACTS = [
 
 PACKAGE_ARTIFACTS = [
     "cxxmcp-package-vcpkg-default",
-    "cxxmcp-package-vcpkg-auth",
+    "cxxmcp-package-vcpkg-http-auth",
     "cxxmcp-package-conan-default",
-    "cxxmcp-package-conan-auth",
+    "cxxmcp-package-conan-http-auth",
     "cxxmcp-package-xmake-default",
-    "cxxmcp-package-xmake-auth",
+    "cxxmcp-package-xmake-http-auth",
 ]
 
-REQUIRED_GATE_ARTIFACTS = [
+RELEASE_GATE_BUNDLE_ARTIFACTS = [
     *RELEASE_MATRIX_ARTIFACTS,
     *AUTH_ARTIFACTS,
     "cxxmcp-auth-openssl-release-gate-linux-gcc-ninja",
     "cxxmcp-performance-evidence-linux-gcc-ninja",
     "cxxmcp-public-header-compile-evidence-linux-gcc-ninja",
     *PACKAGE_ARTIFACTS,
+]
+
+REQUIRED_GATE_ARTIFACTS = [
+    *RELEASE_GATE_BUNDLE_ARTIFACTS,
     "cxxmcp-doxygen-html",
     "cxxmcp-source",
     "cxxmcp-release-evidence",
@@ -182,6 +186,10 @@ def artifact_root(gate_artifacts: Path, name: str) -> Path:
 def check_release_gate_matrix_artifact(
     root: Path, junit_name: str, required_tests: list[str]
 ) -> None:
+    # Support both flat layout and nested build-release-gates/ layout.
+    candidate = root / "build-release-gates"
+    if candidate.is_dir():
+        root = candidate
     require_file(root / "CMakeCache.txt")
     require_junit_tests(root / "test-results" / junit_name, required_tests)
     require_glob(root, "Testing/Temporary/*.log")
@@ -265,7 +273,6 @@ def check_gate_artifacts(gate_artifacts: Path) -> None:
         "sdk",
         "public_targets",
         "package_smoke",
-        "process_stdio_transport",
         "interop_typescript_client_process_stdio",
         "interop_python_client_process_stdio",
         "interop_rmcp_client_process_stdio",
@@ -433,7 +440,6 @@ def check_sdk_source_tarball(path: Path) -> None:
         "scripts/selftest_public_api_surface.py",
         "tests/package_smoke.cmake",
         "templates/external_consumer/CMakeLists.txt",
-        "third_party/jsonrpcpp/jsonrpcpp.hpp",
     ]
     for relative in required:
         if relative not in names:
@@ -441,6 +447,10 @@ def check_sdk_source_tarball(path: Path) -> None:
 
     forbidden = [
         "docs/doxygen/html/index.html",
+        "docs/package_consumption.md",
+        "docs/package_consumption_zh.md",
+        "docs/pages/cookbook.html",
+        "packaging/xmake/packages/c/cxxmcp/xmake.lua",
         "runtime/src/gateway.cpp",
         "tools/cli/src/main.cpp",
     ]
@@ -470,7 +480,7 @@ def require_tar_members(path: Path, required: list[str]) -> None:
 def check_release_tarball_contents(release_artifacts: Path, tag: str) -> None:
     require_tar_members(
         release_artifacts / f"cxxmcp-release-gates-{tag}.tar.gz",
-        REQUIRED_GATE_ARTIFACTS,
+        RELEASE_GATE_BUNDLE_ARTIFACTS,
     )
     require_tar_members(
         release_artifacts / f"cxxmcp-doxygen-html-{tag}.tar.gz",

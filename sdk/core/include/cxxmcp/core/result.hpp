@@ -4,15 +4,10 @@
 
 #include <string>
 #include <string_view>
+#include <tl/expected.hpp>
 #include <type_traits>
 #include <utility>
 #include <variant>
-
-#if defined(__cpp_lib_expected)
-#include <expected>
-#else
-#include <tl/expected.hpp>
-#endif
 
 /// @file
 /// @brief Shared result and error primitives used by the public cxxmcp SDK.
@@ -27,11 +22,7 @@ namespace mcp::core {
 /// @brief Creates an unexpected result value for the active expected backend.
 template <class E>
 constexpr auto unexpected(E&& value) {
-#if defined(__cpp_lib_expected)
-  return std::unexpected<std::decay_t<E> >(std::forward<E>(value));
-#else
   return tl::unexpected<std::decay_t<E> >(std::forward<E>(value));
-#endif
 }
 
 /// @brief Structured error returned by fallible SDK operations.
@@ -63,19 +54,12 @@ struct Error {
 /// payload, mirroring `void` while still fitting the `expected` style.
 using Unit = std::monostate;
 
-#if defined(__cpp_lib_expected)
 /// @brief Alias for the SDK result type.
 ///
-/// Uses `std::expected` when the standard library provides it; otherwise the
-/// SDK falls back to `tl::expected` with the same value/error shape. The error
-/// side is always mcp::core::Error.
-template <typename T>
-using Result = std::expected<T, Error>;
-#else
-/// @brief Alias for the SDK result type.
-///
-/// Uses `tl::expected` on toolchains that do not yet provide
-/// `std::expected`. The error side is always mcp::core::Error.
+/// Uses `tl::expected` for every supported C++ standard so compiled SDK
+/// libraries and downstream consumers see the same public ABI even when the
+/// consumer builds with C++23 or newer. The error side is always
+/// mcp::core::Error.
 template <typename T>
 using Result = tl::expected<T, Error>;
 
@@ -100,6 +84,5 @@ inline bool ends_with(std::string_view value, std::string_view suffix) {
 inline bool ends_with(std::string_view value, char suffix) {
   return !value.empty() && value.back() == suffix;
 }
-#endif
 
 }  // namespace mcp::core

@@ -791,6 +791,10 @@ std::optional<protocol::ProgressToken> HttpTransport::extract_progress_token(
   return protocol::meta_progress_token(request.params.at("_meta"));
 }
 
+struct HttpTransport::HttpServerHolder {
+  httplib::Server server;
+};
+
 HttpTransport::HttpTransport(HttpTransportOptions options)
     : options_(std::move(options)) {
   if (options_.path.empty()) {
@@ -801,27 +805,54 @@ HttpTransport::HttpTransport(HttpTransportOptions options)
   }
 }
 
-struct HttpTransport::HttpServerHolder {
-  httplib::Server server;
-};
-
 HttpTransport::~HttpTransport() = default;
 
 void HttpTransport::wait_until_ready() {
-  std::lock_guard lock(mutex_);
-  if (server_) {
-    server_->server.wait_until_ready();
+  httplib::Server* server = nullptr;
+  {
+    std::unique_lock lock(mutex_);
+    startup_cv_.wait(lock, [this] {
+      return server_ != nullptr || stop_requested_ || startup_finished_;
+    });
+    if (server_ == nullptr) {
+      return;
+    }
+    server = &server_->server;
+  }
+  if (server != nullptr) {
+    server->wait_until_ready();
   }
 }
 
 core::Result<core::Unit> HttpTransport::start(
     RequestHandler handler, NotificationHandler notification_handler) {
+  {
+    std::lock_guard lock(mutex_);
+    if (startup_finished_) {
+      stop_requested_ = false;
+      server_.reset();
+    }
+    startup_finished_ = false;
+  }
+  startup_cv_.notify_all();
+
+  auto finish_without_server = [this]() {
+    {
+      std::lock_guard lock(mutex_);
+      stopped_ = true;
+      startup_finished_ = true;
+    }
+    startup_cv_.notify_all();
+  };
+
   if (!handler) {
+    finish_without_server();
     return mcp::core::unexpected(make_transport_error(
         static_cast<int>(protocol::ErrorCode::InvalidRequest),
         "http transport handler is not configured"));
   }
   if (options_.listen_port <= 0 || options_.listen_port > 65535) {
+    finish_without_server();
     return mcp::core::unexpected(make_transport_error(
         static_cast<int>(protocol::ErrorCode::InvalidRequest),
         "http transport listen port must be configured",
@@ -831,6 +862,7 @@ core::Result<core::Unit> HttpTransport::start(
   if (options_.allowed_origins.empty() &&
       (!is_loopback_host(options_.listen_host) ||
        has_non_loopback_host(options_.allowed_hosts))) {
+    finish_without_server();
     return mcp::core::unexpected(make_transport_error(
         static_cast<int>(protocol::ErrorCode::InvalidRequest),
         "http transport allowed_origins must be configured when the server is "
@@ -839,15 +871,8 @@ core::Result<core::Unit> HttpTransport::start(
         "requests"));
   }
 
-  {
-    std::lock_guard lock(mutex_);
-    stopped_ = false;
-    sessions_.clear();
-    default_session_id_.clear();
-    server_ = std::make_unique<HttpServerHolder>();
-  }
-
-  auto* http_server = &server_->server;
+  auto server = std::make_unique<HttpServerHolder>();
+  auto* http_server = &server->server;
   http_server->set_payload_max_length(options_.max_request_body_bytes);
   http_server->set_read_timeout(options_.read_timeout);
   http_server->set_write_timeout(options_.write_timeout);
@@ -1850,9 +1875,40 @@ core::Result<core::Unit> HttpTransport::start(
     response.status = 204;
   });
 
+  bool stop_before_listen = false;
+  {
+    std::lock_guard lock(mutex_);
+    if (stop_requested_) {
+      stopped_ = true;
+      startup_finished_ = true;
+      stop_before_listen = true;
+    } else {
+      stopped_ = false;
+      sessions_.clear();
+      default_session_id_.clear();
+      server_ = std::move(server);
+    }
+  }
+  startup_cv_.notify_all();
+  if (stop_before_listen) {
+    return core::Unit{};
+  }
+
   const auto listening =
       http_server->listen(options_.listen_host, options_.listen_port);
+  {
+    std::lock_guard lock(mutex_);
+    startup_finished_ = true;
+    if (stop_requested_) {
+      stopped_ = true;
+    }
+  }
+  startup_cv_.notify_all();
   if (!listening) {
+    std::lock_guard lock(mutex_);
+    if (stop_requested_ || stopped_) {
+      return core::Unit{};
+    }
     return mcp::core::unexpected(make_transport_error(
         static_cast<int>(protocol::ErrorCode::InternalError),
         "failed to listen for http transport",
@@ -2027,7 +2083,9 @@ void HttpTransport::stop() noexcept {
   httplib::Server* server_to_stop = nullptr;
   {
     std::lock_guard lock(mutex_);
+    stop_requested_ = true;
     if (stopped_) {
+      startup_cv_.notify_all();
       return;
     }
     stopped_ = true;
@@ -2039,6 +2097,7 @@ void HttpTransport::stop() noexcept {
     default_session_id_.clear();
     server_to_stop = server_ == nullptr ? nullptr : &server_->server;
   }
+  startup_cv_.notify_all();
   notification_cv_.notify_all();
   if (server_to_stop) {
     server_to_stop->stop();
@@ -2206,6 +2265,42 @@ std::string request_id_to_string_for_native_server_http(
       request_id);
 }
 
+std::string request_id_key_fragment(const protocol::RequestId& request_id) {
+  return std::visit(
+      [](const auto& value) -> std::string {
+        using Value = std::decay_t<decltype(value)>;
+        if constexpr (std::is_same_v<Value, std::string>) {
+          std::string result;
+          result.reserve(value.size() + 24);
+          result.push_back('s');
+          result.append(std::to_string(value.size()));
+          result.push_back(':');
+          result.append(value);
+          return result;
+        } else {
+          std::string result = "i";
+          result.append(std::to_string(value));
+          return result;
+        }
+      },
+      request_id);
+}
+
+std::string pending_client_request_key(std::string_view session_id,
+                                       const protocol::RequestId& request_id) {
+  auto request_id_text = request_id_key_fragment(request_id);
+  std::string key;
+  key.reserve(session_id.size() + request_id_text.size() + 32);
+  key.append(std::to_string(session_id.size()));
+  key.push_back(':');
+  key.append(session_id);
+  key.push_back(':');
+  key.append(std::to_string(request_id_text.size()));
+  key.push_back(':');
+  key.append(request_id_text);
+  return key;
+}
+
 StreamableHttpServerMessageContext to_native_server_message_context(
     const server::SessionContext& context) {
   StreamableHttpServerMessageContext result;
@@ -2304,8 +2399,7 @@ class StreamableHttpServerTransport::Impl {
   void wait_until_ready() { ready_future_.wait(); }
 
   core::Result<core::Unit> close() {
-    std::map<protocol::RequestId, std::shared_ptr<PendingClientRequest>>
-        pending;
+    std::map<std::string, std::shared_ptr<PendingClientRequest>> pending;
     std::vector<std::thread> request_threads;
     {
       std::lock_guard<std::mutex> lock(mutex_);
@@ -2450,8 +2544,10 @@ class StreamableHttpServerTransport::Impl {
             protocol::make_error(protocol::ErrorCode::InternalError,
                                  "streamable http server transport closed"));
       }
+      const auto request_key =
+          pending_client_request_key(context.session_id, request.id);
       const auto [_, inserted] =
-          pending_client_requests_.emplace(request.id, pending);
+          pending_client_requests_.emplace(request_key, pending);
       if (!inserted) {
         return protocol::make_error_response(
             std::optional<protocol::RequestId>{request.id},
@@ -2524,7 +2620,29 @@ class StreamableHttpServerTransport::Impl {
     std::shared_ptr<PendingClientRequest> pending;
     {
       std::lock_guard<std::mutex> lock(mutex_);
-      const auto it = pending_client_requests_.find(id);
+      auto it = pending_client_requests_.end();
+      if (last_context_.has_value()) {
+        it = pending_client_requests_.find(
+            pending_client_request_key(last_context_->session_id, id));
+      }
+      if (it == pending_client_requests_.end()) {
+        auto matched = pending_client_requests_.end();
+        for (auto candidate = pending_client_requests_.begin();
+             candidate != pending_client_requests_.end(); ++candidate) {
+          if (candidate->second->id != id) {
+            continue;
+          }
+          if (matched != pending_client_requests_.end()) {
+            return mcp::core::unexpected(make_native_server_http_error(
+                protocol::ErrorCode::InvalidRequest,
+                "streamable http server transport cannot disambiguate pending "
+                "client request",
+                request_id_to_string_for_native_server_http(id)));
+          }
+          matched = candidate;
+        }
+        it = matched;
+      }
       if (it == pending_client_requests_.end()) {
         return mcp::core::unexpected(make_native_server_http_error(
             protocol::ErrorCode::InvalidRequest,
@@ -2548,7 +2666,7 @@ class StreamableHttpServerTransport::Impl {
   std::condition_variable receive_cv_;
   std::deque<InboundItem> inbound_;
   std::optional<StreamableHttpServerMessageContext> last_context_;
-  std::map<protocol::RequestId, std::shared_ptr<PendingClientRequest>>
+  std::map<std::string, std::shared_ptr<PendingClientRequest>>
       pending_client_requests_;
   std::vector<std::thread> request_threads_;
   std::size_t active_request_workers_ = 0;

@@ -36,10 +36,9 @@ Stable public SDK targets are:
 The aggregate `cxxmcp::sdk` target is only a convenience target. Consumers that
 need a narrow dependency should link the narrow target directly.
 
-Gateway/runtime/CLI tooling lives outside this SDK repository. Optional
-`adapter` and `plugin_sdk` targets remain SDK-adjacent extension surfaces, not
-core SDK targets. External tooling and optional extension types must not enter
-public SDK headers without a design note and release review.
+Gateway/runtime/CLI/plugin tooling lives outside this SDK repository. External
+tooling and optional extension types must not enter public SDK headers without
+a design note and release review.
 
 ## Source Compatibility And API Classes
 
@@ -47,6 +46,12 @@ Public headers compile as C++17 by default. The
 `CXXMCP_SDK_CXX_STANDARD` CMake cache value may be raised by downstream builds,
 but stable public headers must not require a standard newer than the configured
 SDK standard.
+
+`mcp::core::Result<T>` uses `tl::expected<T, mcp::core::Error>` for every
+supported C++ standard in this major release. It must not switch to
+`std::expected` based on the consumer's C++ language mode because `Result`
+appears in exported SDK signatures and would otherwise produce incompatible
+symbols between a C++17-built static library and a C++23 consumer.
 
 Public APIs are classified as stable, experimental, or deprecated by
 [Public API Stability](public_api_stability.md). Stable APIs are source-frozen

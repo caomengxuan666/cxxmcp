@@ -4,56 +4,44 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>Transports | cxxmcp</title>
-    <meta name="description" content="Transport layer reference for cxxmcp: stdio, process stdio, Streamable HTTP, and custom transports.">
-    <style>
-      :root { color-scheme: light dark; --bg: #f7f8fa; --panel: #ffffff; --text: #17202a; --muted: #596579; --line: #d9dee7; --accent: #0f766e; --accent-strong: #0b5f59; --code: #eef3f5; }
-      @media (prefers-color-scheme: dark) { :root { --bg: #101317; --panel: #171b21; --text: #edf2f7; --muted: #aab4c3; --line: #2a313a; --accent: #2dd4bf; --accent-strong: #5eead4; --code: #20262e; } }
-      * { box-sizing: border-box; }
-      body { margin: 0; font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; line-height: 1.6; color: var(--text); background: var(--bg); }
-      a { color: var(--accent-strong); text-decoration-thickness: 0.08em; text-underline-offset: 0.18em; }
-      header, main, footer { width: min(960px, calc(100% - 32px)); margin: 0 auto; }
-      header { padding: 28px 0 18px; display: flex; justify-content: space-between; gap: 16px; align-items: center; }
-      .brand { font-weight: 750; font-size: 1.05rem; letter-spacing: 0; }
-      nav { display: flex; flex-wrap: wrap; gap: 14px; font-size: 0.95rem; }
-      .hero { padding: 46px 0 34px; border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); }
-      .eyebrow { color: var(--accent-strong); font-size: 0.9rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0; }
-      h1 { max-width: 820px; margin: 12px 0 16px; font-size: clamp(2.1rem, 5vw, 3.6rem); line-height: 1.05; letter-spacing: 0; }
-      .lede { max-width: 760px; margin: 0; color: var(--muted); font-size: 1.12rem; }
-      .section { padding: 30px 0 8px; }
-      .section h2 { margin: 0 0 12px; font-size: 1.35rem; letter-spacing: 0; }
-      .section h3 { margin: 24px 0 8px; font-size: 1.1rem; letter-spacing: 0; }
-      .section p, .section li { color: var(--muted); }
-      pre { overflow-x: auto; border: 1px solid var(--line); border-radius: 8px; background: var(--code); padding: 18px; }
-      code { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace; font-size: 0.95em; }
-      table { width: 100%; border-collapse: collapse; margin: 16px 0; }
-      th, td { text-align: left; padding: 10px 14px; border-bottom: 1px solid var(--line); }
-      th { color: var(--text); font-weight: 650; }
-      td { color: var(--muted); }
-      .card { border: 1px solid var(--line); border-radius: 8px; background: var(--panel); padding: 20px; margin: 16px 0; }
-      .card h3 { margin: 0 0 8px; font-size: 1.05rem; }
-      .card p { margin: 0 0 10px; }
-      footer { padding: 24px 0 36px; color: var(--muted); border-top: 1px solid var(--line); font-size: 0.95rem; margin-top: 32px; }
-      @media (max-width: 760px) { header { align-items: flex-start; flex-direction: column; } .hero { padding: 34px 0 28px; } }
-    </style>
+    <meta name="description" content="Transport layer reference for cxxmcp.">
+    <link rel="stylesheet" href="style.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.11.1/styles/github.min.css" media="(prefers-color-scheme: light)">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.11.1/styles/github-dark.min.css" media="(prefers-color-scheme: dark)">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.11.1/highlight.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.11.1/languages/cmake.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.11.1/languages/bash.min.js"></script>
+    <script>document.addEventListener('DOMContentLoaded',()=>hljs.highlightAll());</script>
   </head>
   <body>
-    <header>
-      <div class="brand">cxxmcp</div>
-      <nav aria-label="Primary">
-        <a href="./">Home</a>
+    <button class="sidebar-toggle" onclick="document.querySelector('.sidebar').classList.toggle('open')">&#9776;</button>
+    <div class="page">
+      <nav class="sidebar">
+        <div class="sidebar-brand"><a href="./">cxxmcp</a></div>
+        <div class="sidebar-section">Guide</div>
         <a href="./getting-started.html">Getting Started</a>
         <a href="./tutorials.html">Tutorials</a>
         <a href="./concepts.html">Concepts</a>
         <a href="./cookbook.html">Cookbook</a>
         <a href="./transports.html">Transports</a>
-        <a href="./troubleshooting.html">Troubleshooting</a>
-        <a href="./auth.html">Auth</a>
-        <a href="./stability.html">Stability</a>
+        <div class="sidebar-section">Reference</div>
         <a href="./api/">API Reference</a>
+        <a href="./troubleshooting.html">Troubleshooting</a>
+        <a href="./migration.html">Migration</a>
+        <a href="./changelog.html">Changelog</a>
+        <div class="sidebar-section">Project</div>
+        <a href="./auth.html">Auth</a>
+        <a href="./security.html">Security</a>
+        <a href="./stability.html">Stability</a>
+        <a href="./contributing.html">Contributing</a>
+        <a href="./roadmap.html">Roadmap</a>
+        <div class="sidebar-section">External</div>
+        <a href="https://github.com/caomengxuan666/cxxmcp">GitHub</a>
+        <a href="https://modelcontextprotocol.io/">MCP Spec</a>
       </nav>
-    </header>
 
-    <main>
+      <div class="main-wrap">
+        <main>
       <section class="hero">
         <div class="eyebrow">Transports</div>
         <h1>Move JSON-RPC messages between client and server.</h1>
@@ -85,7 +73,7 @@
         </p>
 
         <h3>Server</h3>
-        <pre><code>#include &lt;cxxmcp/peer.hpp&gt;
+        <pre><code class="language-cpp">#include &lt;cxxmcp/peer.hpp&gt;
 #include &lt;cxxmcp/run.hpp&gt;
 
 int main() {
@@ -97,7 +85,7 @@ int main() {
 }</code></pre>
 
         <h3>Client</h3>
-        <pre><code>// Launch a server process and talk to it via stdin/stdout
+        <pre><code class="language-cpp">// Launch a server process and talk to it via stdin/stdout
 auto client = mcp::ClientPeer::builder()
     .process_stdio("./my-server")        // launches the process
     .build();</code></pre>
@@ -121,7 +109,7 @@ auto client = mcp::ClientPeer::builder()
         </p>
 
         <h3>Usage</h3>
-        <pre><code>// Simple command
+        <pre><code class="language-cpp">// Simple command
 auto client = mcp::ClientPeer::builder()
     .process_stdio("node my-server.js")
     .build();
@@ -158,10 +146,10 @@ auto client = mcp::ClientPeer::builder()
         </p>
 
         <h3>Build</h3>
-        <pre><code>cmake -S . -B build -DCXXMCP_ENABLE_HTTP=ON -DCXXMCP_BUILD_SERVER=ON -DCXXMCP_BUILD_CLIENT=ON</code></pre>
+        <pre><code class="language-bash">cmake -S . -B build -DCXXMCP_ENABLE_HTTP=ON -DCXXMCP_BUILD_SERVER=ON -DCXXMCP_BUILD_CLIENT=ON</code></pre>
 
         <h3>Server</h3>
-        <pre><code>#include &lt;cxxmcp/peer.hpp&gt;
+        <pre><code class="language-cpp">#include &lt;cxxmcp/peer.hpp&gt;
 #include &lt;cxxmcp/run.hpp&gt;
 
 auto server = mcp::ServerPeer::builder()
@@ -175,7 +163,7 @@ running->wait_until_ready();
 running->wait();</code></pre>
 
         <h3>Server Options</h3>
-        <pre><code>mcp::transport::StreamableHttpServerTransportOptions opts;
+        <pre><code class="language-cpp">mcp::transport::StreamableHttpServerTransportOptions opts;
 opts.listen_host = "0.0.0.0";         // Bind address
 opts.listen_port = 8080;               // Port
 opts.path = "/mcp";                    // Endpoint path
@@ -187,7 +175,7 @@ auto server = mcp::ServerPeer::builder()
     .build();</code></pre>
 
         <h3>Client</h3>
-        <pre><code>auto client = mcp::ClientPeer::builder()
+        <pre><code class="language-cpp">auto client = mcp::ClientPeer::builder()
     .streamable_http("http://127.0.0.1:3000/mcp")
     .build();
 
@@ -198,7 +186,7 @@ auto client = mcp::ClientPeer::builder()
     .build();</code></pre>
 
         <h3>Client Options</h3>
-        <pre><code>mcp::transport::StreamableHttpClientTransportOptions opts;
+        <pre><code class="language-cpp">mcp::transport::StreamableHttpClientTransportOptions opts;
 opts.base_url = "http://127.0.0.1:3000/mcp";
 opts.timeout = std::chrono::seconds(30);
 opts.bearer_token = "my-secret-token";
@@ -226,7 +214,7 @@ auto client = mcp::ClientPeer::builder()
           your own transport (WebSocket, Unix socket, in-memory loopback, etc.).
         </p>
 
-        <pre><code>#include &lt;cxxmcp/transport/transport.hpp&gt;
+        <pre><code class="language-cpp">#include &lt;cxxmcp/transport/transport.hpp&gt;
 
 // Client transport
 class MyClientTransport : public mcp::transport::ClientTransport {
@@ -276,9 +264,11 @@ class MyServerTransport : public mcp::transport::ServerTransport {
       </section>
     </main>
 
-    <footer>
-      cxxmcp is a community C++ MCP SDK. It is not an official MCP SDK unless
-      accepted or listed by the MCP maintainers.
-    </footer>
+        <footer>
+          cxxmcp is a community C++ MCP SDK. It is not an official MCP SDK unless
+          accepted or listed by the MCP maintainers.
+        </footer>
+      </div>
+    </div>
   </body>
 </html>

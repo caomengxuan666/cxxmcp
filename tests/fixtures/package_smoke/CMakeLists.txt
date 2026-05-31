@@ -20,12 +20,6 @@ endif()
 if(CXXMCP_PACKAGE_SMOKE_AUTH_OPENSSL_ENABLED)
     list(APPEND cxxmcp_package_smoke_components auth_openssl)
 endif()
-if(CXXMCP_PACKAGE_SMOKE_PLUGIN_SDK_ENABLED)
-    list(APPEND cxxmcp_package_smoke_components plugin_sdk)
-endif()
-if(CXXMCP_PACKAGE_SMOKE_ADAPTERS_ENABLED)
-    list(APPEND cxxmcp_package_smoke_components adapters)
-endif()
 
 find_package(cxxmcp CONFIG REQUIRED
     COMPONENTS ${cxxmcp_package_smoke_components})
@@ -92,15 +86,6 @@ add_cxxmcp_package_smoke_target(
     cxxmcp_package_sdk sdk.cpp cxxmcp::sdk)
 add_cxxmcp_package_smoke_target(
     cxxmcp_package_request request.cpp cxxmcp::sdk)
-
-if(TARGET cxxmcp::plugin_sdk)
-    add_cxxmcp_package_smoke_target(
-        cxxmcp_package_plugin_sdk plugin_sdk.cpp cxxmcp::plugin_sdk)
-endif()
-if(TARGET cxxmcp::adapters)
-    add_cxxmcp_package_smoke_target(
-        cxxmcp_package_adapters adapters.cpp cxxmcp::adapters)
-endif()
 
 if(TARGET cxxmcp::auth)
     add_cxxmcp_package_smoke_target(

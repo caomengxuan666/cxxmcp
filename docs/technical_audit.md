@@ -13,7 +13,7 @@ boundary guidance added)
 
 | Status | Count | Notes |
 |--------|-------|-------|
-| **FIXED** | 55 | SIGPIPE, data races (3), namespace UB, HTTP hardening, session transport lifetime guard, session limit, move semantics, JSON depth limits, HTTP PImpl ownership, executor exception hook, JSON-RPC version validation, unsupported MCP protocol-version rejection, strict public protocol-version negotiation helper, initialized enforcement (transport), client/server handler synchronization, native out-of-order response correlation, stable batch rejection policy, handler dispatch missing return, unknown content type rejection, apply_to handler overwrite, explicit sampling temperature zero, image/audio base64 validation, protocol finite-number validation, client/server request-cancellation key allocation, RequestHandle timeout-only wait strategy, session transport duplicate lookup, registry list caching, auth constant-time state/key comparison, auth endpoint HTTPS enforcement, auth metadata discovery SSRF guard, auth authorization-state TTL, auth PKCE S256-only public enum, DPoP SecureString key material, DPoP replay/claim validation hardening, handler dispatch ambiguity detection, bundled jsonrpcpp namespace quarantine, registry name/URI validation, owned ServerHandlerInterface registration, registry synchronization, server authoring header split, direct JSON-RPC envelope serialization, POSIX process argv mutable buffers, graceful shutdown guidance, rate-limiter params size accounting, stale tooling submodule cleanup, plugin SDK owning execution context, optional plugin/adapters package boundary, server auth HTTP request-target propagation, DPoP-aware server AuthProvider bridge |
+| **FIXED** | 55 | SIGPIPE, data races (3), namespace UB, HTTP hardening, session transport lifetime guard, session limit, move semantics, JSON depth limits, HTTP PImpl ownership, executor exception hook, JSON-RPC version validation, unsupported MCP protocol-version rejection, strict public protocol-version negotiation helper, initialized enforcement (transport), client/server handler synchronization, native out-of-order response correlation, stable batch rejection policy, handler dispatch missing return, unknown content type rejection, apply_to handler overwrite, explicit sampling temperature zero, image/audio base64 validation, protocol finite-number validation, client/server request-cancellation key allocation, RequestHandle timeout-only wait strategy, session transport duplicate lookup, registry list caching, auth constant-time state/key comparison, auth endpoint HTTPS enforcement, auth metadata discovery SSRF guard, auth authorization-state TTL, auth PKCE S256-only public enum, DPoP SecureString key material, DPoP replay/claim validation hardening, handler dispatch ambiguity detection, registry name/URI validation, owned ServerHandlerInterface registration, registry synchronization, server authoring header split, direct JSON-RPC envelope serialization, POSIX process argv mutable buffers, graceful shutdown guidance, rate-limiter params size accounting, stale tooling submodule cleanup, removed plugin/adapters extension surface, server auth HTTP request-target propagation, DPoP-aware server AuthProvider bridge |
 | **NOT APPLICABLE** | 3 | ERROR macro conflict (logger deleted), FATAL logger abort semantics (runtime logger deleted), stale `tl::expected` concern (vendored fallback status is rechecked through release dependency review) |
 | **ACCEPTED LIMITATION** | 1 | stdio `std::getline` stop-unblock limitation is documented; process-stdio and Streamable HTTP are the recommended production interop paths pending exact release evidence |
 | **TRACKED DEBT** | 2 | `extern template` feasibility, public `nlohmann::json` include cost |
@@ -59,7 +59,7 @@ their policy changes.
 
 | ID | Status | Primary Evidence |
 |----|--------|------------------|
-| C1 | FIXED | `stdio_transport`, process-stdio interop, release-blocking transport matrix |
+| C1 | FIXED | `stdio_transport`, process-stdio interop, release transport matrix |
 | C2 | FIXED | `stdio_transport`, ThreadSanitizer/source-style policy |
 | C3 | FIXED | `stdio_transport`, notification/response interleaving regressions |
 | H1 | ACCEPTED LIMITATION | `docs/request_lifecycle.md#recommended-signal-handling-pattern`, release notes limitation disclosure |
@@ -112,7 +112,7 @@ their policy changes.
 | EXT-M1 | FIXED | owned `ServerHandlerInterface` lifetime tests |
 | EXT-M2 | FIXED | `ServerHandler::apply_to()` non-empty overwrite tests |
 | EXT-M3 | NOT_APPLICABLE | runtime logger deleted; source archive verifier excludes runtime logger |
-| EXT-M4 | FIXED | plugin SDK owning execution context and optional package boundary checks |
+| EXT-M4 | FIXED | removed plugin/adapters extension surface and package boundary checks |
 | EXT-L1 | FIXED | registry name/URI validation tests |
 | EXT-L2 | NOT_APPLICABLE | runtime logger deleted; source archive verifier excludes runtime logger |
 
@@ -421,20 +421,6 @@ This is risky for reproducible builds and security patching.
 contract. The deleted spdlog and CLI11 source directories are no longer
 declared as git submodules, so SDK consumers and package-manager builds do not
 inherit stale tooling submodule pins.
-
----
-
-### L4. `jsonrpcpp` Global `using Json` Pollutes Namespace — **FIXED**
-
-**File:** `third_party/jsonrpcpp/jsonrpcpp.hpp:36`
-
-`using Json = nlohmann::json;` at file scope in the global namespace. Fragile when included alongside cxxmcp's namespaced alias.
-
-**Resolution:** The bundled private header now defines `Json` inside
-`namespace jsonrpcpp` instead of the global namespace. The header remains a
-private protocol implementation dependency included from
-`sdk/protocol/src/serialization.cpp`, and package consumers still do not see or
-link a public `jsonrpcpp` target.
 
 ---
 
@@ -1097,15 +1083,15 @@ Redefines `ERROR` as a macro. On Windows, `<windows.h>` defines `#define ERROR 0
 
 ### MEDIUM: Plugin `ToolExecutionContext` Uses `string_view` — Dangling Risk — **FIXED**
 
-**File:** `extensions/plugin-sdk/include/cxxmcp/plugin/tool.hpp:14`
+**File:** removed experimental plugin tool context header
 
-`tool_name` is `std::string_view`, borrowing from the caller. If a plugin stores
-or queues the context for async processing, the view will dangle.
+`tool_name` was `std::string_view`, borrowing from the caller. If a plugin
+stored or queued the context for async processing, the view could dangle.
 
-**Resolution:** `ToolExecutionContext::tool_name` now owns a `std::string`.
-The plugin SDK and adapter targets are also opt-in package surfaces, not part of
-the default SDK install, so default consumers do not receive these extension
-headers unless they explicitly enable them.
+**Resolution:** The experimental plugin SDK and adapter extension headers were
+removed from the SDK package surface. Gateway/plugin integrations now belong in
+external repositories until a design note promotes a narrow SDK extension with
+release evidence.
 
 ---
 
@@ -1156,7 +1142,7 @@ findings by category.
 | Performance | 0 | 0 | 4 | — |
 | **Total** | **5** | **11** | **10** | **3** |
 
-**Fixed (55):** SIGPIPE, running_ atomic, output_mutex_, client_capabilities_, session transport lifetime guard, client/server handler synchronization, native out-of-order response correlation, std::unexpected UB, HTTP body/timeout, session limit, move semantics, JSON depth limits, HTTP PImpl ownership, executor exception hook, JSON-RPC version validation, unsupported MCP protocol-version rejection, strict public protocol-version negotiation helper, initialized enforcement (transport), stable batch rejection policy, handler dispatch missing return, unknown content type rejection, apply_to handler overwrite, explicit sampling temperature zero, image/audio base64 validation, protocol finite-number validation, client/server request-cancellation key allocation, RequestHandle timeout-only wait strategy, session transport duplicate lookup, registry list caching, auth constant-time state/key comparison, auth endpoint HTTPS enforcement, auth metadata discovery SSRF guard, auth authorization-state TTL, auth PKCE S256-only public enum, DPoP SecureString key material, DPoP replay/claim validation hardening, handler dispatch ambiguity detection, bundled jsonrpcpp namespace quarantine, registry name/URI validation, owned ServerHandlerInterface registration, registry synchronization, server authoring header split, direct JSON-RPC envelope serialization, POSIX process argv mutable buffers, graceful shutdown guidance, rate-limiter params size accounting, stale tooling submodule cleanup, plugin SDK owning execution context, optional plugin/adapters package boundary, server auth HTTP request-target propagation, DPoP-aware server AuthProvider bridge.
+**Fixed (55):** SIGPIPE, running_ atomic, output_mutex_, client_capabilities_, session transport lifetime guard, client/server handler synchronization, native out-of-order response correlation, std::unexpected UB, HTTP body/timeout, session limit, move semantics, JSON depth limits, HTTP PImpl ownership, executor exception hook, JSON-RPC version validation, unsupported MCP protocol-version rejection, strict public protocol-version negotiation helper, initialized enforcement (transport), stable batch rejection policy, handler dispatch missing return, unknown content type rejection, apply_to handler overwrite, explicit sampling temperature zero, image/audio base64 validation, protocol finite-number validation, client/server request-cancellation key allocation, RequestHandle timeout-only wait strategy, session transport duplicate lookup, registry list caching, auth constant-time state/key comparison, auth endpoint HTTPS enforcement, auth metadata discovery SSRF guard, auth authorization-state TTL, auth PKCE S256-only public enum, DPoP SecureString key material, DPoP replay/claim validation hardening, handler dispatch ambiguity detection, registry name/URI validation, owned ServerHandlerInterface registration, registry synchronization, server authoring header split, direct JSON-RPC envelope serialization, POSIX process argv mutable buffers, graceful shutdown guidance, rate-limiter params size accounting, stale tooling submodule cleanup, removed plugin/adapters extension surface, server auth HTTP request-target propagation, DPoP-aware server AuthProvider bridge.
 
 **Not applicable (3):** ERROR macro conflict (logger deleted), FATAL logger abort semantics (runtime logger deleted), stale `tl::expected` concern because the vendored fallback is scoped to release dependency review instead of treated as a permanent audit fact.
 

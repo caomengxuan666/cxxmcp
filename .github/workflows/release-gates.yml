@@ -6,6 +6,10 @@ on:
   push:
     branches:
       - master
+    paths-ignore:
+      - 'docs/**'
+      - '*.md'
+      - '.github/workflows/pages.yml'
 
 jobs:
   source-style:
@@ -14,7 +18,7 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           submodules: recursive
 
@@ -88,7 +92,7 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           submodules: recursive
 
@@ -121,7 +125,7 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           submodules: recursive
 
@@ -157,7 +161,8 @@ jobs:
             -R "^protocol_serialization_benchmark$" \
             --output-on-failure \
             --timeout 120 \
-            --output-junit build-performance-evidence/test-results/performance-evidence.xml
+            --output-junit test-results/performance-evidence.xml
+          test -s build-performance-evidence/test-results/performance-evidence.xml
 
       - name: Upload performance evidence
         if: always()
@@ -176,7 +181,7 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           submodules: recursive
 
@@ -240,7 +245,7 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           submodules: recursive
 
@@ -250,7 +255,7 @@ jobs:
           sudo apt-get install -y clang ninja-build
 
       - name: Setup Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v6
         with:
           python-version: "3.12"
 
@@ -258,7 +263,7 @@ jobs:
         uses: astral-sh/setup-uv@v5
 
       - name: Setup Node
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v6
         with:
           node-version: "22"
 
@@ -296,7 +301,7 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           submodules: recursive
 
@@ -365,7 +370,7 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           submodules: recursive
 
@@ -415,7 +420,10 @@ jobs:
             -R "^(auth|public_header_auth|package_smoke)$" `
             --output-on-failure `
             --timeout 240 `
-            --output-junit build-auth-release-gate/test-results/auth-release-gate.xml
+            --output-junit test-results/auth-release-gate.xml
+          if (!(Test-Path "build-auth-release-gate/test-results/auth-release-gate.xml")) {
+            throw "missing JUnit evidence: build-auth-release-gate/test-results/auth-release-gate.xml"
+          }
 
       - name: Upload auth release gate evidence
         if: always()
@@ -434,7 +442,7 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           submodules: recursive
 
@@ -470,7 +478,8 @@ jobs:
             -R "^(auth|auth_openssl|public_header_auth|package_smoke)$" \
             --output-on-failure \
             --timeout 300 \
-            --output-junit build-auth-openssl-release-gate/test-results/auth-openssl-release-gate.xml
+            --output-junit test-results/auth-openssl-release-gate.xml
+          test -s build-auth-openssl-release-gate/test-results/auth-openssl-release-gate.xml
 
       - name: Upload OpenSSL auth release gate evidence
         if: always()
@@ -528,7 +537,7 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           submodules: recursive
 
@@ -550,7 +559,7 @@ jobs:
           fi
 
       - name: Setup Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v6
         with:
           python-version: "3.12"
 
@@ -558,7 +567,7 @@ jobs:
         uses: astral-sh/setup-uv@v5
 
       - name: Setup Node
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v6
         with:
           node-version: "22"
 
@@ -629,12 +638,15 @@ jobs:
             "-L", "release-blocking",
             "--output-on-failure",
             "--timeout", "600",
-            "--output-junit", "build-release-gates/test-results/release-blocking.xml"
+            "--output-junit", "test-results/release-blocking.xml"
           )
           if ("${{ matrix.config }}") {
             $ctestArgs += @("-C", "${{ matrix.config }}")
           }
           ctest @ctestArgs
+          if (!(Test-Path "build-release-gates/test-results/release-blocking.xml")) {
+            throw "missing JUnit evidence: build-release-gates/test-results/release-blocking.xml"
+          }
 
       - name: Upload release gate evidence
         if: always()
@@ -672,7 +684,7 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           submodules: recursive
 
@@ -744,7 +756,7 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           submodules: recursive
 
@@ -770,7 +782,7 @@ jobs:
         run: |
           set -euo pipefail
           conan install \
-            --requires=cxxmcp/1.1.1 \
+            --requires=cxxmcp/1.1.3 \
             --generator=CMakeDeps \
             --generator=CMakeToolchain \
             --output-folder="build-package-conan-${{ matrix.name }}-deps" \
@@ -831,7 +843,7 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           submodules: recursive
 
@@ -872,14 +884,14 @@ jobs:
               text,
           )
           text, version_count = re.subn(
-              r'add_versions\("v1\.1\.1",\s*".*?"\)',
-              f'add_versions("v1.1.1", "{digest}")',
+              r'add_versions\("v1\.1\.3",\s*".*?"\)',
+              f'add_versions("v1.1.3", "{digest}")',
               text,
           )
           if url_count != 1:
               raise SystemExit(f"expected one add_urls rewrite, got {url_count}")
           if version_count != 1:
-              raise SystemExit(f"expected one v1.1.1 add_versions rewrite, got {version_count}")
+              raise SystemExit(f"expected one v1.1.3 add_versions rewrite, got {version_count}")
           if f'file://{archive.as_posix()}' not in text:
               raise SystemExit("xmake recipe was not rewritten to the generated source archive")
           if "github.com" in text or "releases/download" in text:
@@ -890,7 +902,7 @@ jobs:
           add_rules("mode.release")
           set_languages("c++17")
           add_repositories("cxxmcp-local repo")
-          add_requires("cxxmcp v1.1.1", {configs = {http = ${{ matrix.http_enabled }}, auth = ${{ matrix.auth_enabled }}}})
+          add_requires("cxxmcp v1.1.3", {configs = {http = ${{ matrix.http_enabled }}, auth = ${{ matrix.auth_enabled }}}})
 
           target("consumer")
               set_kind("binary")
@@ -949,7 +961,7 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           submodules: recursive
 
@@ -984,7 +996,7 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           submodules: recursive
 
@@ -1018,12 +1030,12 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           submodules: recursive
 
       - name: Setup Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v6
         with:
           python-version: "3.12"
 

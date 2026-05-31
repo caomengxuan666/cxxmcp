@@ -125,6 +125,7 @@ if(MCP_ENABLE_HTTP AND TARGET mcp_client AND TARGET mcp_server)
     target_link_libraries(mcp_example_streamable_http_client PRIVATE
                           mcp_client mcp_server)
     cxxmcp_example(mcp_example_streamable_http_client)
+
 endif()
 
 if(MCP_ENABLE_WEBSOCKET AND TARGET mcp_client AND TARGET mcp_server)

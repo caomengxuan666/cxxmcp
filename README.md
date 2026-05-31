@@ -101,7 +101,7 @@ cmake --build build --config Release
 cmake --install build --config Release --prefix out/install/cxxmcp
 ```
 
-Package managers: `conanfile.py` (Conan 2), `packaging/vcpkg/ports/cxxmcp` (vcpkg overlay), `packaging/xmake/` (xmake). See [package consumption](docs/package_consumption.md).
+Package managers: `conanfile.py` (Conan 2), `packaging/vcpkg/ports/cxxmcp-sdk` (vcpkg overlay), `packaging/xmake/` (xmake). See [package consumption](docs/package_consumption.md).
 
 ## CMake Options
 
@@ -112,6 +112,7 @@ Package managers: `conanfile.py` (Conan 2), `packaging/vcpkg/ports/cxxmcp` (vcpk
 | `CXXMCP_BUILD_SERVER` | `OFF` | Build the MCP server library |
 | `CXXMCP_BUILD_EXAMPLES` | `OFF` | Build example executables |
 | `CXXMCP_BUILD_TESTS` | `BUILD_TESTING` | Build tests |
+| `CXXMCP_BUILD_BENCHMARKS` | `OFF` | Build benchmark executables |
 | `CXXMCP_ENABLE_AUTH` | `OFF` | Build the optional OAuth 2.1 / DPoP auth target |
 | `CXXMCP_ENABLE_WEBSOCKET` | `OFF` | Build WebSocket transport (requires `CXXMCP_ENABLE_HTTP`) |
 
@@ -153,6 +154,7 @@ See [examples.md](docs/examples.md) for the full list. The separate [cxxmcp-exam
 - [GitHub Pages](https://caomengxuan666.github.io/cxxmcp/) — API reference
 - [Conformance evidence](docs/conformance_evidence.md) — test results and known exceptions
 - [Compatibility policy](docs/compatibility_policy.md) — versioning, compiler matrix, ABI
+- [Dependency policy](DEPENDENCY_POLICY.md) — update policy and package dependency boundaries
 - [HTTP transport backend evidence](docs/compatibility_policy.md#http-transport-backend-evidence)
 - [Release gates](docs/release_gates.md) — release-blocking checks
 - [Runtime gateway](docs/runtime_gateway.md) — external gateway boundary

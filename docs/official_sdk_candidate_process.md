@@ -19,9 +19,9 @@ becomes the default choice for C++ MCP users.
 - Fact-standard readiness: cxxmcp has public release artifacts, repeatable
   conformance evidence, package-manager routes, and real downstream users.
 
-Do not describe a release as fact-standard-ready until the release candidate
-checklist is complete for the exact release commit and all advertised release
-matrix legs are green.
+Do not describe a release as ready for fact-standard claims until the release
+candidate checklist is complete for the exact release commit and all advertised
+release matrix legs are green.
 
 ## Preconditions
 
@@ -44,8 +44,8 @@ all of the following evidence:
   canonical examples.
 - Public examples and generated documentation present `Peer` / `Service` as
   the canonical SDK path.
-- Runtime, gateway, CLI, app, adapters, and plugin SDK surfaces remain outside
-  the core SDK contract.
+- Runtime, gateway, CLI, app, adapter, and plugin surfaces remain outside the
+  core SDK contract.
 - A maintainer list, security contact, semver policy, and compatibility policy
   are published.
 - At least one package-consumption route is documented. CMake install-tree

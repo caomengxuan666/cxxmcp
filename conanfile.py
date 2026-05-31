@@ -6,7 +6,7 @@ import os
 
 class CxxmcpConan(ConanFile):
     name = "cxxmcp"
-    version = "1.1.1"  # overridden by set_version()
+    version = "1.1.3"  # overridden by set_version()
     package_type = "static-library"
 
     license = "MIT"
@@ -39,11 +39,9 @@ class CxxmcpConan(ConanFile):
         "VERSION",
         "cmake/*",
         "sdk/*",
-        "extensions/*",
         "examples/*",
         "tests/*",
         "third_party/tl/*",
-        "third_party/jsonrpcpp/*",
         "third_party/nlohmann/*",
         "third_party/httplib/httplib.h",
         "README.md",

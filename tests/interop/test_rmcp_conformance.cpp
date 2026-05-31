@@ -490,7 +490,37 @@ void build_reverse_server() {
           "RMCP reverse server build should succeed");
 }
 
+void close_socket(socket_t sock) noexcept {
+#ifdef _WIN32
+  closesocket(sock);
+#else
+  close(sock);
+#endif
+}
+
 std::uint16_t choose_loopback_port() {
+  socket_t sock = ::socket(AF_INET, SOCK_STREAM, 0);
+  if (sock != INVALID_SOCKET) {
+    sockaddr_in addr{};
+    addr.sin_family = AF_INET;
+    addr.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+    addr.sin_port = 0;
+
+    if (::bind(sock, reinterpret_cast<sockaddr*>(&addr), sizeof(addr)) == 0) {
+      socklen_t addr_len = sizeof(addr);
+      if (::getsockname(sock, reinterpret_cast<sockaddr*>(&addr), &addr_len) ==
+          0) {
+        const auto port = static_cast<std::uint16_t>(ntohs(addr.sin_port));
+        close_socket(sock);
+        if (port != 0) {
+          return port;
+        }
+      }
+    }
+
+    close_socket(sock);
+  }
+
 #ifdef _WIN32
   const auto process_id = static_cast<unsigned>(GetCurrentProcessId());
 #else

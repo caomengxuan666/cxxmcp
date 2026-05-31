@@ -148,10 +148,11 @@ class Executor {
     auto entry = std::make_shared<TimerEntry>();
     entry->when = when;
     entry->task = std::move(task);
-    entry->id = next_timer_id_++;
+    entry->priority = static_cast<int>(prio);
     TimerHandle handle(entry);
     {
       std::lock_guard<std::mutex> lock(timer_mutex_);
+      entry->id = next_timer_id_++;
       timers_.push(entry);
     }
     timer_cv_.notify_one();
@@ -296,7 +297,8 @@ class Executor {
       }
       // Dispatch the timer task into the appropriate priority queue
       if (next && next->task) {
-        (void)post(std::move(next->task), TaskPriority::DEFAULT);
+        (void)post(std::move(next->task),
+                   static_cast<TaskPriority>(next->priority));
       }
     }
   }
