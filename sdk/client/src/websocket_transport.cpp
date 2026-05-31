@@ -181,20 +181,29 @@ class WebSocketClientTransport::Impl {
     }
 
     receive_cv_.notify_all();
-
-    // Close the WebSocket connection
-    if (ws_) {
-      try {
-        ws_->close();
-      } catch (...) {
-        // Best-effort close
-      }
-    }
+    shutdown_active_socket();
 
     // Join reader thread
     if (reader_thread_.joinable() &&
         reader_thread_.get_id() != std::this_thread::get_id()) {
       reader_thread_.join();
+    }
+
+    {
+      std::lock_guard<std::mutex> ws_lock(ws_mutex_);
+      if (ws_) {
+        try {
+          ws_->close();
+        } catch (...) {
+          // Best-effort close
+        }
+        ws_.reset();
+      }
+      set_active_socket(INVALID_SOCKET);
+    }
+    {
+      std::lock_guard<std::mutex> lock(mutex_);
+      connected_ = false;
     }
 
     return core::Unit{};
@@ -255,7 +264,11 @@ class WebSocketClientTransport::Impl {
         ws_->set_websocket_max_missed_pongs(options_.max_missed_pongs);
       }
 
+      ws_->set_socket_options(
+          [this](socket_t sock) { set_active_socket(sock); });
+
       if (!ws_->connect()) {
+        set_active_socket(INVALID_SOCKET);
         return mcp::core::unexpected(make_ws_error(
             protocol::ErrorCode::InternalError, "websocket connection failed"));
       }
@@ -343,6 +356,7 @@ class WebSocketClientTransport::Impl {
         }
         ws_.reset();
       }
+      set_active_socket(INVALID_SOCKET);
       connected_ = false;
 
       // Wait with backoff (holding both locks so send() blocks)
@@ -384,6 +398,27 @@ class WebSocketClientTransport::Impl {
     }
 
     receive_cv_.notify_all();
+  }
+
+  void set_active_socket(socket_t sock) {
+    std::lock_guard<std::mutex> lock(socket_mutex_);
+    active_socket_ = sock;
+  }
+
+  void shutdown_active_socket() {
+    socket_t sock = INVALID_SOCKET;
+    {
+      std::lock_guard<std::mutex> lock(socket_mutex_);
+      sock = active_socket_;
+    }
+    if (sock == INVALID_SOCKET) {
+      return;
+    }
+#ifdef _WIN32
+    (void)::shutdown(sock, SD_BOTH);
+#else
+    (void)::shutdown(sock, SHUT_RDWR);
+#endif
   }
 
   core::Result<core::Unit> send_request(protocol::JsonRpcRequest request) {
@@ -453,11 +488,13 @@ class WebSocketClientTransport::Impl {
 
   WebSocketClientTransportOptions options_;
   mutable std::mutex mutex_;
-  std::mutex ws_mutex_;  // Guards ws_->send()
+  std::mutex ws_mutex_;  // Guards writes and WebSocketClient destruction.
+  std::mutex socket_mutex_;
   std::condition_variable receive_cv_;
   std::deque<protocol::JsonRpcMessage> inbound_;
   std::unique_ptr<httplib::ws::WebSocketClient> ws_;
   std::thread reader_thread_;
+  socket_t active_socket_ = INVALID_SOCKET;
   bool closed_ = false;
   bool connected_ = false;
 
