@@ -7,7 +7,7 @@ This document describes how cxxmcp manages its dependencies.
 | Dependency | Version | License | Purpose |
 |---|---|---|---|
 | nlohmann/json | ^3.11 | MIT | JSON parsing and serialization |
-| cpp-httplib | ^0.15 | MIT | HTTP client and server |
+| cpp-httplib | ^0.15 | MIT | HTTP client/server and WebSocket transport |
 | OpenSSL | ^3.0 | Apache-2.0 | TLS and cryptographic operations (optional) |
 
 All direct dependencies are vendored under `third_party/` or resolved via vcpkg when building with `CXXMCP_USE_SYSTEM_DEPS=ON`.

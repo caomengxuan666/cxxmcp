@@ -17,12 +17,12 @@ This document outlines the current development direction for cxxmcp.
 ## Longer Term
 
 - Tier 2 application with MCP conformance program
-- WebSocket transport support
 - Language bindings for Python and Rust via C FFI
 
 ## Completed
 
-- Full server and client implementation (Streamable HTTP, SSE, stdio)
+- Full server and client implementation (Streamable HTTP, SSE, stdio, WebSocket)
+- WebSocket transport with built-in auto-reconnect (cpp-httplib based)
 - OAuth 2.1 authorization support
 - SEP-2243 `Mcp-Method` / `Mcp-Name` header compliance
 - 108/109 server conformance, 428/436 client conformance against latest spec

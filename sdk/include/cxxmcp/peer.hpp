@@ -43,6 +43,9 @@
 #if defined(CXXMCP_ENABLE_HTTP)
 #include "cxxmcp/transport/http_transport.hpp"
 #endif
+#if defined(CXXMCP_ENABLE_WEBSOCKET)
+#include "cxxmcp/transport/websocket_transport.hpp"
+#endif
 #include "cxxmcp/transport/process_stdio_transport.hpp"
 #include "cxxmcp/transport/stdio_transport.hpp"
 #include "cxxmcp/transport/transport.hpp"
@@ -2550,6 +2553,21 @@ class Peer<RoleClient>::Builder {
   }
 #endif
 
+#if defined(CXXMCP_ENABLE_WEBSOCKET)
+  Builder& websocket(transport::WebSocketClientTransportOptions options) {
+    reset_transport();
+    ws_options_ = std::move(options);
+    transport_kind_ = TransportKind::WebSocket;
+    return *this;
+  }
+
+  Builder& websocket(std::string uri) {
+    transport::WebSocketClientTransportOptions options;
+    options.uri = std::move(uri);
+    return websocket(std::move(options));
+  }
+#endif
+
   Builder& stdio(client::Client::StdioEndpoint endpoint) {
     reset_transport();
     stdio_endpoint_ = std::move(endpoint);
@@ -2574,7 +2592,7 @@ class Peer<RoleClient>::Builder {
     return *this;
   }
 
-#if defined(CXXMCP_ENABLE_HTTP)
+#if defined(CXXMCP_ENABLE_HTTP) || defined(CXXMCP_ENABLE_WEBSOCKET)
   Builder& header(std::string name, std::string value) {
     http_headers_[std::move(name)] = std::move(value);
     return *this;
@@ -2584,7 +2602,9 @@ class Peer<RoleClient>::Builder {
     auth_header_ = std::move(token);
     return *this;
   }
+#endif
 
+#if defined(CXXMCP_ENABLE_HTTP)
   Builder& auth_refresh_handler(client::HttpAuthRefreshHandler handler) {
     auth_refresh_handler_ = std::move(handler);
     return *this;
@@ -2755,6 +2775,9 @@ class Peer<RoleClient>::Builder {
     StreamableHttp,
     LegacySse,
 #endif
+#if defined(CXXMCP_ENABLE_WEBSOCKET)
+    WebSocket,
+#endif
     Stdio,
   };
 
@@ -2763,6 +2786,9 @@ class Peer<RoleClient>::Builder {
     native_transport_.reset();
 #if defined(CXXMCP_ENABLE_HTTP)
     http_endpoint_ = client::Client::StreamableHttpEndpoint{};
+#endif
+#if defined(CXXMCP_ENABLE_WEBSOCKET)
+    ws_options_ = {};
 #endif
     stdio_endpoint_ = client::Client::StdioEndpoint{};
     transport_kind_ = TransportKind::None;
@@ -2804,6 +2830,22 @@ class Peer<RoleClient>::Builder {
         return Peer::connect_streamable_http(configured_http_endpoint());
       case TransportKind::LegacySse:
         return Peer::connect_legacy_sse(configured_http_endpoint());
+#endif
+#if defined(CXXMCP_ENABLE_WEBSOCKET)
+      case TransportKind::WebSocket: {
+        auto options = std::move(ws_options_);
+        for (auto& [name, value] : http_headers_) {
+          options.headers[std::move(name)] = std::move(value);
+        }
+        if (auth_header_.has_value()) {
+          options.auth_header = std::move(auth_header_);
+        }
+        if (timeout_.has_value()) {
+          options.timeout = *timeout_;
+        }
+        return Peer(std::make_unique<transport::WebSocketClientTransport>(
+            std::move(options)));
+      }
 #endif
       case TransportKind::Stdio:
         return Peer::connect_stdio(std::move(stdio_endpoint_));
@@ -2901,11 +2943,16 @@ class Peer<RoleClient>::Builder {
   TransportKind transport_kind_ = TransportKind::None;
   std::unique_ptr<client::Transport> concrete_transport_;
   std::unique_ptr<transport::ClientTransport> native_transport_;
-#if defined(CXXMCP_ENABLE_HTTP)
-  client::Client::StreamableHttpEndpoint http_endpoint_;
+#if defined(CXXMCP_ENABLE_HTTP) || defined(CXXMCP_ENABLE_WEBSOCKET)
   std::unordered_map<std::string, std::string> http_headers_;
   std::optional<std::string> auth_header_;
+#endif
+#if defined(CXXMCP_ENABLE_HTTP)
+  client::Client::StreamableHttpEndpoint http_endpoint_;
   client::HttpAuthRefreshHandler auth_refresh_handler_;
+#endif
+#if defined(CXXMCP_ENABLE_WEBSOCKET)
+  transport::WebSocketClientTransportOptions ws_options_;
 #endif
   client::Client::StdioEndpoint stdio_endpoint_;
   std::optional<std::chrono::milliseconds> timeout_;
@@ -4132,6 +4179,28 @@ class Peer<RoleServer>::Builder {
     options.listen_port = listen_port;
     options.path = std::move(path);
     return streamable_http(std::move(options));
+  }
+#endif
+
+#if defined(CXXMCP_ENABLE_WEBSOCKET)
+  Builder& websocket(transport::WebSocketServerTransportOptions options) {
+    return transport(std::make_unique<transport::WebSocketServerTransport>(
+        std::move(options)));
+  }
+
+  Builder& websocket(int listen_port) {
+    transport::WebSocketServerTransportOptions options;
+    options.listen_port = listen_port;
+    return websocket(std::move(options));
+  }
+
+  Builder& websocket(std::string listen_host, int listen_port,
+                     std::string path = "/mcp") {
+    transport::WebSocketServerTransportOptions options;
+    options.listen_host = std::move(listen_host);
+    options.listen_port = listen_port;
+    options.path = std::move(path);
+    return websocket(std::move(options));
   }
 #endif
 
