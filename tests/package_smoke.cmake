@@ -101,6 +101,7 @@ endif()
 set(package_smoke_use_system_deps OFF)
 set(package_smoke_auth_enabled OFF)
 set(package_smoke_auth_openssl_enabled OFF)
+set(package_smoke_websocket_enabled OFF)
 set(cache_path "${BUILD_DIR}/CMakeCache.txt")
 if(EXISTS "${cache_path}")
     file(READ "${cache_path}" cache_content)
@@ -114,6 +115,10 @@ if(EXISTS "${cache_path}")
     if(cache_content MATCHES "CXXMCP_AUTH_CRYPTO:STRING=OpenSSL" OR
        cache_content MATCHES "CXXMCP_AUTH_CRYPTO:UNINITIALIZED=OpenSSL")
         set(package_smoke_auth_openssl_enabled ON)
+    endif()
+    if(cache_content MATCHES "CXXMCP_ENABLE_WEBSOCKET:BOOL=(ON|TRUE|1)" OR
+       cache_content MATCHES "MCP_ENABLE_WEBSOCKET:BOOL=(ON|TRUE|1)")
+        set(package_smoke_websocket_enabled ON)
     endif()
 endif()
 
@@ -214,6 +219,7 @@ set(configure_command
     "-Dcxxmcp_DIR=${installed_cxxmcp_config_dir}"
     "-DCXXMCP_PACKAGE_SMOKE_AUTH_ENABLED=${package_smoke_auth_enabled}"
     "-DCXXMCP_PACKAGE_SMOKE_AUTH_OPENSSL_ENABLED=${package_smoke_auth_openssl_enabled}"
+    "-DCXXMCP_PACKAGE_SMOKE_WEBSOCKET_ENABLED=${package_smoke_websocket_enabled}"
 )
 append_package_smoke_common_configure_options(configure_command)
 

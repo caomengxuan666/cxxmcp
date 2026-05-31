@@ -8,6 +8,7 @@ $ErrorActionPreference = "Stop"
 
 $Root = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
 $CopyrightLine = "// Copyright (c) 2025 [caomengxuan666]"
+$CopyrightPattern = "^// Copyright \(c\) 2025 \[[^\]]+\]$"
 
 $SourceExtensions = @(
     ".c",
@@ -98,7 +99,7 @@ function Test-HasCopyrightHeader {
     param([string]$Path)
 
     $FirstLine = Get-Content -LiteralPath $Path -TotalCount 1 -ErrorAction SilentlyContinue
-    return $FirstLine -eq $CopyrightLine
+    return $FirstLine -match $CopyrightPattern
 }
 
 function Add-CopyrightHeader {

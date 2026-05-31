@@ -17,6 +17,7 @@ DEFAULT_TARGETS = [
     "mcp_public_header_config",
     "mcp_public_header_auth",
     "mcp_public_header_transport",
+    "mcp_public_header_websocket_transport",
     "mcp_public_header_client",
     "mcp_public_header_server",
     "mcp_public_header_peer",

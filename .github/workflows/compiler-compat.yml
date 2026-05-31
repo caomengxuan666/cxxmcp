@@ -65,7 +65,9 @@ jobs:
             -DCMAKE_BUILD_TYPE=Debug \
             -DCXXMCP_BUILD_SDK=ON \
             -DCXXMCP_BUILD_EXAMPLES=ON \
-            -DCXXMCP_BUILD_TESTS=ON
+            -DCXXMCP_BUILD_TESTS=ON \
+            -DCXXMCP_ENABLE_HTTP=ON \
+            -DCXXMCP_ENABLE_WEBSOCKET=ON
 
       - name: Build SDK compatibility targets
         run: cmake --build build-compiler-compat --parallel
@@ -74,7 +76,7 @@ jobs:
         run: |
           mkdir -p build-compiler-compat/test-results
           ctest --test-dir build-compiler-compat \
-            -R "^(protocol|sdk_boundary|public_header_.*|transport_contract|transport_stdio_contract|client_server|stdio_transport|transport_adapters|http_transport|sdk|public_targets|package_smoke)$" \
+            -R "^(protocol|sdk_boundary|public_header_.*|transport_contract|transport_stdio_contract|client_server|stdio_transport|transport_adapters|http_transport|websocket_transport|sdk|public_targets|package_smoke)$" \
             --output-on-failure \
             --timeout 240 \
             --output-junit build-compiler-compat/test-results/compiler-compat.xml

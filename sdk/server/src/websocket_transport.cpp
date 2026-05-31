@@ -25,9 +25,10 @@ namespace mcp::transport {
 
 namespace {
 
-core::Error make_ws_server_error(int code, std::string message,
+core::Error make_ws_server_error(protocol::ErrorCode code, std::string message,
                                  std::string detail = {}) {
-  return core::Error{code, std::move(message), std::move(detail), "transport"};
+  return core::Error{static_cast<int>(code), std::move(message),
+                     std::move(detail), "transport"};
 }
 
 std::string request_id_to_string(const protocol::RequestId& request_id) {
@@ -85,9 +86,9 @@ class WebSocketServerTransport::Impl {
     {
       std::lock_guard<std::mutex> lock(mutex_);
       if (closed_) {
-        return mcp::core::unexpected(make_ws_server_error(
-            protocol::ErrorCode::InvalidRequest,
-            "websocket server transport is closed"));
+        return mcp::core::unexpected(
+            make_ws_server_error(protocol::ErrorCode::InvalidRequest,
+                                 "websocket server transport is closed"));
       }
     }
 
@@ -114,8 +115,9 @@ class WebSocketServerTransport::Impl {
     }
 
     std::unique_lock<std::mutex> lock(mutex_);
-    receive_cv_.wait(lock,
-                     [this] { return closed_ || startup_error_ || !inbound_.empty(); });
+    receive_cv_.wait(lock, [this] {
+      return closed_ || startup_error_ || !inbound_.empty();
+    });
     if (startup_error_) {
       return mcp::core::unexpected(*startup_error_);
     }
@@ -130,6 +132,50 @@ class WebSocketServerTransport::Impl {
   void wait_until_ready() {
     std::unique_lock<std::mutex> lock(ready_mutex_);
     ready_cv_.wait(lock, [this] { return ready_ || closed_; });
+  }
+
+  void start() {
+    const auto host = options_.listen_host;
+    const auto port = options_.listen_port;
+
+    server_thread_ = std::thread([this, host, port]() {
+      try {
+        bool bound = false;
+        if (port > 0) {
+          bound = server_.bind_to_port(host, port);
+        } else {
+          int assigned = server_.bind_to_any_port(host);
+          bound = assigned > 0;
+        }
+        if (!bound) {
+          {
+            std::lock_guard<std::mutex> lock(mutex_);
+            startup_error_ =
+                make_ws_server_error(protocol::ErrorCode::InternalError,
+                                     "websocket server failed to bind to " +
+                                         host + ":" + std::to_string(port));
+            closed_ = true;
+          }
+          mark_ready();
+          receive_cv_.notify_all();
+          return;
+        }
+        mark_ready();
+        server_.listen_after_bind();
+      } catch (const std::exception& ex) {
+        {
+          std::lock_guard<std::mutex> lock(mutex_);
+          startup_error_ = make_ws_server_error(
+              protocol::ErrorCode::InternalError,
+              "websocket server failed to start", ex.what());
+          closed_ = true;
+        }
+        mark_ready();
+        receive_cv_.notify_all();
+      }
+    });
+
+    wait_until_ready();
   }
 
   core::Result<core::Unit> close() {
@@ -183,15 +229,14 @@ class WebSocketServerTransport::Impl {
   };
 
   void setup_server() {
-    server_.WebSocket(
-        options_.path,
-        [this](const httplib::Request& req, httplib::WebSocket& ws) {
-          handle_connection(req, ws);
-        });
+    server_.WebSocket(options_.path, [this](const httplib::Request& req,
+                                            httplib::ws::WebSocket& ws) {
+      handle_connection(req, ws);
+    });
   }
 
   void handle_connection(const httplib::Request& /*req*/,
-                         httplib::WebSocket& ws) {
+                         httplib::ws::WebSocket& ws) {
     const auto conn_id = "conn-" + std::to_string(next_connection_id_++);
     connection_count_++;
 
@@ -219,8 +264,7 @@ class WebSocketServerTransport::Impl {
       // If it's a request from the client, track the connection for routing
       // the response back
       if (auto* request = std::get_if<protocol::JsonRpcRequest>(&*parsed)) {
-        auto pending =
-            std::make_shared<PendingClientRequest>(request->id);
+        auto pending = std::make_shared<PendingClientRequest>(request->id);
         {
           std::lock_guard<std::mutex> lock(mutex_);
           if (closed_) {
@@ -302,9 +346,9 @@ class WebSocketServerTransport::Impl {
 
     auto serialized = protocol::serialize_response(response);
     if (!serialized) {
-      return mcp::core::unexpected(make_ws_server_error(
-          protocol::ErrorCode::InternalError,
-          "failed to serialize websocket response"));
+      return mcp::core::unexpected(
+          make_ws_server_error(protocol::ErrorCode::InternalError,
+                               "failed to serialize websocket response"));
     }
 
     // Send to the specific connection
@@ -313,8 +357,7 @@ class WebSocketServerTransport::Impl {
       if (active_connection_id_ == conn_id && active_ws_) {
         if (!active_ws_->send(*serialized)) {
           return mcp::core::unexpected(make_ws_server_error(
-              protocol::ErrorCode::InternalError,
-              "websocket send failed"));
+              protocol::ErrorCode::InternalError, "websocket send failed"));
         }
         messages_sent_++;
       }
@@ -327,16 +370,16 @@ class WebSocketServerTransport::Impl {
       const protocol::JsonRpcNotification& notification) {
     auto serialized = protocol::serialize_notification(notification);
     if (!serialized) {
-      return mcp::core::unexpected(make_ws_server_error(
-          protocol::ErrorCode::InternalError,
-          "failed to serialize websocket notification"));
+      return mcp::core::unexpected(
+          make_ws_server_error(protocol::ErrorCode::InternalError,
+                               "failed to serialize websocket notification"));
     }
 
     std::lock_guard<std::mutex> lock(mutex_);
     if (!active_ws_) {
-      return mcp::core::unexpected(make_ws_server_error(
-          protocol::ErrorCode::InternalError,
-          "no active websocket connection"));
+      return mcp::core::unexpected(
+          make_ws_server_error(protocol::ErrorCode::InternalError,
+                               "no active websocket connection"));
     }
     if (!active_ws_->send(*serialized)) {
       return mcp::core::unexpected(make_ws_server_error(
@@ -352,17 +395,17 @@ class WebSocketServerTransport::Impl {
     {
       std::lock_guard<std::mutex> lock(mutex_);
       if (!active_ws_) {
-        return mcp::core::unexpected(make_ws_server_error(
-            protocol::ErrorCode::InternalError,
-            "no active websocket connection"));
+        return mcp::core::unexpected(
+            make_ws_server_error(protocol::ErrorCode::InternalError,
+                                 "no active websocket connection"));
       }
       const auto [_, inserted] =
           pending_client_requests_.emplace(request.id, pending);
       if (!inserted) {
-        return mcp::core::unexpected(make_ws_server_error(
-            protocol::ErrorCode::InvalidRequest,
-            "duplicate websocket server request id",
-            request_id_to_string(request.id)));
+        return mcp::core::unexpected(
+            make_ws_server_error(protocol::ErrorCode::InvalidRequest,
+                                 "duplicate websocket server request id",
+                                 request_id_to_string(request.id)));
       }
     }
 
@@ -372,9 +415,9 @@ class WebSocketServerTransport::Impl {
         std::lock_guard<std::mutex> lock(mutex_);
         pending_client_requests_.erase(request.id);
       }
-      return mcp::core::unexpected(make_ws_server_error(
-          protocol::ErrorCode::InternalError,
-          "failed to serialize websocket request"));
+      return mcp::core::unexpected(
+          make_ws_server_error(protocol::ErrorCode::InternalError,
+                               "failed to serialize websocket request"));
     }
 
     {
@@ -411,7 +454,7 @@ class WebSocketServerTransport::Impl {
       pending_client_requests_;
   std::map<protocol::RequestId, std::string> connection_for_request_;
   std::string active_connection_id_;
-  httplib::WebSocket* active_ws_ = nullptr;
+  httplib::ws::WebSocket* active_ws_ = nullptr;
   bool closed_ = false;
   bool ready_ = false;
   std::optional<core::Error> startup_error_;
@@ -428,50 +471,7 @@ class WebSocketServerTransport::Impl {
 WebSocketServerTransport::WebSocketServerTransport(
     WebSocketServerTransportOptions options)
     : impl_(std::make_unique<Impl>(std::move(options))) {
-  // Start the server in a background thread
-  auto& server = impl_->server_;
-  const auto host = impl_->options_.listen_host;
-  const auto port = impl_->options_.listen_port;
-
-  impl_->server_thread_ = std::thread([&server, host, port, impl = impl_.get()]() {
-    try {
-      bool bound = false;
-      if (port > 0) {
-        bound = server.bind_to_port(host, port);
-      } else {
-        int assigned = server.bind_to_any_port(host);
-        bound = assigned > 0;
-      }
-      if (!bound) {
-        {
-          std::lock_guard<std::mutex> lock(impl->mutex_);
-          impl->startup_error_ = make_ws_server_error(
-              protocol::ErrorCode::InternalError,
-              "websocket server failed to bind to " + host + ":" +
-                  std::to_string(port));
-          impl->closed_ = true;
-        }
-        impl->mark_ready();
-        impl->receive_cv_.notify_all();
-        return;
-      }
-      impl->mark_ready();
-      server.listen_after_bind();
-    } catch (const std::exception& ex) {
-      {
-        std::lock_guard<std::mutex> lock(impl->mutex_);
-        impl->startup_error_ = make_ws_server_error(
-            protocol::ErrorCode::InternalError,
-            "websocket server failed to start", ex.what());
-        impl->closed_ = true;
-      }
-      impl->mark_ready();
-      impl->receive_cv_.notify_all();
-    }
-  });
-
-  // Wait for the server to bind
-  impl_->wait_until_ready();
+  impl_->start();
 }
 
 WebSocketServerTransport::~WebSocketServerTransport() = default;
@@ -497,8 +497,6 @@ core::Result<core::Unit> WebSocketServerTransport::close() {
   return impl_->close();
 }
 
-void WebSocketServerTransport::wait_until_ready() {
-  impl_->wait_until_ready();
-}
+void WebSocketServerTransport::wait_until_ready() { impl_->wait_until_ready(); }
 
 }  // namespace mcp::transport

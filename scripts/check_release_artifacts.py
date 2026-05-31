@@ -89,10 +89,16 @@ AUTH_ARTIFACTS = [
 
 PACKAGE_ARTIFACTS = [
     "cxxmcp-package-vcpkg-default",
+    "cxxmcp-package-vcpkg-websocket",
+    "cxxmcp-package-vcpkg-websocket-auth",
     "cxxmcp-package-vcpkg-http-auth",
     "cxxmcp-package-conan-default",
+    "cxxmcp-package-conan-websocket",
+    "cxxmcp-package-conan-websocket-auth",
     "cxxmcp-package-conan-http-auth",
     "cxxmcp-package-xmake-default",
+    "cxxmcp-package-xmake-websocket",
+    "cxxmcp-package-xmake-websocket-auth",
     "cxxmcp-package-xmake-http-auth",
 ]
 
@@ -269,6 +275,7 @@ def check_gate_artifacts(gate_artifacts: Path) -> None:
         "stdio_transport",
         "transport_adapters",
         "http_transport",
+        "websocket_transport",
         "rmcp_conformance",
         "sdk",
         "public_targets",
@@ -280,6 +287,7 @@ def check_gate_artifacts(gate_artifacts: Path) -> None:
         "public_header_error",
         "public_header_config",
         "public_header_transport",
+        "public_header_websocket_transport",
         "public_header_client",
         "public_header_server",
         "public_header_peer",

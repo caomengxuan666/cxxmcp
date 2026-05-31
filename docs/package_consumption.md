@@ -21,6 +21,10 @@ installed as a public SDK header. Downstream code should use
 `cxxmcp/transport/http_transport.hpp`, `cxxmcp/client/http_transport.hpp`, or
 `cxxmcp/server/http_transport.hpp` instead of including `httplib.h`.
 
+The optional WebSocket transport is also backed by `cpp-httplib`. Package
+managers should expose it as a separate opt-in feature/config that maps to
+`CXXMCP_ENABLE_WEBSOCKET=ON` and keeps the default SDK package path off.
+
 Tooling dependencies such as spdlog and CLI11 are outside the SDK package
 contract. vcpkg/Conan package submissions for the SDK should keep examples,
 tests, and docs disabled by default.
@@ -80,6 +84,13 @@ vcpkg install "cxxmcp-sdk[auth]" --overlay-ports=C:\path\to\cxxmcp\packaging\vcp
 The `auth` feature maps to `CXXMCP_ENABLE_AUTH=ON`. It currently enables
 transport-neutral OAuth/DPoP contracts only; it must not pull OpenSSL into the
 default package path.
+
+The `websocket` feature maps to `CXXMCP_ENABLE_WEBSOCKET=ON` and implicitly
+enables HTTP transport support because both transports share `cpp-httplib`:
+
+```powershell
+vcpkg install "cxxmcp-sdk[websocket]" --overlay-ports=C:\path\to\cxxmcp\packaging\vcpkg\ports
+```
 
 ## Future vcpkg Registry Paths
 
@@ -203,6 +214,9 @@ conan create . -o cxxmcp/*:with_auth=True -o cxxmcp/*:with_examples=False -o cxx
 `cxxmcp::auth` component. The default Conan package remains SDK-only and does
 not export auth headers or OpenSSL requirements.
 
+`with_websocket=True` maps to `CXXMCP_ENABLE_WEBSOCKET=ON` and implicitly
+enables `CXXMCP_ENABLE_HTTP=ON`.
+
 ## Narrow SDK Targets
 
 Choose the narrowest public target that matches the binary you are building.
@@ -257,5 +271,6 @@ packaging/xmake/packages/c/cxxmcp/xmake.lua
 
 It builds the same SDK source archive and disables examples, tests, and docs.
 Submit it to xmake-repo after the package interface is stable enough for
-registry review. The recipe has an opt-in `auth` config
-that maps to `CXXMCP_ENABLE_AUTH=ON`; the default remains auth-off.
+registry review. The recipe has opt-in `auth` and `websocket` configs. The
+`websocket` config maps to `CXXMCP_ENABLE_WEBSOCKET=ON` and implicitly enables
+HTTP support; the defaults remain auth-off and websocket-off.

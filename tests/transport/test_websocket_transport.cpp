@@ -53,7 +53,7 @@ class MockWebSocketServer {
  public:
   MockWebSocketServer() {
     server_.WebSocket("/mcp", [this](const httplib::Request& /*req*/,
-                                     httplib::WebSocket& ws) {
+                                     httplib::ws::WebSocket& ws) {
       std::string msg;
       while (ws.read(msg)) {
         std::lock_guard<std::mutex> lock(mutex_);
@@ -69,8 +69,9 @@ class MockWebSocketServer {
                 .result = Json::object(),
             };
             ws.send(serialize_test_response(response));
-          } else if (auto* notif = std::get_if<mcp::protocol::JsonRpcNotification>(
-                         &*parsed)) {
+          } else if (auto* notif =
+                         std::get_if<mcp::protocol::JsonRpcNotification>(
+                             &*parsed)) {
             // Store notifications
           }
         }
@@ -134,8 +135,7 @@ void test_websocket_client_transport_sends_and_receives() {
   require(received.has_value(), "receive should succeed");
   require(received->has_value(), "should have a message");
 
-  auto* response =
-      std::get_if<mcp::protocol::JsonRpcResponse>(&**received);
+  auto* response = std::get_if<mcp::protocol::JsonRpcResponse>(&**received);
   require(response != nullptr, "message should be a response");
   require(response->id.has_value(), "response should have an id");
 
@@ -194,7 +194,8 @@ void test_websocket_client_transport_diagnostics() {
   auto diag = transport.diagnostics();
   require(diag.is_object(), "diagnostics should be an object");
   require(diag.contains("name"), "diagnostics should have name");
-  require(diag["name"] == "websocket-client", "name should be websocket-client");
+  require(diag["name"] == "websocket-client",
+          "name should be websocket-client");
   require(diag.contains("closed"), "diagnostics should have closed");
   require(diag.contains("connected"), "diagnostics should have connected");
 
@@ -221,7 +222,7 @@ void test_websocket_server_transport_accepts_connection() {
   // diagnostics.
   // For this test, we'll use a fixed port approach instead.
   // Let's recreate with a specific port.
-  transport.close();
+  (void)transport.close();
 
   // Use a specific port for testing
   mcp::transport::WebSocketServerTransportOptions options2;
@@ -231,7 +232,7 @@ void test_websocket_server_transport_accepts_connection() {
   mcp::transport::WebSocketServerTransport transport2(std::move(options2));
 
   // Connect a raw WebSocket client
-  httplib::WebSocketClient ws_client("127.0.0.1:18765/mcp");
+  httplib::ws::WebSocketClient ws_client("ws://127.0.0.1:18765/mcp");
   require(ws_client.connect(), "ws client should connect");
 
   // Send an initialize request
@@ -256,7 +257,8 @@ void test_websocket_server_transport_accepts_connection() {
       .result = Json{{"serverInfo", Json{{"name", "test"}, {"version", "1.0"}}},
                      {"capabilities", Json::object()}},
   };
-  auto sent = transport2.send(mcp::protocol::JsonRpcMessage{std::move(response)});
+  auto sent =
+      transport2.send(mcp::protocol::JsonRpcMessage{std::move(response)});
   require(sent.has_value(), "server send should succeed");
 
   // Client should receive the response
@@ -264,7 +266,7 @@ void test_websocket_server_transport_accepts_connection() {
   require(ws_client.read(client_msg), "ws client should read response");
 
   ws_client.close();
-  transport2.close();
+  (void)transport2.close();
 
   std::cout << "OK\n";
 }
@@ -284,11 +286,12 @@ void test_websocket_server_transport_diagnostics() {
   auto diag = transport.diagnostics();
   require(diag.is_object(), "diagnostics should be an object");
   require(diag.contains("name"), "diagnostics should have name");
-  require(diag["name"] == "websocket-server", "name should be websocket-server");
+  require(diag["name"] == "websocket-server",
+          "name should be websocket-server");
   require(diag.contains("closed"), "diagnostics should have closed");
   require(diag.contains("connections"), "diagnostics should have connections");
 
-  transport.close();
+  (void)transport.close();
 
   std::cout << "OK\n";
 }

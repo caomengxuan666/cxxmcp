@@ -18,9 +18,8 @@
 int main() {
   using Json = mcp::protocol::Json;
 
-  auto peer = mcp::ClientPeer::builder()
-                  .websocket("ws://127.0.0.1:3001/mcp")
-                  .build();
+  auto peer =
+      mcp::ClientPeer::builder().websocket("ws://127.0.0.1:3001/mcp").build();
 
   if (!peer) {
     std::cerr << "Failed to build client peer\n";
@@ -39,8 +38,7 @@ int main() {
     std::cerr << "Initialize failed: " << init_result.error().message << "\n";
     return 1;
   }
-  std::cout << "Connected to: " << init_result->server_info.name << " "
-            << init_result->server_info.version << "\n";
+  std::cout << "Connected to WebSocket MCP server\n";
 
   // List available tools
   auto tools = svc->peer().list_all_tools();
@@ -59,7 +57,13 @@ int main() {
   Json echo_input = {{"value", "hello from websocket client"}};
   auto echo_result = svc->peer().call_tool("echo", echo_input);
   if (echo_result) {
-    std::cout << "echo result: " << echo_result->dump(2) << "\n";
+    if (echo_result->structured_content) {
+      std::cout << "echo structured result: "
+                << echo_result->structured_content->dump(2) << "\n";
+    } else {
+      std::cout << "echo returned " << echo_result->content.size()
+                << " content block(s)\n";
+    }
   } else {
     std::cerr << "echo call failed: " << echo_result.error().message << "\n";
   }
@@ -68,11 +72,17 @@ int main() {
   Json greet_input = {{"name", "cxxmcp"}};
   auto greet_result = svc->peer().call_tool("greet", greet_input);
   if (greet_result) {
-    std::cout << "greet result: " << greet_result->dump(2) << "\n";
+    if (greet_result->structured_content) {
+      std::cout << "greet structured result: "
+                << greet_result->structured_content->dump(2) << "\n";
+    } else {
+      std::cout << "greet returned " << greet_result->content.size()
+                << " content block(s)\n";
+    }
   } else {
     std::cerr << "greet call failed: " << greet_result.error().message << "\n";
   }
 
-  svc->stop();
+  (void)svc->stop();
   return 0;
 }

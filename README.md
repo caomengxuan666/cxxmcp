@@ -113,6 +113,7 @@ Package managers: `conanfile.py` (Conan 2), `packaging/vcpkg/ports/cxxmcp-sdk` (
 | `CXXMCP_BUILD_EXAMPLES` | `OFF` | Build example executables |
 | `CXXMCP_BUILD_TESTS` | `BUILD_TESTING` | Build tests |
 | `CXXMCP_BUILD_BENCHMARKS` | `OFF` | Build benchmark executables |
+| `CXXMCP_ENABLE_HTTP` | `OFF` | Build HTTP/SSE transport (requires `cpp-httplib`) |
 | `CXXMCP_ENABLE_AUTH` | `OFF` | Build the optional OAuth 2.1 / DPoP auth target |
 | `CXXMCP_ENABLE_WEBSOCKET` | `OFF` | Build WebSocket transport (requires `CXXMCP_ENABLE_HTTP`) |
 

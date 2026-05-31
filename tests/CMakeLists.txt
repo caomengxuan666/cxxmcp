@@ -143,6 +143,11 @@ if(TARGET mcp_transport)
 
     add_cxxmcp_public_header_compile_test(
         transport transport_header.cpp cxxmcp::transport)
+    if(MCP_ENABLE_WEBSOCKET)
+        add_cxxmcp_public_header_compile_test(
+            websocket_transport websocket_transport_header.cpp
+            cxxmcp::transport)
+    endif()
 endif()
 
 if(TARGET mcp_client AND TARGET mcp_server)

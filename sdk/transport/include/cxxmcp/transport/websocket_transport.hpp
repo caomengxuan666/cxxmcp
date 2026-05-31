@@ -5,9 +5,10 @@
 /// @file
 /// @brief WebSocket transport implementations for MCP client and server peers.
 ///
-/// These transports wrap the WebSocket support built into cpp-httplib, providing
-/// a full-duplex, message-oriented channel for JSON-RPC over WebSocket.
-/// The client transport supports automatic reconnection with exponential backoff.
+/// These transports wrap the WebSocket support built into cpp-httplib,
+/// providing a full-duplex, message-oriented channel for JSON-RPC over
+/// WebSocket. The client transport supports automatic reconnection with
+/// exponential backoff.
 ///
 /// Requires `CXXMCP_ENABLE_WEBSOCKET` (which in turn requires
 /// `CXXMCP_ENABLE_HTTP`, since both share the cpp-httplib dependency).
@@ -128,7 +129,8 @@ class WebSocketClientTransport final : public ClientTransport {
   /// @brief Returns "websocket-client".
   std::string_view name() const noexcept override;
 
-  /// @brief Returns structured diagnostics including connection state and stats.
+  /// @brief Returns structured diagnostics including connection state and
+  /// stats.
   protocol::Json diagnostics() const override;
 
   /// @brief Sends a JSON-RPC message over the WebSocket connection.
@@ -186,7 +188,8 @@ class WebSocketServerTransport final : public ServerTransport {
   /// @brief Returns "websocket-server".
   std::string_view name() const noexcept override;
 
-  /// @brief Returns structured diagnostics including connection count and stats.
+  /// @brief Returns structured diagnostics including connection count and
+  /// stats.
   protocol::Json diagnostics() const override;
 
   /// @brief Sends a JSON-RPC message to the appropriate connected client.

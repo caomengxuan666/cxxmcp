@@ -38,6 +38,15 @@
         }
       ]
     },
+    "websocket": {
+      "description": "WebSocket transport via cpp-httplib (implies HTTP transport support).",
+      "dependencies": [
+        {
+          "name": "cpp-httplib",
+          "default-features": false
+        }
+      ]
+    },
     "auth": {
       "description": "Build the optional OAuth 2.1 / DPoP auth scaffold target."
     },

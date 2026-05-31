@@ -7,7 +7,6 @@
 #include <condition_variable>
 #include <deque>
 #include <exception>
-#include <map>
 #include <memory>
 #include <mutex>
 #include <optional>
@@ -25,22 +24,10 @@ namespace mcp::transport {
 
 namespace {
 
-core::Error make_ws_error(int code, std::string message,
+core::Error make_ws_error(protocol::ErrorCode code, std::string message,
                           std::string detail = {}) {
-  return core::Error{code, std::move(message), std::move(detail), "transport"};
-}
-
-std::string request_id_to_string(const protocol::RequestId& request_id) {
-  return std::visit(
-      [](const auto& value) -> std::string {
-        using Value = std::decay_t<decltype(value)>;
-        if constexpr (std::is_same_v<Value, std::string>) {
-          return value;
-        } else {
-          return std::to_string(value);
-        }
-      },
-      request_id);
+  return core::Error{static_cast<int>(code), std::move(message),
+                     std::move(detail), "transport"};
 }
 
 /// @brief Parsed WebSocket URI components.
@@ -120,7 +107,7 @@ class WebSocketClientTransport::Impl {
         {"closed", closed_},
         {"connected", connected_},
         {"queued", inbound_.size()},
-        {"pendingRequests", pending_requests_.size()},
+        {"pendingRequests", 0},
         {"reconnectCount", reconnect_count_.load()},
         {"messagesSent", messages_sent_.load()},
         {"messagesReceived", messages_received_.load()},
@@ -131,9 +118,9 @@ class WebSocketClientTransport::Impl {
     {
       std::lock_guard<std::mutex> lock(mutex_);
       if (closed_) {
-        return mcp::core::unexpected(make_ws_error(
-            protocol::ErrorCode::InvalidRequest,
-            "websocket client transport is closed"));
+        return mcp::core::unexpected(
+            make_ws_error(protocol::ErrorCode::InvalidRequest,
+                          "websocket client transport is closed"));
       }
     }
 
@@ -185,26 +172,12 @@ class WebSocketClientTransport::Impl {
   }
 
   core::Result<core::Unit> close() {
-    std::map<protocol::RequestId, std::shared_ptr<PendingRequest>> pending;
     {
       std::lock_guard<std::mutex> lock(mutex_);
       if (closed_) {
         return core::Unit{};
       }
       closed_ = true;
-      pending.swap(pending_requests_);
-    }
-
-    // Fail all pending requests
-    for (auto& [_, req] : pending) {
-      {
-        std::lock_guard<std::mutex> req_lock(req->mutex);
-        req->response = protocol::make_error_response(
-            std::optional<protocol::RequestId>{req->id},
-            protocol::make_error(protocol::ErrorCode::InternalError,
-                                 "websocket transport closed"));
-      }
-      req->cv.notify_all();
     }
 
     receive_cv_.notify_all();
@@ -228,22 +201,12 @@ class WebSocketClientTransport::Impl {
   }
 
  private:
-  struct PendingRequest {
-    explicit PendingRequest(protocol::RequestId request_id)
-        : id(std::move(request_id)) {}
-
-    protocol::RequestId id;
-    std::mutex mutex;
-    std::condition_variable cv;
-    std::optional<protocol::JsonRpcResponse> response;
-  };
-
   core::Result<core::Unit> ensure_connected() {
     std::lock_guard<std::mutex> lock(mutex_);
     if (closed_) {
-      return mcp::core::unexpected(make_ws_error(
-          protocol::ErrorCode::InvalidRequest,
-          "websocket client transport is closed"));
+      return mcp::core::unexpected(
+          make_ws_error(protocol::ErrorCode::InvalidRequest,
+                        "websocket client transport is closed"));
     }
     if (connected_) {
       return core::Unit{};
@@ -264,14 +227,17 @@ class WebSocketClientTransport::Impl {
 
     try {
       auto headers = build_headers(options_.headers, options_.auth_header);
-      ws_ = std::make_unique<httplib::WebSocketClient>(
-          parsed.host + ":" + std::to_string(parsed.port) + parsed.path,
-          headers);
+      const auto endpoint = options_.uri.empty()
+                                ? std::string(parsed.ssl ? "wss://" : "ws://") +
+                                      parsed.host + ":" +
+                                      std::to_string(parsed.port) + parsed.path
+                                : options_.uri;
+      ws_ = std::make_unique<httplib::ws::WebSocketClient>(endpoint, headers);
 
       if (!ws_->is_valid()) {
-        return mcp::core::unexpected(make_ws_error(
-            protocol::ErrorCode::InternalError,
-            "failed to create websocket client"));
+        return mcp::core::unexpected(
+            make_ws_error(protocol::ErrorCode::InternalError,
+                          "failed to create websocket client"));
       }
 
       // Configure timeouts
@@ -289,8 +255,7 @@ class WebSocketClientTransport::Impl {
 
       if (!ws_->connect()) {
         return mcp::core::unexpected(make_ws_error(
-            protocol::ErrorCode::InternalError,
-            "websocket connection failed"));
+            protocol::ErrorCode::InternalError, "websocket connection failed"));
       }
 
       connected_ = true;
@@ -305,9 +270,9 @@ class WebSocketClientTransport::Impl {
 
       return core::Unit{};
     } catch (const std::exception& ex) {
-      return mcp::core::unexpected(make_ws_error(
-          protocol::ErrorCode::InternalError,
-          "websocket connection threw exception", ex.what()));
+      return mcp::core::unexpected(
+          make_ws_error(protocol::ErrorCode::InternalError,
+                        "websocket connection threw exception", ex.what()));
     }
   }
 
@@ -325,7 +290,7 @@ class WebSocketClientTransport::Impl {
       if (!result) {
         // Read failed — attempt reconnect or close
         if (!try_reconnect()) {
-          enqueue_error_and_close("websocket read failed");
+          enqueue_error_and_close();
           return;
         }
         continue;
@@ -395,31 +360,6 @@ class WebSocketClientTransport::Impl {
   }
 
   void route_message(protocol::JsonRpcMessage message) {
-    if (auto* response =
-            std::get_if<protocol::JsonRpcResponse>(&message)) {
-      if (response->id.has_value()) {
-        // Check if this completes a pending outbound request
-        std::shared_ptr<PendingRequest> pending;
-        {
-          std::lock_guard<std::mutex> lock(mutex_);
-          auto it = pending_requests_.find(*response->id);
-          if (it != pending_requests_.end()) {
-            pending = it->second;
-            pending_requests_.erase(it);
-          }
-        }
-        if (pending) {
-          {
-            std::lock_guard<std::mutex> req_lock(pending->mutex);
-            pending->response = std::move(*response);
-          }
-          pending->cv.notify_all();
-          return;
-        }
-      }
-    }
-
-    // Not a pending response — enqueue for receive()
     {
       std::lock_guard<std::mutex> lock(mutex_);
       if (closed_) {
@@ -430,7 +370,7 @@ class WebSocketClientTransport::Impl {
     receive_cv_.notify_one();
   }
 
-  void enqueue_error_and_close(const std::string& message) {
+  void enqueue_error_and_close() {
     {
       std::lock_guard<std::mutex> lock(mutex_);
       if (closed_) {
@@ -439,72 +379,35 @@ class WebSocketClientTransport::Impl {
       closed_ = true;
     }
 
-    // Fail all pending requests
-    std::map<protocol::RequestId, std::shared_ptr<PendingRequest>> pending;
-    {
-      std::lock_guard<std::mutex> lock(mutex_);
-      pending.swap(pending_requests_);
-    }
-    for (auto& [_, req] : pending) {
-      {
-        std::lock_guard<std::mutex> req_lock(req->mutex);
-        req->response = protocol::make_error_response(
-            std::optional<protocol::RequestId>{req->id},
-            protocol::make_error(protocol::ErrorCode::InternalError, message));
-      }
-      req->cv.notify_all();
-    }
-
     receive_cv_.notify_all();
   }
 
   core::Result<core::Unit> send_request(protocol::JsonRpcRequest request) {
-    auto pending = std::make_shared<PendingRequest>(request.id);
     {
       std::lock_guard<std::mutex> lock(mutex_);
       if (closed_) {
-        return mcp::core::unexpected(make_ws_error(
-            protocol::ErrorCode::InvalidRequest,
-            "websocket client transport is closed"));
-      }
-      const auto [_, inserted] =
-          pending_requests_.emplace(request.id, pending);
-      if (!inserted) {
-        return mcp::core::unexpected(make_ws_error(
-            protocol::ErrorCode::InvalidRequest,
-            "duplicate websocket request id",
-            request_id_to_string(request.id)));
+        return mcp::core::unexpected(
+            make_ws_error(protocol::ErrorCode::InvalidRequest,
+                          "websocket client transport is closed"));
       }
     }
 
     auto serialized = protocol::serialize_request(request);
     if (!serialized) {
-      // Remove from pending
-      {
-        std::lock_guard<std::mutex> lock(mutex_);
-        pending_requests_.erase(request.id);
-      }
-      return mcp::core::unexpected(make_ws_error(
-          protocol::ErrorCode::InternalError,
-          "failed to serialize websocket request"));
+      return mcp::core::unexpected(
+          make_ws_error(protocol::ErrorCode::InternalError,
+                        "failed to serialize websocket request"));
     }
 
     {
       std::lock_guard<std::mutex> ws_lock(ws_mutex_);
       if (!ws_ || !ws_->send(*serialized)) {
-        // Remove from pending
-        {
-          std::lock_guard<std::mutex> lock(mutex_);
-          pending_requests_.erase(request.id);
-        }
         return mcp::core::unexpected(make_ws_error(
-            protocol::ErrorCode::InternalError,
-            "websocket send failed"));
+            protocol::ErrorCode::InternalError, "websocket send failed"));
       }
     }
     messages_sent_++;
 
-    // The response will be delivered through receive() by the reader thread
     return core::Unit{};
   }
 
@@ -512,9 +415,9 @@ class WebSocketClientTransport::Impl {
       const protocol::JsonRpcNotification& notification) {
     auto serialized = protocol::serialize_notification(notification);
     if (!serialized) {
-      return mcp::core::unexpected(make_ws_error(
-          protocol::ErrorCode::InternalError,
-          "failed to serialize websocket notification"));
+      return mcp::core::unexpected(
+          make_ws_error(protocol::ErrorCode::InternalError,
+                        "failed to serialize websocket notification"));
     }
 
     std::lock_guard<std::mutex> ws_lock(ws_mutex_);
@@ -530,9 +433,9 @@ class WebSocketClientTransport::Impl {
       protocol::JsonRpcResponse response) {
     auto serialized = protocol::serialize_response(response);
     if (!serialized) {
-      return mcp::core::unexpected(make_ws_error(
-          protocol::ErrorCode::InternalError,
-          "failed to serialize websocket response"));
+      return mcp::core::unexpected(
+          make_ws_error(protocol::ErrorCode::InternalError,
+                        "failed to serialize websocket response"));
     }
 
     std::lock_guard<std::mutex> ws_lock(ws_mutex_);
@@ -549,9 +452,7 @@ class WebSocketClientTransport::Impl {
   std::mutex ws_mutex_;  // Guards ws_->send()
   std::condition_variable receive_cv_;
   std::deque<protocol::JsonRpcMessage> inbound_;
-  std::map<protocol::RequestId, std::shared_ptr<PendingRequest>>
-      pending_requests_;
-  std::unique_ptr<httplib::WebSocketClient> ws_;
+  std::unique_ptr<httplib::ws::WebSocketClient> ws_;
   std::thread reader_thread_;
   bool closed_ = false;
   bool connected_ = false;
