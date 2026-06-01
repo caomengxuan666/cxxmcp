@@ -37,6 +37,9 @@ namespace mcp::server {
 /// the underlying MCP session. Use available() before optional peer operations
 /// when the context may not have come from a live transport.
 ///
+/// New code may prefer the SessionClient or ClientHandle aliases to avoid
+/// confusing this session-bound handle with the top-level mcp::ClientPeer.
+///
 /// Methods return core::Result and never throw intentionally. Transport
 /// failures, protocol error responses, unsupported client capabilities, and
 /// response deserialization failures are propagated as core::Error values.
@@ -863,8 +866,13 @@ inline ClientPeer client_peer(const SessionContext& context) noexcept {
                     context.transport_lifetime);
 }
 
-inline ClientPeer SessionContext::client() const noexcept {
-  return ClientPeer(transport, session_id, transport_lifetime);
+/// @brief Create a SessionClient handle from a session context.
+inline SessionClient session_client(const SessionContext& context) noexcept {
+  return client_peer(context);
+}
+
+inline SessionClient SessionContext::client() const noexcept {
+  return session_client(*this);
 }
 
 }  // namespace mcp::server

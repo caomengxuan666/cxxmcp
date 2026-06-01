@@ -11,6 +11,8 @@
 #include <utility>
 #include <vector>
 
+#include "cxxmcp/auth/http_metadata_endpoint.hpp"
+#include "cxxmcp/auth/http_token_endpoint.hpp"
 #include "cxxmcp/auth/lifecycle.hpp"
 #include "cxxmcp/auth/pkce.hpp"
 #include "cxxmcp/auth/token.hpp"
@@ -287,5 +289,276 @@ class OAuthClientOrchestrator {
   std::optional<AuthorizationServerMetadata> metadata_;
   std::optional<ProtectedResourceMetadata> protected_resource_;
 };
+
+class OAuthClientFlowBuilder;
+
+/// @brief Built common browser + PKCE OAuth client flow.
+///
+/// OAuthClientOrchestrator keeps transport and callback dependencies injectable
+/// by reference. OAuthClientFlow keeps dependency handles through shared_ptr so
+/// applications can assemble owned endpoints and application-owned references
+/// through OAuthClientFlowBuilder.
+class OAuthClientFlow {
+ public:
+  OAuthClientFlow(const OAuthClientFlow&) = delete;
+  OAuthClientFlow& operator=(const OAuthClientFlow&) = delete;
+  OAuthClientFlow(OAuthClientFlow&&) = delete;
+  OAuthClientFlow& operator=(OAuthClientFlow&&) = delete;
+
+  /// @brief Execute discovery, client setup, authorization, and token exchange.
+  core::Result<TokenSet> authorize() { return orchestrator_.authorize(); }
+
+  /// @brief Return a currently valid access token, refreshing when needed.
+  core::Result<std::string> get_access_token() {
+    return orchestrator_.get_access_token();
+  }
+
+  /// @brief Handle an unauthorized HTTP response and decide whether to retry.
+  core::Result<OAuthRefreshRetryResult> handle_auth_response(
+      const HttpResponseMetadata& response) {
+    return orchestrator_.handle_auth_response(response);
+  }
+
+  /// @brief Get the current lifecycle state.
+  OAuthLifecycleState lifecycle_state() const {
+    return orchestrator_.lifecycle_state();
+  }
+
+  /// @brief Get the current client configuration.
+  const OAuthClientConfig& client_config() const {
+    return orchestrator_.client_config();
+  }
+
+  /// @brief Get the discovered authorization server metadata.
+  const std::optional<AuthorizationServerMetadata>& metadata() const {
+    return orchestrator_.metadata();
+  }
+
+  /// @brief Get the discovered protected resource metadata.
+  const std::optional<ProtectedResourceMetadata>& protected_resource_metadata()
+      const {
+    return orchestrator_.protected_resource_metadata();
+  }
+
+ private:
+  friend class OAuthClientFlowBuilder;
+
+  OAuthClientFlow(
+      OAuthClientOrchestratorConfig config,
+      std::shared_ptr<OAuthClientCallback> callback,
+      std::shared_ptr<OAuthMetadataEndpoint> metadata_endpoint,
+      std::shared_ptr<OAuthTokenEndpoint> token_endpoint,
+      std::shared_ptr<PkceGenerator> pkce_generator,
+      std::shared_ptr<OAuthClientRegistrationEndpoint> registration_endpoint)
+      : config_(std::move(config)),
+        callback_(std::move(callback)),
+        metadata_endpoint_(std::move(metadata_endpoint)),
+        token_endpoint_(std::move(token_endpoint)),
+        pkce_generator_(std::move(pkce_generator)),
+        registration_endpoint_(std::move(registration_endpoint)),
+        orchestrator_(
+            config_, *callback_, *metadata_endpoint_, *token_endpoint_,
+            *pkce_generator_,
+            registration_endpoint_ ? registration_endpoint_.get() : nullptr) {}
+
+  OAuthClientOrchestratorConfig config_;
+  std::shared_ptr<OAuthClientCallback> callback_;
+  std::shared_ptr<OAuthMetadataEndpoint> metadata_endpoint_;
+  std::shared_ptr<OAuthTokenEndpoint> token_endpoint_;
+  std::shared_ptr<PkceGenerator> pkce_generator_;
+  std::shared_ptr<OAuthClientRegistrationEndpoint> registration_endpoint_;
+  OAuthClientOrchestrator orchestrator_;
+};
+
+/// @brief Fluent builder for the common OAuth browser authorization flow.
+class OAuthClientFlowBuilder {
+ public:
+  OAuthClientFlowBuilder() = default;
+
+  explicit OAuthClientFlowBuilder(std::string resource_url) {
+    config_.resource_url = std::move(resource_url);
+  }
+
+  /// @brief Set the MCP protected resource URL.
+  OAuthClientFlowBuilder& resource_url(std::string value) {
+    config_.resource_url = std::move(value);
+    return *this;
+  }
+
+  /// @brief Set the display name used during dynamic client registration.
+  OAuthClientFlowBuilder& client_name(std::string value) {
+    config_.client_name = std::move(value);
+    return *this;
+  }
+
+  /// @brief Set requested OAuth scopes.
+  OAuthClientFlowBuilder& scopes(ScopeList value) {
+    config_.scopes = std::move(value);
+    return *this;
+  }
+
+  /// @brief Set the redirect URI used by the authorization code flow.
+  OAuthClientFlowBuilder& redirect_uri(std::string value) {
+    config_.redirect_uri = std::move(value);
+    return *this;
+  }
+
+  /// @brief Set the maximum wait time for the authorization callback.
+  OAuthClientFlowBuilder& callback_timeout(std::chrono::seconds value) {
+    config_.callback_timeout = value;
+    return *this;
+  }
+
+  /// @brief Set the proactive token refresh skew.
+  OAuthClientFlowBuilder& refresh_skew(std::chrono::seconds value) {
+    config_.refresh_skew = value;
+    return *this;
+  }
+
+  /// @brief Use a preconfigured client_id and skip dynamic registration.
+  OAuthClientFlowBuilder& client_id(std::string value) {
+    config_.client_id = std::move(value);
+    return *this;
+  }
+
+  /// @brief Set a non-owning application callback reference.
+  OAuthClientFlowBuilder& callback(OAuthClientCallback& value) {
+    callback_ = non_owning(value);
+    return *this;
+  }
+
+  /// @brief Set an owning application callback.
+  OAuthClientFlowBuilder& callback(std::shared_ptr<OAuthClientCallback> value) {
+    callback_ = std::move(value);
+    return *this;
+  }
+
+  /// @brief Set a non-owning metadata endpoint reference.
+  OAuthClientFlowBuilder& metadata_endpoint(OAuthMetadataEndpoint& value) {
+    metadata_endpoint_ = non_owning(value);
+    return *this;
+  }
+
+  /// @brief Set an owning metadata endpoint.
+  OAuthClientFlowBuilder& metadata_endpoint(
+      std::shared_ptr<OAuthMetadataEndpoint> value) {
+    metadata_endpoint_ = std::move(value);
+    return *this;
+  }
+
+  /// @brief Set a non-owning token endpoint reference.
+  OAuthClientFlowBuilder& token_endpoint(OAuthTokenEndpoint& value) {
+    token_endpoint_ = non_owning(value);
+    return *this;
+  }
+
+  /// @brief Set an owning token endpoint.
+  OAuthClientFlowBuilder& token_endpoint(
+      std::shared_ptr<OAuthTokenEndpoint> value) {
+    token_endpoint_ = std::move(value);
+    return *this;
+  }
+
+  /// @brief Set the default HTTP metadata and token endpoints.
+  OAuthClientFlowBuilder& http_endpoints(OAuthHttpGet get, OAuthHttpPost post) {
+    metadata_endpoint_ =
+        std::make_shared<HttpOAuthMetadataEndpoint>(std::move(get));
+    token_endpoint_ = std::make_shared<HttpOAuthTokenEndpoint>(std::move(post));
+    return *this;
+  }
+
+  /// @brief Set a non-owning PKCE generator reference.
+  OAuthClientFlowBuilder& pkce_generator(PkceGenerator& value) {
+    pkce_generator_ = non_owning(value);
+    return *this;
+  }
+
+  /// @brief Set an owning PKCE generator.
+  OAuthClientFlowBuilder& pkce_generator(std::shared_ptr<PkceGenerator> value) {
+    pkce_generator_ = std::move(value);
+    return *this;
+  }
+
+  /// @brief Set a non-owning dynamic client registration endpoint reference.
+  OAuthClientFlowBuilder& registration_endpoint(
+      OAuthClientRegistrationEndpoint& value) {
+    registration_endpoint_ = non_owning(value);
+    return *this;
+  }
+
+  /// @brief Set an owning dynamic client registration endpoint.
+  OAuthClientFlowBuilder& registration_endpoint(
+      std::shared_ptr<OAuthClientRegistrationEndpoint> value) {
+    registration_endpoint_ = std::move(value);
+    return *this;
+  }
+
+  /// @brief Build the owning flow wrapper.
+  core::Result<std::unique_ptr<OAuthClientFlow>> build() & {
+    return std::move(*this).build();
+  }
+
+  /// @brief Build the owning flow wrapper.
+  core::Result<std::unique_ptr<OAuthClientFlow>> build() && {
+    auto validation = validate();
+    if (!validation.has_value()) {
+      return core::unexpected(validation.error());
+    }
+
+    return std::unique_ptr<OAuthClientFlow>(new OAuthClientFlow(
+        std::move(config_), std::move(callback_), std::move(metadata_endpoint_),
+        std::move(token_endpoint_), std::move(pkce_generator_),
+        std::move(registration_endpoint_)));
+  }
+
+ private:
+  template <typename T>
+  static std::shared_ptr<T> non_owning(T& value) {
+    return std::shared_ptr<T>(&value, [](T*) {});
+  }
+
+  core::Result<core::Unit> validate() const {
+    if (config_.resource_url.empty()) {
+      return core::unexpected(make_oauth_error(OAuthErrorCode::kInvalidRequest,
+                                               "resource_url is required"));
+    }
+    if (!callback_) {
+      return core::unexpected(
+          make_oauth_error(OAuthErrorCode::kInvalidRequest,
+                           "OAuth client callback is required"));
+    }
+    if (!metadata_endpoint_) {
+      return core::unexpected(
+          make_oauth_error(OAuthErrorCode::kInvalidRequest,
+                           "OAuth metadata endpoint is required"));
+    }
+    if (!token_endpoint_) {
+      return core::unexpected(make_oauth_error(
+          OAuthErrorCode::kInvalidRequest, "OAuth token endpoint is required"));
+    }
+    if (!pkce_generator_) {
+      return core::unexpected(make_oauth_error(OAuthErrorCode::kInvalidRequest,
+                                               "PKCE generator is required"));
+    }
+    return core::Unit{};
+  }
+
+  OAuthClientOrchestratorConfig config_;
+  std::shared_ptr<OAuthClientCallback> callback_;
+  std::shared_ptr<OAuthMetadataEndpoint> metadata_endpoint_;
+  std::shared_ptr<OAuthTokenEndpoint> token_endpoint_;
+  std::shared_ptr<PkceGenerator> pkce_generator_;
+  std::shared_ptr<OAuthClientRegistrationEndpoint> registration_endpoint_;
+};
+
+/// @brief Start building the common OAuth browser authorization flow.
+inline OAuthClientFlowBuilder oauth_client_flow() {
+  return OAuthClientFlowBuilder{};
+}
+
+/// @brief Start building the common OAuth browser flow for a resource URL.
+inline OAuthClientFlowBuilder oauth_client_flow(std::string resource_url) {
+  return OAuthClientFlowBuilder(std::move(resource_url));
+}
 
 }  // namespace mcp::auth

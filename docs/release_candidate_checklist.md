@@ -100,7 +100,8 @@ workflow run URL, and release URL fields before publishing.
 - [ ] vcpkg overlay default/auth, Conan default/auth, and xmake default/auth
       package-consumption smoke jobs passed.
 - [ ] `CXXMCP_AUTH_CRYPTO=OpenSSL` Linux GCC release gate passed
-      `auth_openssl`, `public_header_auth`, and OpenSSL package smoke.
+      `auth_openssl`, all `public_header_auth*` fixtures, and OpenSSL package
+      smoke.
 - [ ] `protocol_serialization_benchmark` Linux GCC Release evidence is
       attached before making serialization hot-path claims.
 - [ ] The benchmark output in

@@ -93,7 +93,8 @@ if(TARGET mcp_client AND TARGET mcp_server)
 endif()
 
 if(TARGET mcp_client AND TARGET mcp_server)
-    add_executable(mcp_example_client_loopback peer/client_loopback.cpp)
+    add_executable(mcp_example_client_loopback
+                   integration/client_loopback.cpp)
     target_link_libraries(mcp_example_client_loopback PRIVATE mcp_client
                                                           mcp_server)
     cxxmcp_example(mcp_example_client_loopback)
@@ -101,7 +102,7 @@ if(TARGET mcp_client AND TARGET mcp_server)
                               mcp_example_client_loopback)
 
     add_executable(mcp_example_task_async_client_server
-                   peer/task_async_client_server.cpp)
+                   integration/task_async_client_server.cpp)
     target_link_libraries(mcp_example_task_async_client_server
                           PRIVATE mcp_client mcp_server)
     cxxmcp_example(mcp_example_task_async_client_server)

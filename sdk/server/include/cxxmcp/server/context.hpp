@@ -25,10 +25,11 @@ using CancellationToken = mcp::CancellationToken;
 ///
 /// ToolContext copies the SessionContext metadata for the active request and
 /// adds tool arguments. It does not own the transport; client() returns a
-/// non-owning ClientPeer for optional server-to-client calls during handling.
+/// non-owning SessionClient for optional server-to-client calls during
+/// handling.
 struct ToolContext : SessionContext {
   /// @brief Return a non-owning peer handle for this invocation's client.
-  ClientPeer client() const noexcept { return client_peer(*this); }
+  SessionClient client() const noexcept { return session_client(*this); }
 
   /// JSON arguments supplied with the tool call.
   protocol::Json arguments = protocol::Json::object();
@@ -44,7 +45,7 @@ struct ToolContext : SessionContext {
 /// @brief Invocation context passed to prompt handlers.
 struct PromptContext : SessionContext {
   /// @brief Return a non-owning peer handle for this invocation's client.
-  ClientPeer client() const noexcept { return client_peer(*this); }
+  SessionClient client() const noexcept { return session_client(*this); }
 
   /// JSON arguments supplied with the prompt request.
   protocol::Json arguments = protocol::Json::object();
@@ -58,7 +59,7 @@ struct PromptContext : SessionContext {
 /// @brief Invocation context passed to resource read handlers.
 struct ResourceContext : SessionContext {
   /// @brief Return a non-owning peer handle for this invocation's client.
-  ClientPeer client() const noexcept { return client_peer(*this); }
+  SessionClient client() const noexcept { return session_client(*this); }
 
   /// Requested resource URI.
   std::string uri;

@@ -26,6 +26,12 @@ namespace mcp::server {
 
 class Transport;
 class ClientPeer;
+/// @brief Clearer alias for the session-bound client handle returned from
+/// server handler contexts.
+using SessionClient = ClientPeer;
+/// @brief Alias for applications that want to avoid colliding mentally with
+/// the top-level mcp::ClientPeer client-side peer.
+using ClientHandle = ClientPeer;
 
 /// @brief Per-message connection metadata supplied to server handlers.
 ///
@@ -53,10 +59,10 @@ struct SessionContext {
   /// after the transport has been destroyed.
   std::weak_ptr<void> transport_lifetime;
 
-  /// @brief Return a non-owning peer handle for the client on this session.
-  /// @return A ClientPeer bound to transport, or an unavailable peer when no
-  /// transport is associated with the context.
-  ClientPeer client() const noexcept;
+  /// @brief Return a non-owning handle for the client on this session.
+  /// @return A SessionClient bound to transport, or an unavailable handle when
+  /// no transport is associated with the context.
+  SessionClient client() const noexcept;
 };
 
 /// @brief Callback used by transports to dispatch inbound JSON-RPC requests.

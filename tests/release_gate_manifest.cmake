@@ -43,6 +43,15 @@ endforeach()
 
 foreach(header_test
         protocol protocol_types protocol_types_reflect error config auth transport
+        auth_client_orchestrator auth_constant_time auth_dpop
+        auth_http_jwks_endpoint auth_http_metadata_endpoint
+        auth_http_token_endpoint auth_jwks auth_lifecycle
+        auth_loopback_receiver auth_metadata auth_pkce auth_registration
+        auth_server_auth_endpoints auth_server_auth_provider auth_token
+        auth_types auth_www_auth auth_openssl_base64url auth_openssl_dpop
+        auth_openssl_jwk auth_openssl_jws auth_openssl_jws_verify
+        auth_openssl_jwt auth_openssl_pkce
+        auth_openssl_server_auth_provider auth_openssl_sha256
         websocket_transport client server peer handler service sdk)
     string(REGEX MATCH
         "add_cxxmcp_public_header_compile_test\\([ \t\r\n]*${header_test}([ \t\r\n]|\\))"

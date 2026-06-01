@@ -283,6 +283,11 @@ execution:
   `<cxxmcp/auth/server_auth_provider.hpp>` provides
   `DpopBearerAuthProvider`, a server-side bridge over injected JWT/DPoP
   verifiers, replay cache, and access-token hash function.
+- With the optional auth target enabled,
+  `<cxxmcp/auth/client_orchestrator.hpp>` provides
+  `OAuthClientFlowBuilder`, an owning assembly helper for the common browser +
+  PKCE authorization-code client flow over injected callback, metadata, token,
+  PKCE, and optional registration endpoints.
 - With the optional auth target enabled, DPoP request-header builders produce
   `DPoP` and `Authorization: DPoP ...` headers over an injected `DpopSigner`
   and transport-neutral HTTP method/URL target.
@@ -309,7 +314,7 @@ execution:
 These behaviors are stable enough for user documentation and package smoke
 coverage. They do not imply that cxxmcp owns token issuance, browser UX,
 persistent storage, concrete remote JWKS HTTP transport, OAuth discovery policy,
-or a fully automatic HTTP-client-owned OAuth orchestrator today.
+or a fully automatic HTTP-client-owned OAuth runtime today.
 
 ### Intentional Non-Goals (belong in application code)
 

@@ -318,6 +318,22 @@ jobs:
           cmake --build build-clang-tidy --parallel --target \
             mcp_public_header_auth \
             mcp_public_header_auth_client_orchestrator \
+            mcp_public_header_auth_constant_time \
+            mcp_public_header_auth_dpop \
+            mcp_public_header_auth_http_jwks_endpoint \
+            mcp_public_header_auth_http_metadata_endpoint \
+            mcp_public_header_auth_http_token_endpoint \
+            mcp_public_header_auth_jwks \
+            mcp_public_header_auth_lifecycle \
+            mcp_public_header_auth_loopback_receiver \
+            mcp_public_header_auth_metadata \
+            mcp_public_header_auth_pkce \
+            mcp_public_header_auth_registration \
+            mcp_public_header_auth_server_auth_endpoints \
+            mcp_public_header_auth_server_auth_provider \
+            mcp_public_header_auth_token \
+            mcp_public_header_auth_types \
+            mcp_public_header_auth_www_auth \
             mcp_public_header_client \
             mcp_public_header_config \
             mcp_public_header_error \
