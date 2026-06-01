@@ -161,7 +161,7 @@ jobs:
 
       - name: Upload performance evidence
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: cxxmcp-performance-evidence-linux-gcc-ninja
           path: |
@@ -214,7 +214,7 @@ jobs:
 
       - name: Upload public-header compile evidence
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: cxxmcp-public-header-compile-evidence-linux-gcc-ninja
           path: |
@@ -419,7 +419,7 @@ jobs:
 
       - name: Upload auth release gate evidence
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: cxxmcp-auth-release-gate-${{ matrix.name }}
           path: |
@@ -473,7 +473,7 @@ jobs:
 
       - name: Upload OpenSSL auth release gate evidence
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: cxxmcp-auth-openssl-release-gate-linux-gcc-ninja
           path: |
@@ -639,7 +639,7 @@ jobs:
 
       - name: Upload release gate evidence
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: cxxmcp-release-gates-${{ matrix.name }}
           path: |
@@ -725,7 +725,7 @@ jobs:
 
       - name: Upload vcpkg package evidence
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: cxxmcp-package-vcpkg-${{ matrix.name }}
           path: |
@@ -831,7 +831,7 @@ jobs:
 
       - name: Upload Conan package evidence
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: cxxmcp-package-conan-${{ matrix.name }}
           path: |
@@ -995,7 +995,7 @@ jobs:
 
       - name: Upload xmake package evidence
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: cxxmcp-package-xmake-${{ matrix.name }}
           path: |
@@ -1035,7 +1035,7 @@ jobs:
         run: test -f docs/doxygen/html/index.html
 
       - name: Upload docs artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: cxxmcp-doxygen-html
           path: docs/doxygen/html
@@ -1067,7 +1067,7 @@ jobs:
           sha256sum "${archive}" > release-artifacts/SHA256SUMS.txt
 
       - name: Upload source artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: cxxmcp-source
           path: release-artifacts
@@ -1165,7 +1165,7 @@ jobs:
         run: python scripts/check_release_evidence.py --source . --evidence release-evidence
 
       - name: Upload release evidence
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: cxxmcp-release-evidence
           path: release-evidence
