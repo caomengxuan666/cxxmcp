@@ -60,7 +60,7 @@ the archive checksum is not self-referential.
 Every public release must attach or link artifacts produced from the exact
 release commit:
 
-- versioned SDK source archive with recursive submodule contents
+- versioned SDK source archive with vendored fallback dependencies
 - `SHA256SUMS.txt` for published source artifacts
 - generated public API documentation
 - release evidence bundle

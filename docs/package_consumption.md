@@ -133,8 +133,8 @@ overlay port in these ways:
 
 Prefer the SDK source release archive over GitHub's generated source archive.
 The SDK archive includes the header-only SDK dependencies needed by the default
-bundled build, while GitHub generated archives do not include submodule
-contents.
+bundled build, including the vendored `cpp-httplib` fallback used by HTTP and
+WebSocket transports.
 
 The concrete `v1.1.3` URL below is the latest published SDK source archive
 known to these docs. It is valid for consumers that want the published default
