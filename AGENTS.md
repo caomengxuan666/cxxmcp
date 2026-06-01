@@ -23,8 +23,9 @@ gateway, or hosted runtime.
 - Do not edit generated or local-output paths: `out/`, `build*/`,
   `CMakeFiles/`, `Testing/`, `docs/doxygen/`, `.cache/`, or IDE folders.
 - Do not change vendored dependencies under `third_party/` unless the task is an
-  explicit dependency upgrade. `third_party/httplib` is vendored from upstream;
-  preserve its upstream state unless the upgrade is intentional.
+  explicit dependency upgrade. In `third_party/httplib`, treat `httplib.h`,
+  `LICENSE`, and upstream `README.md` as the upstream payload; the minimal
+  `CMakeLists.txt` and `README.cxxmcp.md` are cxxmcp-maintained wrapper notes.
 - Do not change `.github/dependabot.yml` casually. It is part of the dependency
   update policy, not a generic CI tuning file.
 - Do not change `reference/` or RMCP fixture assumptions unless the work is about

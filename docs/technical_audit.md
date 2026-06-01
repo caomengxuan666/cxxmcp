@@ -500,7 +500,8 @@ Not everything is problematic. The audit also confirmed several areas of high qu
 - **TaskManager locking discipline** is correct — no races found.
 - **Service lifecycle** handles self-deadlock (`stop()` from loop thread) correctly.
 - **SIGPIPE handling on client side** is well-implemented with scoped blocking.
-- **SSE `&request` capture** is safe in httplib 0.45.0 (synchronous call chain).
+- **SSE `&request` capture** is tied to the vendored cpp-httplib synchronous
+  handler call chain and must be rechecked during every cpp-httplib update.
 - **Destructor cleanup** correctly uses `(void)stop()` pattern — acceptable in noexcept context.
 - **No `FIXME`/`HACK`/`XXX` annotations** in SDK source — code is clean of known-issue markers, and `scripts/check_source_markers.py` now gates first-party source paths in release source-style evidence.
 - **Protocol coverage** is broad with forward-compatible `extensions` fields on

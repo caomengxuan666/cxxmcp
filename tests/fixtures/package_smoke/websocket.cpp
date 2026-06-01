@@ -7,12 +7,20 @@
 
 void configure_peer_builder() {
   auto builder = mcp::ClientPeer::builder();
+#if defined(CXXMCP_PACKAGE_SMOKE_OPENSSL)
+  builder.websocket("wss://127.0.0.1:3001/mcp");
+#else
   builder.websocket("ws://127.0.0.1:3001/mcp");
+#endif
 }
 
 std::unique_ptr<mcp::transport::WebSocketClientTransport> make_client() {
   mcp::transport::WebSocketClientTransportOptions options;
+#if defined(CXXMCP_PACKAGE_SMOKE_OPENSSL)
+  options.uri = "wss://127.0.0.1:3001/mcp";
+#else
   options.uri = "ws://127.0.0.1:3001/mcp";
+#endif
   return std::make_unique<mcp::transport::WebSocketClientTransport>(
       std::move(options));
 }

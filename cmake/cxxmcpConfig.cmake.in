@@ -12,14 +12,28 @@ if(@CXXMCP_ENABLE_HTTP@ AND @CXXMCP_USE_SYSTEM_DEPS@)
     find_dependency(httplib CONFIG)
 endif()
 
-if("@CXXMCP_AUTH_CRYPTO@" STREQUAL "OpenSSL")
+if(@CXXMCP_ENABLE_OPENSSL@ OR "@CXXMCP_AUTH_CRYPTO@" STREQUAL "OpenSSL")
     find_dependency(OpenSSL)
 endif()
 
 include("${CMAKE_CURRENT_LIST_DIR}/cxxmcpTargets.cmake")
 
+set(_cxxmcp_public_components
+    core
+    protocol
+    client
+    server
+    transport
+    auth
+    auth_openssl
+    sdk
+    peer
+    handler
+    service)
+
 foreach(_cxxmcp_component IN LISTS cxxmcp_FIND_COMPONENTS)
-    if(TARGET "cxxmcp::${_cxxmcp_component}")
+    if(_cxxmcp_component IN_LIST _cxxmcp_public_components AND
+       TARGET "cxxmcp::${_cxxmcp_component}")
         set("cxxmcp_${_cxxmcp_component}_FOUND" TRUE)
     else()
         set("cxxmcp_${_cxxmcp_component}_FOUND" FALSE)

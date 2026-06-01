@@ -18,6 +18,10 @@ external gateway tooling.
 Downstream code should include the cxxmcp transport headers, not `httplib.h`
 directly.
 
+OpenSSL is optional. Package recipes should expose it as one cross-cutting
+feature for HTTPS, WSS, and auth crypto instead of separate transport-specific
+OpenSSL feature names.
+
 ## Update Cadence
 
 - GitHub Actions are monitored by Dependabot.

@@ -56,20 +56,33 @@ def main() -> None:
         fail("vcpkg auth feature must not be enabled by default")
     if "websocket" in default_features:
         fail("vcpkg websocket feature must not be enabled by default")
+    if "openssl" in default_features:
+        fail("vcpkg openssl feature must not be enabled by default")
     features = data.get("features", {})
     if "auth" not in features:
         fail("vcpkg port must expose an opt-in auth feature")
     if "websocket" not in features:
         fail("vcpkg port must expose an opt-in websocket feature")
+    if "openssl" not in features:
+        fail("vcpkg port must expose an opt-in openssl feature")
+    if "http-openssl" in features or "websocket-openssl" in features:
+        fail("vcpkg must use one cross-cutting openssl feature")
     deps = data.get("dependencies", [])
-    if any(dependency_name(dep) == "openssl" for dep in deps):
-        fail("vcpkg default dependencies must not pull OpenSSL for auth")
     for dep in deps:
         if dependency_name(dep) == "cpp-httplib":
             if dep.get("default-features", True) is not False:
                 fail("vcpkg cpp-httplib dependency must keep default features disabled")
             if {"openssl", "ssl"} & dependency_features(dep):
                 fail("vcpkg default cpp-httplib dependency must not enable OpenSSL")
+    http_deps = features["http"].get("dependencies", [])
+    http_httplib = [dep for dep in http_deps if dependency_name(dep) == "cpp-httplib"]
+    if not http_httplib:
+        fail("vcpkg http feature must depend on cpp-httplib")
+    for dep in http_httplib:
+        if not isinstance(dep, dict) or dep.get("default-features", True) is not False:
+            fail("vcpkg http cpp-httplib dependency must disable default features")
+        if {"openssl", "ssl"} & dependency_features(dep):
+            fail("vcpkg http feature must not force OpenSSL")
     websocket_deps = features["websocket"].get("dependencies", [])
     websocket_httplib = [
         dep for dep in websocket_deps if dependency_name(dep) == "cpp-httplib"
@@ -81,14 +94,32 @@ def main() -> None:
             fail("vcpkg websocket cpp-httplib dependency must disable default features")
         if {"openssl", "ssl"} & dependency_features(dep):
             fail("vcpkg websocket feature must not force OpenSSL")
+    openssl_deps = features["openssl"].get("dependencies", [])
+    if "openssl" not in [dependency_name(dep) for dep in openssl_deps]:
+        fail("vcpkg openssl feature must depend on openssl")
+    openssl_httplib = [
+        dep for dep in openssl_deps if dependency_name(dep) == "cpp-httplib"
+    ]
+    if not openssl_httplib:
+        fail("vcpkg openssl feature must depend on cpp-httplib")
+    for dep in openssl_httplib:
+        if not isinstance(dep, dict) or dep.get("default-features", True) is not False:
+            fail("vcpkg openssl cpp-httplib dependency must disable default features")
+        if "openssl" not in dependency_features(dep):
+            fail("vcpkg openssl cpp-httplib dependency must enable OpenSSL")
 
     vcpkg_portfile = source / "packaging/vcpkg/ports/cxxmcp-sdk/portfile.cmake"
     require_contains(vcpkg_portfile, '"auth" IN_LIST FEATURES')
     require_contains(vcpkg_portfile, '"websocket" IN_LIST FEATURES')
+    require_contains(vcpkg_portfile, '"openssl" IN_LIST FEATURES')
     require_contains(vcpkg_portfile, "-DCXXMCP_ENABLE_AUTH=${CXXMCP_VCPKG_ENABLE_AUTH}")
     require_contains(
         vcpkg_portfile,
         "-DCXXMCP_ENABLE_WEBSOCKET=${CXXMCP_VCPKG_ENABLE_WEBSOCKET}",
+    )
+    require_contains(
+        vcpkg_portfile,
+        "-DCXXMCP_ENABLE_OPENSSL=${CXXMCP_VCPKG_ENABLE_OPENSSL}",
     )
     require_contains(vcpkg_portfile, "vcpkg_check_linkage(ONLY_STATIC_LIBRARY)")
     require_not_contains(vcpkg_portfile, "-DBUILD_SHARED_LIBS=OFF")
@@ -100,6 +131,11 @@ def main() -> None:
     require_contains(
         curated_portfile,
         "-DCXXMCP_ENABLE_WEBSOCKET=${CXXMCP_VCPKG_ENABLE_WEBSOCKET}",
+    )
+    require_contains(curated_portfile, '"openssl" IN_LIST FEATURES')
+    require_contains(
+        curated_portfile,
+        "-DCXXMCP_ENABLE_OPENSSL=${CXXMCP_VCPKG_ENABLE_OPENSSL}",
     )
     require_contains(curated_portfile, "vcpkg_check_linkage(ONLY_STATIC_LIBRARY)")
     require_not_contains(curated_portfile, "-DBUILD_SHARED_LIBS=OFF")

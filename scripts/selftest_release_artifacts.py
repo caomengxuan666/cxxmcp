@@ -171,10 +171,21 @@ def create_gate_artifacts(root: Path) -> None:
     )
     write(public_header / "public-header-compile-evidence.json", f'{{"targets":[{entries}]}}')
 
-    for feature in ["default", "websocket", "websocket-auth", "http-auth"]:
+    for feature in [
+        "default",
+        "http",
+        "websocket",
+        "http-openssl",
+        "websocket-openssl",
+        "http-auth",
+        "websocket-auth",
+        "http-auth-openssl",
+    ]:
         add_package_artifact(root, f"cxxmcp-package-vcpkg-{feature}", "vcpkg")
-        add_package_artifact(root, f"cxxmcp-package-conan-{feature}", "conan")
-        add_package_artifact(root, f"cxxmcp-package-xmake-{feature}", "xmake")
+
+    for manager in ["conan", "xmake"]:
+        for feature in ["default", "http", "websocket", "http-auth", "websocket-auth"]:
+            add_package_artifact(root, f"cxxmcp-package-{manager}-{feature}", manager)
 
     write(root / "cxxmcp-doxygen-html" / "index.html", "<html></html>")
     write(root / "cxxmcp-source" / "cxxmcp-source-test.tar.gz", "tar")
