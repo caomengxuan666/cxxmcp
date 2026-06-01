@@ -95,6 +95,7 @@ Before tagging a beta, rc, or stable release, review public header diffs under:
 - `sdk/include/cxxmcp`
 - `sdk/core/include/cxxmcp`
 - `sdk/protocol/include/cxxmcp`
+- `sdk/auth/include/cxxmcp` when auth is enabled
 - `sdk/client/include/cxxmcp`
 - `sdk/server/include/cxxmcp`
 - `sdk/transport/include/cxxmcp`

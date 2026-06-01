@@ -7,7 +7,7 @@
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![MCP](https://img.shields.io/badge/protocol-Model%20Context%20Protocol-111827.svg)](https://modelcontextprotocol.io/)
 [![Server Conformance](https://img.shields.io/badge/Server%20Conformance-109%2F110%20(99%25)-brightgreen.svg)](docs/conformance_evidence.md)
-[![Client Conformance](https://img.shields.io/badge/Client%20Conformance-447%2F447%20(100%25)-brightgreen.svg)](docs/conformance_evidence.md)
+[![Client Conformance](https://img.shields.io/badge/Client%20Conformance-448%2F448%20(100%25)-brightgreen.svg)](docs/conformance_evidence.md)
 
 A production-ready C++17 SDK for the [Model Context Protocol](https://modelcontextprotocol.io/) — build MCP servers and clients that embed directly into native C++ applications, with full protocol coverage and cross-SDK conformance validation.
 
@@ -72,7 +72,7 @@ int main() {
 | | cxxmcp | RMCP |
 |---|---|---|
 | Server | **109/110** (99%) | 48/95 (51%) |
-| Client | **447/447** (100%) | — (runner crashed) |
+| Client | **448/448** (100%) | — (runner crashed) |
 
 Full details in [conformance evidence](docs/conformance_evidence.md).
 
@@ -100,6 +100,9 @@ cmake -S . -B build -DCXXMCP_BUILD_CLIENT=ON -DCXXMCP_BUILD_SERVER=ON
 cmake --build build --config Release
 cmake --install build --config Release --prefix out/install/cxxmcp
 ```
+
+The quick-start client uses Streamable HTTP, so source builds that compile that
+client path must also set `-DCXXMCP_ENABLE_HTTP=ON`.
 
 Package managers: `conanfile.py` (Conan 2), `packaging/vcpkg/ports/cxxmcp-sdk` (vcpkg overlay), `packaging/xmake/` (xmake). See [package consumption](docs/package_consumption.md).
 

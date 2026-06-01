@@ -30,6 +30,9 @@ requirements into the default SDK path.
 - `task_async_client_server.cpp`: task-aware tool lifecycle.
 - `streamable_http_client.cpp`: Streamable HTTP client construction via
   `ClientPeer::builder().streamable_http(uri)`.
+- `websocket_client.cpp` / `websocket_server.cpp`: opt-in WebSocket client and
+  server transport construction via `ClientPeer::builder().websocket(uri)` and
+  `ServerPeer::builder().websocket(port)`.
 
 ## Compatibility Or Low-Level Examples
 
@@ -101,8 +104,9 @@ For release/vcpkg evidence, keep at least these downstream scenarios green:
   logging, raw requests, notifications, and task-backed tool calls.
 - Minimal stdio server plus process-stdio client probe, including child-process
   launch through public transport APIs.
-- Streamable HTTP client/server coverage, including direct HTTP, legacy SSE
-  compatibility, and HTTP auth-lite bearer-token propagation.
+- Streamable HTTP and WebSocket client/server coverage, including direct HTTP,
+  legacy SSE compatibility, reconnect behavior, and HTTP auth-lite bearer-token
+  propagation.
 - Request lifecycle coverage for async requests, timeouts, cancellation,
   cancellation-aware inbound callbacks, pagination helpers, subscriptions, and
   task cancellation. Applications own signal handling and call `stop()` / `close()`

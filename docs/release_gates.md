@@ -148,6 +148,7 @@ platform combinations where the release-blocking set above passed. The intended
 matrix is:
 
 - Windows MSVC with Ninja and Visual Studio generators
+- Windows ClangCL with Ninja
 - Linux GCC with Ninja
 - Linux Clang with Ninja
 - macOS AppleClang with Ninja
@@ -236,11 +237,12 @@ The same workflow uploads:
   evaluate compile-time debt before changing the public JSON or template
   boundary.
 - `cxxmcp-package-vcpkg-*`: real vcpkg overlay package-consumption evidence for
-  default, HTTP, WebSocket, OpenSSL-backed HTTP/WebSocket TLS, auth, and
-  auth+OpenSSL combinations. The vcpkg package keeps one cross-cutting
-  `openssl` feature; release-gates exercises it through `[http,openssl]`,
-  `[websocket,openssl]`, and `[http,auth,openssl]` combinations rather than
-  adding separate package features for each TLS transport.
+  default, HTTP, WebSocket, OpenSSL-backed HTTP/WebSocket TLS, auth,
+  auth+OpenSSL, and HTTP+auth+OpenSSL combinations. The vcpkg package keeps
+  one cross-cutting `openssl` feature; release-gates exercises it through
+  `[auth,openssl]`, `[http,openssl]`, `[websocket,openssl]`, and
+  `[http,auth,openssl]` combinations rather than adding separate package
+  features for each TLS transport.
 - `cxxmcp-package-conan-*`: real Conan package-consumption evidence for default,
   HTTP, WebSocket, auth, and WebSocket+auth options.
 - `cxxmcp-package-xmake-*`: real xmake package-consumption evidence for default,
@@ -287,6 +289,7 @@ Before a release, review public header diffs under:
 - `sdk/include/cxxmcp`
 - `sdk/core/include/cxxmcp`
 - `sdk/protocol/include/cxxmcp`
+- `sdk/auth/include/cxxmcp` when auth is enabled
 - `sdk/client/include/cxxmcp`
 - `sdk/server/include/cxxmcp`
 - `sdk/transport/include/cxxmcp`

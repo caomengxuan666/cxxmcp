@@ -31,6 +31,8 @@ DEFAULT_TESTS = [
     "interop_python_client_process_stdio",
     "interop_rmcp_client_process_stdio",
     "public_header_protocol",
+    "public_header_protocol_types",
+    "public_header_protocol_types_reflect",
     "public_header_error",
     "public_header_config",
     "public_header_transport",
@@ -45,6 +47,8 @@ DEFAULT_TESTS = [
 
 PUBLIC_HEADER_TARGETS = [
     "mcp_public_header_protocol",
+    "mcp_public_header_protocol_types",
+    "mcp_public_header_protocol_types_reflect",
     "mcp_public_header_error",
     "mcp_public_header_config",
     "mcp_public_header_auth",

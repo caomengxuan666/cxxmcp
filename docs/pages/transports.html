@@ -59,6 +59,7 @@
           <tr><td>stdio</td><td>Server + Client</td><td>default</td><td><code>.stdio()</code></td><td><code>StdioTransport</code></td></tr>
           <tr><td>Process stdio</td><td>Client</td><td>default</td><td><code>.process_stdio(cmd)</code></td><td><code>ProcessStdioClientTransport</code></td></tr>
           <tr><td>Streamable HTTP</td><td>Server + Client</td><td><code>CXXMCP_ENABLE_HTTP</code></td><td><code>.streamable_http(...)</code></td><td><code>StreamableHttp{Server,Client}Transport</code></td></tr>
+          <tr><td>WebSocket</td><td>Server + Client</td><td><code>CXXMCP_ENABLE_HTTP</code> + <code>CXXMCP_ENABLE_WEBSOCKET</code></td><td><code>.websocket(...)</code></td><td><code>WebSocket{Server,Client}Transport</code></td></tr>
           <tr><td>Custom</td><td>Either</td><td>—</td><td>implement <code>Transport&lt;Role&gt;</code></td><td>your class</td></tr>
         </table>
       </section>
@@ -206,12 +207,38 @@ auto client = mcp::ClientPeer::builder()
         </ul>
       </section>
 
+      <!-- WebSocket -->
+      <section class="section">
+        <h2>WebSocket Transport</h2>
+        <p>
+          Full-duplex message transport over WebSocket with client reconnect
+          support. Requires <code>CXXMCP_ENABLE_HTTP=ON</code> and
+          <code>CXXMCP_ENABLE_WEBSOCKET=ON</code>.
+        </p>
+
+        <h3>Build</h3>
+        <pre><code class="language-bash">cmake -S . -B build -DCXXMCP_ENABLE_HTTP=ON -DCXXMCP_ENABLE_WEBSOCKET=ON -DCXXMCP_BUILD_SERVER=ON -DCXXMCP_BUILD_CLIENT=ON</code></pre>
+
+        <h3>Server</h3>
+        <pre><code class="language-cpp">auto server = mcp::ServerPeer::builder()
+    .name("ws-server").version("1.0.0")
+    .websocket(3001)
+    .tool&lt;Json, Json&gt;("echo", [](const Json&amp; in) { return in; })
+    .build();</code></pre>
+
+        <h3>Client</h3>
+        <pre><code class="language-cpp">auto client = mcp::ClientPeer::builder()
+    .websocket("ws://127.0.0.1:3001/mcp")
+    .build();</code></pre>
+      </section>
+
       <!-- Custom Transports -->
       <section class="section">
         <h2>Custom Transports</h2>
         <p>
           Implement the <code>Transport&lt;Role&gt;</code> interface to create
-          your own transport (WebSocket, Unix socket, in-memory loopback, etc.).
+          your own transport (Unix socket, in-memory loopback, shared memory,
+          etc.).
         </p>
 
         <pre><code class="language-cpp">#include &lt;cxxmcp/transport/transport.hpp&gt;

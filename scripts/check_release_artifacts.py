@@ -243,6 +243,8 @@ def check_public_header_compile_artifact(root: Path) -> None:
 
     required_targets = {
         "mcp_public_header_protocol",
+        "mcp_public_header_protocol_types",
+        "mcp_public_header_protocol_types_reflect",
         "mcp_public_header_error",
         "mcp_public_header_config",
         "mcp_public_header_auth",
@@ -290,6 +292,8 @@ def check_gate_artifacts(gate_artifacts: Path) -> None:
         "interop_python_client_process_stdio",
         "interop_rmcp_client_process_stdio",
         "public_header_protocol",
+        "public_header_protocol_types",
+        "public_header_protocol_types_reflect",
         "public_header_error",
         "public_header_config",
         "public_header_transport",

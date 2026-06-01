@@ -13,6 +13,8 @@ import time
 
 DEFAULT_TARGETS = [
     "mcp_public_header_protocol",
+    "mcp_public_header_protocol_types",
+    "mcp_public_header_protocol_types_reflect",
     "mcp_public_header_error",
     "mcp_public_header_config",
     "mcp_public_header_auth",

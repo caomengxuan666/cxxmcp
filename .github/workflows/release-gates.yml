@@ -33,17 +33,8 @@ jobs:
         run: pwsh -NoProfile -File scripts/format.ps1 -Check
 
       - name: Run cpplint
-        run: |
-          if command -v cpplint &>/dev/null; then
-            cpplint_cmd="cpplint"
-          elif command -v uv &>/dev/null; then
-            cpplint_cmd="uv run --with cpplint cpplint"
-          else
-            echo "::error::cpplint not found. Install cpplint or uv."
-            exit 2
-          fi
-          files=$(find sdk -type f \( -name '*.cpp' -o -name '*.hpp' -o -name '*.h' \) | sort)
-          echo "$files" | xargs $cpplint_cmd 2>&1 | tail -5
+        shell: pwsh
+        run: pwsh -NoProfile -File scripts/check-cpplint.ps1
 
       - name: Check protocol model coverage
         run: python scripts/check_protocol_model_coverage.py --source .
@@ -332,6 +323,8 @@ jobs:
             mcp_public_header_handler \
             mcp_public_header_peer \
             mcp_public_header_protocol \
+            mcp_public_header_protocol_types \
+            mcp_public_header_protocol_types_reflect \
             mcp_public_header_sdk \
             mcp_public_header_server \
             mcp_public_header_service \
@@ -710,6 +703,13 @@ jobs:
             auth_openssl_enabled: "OFF"
             auth_enabled: "ON"
             websocket_enabled: "ON"
+          - name: auth-openssl
+            feature: "[auth,openssl]"
+            http_enabled: "OFF"
+            openssl_enabled: "ON"
+            auth_openssl_enabled: "ON"
+            auth_enabled: "ON"
+            websocket_enabled: "OFF"
           - name: http-auth-openssl
             feature: "[http,auth,openssl]"
             http_enabled: "ON"

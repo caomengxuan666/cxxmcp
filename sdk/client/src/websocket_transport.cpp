@@ -5,6 +5,7 @@
 #include <atomic>
 #include <chrono>
 #include <condition_variable>
+#include <cstdint>
 #include <deque>
 #include <exception>
 #include <memory>
@@ -363,8 +364,8 @@ class WebSocketClientTransport::Impl {
       std::this_thread::sleep_for(current_backoff_);
       current_backoff_ = std::min(
           std::chrono::milliseconds(
-              static_cast<long long>(current_backoff_.count() *
-                                     options_.reconnect_backoff_multiplier)),
+              static_cast<std::int64_t>(current_backoff_.count() *
+                                        options_.reconnect_backoff_multiplier)),
           options_.reconnect_max_delay);
 
       // Attempt reconnect

@@ -6,6 +6,7 @@ set(public_include_roots
     sdk/include
     sdk/core/include
     sdk/protocol/include
+    sdk/auth/include
     sdk/client/include
     sdk/server/include
     sdk/transport/include

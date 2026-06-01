@@ -186,10 +186,16 @@ svc->peer().call_tool("echo", Json{{"value", "hi"}});</code></pre>
             <td>Web services, remote access</td>
           </tr>
           <tr>
+            <td>WebSocket</td>
+            <td><code>.websocket(...)</code></td>
+            <td><code>CXXMCP_ENABLE_HTTP</code> + <code>CXXMCP_ENABLE_WEBSOCKET</code></td>
+            <td>Full-duplex remote access</td>
+          </tr>
+          <tr>
             <td>Custom</td>
             <td>implement <code class="language-cpp">mcp::transport::Transport</code></td>
             <td>—</td>
-            <td>WebSocket, Unix socket, etc.</td>
+            <td>Unix socket, in-memory loopback, etc.</td>
           </tr>
         </table>
       </section>

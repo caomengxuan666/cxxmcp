@@ -121,9 +121,9 @@ packaging/vcpkg/vcpkg-configuration.git-registry-future-example.json
   crypto 共用一个横向 `openssl` feature，不再增加 transport-specific TLS feature；
 - OpenSSL 不能进入默认 SDK package 路径；只有用户同时选择 `openssl` 时，
   `auth`、`http`、`websocket` 才获得 OpenSSL-backed 行为；
-- package smoke 要覆盖 default、HTTP、WebSocket、auth 和 OpenSSL-enabled
-  组合；默认安装不能暴露 `cxxmcp::auth` 或 `cxxmcp::cpp_httplib` 这类 private
-  implementation target。
+- package smoke 要覆盖 default、HTTP、WebSocket、auth、auth+OpenSSL 和
+  HTTP+auth+OpenSSL 组合；默认安装不能暴露 `cxxmcp::auth` 或
+  `cxxmcp::cpp_httplib` 这类 private implementation target。
 
 ## FetchContent
 
@@ -133,8 +133,10 @@ HTTP 和 WebSocket transport 使用的 vendored `cpp-httplib` fallback。
 
 下面具体的 `v1.1.4` URL 是本文档目前记录的最新已发布 SDK source archive。
 它适用于想固定到已发布默认 SDK surface 的 consumer。不要把它当成当前 worktree
-可选 auth header surface 的证据；当前源码或 release candidate 验证必须使用那次
-release-gates run 生成的精确 source archive 和 checksum。
+可选 auth header surface 的证据；当前源码验证必须使用那次 release-gates run
+生成的 `cxxmcp-source` artifact 和 checksum。已发布 release 的消费路径必须使用
+release workflow 生成的 versioned deterministic `cxxmcp-sdk-source-v<version>`
+archive 和 checksum。
 
 ```cmake
 include(FetchContent)
@@ -162,7 +164,8 @@ target_link_libraries(my_server PRIVATE cxxmcp::server)
 构建意外启用 examples、tests 或 docs。
 
 URL 和 hash 应来自你有意 pin 的那个 release。release candidate 验证要使用候选
-run 生成的精确 source artifact，不要直接复制以前发布版本的示例。
+run 生成的 `cxxmcp-source` artifact；已发布版本消费要使用 release workflow
+生成的 `cxxmcp-sdk-source-v<version>` archive，不要直接复制以前发布版本的示例。
 
 cxxmcp 不会安装或导出 `CPM.cmake` helper。消费方项目必须自己提供它，例如把
 `cmake/CPM.cmake` vendor 到自己的源码树，或者在 `include()` 前自行 bootstrap。

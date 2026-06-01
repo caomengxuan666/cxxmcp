@@ -7,7 +7,7 @@
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![MCP](https://img.shields.io/badge/protocol-Model%20Context%20Protocol-111827.svg)](https://modelcontextprotocol.io/)
 [![Server Conformance](https://img.shields.io/badge/Server%20Conformance-109%2F110%20(99%25)-brightgreen.svg)](docs/conformance_evidence.md)
-[![Client Conformance](https://img.shields.io/badge/Client%20Conformance-447%2F447%20(100%25)-brightgreen.svg)](docs/conformance_evidence.md)
+[![Client Conformance](https://img.shields.io/badge/Client%20Conformance-448%2F448%20(100%25)-brightgreen.svg)](docs/conformance_evidence.md)
 
 生产就绪的 C++17 [Model Context Protocol](https://modelcontextprotocol.io/) SDK —— 直接在原生 C++ 应用中嵌入 MCP server 和 client，完整覆盖协议能力，通过跨 SDK conformance 验证。
 
@@ -61,7 +61,7 @@ int main() {
 | Protocol / JSON-RPC | Typed models、序列化、initialize 校验、raw escape hatch |
 | Server SDK | tool/prompt/resource registry、typed handler、task-aware call、notification |
 | Client SDK | HTTP、stdio、process stdio、async helper、roots、sampling、elicitation、tasks |
-| Transports | stdio、process stdio、Streamable HTTP（有状态 session）、legacy SSE 兼容 |
+| Transports | stdio、process stdio、Streamable HTTP（有状态 session）、legacy SSE 兼容、WebSocket（自动重连） |
 | Packaging | CMake `find_package`、Conan 2、vcpkg overlay、FetchContent / CPM |
 | Peer/Service boundary | RMCP 风格 role-aware `Peer<Role>` 和 `Service<Role>` |
 
@@ -72,7 +72,7 @@ int main() {
 | | cxxmcp | RMCP |
 |---|---|---|
 | Server | **109/110** (99%) | 48/95 (51%) |
-| Client | **447/447** (100%) | — (runner 崩溃) |
+| Client | **448/448** (100%) | — (runner 崩溃) |
 
 完整结果见 [conformance evidence](docs/conformance_evidence.md)。
 
@@ -100,6 +100,9 @@ cmake -S . -B build -DCXXMCP_BUILD_CLIENT=ON -DCXXMCP_BUILD_SERVER=ON
 cmake --build build --config Release
 cmake --install build --config Release --prefix out/install/cxxmcp
 ```
+
+Quick Start 中的 client 示例使用 Streamable HTTP；如果要从源码构建该
+client 路径，还需要加上 `-DCXXMCP_ENABLE_HTTP=ON`。
 
 包管理器：`conanfile.py`（Conan 2）、`packaging/vcpkg/ports/cxxmcp-sdk`（vcpkg overlay）、`packaging/xmake/`（xmake）。详见 [package consumption](docs/package_consumption_zh.md)。
 
@@ -140,7 +143,7 @@ cmake --install build --config Release --prefix out/install/cxxmcp
 - 完整 MCP 协议覆盖，typed helper 自动按 capability gate
 - 基于官方 runner 的跨 SDK conformance 验证
 - RMCP 风格 Peer/Service 架构，为嵌入场景设计
-- 开箱支持 stdio、process stdio 和 Streamable HTTP transport
+- 开箱支持 stdio、process stdio、Streamable HTTP 和 WebSocket transport
 
 ## Examples
 

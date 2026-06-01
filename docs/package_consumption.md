@@ -135,9 +135,10 @@ overlay port in these ways:
   than adding transport-specific TLS feature names;
 - keep OpenSSL out of the default SDK package path; `auth`, `http`, and
   `websocket` only gain OpenSSL behavior when the user also selects `openssl`;
-- keep package smoke evidence for default, HTTP, WebSocket, auth, and
-  OpenSSL-enabled combinations; default installs must not expose `cxxmcp::auth`
-  or private implementation targets such as `cxxmcp::cpp_httplib`.
+- keep package smoke evidence for default, HTTP, WebSocket, auth,
+  auth+OpenSSL, and HTTP+auth+OpenSSL combinations; default installs must not
+  expose `cxxmcp::auth` or private implementation targets such as
+  `cxxmcp::cpp_httplib`.
 
 ## FetchContent
 
@@ -149,8 +150,10 @@ WebSocket transports.
 The concrete `v1.1.4` URL below is the latest published SDK source archive
 known to these docs. It is valid for consumers that want the published default
 SDK surface. Do not use it as evidence for the current worktree's optional auth
-header surface; current-source or release-candidate validation must use the
-exact source archive and checksum produced by that release-gates run.
+header surface; current-source validation must use the `cxxmcp-source` artifact
+and checksum produced by that release-gates run. Published release consumption
+must use the versioned deterministic `cxxmcp-sdk-source-v<version>` archive and
+checksum produced by the release workflow.
 
 ```cmake
 include(FetchContent)
@@ -179,8 +182,10 @@ explicit so downstream builds do not accidentally enable examples, tests, or
 docs.
 
 Use the URL and hash from the release you intentionally pin. For release
-candidate validation, use the exact source artifact produced by that candidate
-run rather than copying a previously published release example unchanged.
+candidate validation, use the `cxxmcp-source` artifact produced by that
+candidate run. For published release consumption, use the
+`cxxmcp-sdk-source-v<version>` archive produced by the release workflow rather
+than copying a previously published release example unchanged.
 
 cxxmcp does not install or export a `CPM.cmake` helper. The consuming project
 must provide it, for example by vendoring `cmake/CPM.cmake` in its own source
