@@ -52,6 +52,7 @@ PUBLIC_HEADER_TARGETS = [
     "mcp_public_header_error",
     "mcp_public_header_config",
     "mcp_public_header_auth",
+    "mcp_public_header_auth_client_orchestrator",
     "mcp_public_header_transport",
     "mcp_public_header_websocket_transport",
     "mcp_public_header_client",
@@ -151,14 +152,25 @@ def create_gate_artifacts(root: Path) -> None:
             root,
             f"cxxmcp-auth-release-gate-{name}",
             "auth-release-gate.xml",
-            ["auth", "public_header_auth", "package_smoke"],
+            [
+                "auth",
+                "public_header_auth",
+                "public_header_auth_client_orchestrator",
+                "package_smoke",
+            ],
         )
 
     add_gate_artifact(
         root,
         "cxxmcp-auth-openssl-release-gate-linux-gcc-ninja",
         "auth-openssl-release-gate.xml",
-        ["auth", "auth_openssl", "public_header_auth", "package_smoke"],
+        [
+            "auth",
+            "auth_openssl",
+            "public_header_auth",
+            "public_header_auth_client_orchestrator",
+            "package_smoke",
+        ],
     )
     add_gate_artifact(
         root,

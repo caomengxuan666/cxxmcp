@@ -3,6 +3,7 @@
 #pragma once
 
 #include <chrono>
+#include <cstdint>
 #include <functional>
 #include <memory>
 #include <optional>
@@ -177,8 +178,13 @@ class OAuthClientOrchestrator {
     auto state = generate_state();
 
     // Step 5: Build authorization URL and present to user.
-    auto session_result = manager_.start_session(AuthorizationSessionRequest{
-        .client = {}, .pkce = *pkce, .state = state});
+    AuthorizationSessionRequest session_request;
+    session_request.client.client_name = config_.client_name;
+    session_request.client.redirect_uri = manager_.client_config().redirect_uri;
+    session_request.client.scopes = config_.scopes;
+    session_request.pkce = *pkce;
+    session_request.state = state;
+    auto session_result = manager_.start_session(std::move(session_request));
     if (!session_result.has_value()) {
       return core::unexpected(session_result.error());
     }
