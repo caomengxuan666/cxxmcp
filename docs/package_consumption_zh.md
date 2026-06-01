@@ -118,7 +118,8 @@ packaging/vcpkg/vcpkg-configuration.git-registry-future-example.json
 
 优先使用 release workflow 生成的 SDK source archive，而不是 GitHub 自动生成的
 源码包。SDK archive 包含默认 bundled 构建需要的 header-only SDK 依赖；GitHub
-自动源码包不包含 submodule 内容。
+SDK 源码包会包含默认 bundled build 需要的 header-only 依赖，包括 HTTP 和
+WebSocket transport 使用的 vendored `cpp-httplib` fallback。
 
 下面具体的 `v1.1.3` URL 是本文档目前记录的最新已发布 SDK source archive。
 它适用于想固定到已发布默认 SDK surface 的 consumer。不要把它当成当前 worktree

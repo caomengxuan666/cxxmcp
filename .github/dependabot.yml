@@ -8,12 +8,3 @@ updates:
     labels:
       - "enhancement"
       - "P2"
-
-  - package-ecosystem: "gitsubmodule"
-    directory: "/"
-    schedule:
-      interval: "monthly"
-    open-pull-requests-limit: 3
-    labels:
-      - "enhancement"
-      - "P2"

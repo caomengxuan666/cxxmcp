@@ -20,10 +20,10 @@ directly.
 
 ## Update Cadence
 
-- GitHub Actions and the `third_party/httplib` submodule are monitored by
-  Dependabot.
-- Bundled header-only dependencies are updated deliberately through normal pull
-  requests with package-smoke and release-gate evidence.
+- GitHub Actions are monitored by Dependabot.
+- Bundled header-only dependencies, including the vendored `cpp-httplib`
+  fallback, are updated deliberately through normal pull requests with
+  package-smoke and release-gate evidence.
 - Security updates that affect public SDK builds are treated as priority fixes
   under the project security and release policies.
 

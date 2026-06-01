@@ -48,7 +48,7 @@ registered through `cxxmcp_mark_release_blocking()`.
 - `package-manager-xmake`: consumes the xmake-repo draft from a local xmake
   repository for default, WebSocket, and auth configurations, but rewrites the
   CI recipe to use a generated source archive from the exact workflow checkout,
-  including checked-out submodule contents, instead of the last published
+  including vendored fallback dependencies, instead of the last published
   GitHub Release archive. It then compiles a clean downstream C++17 consumer.
   The uploaded artifact must include the temporary local xmake repository,
   generated source archive, and non-empty xmake repo and build logs.
@@ -245,14 +245,15 @@ The same workflow uploads:
   package-consumption evidence for the default SDK package and optional auth
   option. Release-gates artifacts use a temporary local xmake repository whose
   recipe points at a generated source archive from the same workflow checkout,
-  including checked-out submodule contents, so xmake verifies the exact
+  including vendored fallback dependencies, so xmake verifies the exact
   release-candidate source instead of a stale previously published release
   archive. The release artifact verifier requires both the rewritten temporary
   repository recipe and the generated source archive to be present.
   These package-manager artifacts are Ubuntu Linux evidence unless the release
   notes attach matching Windows or macOS package-manager artifacts for the same
   release commit.
-- `cxxmcp-source`: a source archive with recursive submodule contents and a
+- `cxxmcp-source`: a source archive with SDK sources, vendored fallback
+  dependencies, and a
   `SHA256SUMS.txt` file.
 - `cxxmcp-release-evidence`: the README, Chinese README, changelog,
   contribution guide, security policy, code of conduct, auth design and user
