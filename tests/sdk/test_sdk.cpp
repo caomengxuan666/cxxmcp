@@ -2913,6 +2913,42 @@ void test_request_handle_latches_terminal_cancellation() {
           "token cancellation notification should be sent once");
 }
 
+void test_request_handle_cancellation_observers_do_not_starve_executor() {
+  constexpr int kObserverCount = 4;
+  mcp::CancellationSource cancellation;
+  std::atomic<int> completed_requests{0};
+
+  std::vector<mcp::RequestHandle<Json>> handles;
+  handles.reserve(kObserverCount);
+  for (int i = 0; i < kObserverCount; ++i) {
+    handles.push_back(mcp::RequestHandle<Json>::spawn(
+        std::int64_t{9000 + i}, std::nullopt, cancellation.token(), {},
+        [&completed_requests, i]() -> mcp::core::Result<Json> {
+          completed_requests.fetch_add(1, std::memory_order_acq_rel);
+          return Json{{"observer", i}};
+        }));
+  }
+
+  for (const auto& handle : handles) {
+    const auto result = handle.await_response();
+    require(result.has_value(), "observer setup request should complete");
+  }
+  require(completed_requests.load(std::memory_order_acquire) == kObserverCount,
+          "all observer setup requests should complete");
+
+  std::this_thread::sleep_for(std::chrono::milliseconds(20));
+  auto sentinel = mcp::RequestHandle<Json>::spawn(
+      std::int64_t{9100}, std::chrono::milliseconds(50), std::nullopt, {},
+      []() -> mcp::core::Result<Json> { return Json{{"sentinel", true}}; });
+
+  const auto sentinel_result = sentinel.await_response();
+  cancellation.cancel();
+  require(sentinel_result.has_value(),
+          "uncancelled token observers should not occupy request workers");
+  require(sentinel_result->at("sentinel") == true,
+          "sentinel request result mismatch");
+}
+
 void test_request_handle_cancellation_race_stress() {
   constexpr int kRequestCount = 24;
   std::atomic<int> ready_waiters{0};
@@ -3850,6 +3886,7 @@ int main() {
     test_public_dispatch_boundaries_translate_handler_exceptions();
     test_request_handle_latches_terminal_timeout();
     test_request_handle_latches_terminal_cancellation();
+    test_request_handle_cancellation_observers_do_not_starve_executor();
     test_request_handle_cancellation_race_stress();
     test_request_handle_timeout_race_stress();
     test_app_builder_rejects_empty_std_function_handlers();

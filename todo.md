@@ -60,11 +60,10 @@ Handle them on feature branches before closing the broader open gates above.
 - Strengthen auth public-header coverage so each auth public header that is
   exposed when auth is enabled has an independent C++17 compile fixture, not
   only umbrella-header coverage.
-- After the API ergonomics and example-gate work above, revisit
-  `RequestHandle` cancellation internals. Keep `RequestHandle::cancel()` and
-  `RequestOptions::cancellation_token`, but remove the implementation pattern
-  where long-lived cancellation watchers can occupy the shared request executor
-  workers.
+- Completed locally: `RequestHandle` cancellation internals keep
+  `RequestHandle::cancel()` and `RequestOptions::cancellation_token`, while
+  token callbacks now wake request handles without long-lived cancellation
+  watchers occupying shared request executor workers.
 
 ## Ecosystem And Registry
 
