@@ -77,12 +77,18 @@ endfunction()
 
 set(negative_auth_source_dir "${BUILD_DIR}/package-smoke/negative-auth-source")
 set(negative_auth_build_dir "${BUILD_DIR}/package-smoke/negative-auth-build")
+set(negative_cpp_httplib_source_dir
+    "${BUILD_DIR}/package-smoke/negative-cpp-httplib-source")
+set(negative_cpp_httplib_build_dir
+    "${BUILD_DIR}/package-smoke/negative-cpp-httplib-build")
 file(REMOVE_RECURSE
     "${prefix_dir}"
     "${consumer_build_dir}"
     "${template_build_dir}"
     "${negative_auth_source_dir}"
-    "${negative_auth_build_dir}")
+    "${negative_auth_build_dir}"
+    "${negative_cpp_httplib_source_dir}"
+    "${negative_cpp_httplib_build_dir}")
 file(MAKE_DIRECTORY "${prefix_dir}")
 
 set(install_command "${CMAKE_COMMAND}" --install "${BUILD_DIR}" --prefix "${prefix_dir}")
@@ -99,14 +105,20 @@ if(NOT install_result EQUAL 0)
 endif()
 
 set(package_smoke_use_system_deps OFF)
+set(package_smoke_http_enabled OFF)
 set(package_smoke_auth_enabled OFF)
 set(package_smoke_auth_openssl_enabled OFF)
+set(package_smoke_openssl_enabled OFF)
 set(package_smoke_websocket_enabled OFF)
 set(cache_path "${BUILD_DIR}/CMakeCache.txt")
 if(EXISTS "${cache_path}")
     file(READ "${cache_path}" cache_content)
     if(cache_content MATCHES "CXXMCP_USE_SYSTEM_DEPS:BOOL=(ON|TRUE|1)")
         set(package_smoke_use_system_deps ON)
+    endif()
+    if(cache_content MATCHES "CXXMCP_ENABLE_HTTP:BOOL=(ON|TRUE|1)" OR
+       cache_content MATCHES "MCP_ENABLE_HTTP:BOOL=(ON|TRUE|1)")
+        set(package_smoke_http_enabled ON)
     endif()
     if(cache_content MATCHES "CXXMCP_ENABLE_AUTH:BOOL=(ON|TRUE|1)" OR
        cache_content MATCHES "MCP_ENABLE_AUTH:BOOL=(ON|TRUE|1)")
@@ -115,6 +127,10 @@ if(EXISTS "${cache_path}")
     if(cache_content MATCHES "CXXMCP_AUTH_CRYPTO:STRING=OpenSSL" OR
        cache_content MATCHES "CXXMCP_AUTH_CRYPTO:UNINITIALIZED=OpenSSL")
         set(package_smoke_auth_openssl_enabled ON)
+        set(package_smoke_openssl_enabled ON)
+    endif()
+    if(cache_content MATCHES "CXXMCP_ENABLE_OPENSSL:BOOL=(ON|TRUE|1)")
+        set(package_smoke_openssl_enabled ON)
     endif()
     if(cache_content MATCHES "CXXMCP_ENABLE_WEBSOCKET:BOOL=(ON|TRUE|1)" OR
        cache_content MATCHES "MCP_ENABLE_WEBSOCKET:BOOL=(ON|TRUE|1)")
@@ -195,6 +211,10 @@ if(EXISTS "${installed_include_dir}/httplib.h" OR
     message(FATAL_ERROR
         "cpp-httplib must not be installed as an SDK public header")
 endif()
+assert_optional_component_missing(
+    cpp_httplib
+    "${negative_cpp_httplib_source_dir}"
+    "${negative_cpp_httplib_build_dir}")
 if(package_smoke_use_system_deps)
     if(EXISTS "${installed_include_dir}/tl/expected.hpp")
         message(FATAL_ERROR "system-deps install must not vendor tl-expected")
@@ -217,8 +237,10 @@ set(configure_command
     -B "${consumer_build_dir}"
     "-DCMAKE_PREFIX_PATH=${prefix_dir}"
     "-Dcxxmcp_DIR=${installed_cxxmcp_config_dir}"
+    "-DCXXMCP_PACKAGE_SMOKE_HTTP_ENABLED=${package_smoke_http_enabled}"
     "-DCXXMCP_PACKAGE_SMOKE_AUTH_ENABLED=${package_smoke_auth_enabled}"
     "-DCXXMCP_PACKAGE_SMOKE_AUTH_OPENSSL_ENABLED=${package_smoke_auth_openssl_enabled}"
+    "-DCXXMCP_PACKAGE_SMOKE_OPENSSL_ENABLED=${package_smoke_openssl_enabled}"
     "-DCXXMCP_PACKAGE_SMOKE_WEBSOCKET_ENABLED=${package_smoke_websocket_enabled}"
 )
 append_package_smoke_common_configure_options(configure_command)

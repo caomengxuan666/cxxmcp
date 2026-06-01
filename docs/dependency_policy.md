@@ -33,6 +33,10 @@ contract and should not be required by SDK-only packages.
 `cpp-httplib` remains an implementation dependency hidden behind transport
 interfaces. The evidence and replacement trigger for considering another HTTP
 backend are tracked in `docs/compatibility_policy.md#http-transport-backend-evidence`.
+OpenSSL is optional and must stay outside the default SDK package path. When it
+is enabled, package recipes should expose one cross-cutting `openssl` feature
+for HTTPS, WSS, and auth crypto instead of separate transport-specific OpenSSL
+features.
 
 Gateway/tooling state is outside the public SDK header contract and now lives
 outside this SDK repository. The canonical SDK include roots must not expose

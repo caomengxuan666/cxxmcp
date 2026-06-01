@@ -657,30 +657,58 @@ jobs:
         include:
           - name: default
             feature: ""
+            http_enabled: "OFF"
+            openssl_enabled: "OFF"
+            auth_openssl_enabled: "OFF"
             auth_enabled: "OFF"
             websocket_enabled: "OFF"
           - name: http
             feature: "[http]"
+            http_enabled: "ON"
+            openssl_enabled: "OFF"
+            auth_openssl_enabled: "OFF"
             auth_enabled: "OFF"
             websocket_enabled: "OFF"
           - name: websocket
             feature: "[websocket]"
+            http_enabled: "ON"
+            openssl_enabled: "OFF"
+            auth_openssl_enabled: "OFF"
             auth_enabled: "OFF"
             websocket_enabled: "ON"
           - name: http-openssl
-            feature: "[http-openssl]"
+            feature: "[http,openssl]"
+            http_enabled: "ON"
+            openssl_enabled: "ON"
+            auth_openssl_enabled: "OFF"
             auth_enabled: "OFF"
             websocket_enabled: "OFF"
+          - name: websocket-openssl
+            feature: "[websocket,openssl]"
+            http_enabled: "ON"
+            openssl_enabled: "ON"
+            auth_openssl_enabled: "OFF"
+            auth_enabled: "OFF"
+            websocket_enabled: "ON"
           - name: http-auth
             feature: "[http,auth]"
+            http_enabled: "ON"
+            openssl_enabled: "OFF"
+            auth_openssl_enabled: "OFF"
             auth_enabled: "ON"
             websocket_enabled: "OFF"
           - name: websocket-auth
             feature: "[websocket,auth]"
+            http_enabled: "ON"
+            openssl_enabled: "OFF"
+            auth_openssl_enabled: "OFF"
             auth_enabled: "ON"
             websocket_enabled: "ON"
           - name: http-auth-openssl
-            feature: "[http-openssl,auth,openssl]"
+            feature: "[http,auth,openssl]"
+            http_enabled: "ON"
+            openssl_enabled: "ON"
+            auth_openssl_enabled: "ON"
             auth_enabled: "ON"
             websocket_enabled: "OFF"
 
@@ -717,7 +745,10 @@ jobs:
             -DCMAKE_BUILD_TYPE=Release \
             -DCMAKE_TOOLCHAIN_FILE="${RUNNER_TEMP}/vcpkg/scripts/buildsystems/vcpkg.cmake" \
             -DVCPKG_TARGET_TRIPLET=x64-linux \
+            -DCXXMCP_PACKAGE_SMOKE_HTTP_ENABLED=${{ matrix.http_enabled }} \
+            -DCXXMCP_PACKAGE_SMOKE_OPENSSL_ENABLED=${{ matrix.openssl_enabled }} \
             -DCXXMCP_PACKAGE_SMOKE_AUTH_ENABLED=${{ matrix.auth_enabled }} \
+            -DCXXMCP_PACKAGE_SMOKE_AUTH_OPENSSL_ENABLED=${{ matrix.auth_openssl_enabled }} \
             -DCXXMCP_PACKAGE_SMOKE_WEBSOCKET_ENABLED=${{ matrix.websocket_enabled }} \
             2>&1 | tee "build-package-vcpkg-${{ matrix.name }}/cmake-configure.log"
           cmake --build "build-package-vcpkg-${{ matrix.name }}" --parallel \
@@ -746,31 +777,46 @@ jobs:
             with_http: "False"
             with_websocket: "False"
             with_auth: "False"
+            http_enabled: "OFF"
             auth_enabled: "OFF"
+            auth_openssl_enabled: "OFF"
+            openssl_enabled: "OFF"
             websocket_enabled: "OFF"
           - name: http
             with_http: "True"
             with_websocket: "False"
             with_auth: "False"
+            http_enabled: "ON"
             auth_enabled: "OFF"
+            auth_openssl_enabled: "OFF"
+            openssl_enabled: "OFF"
             websocket_enabled: "OFF"
           - name: websocket
             with_http: "False"
             with_websocket: "True"
             with_auth: "False"
+            http_enabled: "ON"
             auth_enabled: "OFF"
+            auth_openssl_enabled: "OFF"
+            openssl_enabled: "OFF"
             websocket_enabled: "ON"
           - name: http-auth
             with_http: "True"
             with_websocket: "False"
             with_auth: "True"
+            http_enabled: "ON"
             auth_enabled: "ON"
+            auth_openssl_enabled: "OFF"
+            openssl_enabled: "OFF"
             websocket_enabled: "OFF"
           - name: websocket-auth
             with_http: "False"
             with_websocket: "True"
             with_auth: "True"
+            http_enabled: "ON"
             auth_enabled: "ON"
+            auth_openssl_enabled: "OFF"
+            openssl_enabled: "OFF"
             websocket_enabled: "ON"
 
     steps:
@@ -800,7 +846,7 @@ jobs:
         run: |
           set -euo pipefail
           conan install \
-            --requires=cxxmcp/1.1.3 \
+            --requires=cxxmcp/1.1.4 \
             --generator=CMakeDeps \
             --generator=CMakeToolchain \
             --output-folder="build-package-conan-${{ matrix.name }}-deps" \
@@ -823,7 +869,10 @@ jobs:
             -G Ninja \
             -DCMAKE_BUILD_TYPE=Release \
             -DCMAKE_TOOLCHAIN_FILE="${toolchain}" \
+            -DCXXMCP_PACKAGE_SMOKE_HTTP_ENABLED=${{ matrix.http_enabled }} \
+            -DCXXMCP_PACKAGE_SMOKE_OPENSSL_ENABLED=${{ matrix.openssl_enabled }} \
             -DCXXMCP_PACKAGE_SMOKE_AUTH_ENABLED=${{ matrix.auth_enabled }} \
+            -DCXXMCP_PACKAGE_SMOKE_AUTH_OPENSSL_ENABLED=${{ matrix.auth_openssl_enabled }} \
             -DCXXMCP_PACKAGE_SMOKE_WEBSOCKET_ENABLED=${{ matrix.websocket_enabled }} \
             2>&1 | tee "build-package-conan-${{ matrix.name }}/cmake-configure.log"
           cmake --build "build-package-conan-${{ matrix.name }}" --parallel \
@@ -853,30 +902,35 @@ jobs:
             websocket_enabled: "false"
             auth_enabled: "false"
             auth_define: ""
+            http_define: ""
             websocket_define: ""
           - name: http
             http_enabled: "true"
             websocket_enabled: "false"
             auth_enabled: "false"
             auth_define: ""
+            http_define: "add_defines(\"CXXMCP_PACKAGE_SMOKE_HTTP\")"
             websocket_define: ""
           - name: websocket
             http_enabled: "false"
             websocket_enabled: "true"
             auth_enabled: "false"
             auth_define: ""
+            http_define: "add_defines(\"CXXMCP_PACKAGE_SMOKE_HTTP\")"
             websocket_define: "add_defines(\"CXXMCP_PACKAGE_SMOKE_WEBSOCKET\")"
           - name: http-auth
             http_enabled: "true"
             websocket_enabled: "false"
             auth_enabled: "true"
             auth_define: "add_defines(\"CXXMCP_PACKAGE_SMOKE_AUTH\")"
+            http_define: "add_defines(\"CXXMCP_PACKAGE_SMOKE_HTTP\")"
             websocket_define: ""
           - name: websocket-auth
             http_enabled: "false"
             websocket_enabled: "true"
             auth_enabled: "true"
             auth_define: "add_defines(\"CXXMCP_PACKAGE_SMOKE_AUTH\")"
+            http_define: "add_defines(\"CXXMCP_PACKAGE_SMOKE_HTTP\")"
             websocket_define: "add_defines(\"CXXMCP_PACKAGE_SMOKE_WEBSOCKET\")"
 
     steps:
@@ -920,14 +974,14 @@ jobs:
               text,
           )
           text, version_count = re.subn(
-              r'add_versions\("v1\.1\.3",\s*".*?"\)',
-              f'add_versions("v1.1.3", "{digest}")',
+              r'add_versions\("v1\.1\.4",\s*".*?"\)',
+              f'add_versions("v1.1.4", "{digest}")',
               text,
           )
           if url_count != 1:
               raise SystemExit(f"expected one add_urls rewrite, got {url_count}")
           if version_count != 1:
-              raise SystemExit(f"expected one v1.1.3 add_versions rewrite, got {version_count}")
+              raise SystemExit(f"expected one v1.1.4 add_versions rewrite, got {version_count}")
           if f'file://{archive.as_posix()}' not in text:
               raise SystemExit("xmake recipe was not rewritten to the generated source archive")
           if "github.com" in text or "releases/download" in text:
@@ -938,13 +992,14 @@ jobs:
           add_rules("mode.release")
           set_languages("c++17")
           add_repositories("cxxmcp-local repo")
-          add_requires("cxxmcp v1.1.3", {configs = {http = ${{ matrix.http_enabled }}, websocket = ${{ matrix.websocket_enabled }}, auth = ${{ matrix.auth_enabled }}}})
+          add_requires("cxxmcp v1.1.4", {configs = {http = ${{ matrix.http_enabled }}, websocket = ${{ matrix.websocket_enabled }}, auth = ${{ matrix.auth_enabled }}}})
 
           target("consumer")
               set_kind("binary")
               add_files("main.cpp")
               add_packages("cxxmcp")
               ${{ matrix.auth_define }}
+              ${{ matrix.http_define }}
               ${{ matrix.websocket_define }}
           EOF
           cat > "build-package-xmake-${{ matrix.name }}/main.cpp" <<'EOF'
@@ -954,6 +1009,9 @@ jobs:
           #include <cxxmcp/protocol/serialization.hpp>
           #ifdef CXXMCP_PACKAGE_SMOKE_AUTH
           #include <cxxmcp/auth.hpp>
+          #endif
+          #ifdef CXXMCP_PACKAGE_SMOKE_HTTP
+          #include <cxxmcp/transport/http_transport.hpp>
           #endif
           #ifdef CXXMCP_PACKAGE_SMOKE_WEBSOCKET
           #include <cxxmcp/peer.hpp>
@@ -970,6 +1028,14 @@ jobs:
               auto registration =
                   mcp::auth::build_client_registration_request(options);
               (void)registration;
+          #endif
+          #ifdef CXXMCP_PACKAGE_SMOKE_HTTP
+              mcp::transport::StreamableHttpClientTransportOptions http_options;
+              http_options.uri = "http://127.0.0.1:3001/mcp";
+              auto http_client =
+                  std::make_unique<mcp::transport::StreamableHttpClientTransport>(
+                      std::move(http_options));
+              (void)http_client;
           #endif
           #ifdef CXXMCP_PACKAGE_SMOKE_WEBSOCKET
               auto builder = mcp::ClientPeer::builder();

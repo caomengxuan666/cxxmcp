@@ -15,6 +15,7 @@ OAuth protocol scaffolding is an **optional feature**, gated by CMake options:
 option(CXXMCP_ENABLE_AUTH "OAuth 2.1 / DPoP authorization scaffolding" OFF)
 # Legacy alias accepted by the build:
 option(MCP_ENABLE_AUTH "OAuth 2.1 / DPoP authorization scaffolding" OFF)
+option(CXXMCP_ENABLE_OPENSSL "OpenSSL-backed optional integrations" OFF)
 set(CXXMCP_AUTH_CRYPTO "NONE" CACHE STRING "NONE or OpenSSL")
 ```
 
@@ -27,6 +28,8 @@ set(CXXMCP_AUTH_CRYPTO "NONE" CACHE STRING "NONE or OpenSSL")
   transport-neutral auth contracts, metadata/token endpoint helpers, DPoP
   request-header builders, and JWKS value/cache boundaries without requiring
   OpenSSL or MiniOAuth2.
+- `CXXMCP_ENABLE_OPENSSL=ON`: enables OpenSSL-backed HTTP/WebSocket TLS support
+  without enabling auth by itself.
 - `CXXMCP_AUTH_CRYPTO=OpenSSL`: requires `CXXMCP_ENABLE_AUTH=ON`, resolves
   OpenSSL through CMake/package-manager discovery, and exports
   `cxxmcp::auth_openssl` for crypto-backed helpers.
@@ -72,12 +75,12 @@ OAuth still requires cxxmcp-owned protocol and security code around that helper:
 | JWT / ID token validation | Verify signatures and claims via OpenSSL/JWKS-aware code. Decode-only helpers are intentionally not part of the public SDK. | cxxmcp + OpenSSL |
 
 OpenSSL is the only binary/system dependency that the full implementation should
-introduce when crypto-backed auth is enabled. The initial scaffold does not call
-`find_package(OpenSSL)`. For vcpkg and Conan builds, OpenSSL must come from the
-same package-manager resolution as the rest of the dependency graph. For plain
-CMake builds, CMake uses the user's installed OpenSSL and may be guided with
-standard hints such as `OPENSSL_ROOT_DIR` when the platform does not provide a
-default search path.
+introduce when crypto-backed auth or transport TLS is enabled. The default auth
+scaffold does not call `find_package(OpenSSL)`. Package-manager builds that
+expose OpenSSL must resolve it through the same package-manager graph as the
+rest of the dependencies. For plain CMake builds, CMake uses the user's
+installed OpenSSL and may be guided with standard hints such as
+`OPENSSL_ROOT_DIR` when the platform does not provide a default search path.
 
 Full auth-enabled package builds must keep OpenSSL as a normal package
 dependency, not as vendored source. MiniOAuth2 is vendored because it is
@@ -98,8 +101,6 @@ Auth support must preserve the existing SDK packaging behavior:
   external CMake project;
 - vcpkg builds resolve OpenSSL through the active vcpkg toolchain and port
   dependency metadata;
-- Conan builds resolve OpenSSL through the Conan dependency graph and generated
-  CMake toolchain files;
 - the full crypto-backed implementation uses `find_package(OpenSSL REQUIRED)`
   against the active package manager or user's local OpenSSL installation, with
   standard CMake hints such as `OPENSSL_ROOT_DIR` available for non-default
@@ -129,9 +130,12 @@ The auth scaffold therefore keeps these requirements explicit:
   compile crypto-backed auth code.
 - `CXXMCP_ENABLE_AUTH=ON` currently exposes transport-neutral auth contracts
   only; it still does not require OpenSSL.
+- `CXXMCP_ENABLE_OPENSSL=ON` explicitly enables OpenSSL-backed HTTP/WebSocket
+  TLS support for bundled builds; package-manager builds resolve the matching
+  `cpp-httplib` TLS feature through the package manager.
 - `CXXMCP_AUTH_CRYPTO=OpenSSL` explicitly enables OpenSSL-backed auth helper
-  surfaces and is the only path that calls `find_package(OpenSSL)`.
-- OAuth/DPoP and first-party HTTPS support must add OpenSSL through normal
+  surfaces when `CXXMCP_ENABLE_AUTH=ON`.
+- OAuth/DPoP and first-party HTTPS/WSS support must add OpenSSL through normal
   package-manager resolution, not by vendoring OpenSSL into `third_party`.
 - Applications may place cxxmcp behind a reverse proxy that terminates TLS; in
   that mode the SDK still receives and forwards normal HTTP headers, including

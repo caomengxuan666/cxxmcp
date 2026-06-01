@@ -81,9 +81,19 @@ the default vcpkg package path:
 vcpkg install "cxxmcp-sdk[auth]" --overlay-ports=C:\path\to\cxxmcp\packaging\vcpkg\ports
 ```
 
-The `auth` feature maps to `CXXMCP_ENABLE_AUTH=ON`. It currently enables
-transport-neutral OAuth/DPoP contracts only; it must not pull OpenSSL into the
-default package path.
+The `auth` feature maps to `CXXMCP_ENABLE_AUTH=ON`. It enables the
+transport-neutral OAuth/DPoP contracts without pulling OpenSSL into the default
+package path.
+
+The `openssl` feature is a single cross-cutting opt-in feature. Combine it with
+`http` for HTTPS transport support, with `websocket` for WSS support, and with
+`auth` for the `cxxmcp::auth_openssl` JOSE/JWT/DPoP helpers:
+
+```powershell
+vcpkg install "cxxmcp-sdk[http,openssl]" --overlay-ports=C:\path\to\cxxmcp\packaging\vcpkg\ports
+vcpkg install "cxxmcp-sdk[websocket,openssl]" --overlay-ports=C:\path\to\cxxmcp\packaging\vcpkg\ports
+vcpkg install "cxxmcp-sdk[auth,openssl]" --overlay-ports=C:\path\to\cxxmcp\packaging\vcpkg\ports
+```
 
 The `websocket` feature maps to `CXXMCP_ENABLE_WEBSOCKET=ON` and implicitly
 enables HTTP transport support because both transports share `cpp-httplib`:
@@ -120,14 +130,14 @@ overlay port in these ways:
   explicitly built as static libraries and shared-library ABI support is not
   claimed; do not force `-DBUILD_SHARED_LIBS=OFF` in the portfile;
 - keep SDK-only build options enabled and examples, tests, and docs disabled;
-- keep default `cpp-httplib` consumption as loopback HTTP without TLS unless a
-  deliberate `ssl` or `https` feature is added for `cpp-httplib[openssl]`;
-- keep OAuth/DPoP auth as a later opt-in feature after the OpenSSL-backed
-  implementation exists, rather than pulling OpenSSL into the default SDK
-  package;
-- keep package smoke evidence in both modes: default installs must not expose
-  `cxxmcp::auth`, while auth-enabled installs must let an external consumer
-  link `cxxmcp::auth` explicitly.
+- keep default `cpp-httplib` consumption as loopback HTTP without TLS, and use
+  one cross-cutting `openssl` feature for HTTPS, WSS, and auth crypto rather
+  than adding transport-specific TLS feature names;
+- keep OpenSSL out of the default SDK package path; `auth`, `http`, and
+  `websocket` only gain OpenSSL behavior when the user also selects `openssl`;
+- keep package smoke evidence for default, HTTP, WebSocket, auth, and
+  OpenSSL-enabled combinations; default installs must not expose `cxxmcp::auth`
+  or private implementation targets such as `cxxmcp::cpp_httplib`.
 
 ## FetchContent
 
@@ -136,7 +146,7 @@ The SDK archive includes the header-only SDK dependencies needed by the default
 bundled build, including the vendored `cpp-httplib` fallback used by HTTP and
 WebSocket transports.
 
-The concrete `v1.1.3` URL below is the latest published SDK source archive
+The concrete `v1.1.4` URL below is the latest published SDK source archive
 known to these docs. It is valid for consumers that want the published default
 SDK surface. Do not use it as evidence for the current worktree's optional auth
 header surface; current-source or release-candidate validation must use the
@@ -147,8 +157,8 @@ include(FetchContent)
 
 FetchContent_Declare(
     cxxmcp
-    URL https://github.com/caomengxuan666/cxxmcp/releases/download/v1.1.3/cxxmcp-sdk-source-v1.1.3.tar.gz
-    URL_HASH SHA256=ebf256c24e806301b65749ff22960b717aef46bba625c5d8a7edf9e237ccf936
+    URL https://github.com/caomengxuan666/cxxmcp/releases/download/v1.1.4/cxxmcp-sdk-source-v1.1.4.tar.gz
+    URL_HASH SHA256=c222d7e0752bff2d16457a427441acc654249b3102851163a6d6d4c411b8d9fb
 )
 
 set(CXXMCP_BUILD_SDK ON CACHE BOOL "" FORCE)
@@ -187,8 +197,8 @@ set(CXXMCP_BUILD_DOCS OFF CACHE BOOL "" FORCE)
 
 CPMAddPackage(
     NAME cxxmcp
-    URL https://github.com/caomengxuan666/cxxmcp/releases/download/v1.1.3/cxxmcp-sdk-source-v1.1.3.tar.gz
-    URL_HASH SHA256=ebf256c24e806301b65749ff22960b717aef46bba625c5d8a7edf9e237ccf936
+    URL https://github.com/caomengxuan666/cxxmcp/releases/download/v1.1.4/cxxmcp-sdk-source-v1.1.4.tar.gz
+    URL_HASH SHA256=c222d7e0752bff2d16457a427441acc654249b3102851163a6d6d4c411b8d9fb
 )
 
 add_executable(my_client main.cpp)

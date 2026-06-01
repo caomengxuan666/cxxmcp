@@ -73,8 +73,18 @@ gateway tooling 变成 SDK 包的默认消费面。
 vcpkg install "cxxmcp-sdk[auth]" --overlay-ports=C:\path\to\cxxmcp\packaging\vcpkg\ports
 ```
 
-`auth` feature 会映射到 `CXXMCP_ENABLE_AUTH=ON`。它当前只启用
-transport-neutral OAuth/DPoP contracts，不允许把 OpenSSL 拉入默认 package 路径。
+`auth` feature 会映射到 `CXXMCP_ENABLE_AUTH=ON`。它启用 transport-neutral
+OAuth/DPoP contracts，但不会把 OpenSSL 拉入默认 package 路径。
+
+`openssl` 是一个横向 opt-in feature。和 `http` 组合时启用 HTTPS transport，
+和 `websocket` 组合时启用 WSS，和 `auth` 组合时启用 `cxxmcp::auth_openssl`
+JOSE/JWT/DPoP helpers：
+
+```powershell
+vcpkg install "cxxmcp-sdk[http,openssl]" --overlay-ports=C:\path\to\cxxmcp\packaging\vcpkg\ports
+vcpkg install "cxxmcp-sdk[websocket,openssl]" --overlay-ports=C:\path\to\cxxmcp\packaging\vcpkg\ports
+vcpkg install "cxxmcp-sdk[auth,openssl]" --overlay-ports=C:\path\to\cxxmcp\packaging\vcpkg\ports
+```
 
 `websocket` feature 会映射到 `CXXMCP_ENABLE_WEBSOCKET=ON`，并且因为共享
 `cpp-httplib`，会隐式开启 HTTP transport support：
@@ -107,21 +117,21 @@ packaging/vcpkg/vcpkg-configuration.git-registry-future-example.json
   `vcpkg_check_linkage(ONLY_STATIC_LIBRARY)`；portfile 不再强制
   `-DBUILD_SHARED_LIBS=OFF`；
 - 继续只启用 SDK 构建，并关闭 examples、tests 和 docs；
-- 默认 `cpp-httplib` 仍按不带 TLS 的 loopback HTTP 消费，除非后续明确增加依赖
-  `cpp-httplib[openssl]` 的 `ssl` 或 `https` feature；
-- OAuth/DPoP auth 等 OpenSSL-backed 实现落地之后再作为 opt-in feature，不提前把
-  OpenSSL 拉入默认 SDK package；
-- package smoke 要覆盖两个状态：默认安装不能暴露 `cxxmcp::auth`，auth-enabled
-  安装必须允许外部 consumer 显式链接 `cxxmcp::auth`。
+- 默认 `cpp-httplib` 仍按不带 TLS 的 loopback HTTP 消费；HTTPS、WSS 和 auth
+  crypto 共用一个横向 `openssl` feature，不再增加 transport-specific TLS feature；
+- OpenSSL 不能进入默认 SDK package 路径；只有用户同时选择 `openssl` 时，
+  `auth`、`http`、`websocket` 才获得 OpenSSL-backed 行为；
+- package smoke 要覆盖 default、HTTP、WebSocket、auth 和 OpenSSL-enabled
+  组合；默认安装不能暴露 `cxxmcp::auth` 或 `cxxmcp::cpp_httplib` 这类 private
+  implementation target。
 
 ## FetchContent
 
 优先使用 release workflow 生成的 SDK source archive，而不是 GitHub 自动生成的
-源码包。SDK archive 包含默认 bundled 构建需要的 header-only SDK 依赖；GitHub
-SDK 源码包会包含默认 bundled build 需要的 header-only 依赖，包括 HTTP 和
-WebSocket transport 使用的 vendored `cpp-httplib` fallback。
+源码包。SDK archive 包含默认 bundled 构建需要的 header-only SDK 依赖，包括
+HTTP 和 WebSocket transport 使用的 vendored `cpp-httplib` fallback。
 
-下面具体的 `v1.1.3` URL 是本文档目前记录的最新已发布 SDK source archive。
+下面具体的 `v1.1.4` URL 是本文档目前记录的最新已发布 SDK source archive。
 它适用于想固定到已发布默认 SDK surface 的 consumer。不要把它当成当前 worktree
 可选 auth header surface 的证据；当前源码或 release candidate 验证必须使用那次
 release-gates run 生成的精确 source archive 和 checksum。
@@ -131,8 +141,8 @@ include(FetchContent)
 
 FetchContent_Declare(
     cxxmcp
-    URL https://github.com/caomengxuan666/cxxmcp/releases/download/v1.1.3/cxxmcp-sdk-source-v1.1.3.tar.gz
-    URL_HASH SHA256=ebf256c24e806301b65749ff22960b717aef46bba625c5d8a7edf9e237ccf936
+    URL https://github.com/caomengxuan666/cxxmcp/releases/download/v1.1.4/cxxmcp-sdk-source-v1.1.4.tar.gz
+    URL_HASH SHA256=c222d7e0752bff2d16457a427441acc654249b3102851163a6d6d4c411b8d9fb
 )
 
 set(CXXMCP_BUILD_SDK ON CACHE BOOL "" FORCE)
@@ -168,8 +178,8 @@ set(CXXMCP_BUILD_DOCS OFF CACHE BOOL "" FORCE)
 
 CPMAddPackage(
     NAME cxxmcp
-    URL https://github.com/caomengxuan666/cxxmcp/releases/download/v1.1.3/cxxmcp-sdk-source-v1.1.3.tar.gz
-    URL_HASH SHA256=ebf256c24e806301b65749ff22960b717aef46bba625c5d8a7edf9e237ccf936
+    URL https://github.com/caomengxuan666/cxxmcp/releases/download/v1.1.4/cxxmcp-sdk-source-v1.1.4.tar.gz
+    URL_HASH SHA256=c222d7e0752bff2d16457a427441acc654249b3102851163a6d6d4c411b8d9fb
 )
 
 add_executable(my_client main.cpp)

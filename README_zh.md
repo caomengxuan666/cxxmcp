@@ -113,7 +113,8 @@ cmake --install build --config Release --prefix out/install/cxxmcp
 | `CXXMCP_BUILD_EXAMPLES` | `OFF` | 构建示例 |
 | `CXXMCP_BUILD_TESTS` | `BUILD_TESTING` | 构建测试 |
 | `CXXMCP_BUILD_BENCHMARKS` | `OFF` | 构建 benchmark 可执行文件 |
-| `CXXMCP_ENABLE_HTTP` | `OFF` | 构建 HTTP/SSE transport（需要 `cpp-httplib`） |
+| `CXXMCP_ENABLE_HTTP` | `OFF` | 构建 HTTP/SSE transport（默认使用 bundled `cpp-httplib`，`CXXMCP_USE_SYSTEM_DEPS=ON` 时使用系统包） |
+| `CXXMCP_ENABLE_OPENSSL` | `OFF` | 启用 OpenSSL-backed HTTP/WebSocket TLS 支持 |
 | `CXXMCP_ENABLE_WEBSOCKET` | `OFF` | 构建 WebSocket transport（需要 `CXXMCP_ENABLE_HTTP`） |
 | `CXXMCP_ENABLE_AUTH` | `OFF` | 构建可选 OAuth 2.1 / DPoP auth target |
 
@@ -129,6 +130,7 @@ cmake --install build --config Release --prefix out/install/cxxmcp
 | `cxxmcp::client` | 可嵌入 MCP client SDK |
 | `cxxmcp::server` | 可嵌入 MCP server SDK |
 | `cxxmcp::auth` | 可选 OAuth 2.1 / DPoP contract（`CXXMCP_ENABLE_AUTH=ON`） |
+| `cxxmcp::auth_openssl` | 可选 OpenSSL-backed JOSE/JWT/DPoP helpers（`CXXMCP_ENABLE_AUTH=ON`，`CXXMCP_AUTH_CRYPTO=OpenSSL`） |
 | `cxxmcp::sdk` | 聚合 public SDK target |
 
 ## 为什么选择 cxxmcp

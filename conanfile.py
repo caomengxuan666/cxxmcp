@@ -6,7 +6,7 @@ import os
 
 class CxxmcpConan(ConanFile):
     name = "cxxmcp"
-    version = "1.1.3"  # overridden by set_version()
+    version = "1.1.4"  # overridden by set_version()
     package_type = "static-library"
 
     license = "MIT"
@@ -117,7 +117,7 @@ class CxxmcpConan(ConanFile):
         self.cpp_info.libs = ["mcp_server", "mcp_client", "mcp_protocol"]
         self.cpp_info.defines.extend(optional_defines)
         if self.settings.os == "Windows" and http_enabled:
-            self.cpp_info.system_libs.append("ws2_32")
+            self.cpp_info.system_libs.extend(["ws2_32", "crypt32"])
         elif self.settings.os in ("Linux", "FreeBSD"):
             self.cpp_info.system_libs.append("pthread")
 
@@ -139,7 +139,8 @@ class CxxmcpConan(ConanFile):
         self.cpp_info.components["client"].requires = ["transport"]
         self.cpp_info.components["client"].defines.extend(optional_defines)
         if self.settings.os == "Windows" and http_enabled:
-            self.cpp_info.components["client"].system_libs.append("ws2_32")
+            self.cpp_info.components["client"].system_libs.extend(
+                ["ws2_32", "crypt32"])
         elif self.settings.os in ("Linux", "FreeBSD"):
             self.cpp_info.components["client"].system_libs.append("pthread")
 
@@ -149,7 +150,8 @@ class CxxmcpConan(ConanFile):
         self.cpp_info.components["server"].requires = ["transport"]
         self.cpp_info.components["server"].defines.extend(optional_defines)
         if self.settings.os == "Windows" and http_enabled:
-            self.cpp_info.components["server"].system_libs.append("ws2_32")
+            self.cpp_info.components["server"].system_libs.extend(
+                ["ws2_32", "crypt32"])
         elif self.settings.os in ("Linux", "FreeBSD"):
             self.cpp_info.components["server"].system_libs.append("pthread")
 

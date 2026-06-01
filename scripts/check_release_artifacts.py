@@ -89,17 +89,23 @@ AUTH_ARTIFACTS = [
 
 PACKAGE_ARTIFACTS = [
     "cxxmcp-package-vcpkg-default",
+    "cxxmcp-package-vcpkg-http",
     "cxxmcp-package-vcpkg-websocket",
-    "cxxmcp-package-vcpkg-websocket-auth",
+    "cxxmcp-package-vcpkg-http-openssl",
+    "cxxmcp-package-vcpkg-websocket-openssl",
     "cxxmcp-package-vcpkg-http-auth",
+    "cxxmcp-package-vcpkg-websocket-auth",
+    "cxxmcp-package-vcpkg-http-auth-openssl",
     "cxxmcp-package-conan-default",
+    "cxxmcp-package-conan-http",
     "cxxmcp-package-conan-websocket",
-    "cxxmcp-package-conan-websocket-auth",
     "cxxmcp-package-conan-http-auth",
+    "cxxmcp-package-conan-websocket-auth",
     "cxxmcp-package-xmake-default",
+    "cxxmcp-package-xmake-http",
     "cxxmcp-package-xmake-websocket",
-    "cxxmcp-package-xmake-websocket-auth",
     "cxxmcp-package-xmake-http-auth",
+    "cxxmcp-package-xmake-websocket-auth",
 ]
 
 RELEASE_GATE_BUNDLE_ARTIFACTS = [

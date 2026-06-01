@@ -94,6 +94,10 @@ cxxmcp_build_option(CXXMCP_ENABLE_HTTP MCP_ENABLE_HTTP
 cxxmcp_build_option(CXXMCP_ENABLE_WEBSOCKET MCP_ENABLE_WEBSOCKET
     "Build WebSocket transport (requires cpp-httplib)" OFF)
 
+option(CXXMCP_ENABLE_OPENSSL
+    "Enable OpenSSL-backed optional integrations such as HTTP/WebSocket TLS"
+    OFF)
+
 set(CXXMCP_AUTH_CRYPTO "NONE" CACHE STRING
     "Optional crypto backend for cxxmcp auth; NONE or OpenSSL")
 set_property(CACHE CXXMCP_AUTH_CRYPTO PROPERTY STRINGS NONE OpenSSL)
@@ -133,6 +137,14 @@ if(NOT MCP_ENABLE_AUTH AND NOT CXXMCP_AUTH_CRYPTO STREQUAL "NONE")
         "CXXMCP_AUTH_CRYPTO requires CXXMCP_ENABLE_AUTH=ON")
 endif()
 
+set(CXXMCP_EFFECTIVE_ENABLE_OPENSSL ${CXXMCP_ENABLE_OPENSSL})
+if(CXXMCP_AUTH_CRYPTO STREQUAL "OpenSSL")
+    set(CXXMCP_EFFECTIVE_ENABLE_OPENSSL ON)
+endif()
+if(CXXMCP_EFFECTIVE_ENABLE_OPENSSL)
+    find_package(OpenSSL REQUIRED COMPONENTS SSL Crypto)
+endif()
+
 add_library(mcp_core INTERFACE)
 set_target_properties(mcp_core PROPERTIES EXPORT_NAME core)
 target_include_directories(mcp_core INTERFACE
@@ -169,13 +181,30 @@ endif()
 # Internal implementation dependency for HTTP transports and tests. It is not
 # installed or exported as part of the public SDK package contract.
 if(MCP_ENABLE_HTTP AND NOT CXXMCP_USE_SYSTEM_DEPS)
+    set(CXXMCP_BUNDLED_HTTPLIB_COMPILE_DEFINITIONS)
+    set(CXXMCP_BUNDLED_HTTPLIB_LINK_LIBRARIES
+        $<$<PLATFORM_ID:Windows>:ws2_32>
+        $<$<PLATFORM_ID:Windows>:crypt32>
+    )
+    if(CXXMCP_EFFECTIVE_ENABLE_OPENSSL)
+        list(APPEND CXXMCP_BUNDLED_HTTPLIB_COMPILE_DEFINITIONS
+            CPPHTTPLIB_OPENSSL_SUPPORT)
+        list(APPEND CXXMCP_BUNDLED_HTTPLIB_LINK_LIBRARIES
+            OpenSSL::SSL
+            OpenSSL::Crypto)
+    endif()
+
     add_library(cpp_httplib INTERFACE)
     target_include_directories(cpp_httplib INTERFACE
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/third_party/httplib>
     )
     target_link_libraries(cpp_httplib INTERFACE
-        $<$<PLATFORM_ID:Windows>:ws2_32>
+        ${CXXMCP_BUNDLED_HTTPLIB_LINK_LIBRARIES}
     )
+    if(CXXMCP_BUNDLED_HTTPLIB_COMPILE_DEFINITIONS)
+        target_compile_definitions(cpp_httplib INTERFACE
+            ${CXXMCP_BUNDLED_HTTPLIB_COMPILE_DEFINITIONS})
+    endif()
     cxxmcp_require_sdk_cxx(cpp_httplib)
 endif()
 
@@ -236,7 +265,10 @@ if(MCP_ENABLE_CLIENT)
         if(CXXMCP_USE_SYSTEM_DEPS)
             target_link_libraries(mcp_client PRIVATE "${CXXMCP_HTTPLIB_TARGET}")
         else()
-            target_link_libraries(mcp_client PRIVATE cpp_httplib)
+            target_compile_definitions(mcp_client PRIVATE
+                ${CXXMCP_BUNDLED_HTTPLIB_COMPILE_DEFINITIONS})
+            target_link_libraries(mcp_client PRIVATE
+                ${CXXMCP_BUNDLED_HTTPLIB_LINK_LIBRARIES})
         endif()
         target_compile_definitions(mcp_client PUBLIC CXXMCP_ENABLE_HTTP=1)
     endif()
@@ -283,7 +315,10 @@ if(MCP_ENABLE_SERVER)
         if(CXXMCP_USE_SYSTEM_DEPS)
             target_link_libraries(mcp_server PRIVATE "${CXXMCP_HTTPLIB_TARGET}")
         else()
-            target_link_libraries(mcp_server PRIVATE cpp_httplib)
+            target_compile_definitions(mcp_server PRIVATE
+                ${CXXMCP_BUNDLED_HTTPLIB_COMPILE_DEFINITIONS})
+            target_link_libraries(mcp_server PRIVATE
+                ${CXXMCP_BUNDLED_HTTPLIB_LINK_LIBRARIES})
         endif()
         target_compile_definitions(mcp_server PUBLIC CXXMCP_ENABLE_HTTP=1)
     endif()
@@ -499,10 +534,6 @@ endif()
 if(TARGET mcp_service)
     list(APPEND CXXMCP_INSTALL_TARGETS mcp_service)
 endif()
-if(MCP_ENABLE_HTTP AND NOT CXXMCP_USE_SYSTEM_DEPS AND TARGET cpp_httplib)
-    list(APPEND CXXMCP_INSTALL_TARGETS cpp_httplib)
-endif()
-
 install(TARGETS ${CXXMCP_INSTALL_TARGETS}
     EXPORT cxxmcpTargets
     ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
