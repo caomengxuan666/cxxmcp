@@ -74,7 +74,7 @@ jobs:
           grep -q 'href="./stability.html"' public/index.html
 
       - name: Upload Pages artifact
-        uses: actions/upload-pages-artifact@v3
+        uses: actions/upload-pages-artifact@v5
         with:
           path: public
 
