@@ -472,6 +472,7 @@ def check_source_tree(source: Path) -> None:
         "cxxmcp-package-vcpkg-websocket-openssl",
         "cxxmcp-package-vcpkg-http-auth",
         "cxxmcp-package-vcpkg-websocket-auth",
+        "cxxmcp-package-vcpkg-auth-openssl",
         "cxxmcp-package-vcpkg-http-auth-openssl",
         "cxxmcp-package-conan-default",
         "cxxmcp-package-conan-http",
