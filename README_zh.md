@@ -18,6 +18,7 @@ English version: [README.md](README.md)
 ```cmake
 find_package(cxxmcp CONFIG REQUIRED)
 target_link_libraries(my_server PRIVATE cxxmcp::server)
+target_link_libraries(my_client PRIVATE cxxmcp::client)
 ```
 
 ```cpp
@@ -43,14 +44,21 @@ int main() {
 #include <cxxmcp/run.hpp>
 
 int main() {
-    return mcp::ClientPeer::builder()
+    int status = 0;
+    const auto run_status = mcp::ClientPeer::builder()
         .streamable_http("http://127.0.0.1:3000/mcp")
-        .run([](auto& svc) {
-            svc.peer().initialize();
-            svc.peer().list_all_tools();
-            svc.peer().call_tool("echo",
-                                 mcp::protocol::Json{{"value", "hello"}});
+        .run([&status](auto& svc) {
+            if (!svc.peer().initialize().has_value() ||
+                !svc.peer().notify_initialized().has_value() ||
+                !svc.peer().list_all_tools().has_value() ||
+                !svc.peer()
+                     .call_tool("echo",
+                                mcp::protocol::Json{{"value", "hello"}})
+                     .has_value()) {
+                status = 1;
+            }
         });
+    return run_status == 0 ? status : run_status;
 }
 ```
 

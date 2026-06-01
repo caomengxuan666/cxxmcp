@@ -183,6 +183,7 @@ def create_gate_artifacts(root: Path) -> None:
         "websocket-openssl",
         "http-auth",
         "websocket-auth",
+        "auth-openssl",
         "http-auth-openssl",
     ]:
         add_package_artifact(root, f"cxxmcp-package-vcpkg-{feature}", "vcpkg")

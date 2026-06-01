@@ -631,6 +631,7 @@ def check_source_tree(source: Path) -> None:
     require_contains(release_sdk, "OpenSSL-backed auth evidence is currently a Linux GCC Ninja release")
     require_contains(release_sdk, "Performance evidence is currently limited to the Linux GCC Ninja")
     require_contains(release_sdk, "Public-header compile-time evidence is currently limited")
+    require_contains(release_sdk, "cxxmcp-package-vcpkg-auth-openssl")
     require_contains(release_sdk, "unless matching platform artifacts are attached")
     require_contains(release_sdk, "gh release upload")
     require_contains(release_sdk, "gh release create")
@@ -649,7 +650,8 @@ def check_source_tree(source: Path) -> None:
     require_contains(release_gate_manifest, "auth_openssl")
     require_contains(release_gate_manifest, "foreach(header_test")
     require_contains(release_gate_manifest, "websocket_transport")
-    require_contains(release_gate_manifest, "protocol error config auth transport")
+    require_contains(release_gate_manifest, "protocol protocol_types protocol_types_reflect")
+    require_contains(release_gate_manifest, "error config auth transport")
 
     package_smoke = source / "tests/package_smoke.cmake"
     require_contains(package_smoke, "PACKAGE_SMOKE_GENERATOR")
@@ -691,6 +693,7 @@ def check_source_tree(source: Path) -> None:
         "cxxmcp-public-header-compile-evidence-linux-gcc-ninja",
         "performance-evidence.xml",
         "public-header-compile-evidence.json",
+        "mcp_public_header_websocket_transport",
         "protocol_serialization_benchmark",
         "check_sdk_source_tarball",
         "check_release_tarball_contents",
