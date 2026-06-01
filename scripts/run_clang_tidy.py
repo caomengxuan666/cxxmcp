@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import json
 import shutil
 import subprocess
 from pathlib import Path
@@ -24,6 +25,21 @@ def collect_sources(source_root: Path, paths: list[str]) -> list[Path]:
             sources.extend(sorted(path.rglob("*.cpp")))
             continue
         fail(f"missing clang-tidy input path: {path}")
+    return sources
+
+
+def compile_command_sources(build_dir: Path) -> set[Path]:
+    compile_commands = build_dir / "compile_commands.json"
+    try:
+        entries = json.loads(compile_commands.read_text(encoding="utf-8"))
+    except json.JSONDecodeError as error:
+        fail(f"invalid compile_commands.json: {error}")
+
+    sources: set[Path] = set()
+    for entry in entries:
+        file_name = entry.get("file")
+        if isinstance(file_name, str) and file_name:
+            sources.add(Path(file_name).resolve())
     return sources
 
 
@@ -48,7 +64,12 @@ def main() -> None:
     if not compile_commands.is_file():
         fail(f"missing compile_commands.json: {compile_commands}")
 
-    sources = collect_sources(source_root, args.paths)
+    configured_sources = compile_command_sources(build_dir)
+    sources = [
+        source
+        for source in collect_sources(source_root, args.paths)
+        if source in configured_sources
+    ]
     if not sources:
         fail("no clang-tidy source files were selected")
 

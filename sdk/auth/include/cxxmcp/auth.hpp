@@ -8,9 +8,10 @@
 /// The auth layer is exposed only when the `cxxmcp::auth` CMake target is
 /// enabled with `MCP_ENABLE_AUTH` / `CXXMCP_ENABLE_AUTH`. These headers define
 /// transport-neutral OAuth 2.1, PKCE, DPoP, metadata, and token storage
-/// contracts. Crypto and HTTP integration are intentionally implementation
-/// details of later source files, not public API dependencies.
+/// contracts plus the high-level OAuth client flow builder. Crypto integration
+/// remains in opt-in provider headers such as `cxxmcp/auth/openssl/*`.
 
+#include "cxxmcp/auth/client_orchestrator.hpp"
 #include "cxxmcp/auth/constant_time.hpp"
 #include "cxxmcp/auth/dpop.hpp"
 #include "cxxmcp/auth/http_metadata_endpoint.hpp"

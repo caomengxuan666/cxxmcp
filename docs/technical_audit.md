@@ -597,9 +597,9 @@ Background tasks continue running after timeout — cancellation is cooperative 
 CV-based blocking instead of `shared_future` or polling. `CancellationToken` has
 been extended with `wait_for_cancel()` (CV-based, zero CPU) backed by a
 `CancellationState` containing `atomic_bool` + `mutex` + `condition_variable`.
-The cancellation watcher is posted as a `BACKGROUND` task on the executor,
-blocks on `token.wait_for_cancel()`, then cancels the `AsyncResult` to wake
-waiters. `TaskHandle::wait()` also uses CV-based push notification
+`RequestHandle` cancellation is delivered through a token callback registration
+that cancels the `AsyncResult` to wake waiters without occupying request
+executor workers. `TaskHandle::wait()` also uses CV-based push notification
 (`task_status_cv_`) with an RPC poll fallback for servers that don't send task
 status notifications. All `sleep_for` polling has been eliminated.
 

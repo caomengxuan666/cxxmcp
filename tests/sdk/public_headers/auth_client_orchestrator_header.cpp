@@ -3,8 +3,8 @@
 #include <cxxmcp/auth/client_orchestrator.hpp>
 
 int main() {
-  mcp::auth::OAuthClientOrchestratorConfig config;
-  config.resource_url = "https://resource.example/mcp";
-  config.client_name = "public-header";
-  return config.resource_url.empty() ? 1 : 0;
+  auto builder = mcp::auth::oauth_client_flow("https://resource.example/mcp")
+                     .client_name("public-header")
+                     .scopes({"mcp:tools"});
+  return 0;
 }

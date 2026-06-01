@@ -31,7 +31,6 @@ requirements into the default SDK path.
 
 - `basics/handler_contracts.cpp`: durable handler interfaces.
 - `auth/auth_dpop_openssl.cpp`: opt-in OpenSSL DPoP/JWKS auth-provider wiring.
-- `peer/task_async_client_server.cpp`: task-aware tool lifecycle.
 - `http/streamable_http_client.cpp`: Streamable HTTP client construction via
   `ClientPeer::builder().streamable_http(uri)`.
 - `websocket/websocket_client.cpp` / `websocket/websocket_server.cpp`: opt-in
@@ -41,7 +40,9 @@ requirements into the default SDK path.
 
 ## Compatibility Or Low-Level Examples
 
-- `peer/client_loopback.cpp`: local loopback coverage using
+- `integration/task_async_client_server.cpp`: task-aware tool lifecycle across a
+  client/server loopback.
+- `integration/client_loopback.cpp`: local loopback coverage using
   `ServerPeer::builder()` with the deprecated `server()` accessor for client
   transport plumbing.
 

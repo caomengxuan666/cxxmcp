@@ -1,17 +1,16 @@
 // Copyright (c) 2025 [caomengxuan666]
 //
 // Example: Client-side OAuth 2.1 authorization flow using
-// OAuthClientOrchestrator.
+// OAuthClientFlowBuilder.
 //
 // This example is parked behind CXXMCP_BUILD_EXPERIMENTAL_OAUTH_EXAMPLES until
 // the OAuth public API shape is finalized.
 
 #include <iostream>
+#include <memory>
 #include <string>
 
 #include "cxxmcp/auth/client_orchestrator.hpp"
-#include "cxxmcp/auth/http_metadata_endpoint.hpp"
-#include "cxxmcp/auth/http_token_endpoint.hpp"
 #include "cxxmcp/auth/openssl/pkce.hpp"
 #include "httplib.h"
 
@@ -121,24 +120,26 @@ int main(int argc, char* argv[]) {
 
   const std::string resource_url = argv[1];
 
-  mcp::auth::HttpOAuthMetadataEndpoint metadata_endpoint(http_get);
-  mcp::auth::HttpOAuthTokenEndpoint token_endpoint(http_post);
-  mcp::auth::openssl::OpenSslPkceGenerator pkce_generator;
   StdinCallback callback;
+  auto pkce_generator =
+      std::make_shared<mcp::auth::openssl::OpenSslPkceGenerator>();
 
-  mcp::auth::OAuthClientOrchestratorConfig config;
-  config.resource_url = resource_url;
-  config.client_name = "cxxmcp-example-client";
-  config.scopes = {"mcp:tools", "mcp:resources"};
-  config.callback_timeout = std::chrono::seconds(300);
-
-  mcp::auth::OAuthClientOrchestrator orchestrator(
-      std::move(config), callback, metadata_endpoint, token_endpoint,
-      pkce_generator);
+  auto flow = mcp::auth::oauth_client_flow(resource_url)
+                  .client_name("cxxmcp-example-client")
+                  .scopes({"mcp:tools", "mcp:resources"})
+                  .callback_timeout(std::chrono::seconds(300))
+                  .callback(callback)
+                  .http_endpoints(http_get, http_post)
+                  .pkce_generator(std::move(pkce_generator))
+                  .build();
+  if (!flow.has_value()) {
+    std::cerr << "OAuth flow setup failed: " << flow.error().message << "\n";
+    return 1;
+  }
 
   std::cout << "Starting OAuth authorization flow for " << resource_url << "\n";
 
-  auto tokens = orchestrator.authorize();
+  auto tokens = (*flow)->authorize();
   if (!tokens.has_value()) {
     std::cerr << "Authorization failed: " << tokens.error().message << "\n";
     if (!tokens.error().detail.empty()) {
@@ -163,7 +164,7 @@ int main(int argc, char* argv[]) {
     std::cout << "\n";
   }
 
-  auto token = orchestrator.get_access_token();
+  auto token = (*flow)->get_access_token();
   if (token.has_value()) {
     std::cout << "\nValid access token available: " << token->substr(0, 16)
               << "...\n";

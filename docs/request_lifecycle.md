@@ -55,6 +55,10 @@ handlers. `CancellationToken::cancelled()` uses `atomic_bool` with
 blocks on a condition variable until cancellation is requested (zero CPU), with
 optional timeout and deadline overloads.
 
+Outbound `RequestHandle<T>` cancellation uses token callback registration to
+complete the handle and send one protocol cancellation notification. It does
+not dedicate request executor workers to long-lived cancellation watchers.
+
 The SDK propagates cancellation tokens into handler contexts where there is a
 meaningful execution boundary:
 

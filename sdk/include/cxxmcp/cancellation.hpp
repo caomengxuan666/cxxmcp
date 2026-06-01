@@ -8,11 +8,25 @@
 #include <atomic>
 #include <chrono>
 #include <condition_variable>
+#include <cstddef>
+#include <functional>
 #include <memory>
 #include <mutex>
 #include <utility>
+#include <vector>
 
 namespace mcp {
+
+class CancellationToken;
+
+namespace detail {
+
+class CancellationRegistration;
+
+CancellationRegistration register_cancellation_callback(
+    CancellationToken token, std::function<void()> callback);
+
+}  // namespace detail
 
 /// @brief Shared state backing a cancellation token/source pair.
 ///
@@ -24,7 +38,67 @@ struct CancellationState {
   std::atomic_bool cancelled{false};
   std::mutex mutex;
   std::condition_variable cv;
+  std::size_t next_callback_id = 1;
+  std::vector<std::pair<std::size_t, std::function<void()>>> callbacks;
 };
+
+namespace detail {
+
+class CancellationRegistration {
+ public:
+  CancellationRegistration() = default;
+  CancellationRegistration(const CancellationRegistration&) = delete;
+  CancellationRegistration& operator=(const CancellationRegistration&) = delete;
+
+  CancellationRegistration(CancellationRegistration&& other) noexcept
+      : state_(std::move(other.state_)), id_(other.id_) {
+    other.id_ = 0;
+  }
+
+  CancellationRegistration& operator=(
+      CancellationRegistration&& other) noexcept {
+    if (this != &other) {
+      unregister();
+      state_ = std::move(other.state_);
+      id_ = other.id_;
+      other.id_ = 0;
+    }
+    return *this;
+  }
+
+  ~CancellationRegistration() { unregister(); }
+
+  bool active() const noexcept { return state_ != nullptr && id_ != 0; }
+
+ private:
+  friend CancellationRegistration register_cancellation_callback(
+      CancellationToken token, std::function<void()> callback);
+
+  CancellationRegistration(std::shared_ptr<CancellationState> state,
+                           std::size_t id)
+      : state_(std::move(state)), id_(id) {}
+
+  void unregister() noexcept {
+    if (!state_ || id_ == 0) {
+      return;
+    }
+    std::lock_guard<std::mutex> lock(state_->mutex);
+    for (auto iter = state_->callbacks.begin(); iter != state_->callbacks.end();
+         ++iter) {
+      if (iter->first == id_) {
+        state_->callbacks.erase(iter);
+        break;
+      }
+    }
+    id_ = 0;
+    state_.reset();
+  }
+
+  std::shared_ptr<CancellationState> state_;
+  std::size_t id_ = 0;
+};
+
+}  // namespace detail
 
 /// @brief Copyable token observed by cancellation-aware SDK operations.
 class CancellationToken {
@@ -91,12 +165,48 @@ class CancellationToken {
 
  private:
   friend class CancellationSource;
+  friend detail::CancellationRegistration
+  detail::register_cancellation_callback(CancellationToken token,
+                                         std::function<void()> callback);
 
   explicit CancellationToken(std::shared_ptr<CancellationState> state)
       : state_(std::move(state)) {}
 
   std::shared_ptr<CancellationState> state_;
 };
+
+namespace detail {
+
+inline CancellationRegistration register_cancellation_callback(
+    CancellationToken token, std::function<void()> callback) {
+  if (!callback || !token.state_) {
+    return CancellationRegistration{};
+  }
+
+  bool run_now = false;
+  std::size_t id = 0;
+  {
+    std::lock_guard<std::mutex> lock(token.state_->mutex);
+    if (token.state_->cancelled.load(std::memory_order_acquire)) {
+      run_now = true;
+    } else {
+      id = token.state_->next_callback_id++;
+      token.state_->callbacks.emplace_back(id, std::move(callback));
+    }
+  }
+
+  if (run_now) {
+    try {
+      callback();
+    } catch (...) {
+    }
+    return CancellationRegistration{};
+  }
+
+  return CancellationRegistration{std::move(token.state_), id};
+}
+
+}  // namespace detail
 
 /// @brief Owner side of a cooperative cancellation token.
 class CancellationSource {
@@ -111,9 +221,23 @@ class CancellationSource {
   /// wait_for_cancel().
   void cancel() const noexcept {
     if (state_ != nullptr) {
-      state_->cancelled.store(true, std::memory_order_release);
-      std::lock_guard<std::mutex> lock(state_->mutex);
+      const bool already_cancelled =
+          state_->cancelled.exchange(true, std::memory_order_acq_rel);
+      std::vector<std::function<void()>> callbacks;
+      if (!already_cancelled) {
+        std::lock_guard<std::mutex> lock(state_->mutex);
+        for (auto& callback : state_->callbacks) {
+          callbacks.push_back(std::move(callback.second));
+        }
+        state_->callbacks.clear();
+      }
       state_->cv.notify_all();
+      for (auto& callback : callbacks) {
+        try {
+          callback();
+        } catch (...) {
+        }
+      }
     }
   }
 

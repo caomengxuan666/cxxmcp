@@ -67,6 +67,7 @@ inline core::Executor& request_executor() {
 struct RequestHandleControl {
   mutable std::mutex mutex;
   std::optional<core::Error> terminal_error;
+  std::shared_ptr<detail::CancellationRegistration> cancellation_registration;
   bool cancel_sent = false;
 };
 
@@ -170,10 +171,11 @@ class RequestHandle {
     auto handle = RequestHandle(std::move(request_id), std::move(timeout),
                                 std::move(cancellation), std::move(cancel),
                                 std::move(async_result));
-    // Start cancellation watcher if a real cancellation source is configured.
+    // Register cancellation observer if a real cancellation source is
+    // configured.
     if (handle.cancellation_.has_value() &&
         handle.cancellation_->cancellable()) {
-      handle.start_cancellation_watcher();
+      handle.start_cancellation_observer();
     }
     return handle;
   }
@@ -192,9 +194,9 @@ class RequestHandle {
   ///
   /// If neither timeout nor cancellation was configured, blocks until the
   /// background task finishes. A configured cancellation token or timeout is
-  /// observed: cancellation wakes the waiter immediately via a background
-  /// watcher task that calls async_result_->cancel(). Timeout uses
-  /// AsyncResult::wait_for() which is CV-based.
+  /// observed: cancellation wakes the waiter immediately through the token's
+  /// callback registration. Timeout uses AsyncResult::wait_for() which is
+  /// CV-based.
   core::Result<T> await_response() const {
     if (!async_result_) {
       return mcp::core::unexpected(errors::request_state_missing());
@@ -222,9 +224,8 @@ class RequestHandle {
                            errors::request_timed_out(*timeout_));
     }
 
-    // Cancellation path (with optional timeout)
-    // The cancellation watcher is already running and will set a terminal
-    // error and cancel the async_result_ when the token fires.
+    // Cancellation path (with optional timeout). The token observer will set a
+    // terminal error and cancel the async_result_ when the token fires.
     if (timeout_.has_value()) {
       auto result = async_result_->wait_for(*timeout_);
       if (const auto terminal = terminal_error(); terminal.has_value()) {
@@ -269,38 +270,56 @@ class RequestHandle {
         async_result_(std::move(async_result)),
         control_(std::make_shared<detail::RequestHandleControl>()) {}
 
-  /// @brief Start a background watcher that blocks on the cancellation
-  /// token's CV and cancels the async_result when the token fires.
-  void start_cancellation_watcher() const {
+  /// @brief Register a token callback that cancels the async_result when the
+  /// token fires without occupying a request executor worker.
+  void start_cancellation_observer() const {
     if (!cancellation_.has_value() || !async_result_) return;
 
-    auto control = control_;
+    std::weak_ptr<detail::RequestHandleControl> weak_control = control_;
     auto async_result = async_result_;
     auto cancel_token = *cancellation_;
     auto cancel_cb = cancel_;
 
-    (void)detail::request_executor().post(
-        [control, async_result, cancel_token, cancel_cb]() {
-          // Block until cancelled (CV-based, zero CPU)
-          cancel_token.wait_for_cancel();
-          // Set terminal error
-          bool send_cancel = false;
+    auto registration = std::make_shared<detail::CancellationRegistration>(
+        detail::register_cancellation_callback(
+            cancel_token, [weak_control, async_result, cancel_cb]() {
+              bool send_cancel = false;
+              if (auto control = weak_control.lock()) {
+                std::shared_ptr<detail::CancellationRegistration> registration;
+                {
+                  std::lock_guard lock(control->mutex);
+                  if (!control->terminal_error.has_value()) {
+                    control->terminal_error = errors::request_cancelled();
+                  }
+                  if (!control->cancel_sent) {
+                    control->cancel_sent = true;
+                    send_cancel = true;
+                  }
+                  registration = std::move(control->cancellation_registration);
+                }
+              }
+              async_result->cancel("request cancelled");
+              if (send_cancel && cancel_cb) {
+                (void)cancel_cb("request cancelled");
+              }
+            }));
+
+    if (registration->active() && control_) {
+      {
+        std::lock_guard lock(control_->mutex);
+        control_->cancellation_registration = registration;
+      }
+      async_result_->then([weak_control](const auto&) {
+        if (auto control = weak_control.lock()) {
+          std::shared_ptr<detail::CancellationRegistration> registration;
           {
             std::lock_guard lock(control->mutex);
-            if (!control->terminal_error.has_value()) {
-              control->terminal_error = errors::request_cancelled();
-              control->cancel_sent = true;
-              send_cancel = true;
-            }
+            registration = std::move(control->cancellation_registration);
           }
-          // Cancel the async result to wake up await_response() waiters
-          async_result->cancel("request cancelled");
-          // Send cancel callback to peer
-          if (send_cancel && cancel_cb) {
-            (void)cancel_cb("request cancelled");
-          }
-        },
-        core::TaskPriority::BACKGROUND);
+        }
+        return core::Unit{};
+      });
+    }
   }
 
   std::optional<core::Error> terminal_error() const {
@@ -327,6 +346,7 @@ class RequestHandle {
   core::Result<T> fail_terminal(std::string reason, core::Error error) const {
     bool send_cancel = false;
     core::Error terminal = error;
+    std::shared_ptr<detail::CancellationRegistration> registration;
     if (control_) {
       std::lock_guard lock(control_->mutex);
       if (!control_->terminal_error.has_value()) {
@@ -337,6 +357,7 @@ class RequestHandle {
         control_->cancel_sent = true;
         send_cancel = true;
       }
+      registration = std::move(control_->cancellation_registration);
     } else {
       send_cancel = true;
     }

@@ -728,6 +728,8 @@ def check_source_tree(source: Path) -> None:
     require_contains(compile_evidence, "mcp_public_header_protocol")
     require_contains(compile_evidence, "mcp_public_header_auth")
     require_contains(compile_evidence, "mcp_public_header_auth_client_orchestrator")
+    require_contains(compile_evidence, "mcp_public_header_auth_http_token_endpoint")
+    require_contains(compile_evidence, "mcp_public_header_auth_server_auth_provider")
     require_contains(compile_evidence, "mcp_public_header_websocket_transport")
     require_contains(compile_evidence, "elapsed_seconds")
 
@@ -818,8 +820,8 @@ def check_source_tree(source: Path) -> None:
     require_contains(template_cmake, "cxxmcp::sdk")
 
     example_markers = {
-        "examples/peer/client_loopback.cpp": "Compatibility example",
-        "examples/peer/task_async_client_server.cpp": "Compatibility example",
+        "examples/integration/client_loopback.cpp": "Compatibility example",
+        "examples/integration/task_async_client_server.cpp": "Compatibility example",
         "examples/stdio/stdio_server.cpp": "Comprehensive stdio server example",
         "examples/stdio/typed_stdio_server.cpp": "Typed tool registration example",
     }
