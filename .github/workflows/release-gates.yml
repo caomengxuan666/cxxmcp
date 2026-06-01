@@ -263,21 +263,24 @@ jobs:
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable
 
-      - name: Cache Rust cargo registry and build artifacts
-        uses: Swatinem/rust-cache@v2
-        with:
-          prefix-key: release-gates
-          shared-key: linux-rust
-          env-vars: CARGO_TARGET_DIR
-          cache-targets: true
-          cache-on-failure: false
-          save-if: ${{ github.ref == 'refs/heads/master' }}
-
       - name: Checkout pinned RMCP reference
         run: |
           mkdir -p reference
           git clone https://github.com/modelcontextprotocol/rust-sdk.git reference/rmcp
           git -C reference/rmcp checkout c330fede90e4729c234f8e87fdbc5ea27a1dd10c
+
+      - name: Cache Rust cargo registry and build artifacts
+        uses: Swatinem/rust-cache@v2
+        with:
+          prefix-key: release-gates
+          shared-key: linux-rust
+          workspaces: |
+            reference/rmcp/conformance
+            tests/fixtures/rmcp_pagination_client
+          env-vars: CARGO_TARGET_DIR
+          cache-targets: true
+          cache-on-failure: false
+          save-if: ${{ github.ref == 'refs/heads/master' }}
 
       - name: Configure sanitizer build
         run: cmake --preset ${{ matrix.configure_preset }}
@@ -562,22 +565,25 @@ jobs:
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable
 
-      - name: Cache Rust cargo registry and build artifacts
-        uses: Swatinem/rust-cache@v2
-        with:
-          prefix-key: release-gates
-          shared-key: windows-rust
-          env-vars: CARGO_TARGET_DIR
-          cache-targets: true
-          cache-on-failure: false
-          save-if: ${{ github.ref == 'refs/heads/master' }}
-
       - name: Checkout pinned RMCP reference
         shell: bash
         run: |
           mkdir -p reference
           git clone https://github.com/modelcontextprotocol/rust-sdk.git reference/rmcp
           git -C reference/rmcp checkout c330fede90e4729c234f8e87fdbc5ea27a1dd10c
+
+      - name: Cache Rust cargo registry and build artifacts
+        uses: Swatinem/rust-cache@v2
+        with:
+          prefix-key: release-gates
+          shared-key: windows-rust
+          workspaces: |
+            reference/rmcp/conformance
+            tests/fixtures/rmcp_pagination_client
+          env-vars: CARGO_TARGET_DIR
+          cache-targets: true
+          cache-on-failure: false
+          save-if: ${{ github.ref == 'refs/heads/master' }}
 
       - name: Configure
         shell: pwsh
