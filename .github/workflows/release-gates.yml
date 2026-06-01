@@ -317,6 +317,7 @@ jobs:
         run: |
           cmake --build build-clang-tidy --parallel --target \
             mcp_public_header_auth \
+            mcp_public_header_auth_client_orchestrator \
             mcp_public_header_client \
             mcp_public_header_config \
             mcp_public_header_error \
@@ -405,7 +406,7 @@ jobs:
           New-Item -ItemType Directory -Force -Path "build-auth-release-gate/test-results" | Out-Null
           ctest `
             --test-dir build-auth-release-gate `
-            -R "^(auth|public_header_auth|package_smoke)$" `
+            -R "^(auth|public_header_auth.*|package_smoke)$" `
             --output-on-failure `
             --timeout 240 `
             --output-junit test-results/auth-release-gate.xml
@@ -461,7 +462,7 @@ jobs:
           mkdir -p build-auth-openssl-release-gate/test-results
           ctest \
             --test-dir build-auth-openssl-release-gate \
-            -R "^(auth|auth_openssl|public_header_auth|package_smoke)$" \
+            -R "^(auth|auth_openssl|public_header_auth.*|package_smoke)$" \
             --output-on-failure \
             --timeout 300 \
             --output-junit test-results/auth-openssl-release-gate.xml
@@ -1220,7 +1221,7 @@ jobs:
           python scripts/collect_public_api_surface.py \
             --source . \
             --output release-evidence/public-api-surface.json
-          cp examples/*.cpp examples/CMakeLists.txt release-evidence/examples/
+          cp -r examples/. release-evidence/examples/
           cp -r templates/external_consumer release-evidence/templates/
           {
             echo "commit=${GITHUB_SHA}"

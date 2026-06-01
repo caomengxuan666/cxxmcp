@@ -727,6 +727,7 @@ def check_source_tree(source: Path) -> None:
     compile_evidence = source / "scripts/collect_public_header_compile_evidence.py"
     require_contains(compile_evidence, "mcp_public_header_protocol")
     require_contains(compile_evidence, "mcp_public_header_auth")
+    require_contains(compile_evidence, "mcp_public_header_auth_client_orchestrator")
     require_contains(compile_evidence, "mcp_public_header_websocket_transport")
     require_contains(compile_evidence, "elapsed_seconds")
 
@@ -817,10 +818,10 @@ def check_source_tree(source: Path) -> None:
     require_contains(template_cmake, "cxxmcp::sdk")
 
     example_markers = {
-        "examples/client_loopback.cpp": "Compatibility example",
-        "examples/task_async_client_server.cpp": "Compatibility example",
-        "examples/stdio_server.cpp": "Comprehensive stdio server example",
-        "examples/typed_stdio_server.cpp": "Typed tool registration example",
+        "examples/peer/client_loopback.cpp": "Compatibility example",
+        "examples/peer/task_async_client_server.cpp": "Compatibility example",
+        "examples/stdio/stdio_server.cpp": "Comprehensive stdio server example",
+        "examples/stdio/typed_stdio_server.cpp": "Typed tool registration example",
     }
     for relative, marker in example_markers.items():
         text = read_text(source / relative)
@@ -881,12 +882,12 @@ def check_evidence_dir(evidence: Path) -> None:
         "scripts/selftest_release_artifacts.py",
         "scripts/selftest_public_api_surface.py",
         "examples/CMakeLists.txt",
-        "examples/auth_bearer_http.cpp",
-        "examples/auth_dpop_openssl.cpp",
-        "examples/server_stdio_peer.cpp",
-        "examples/server_peer.cpp",
-        "examples/client_peer.cpp",
-        "examples/process_stdio_client.cpp",
+        "examples/http/auth_bearer_http.cpp",
+        "examples/auth/auth_dpop_openssl.cpp",
+        "examples/stdio/server_stdio_peer.cpp",
+        "examples/peer/server_peer.cpp",
+        "examples/peer/client_peer.cpp",
+        "examples/stdio/process_stdio_client.cpp",
         "templates/external_consumer/CMakeLists.txt",
         "templates/external_consumer/main.cpp",
         "templates/external_consumer/README.md",

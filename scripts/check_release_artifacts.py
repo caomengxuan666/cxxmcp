@@ -62,12 +62,12 @@ RELEASE_EVIDENCE_REQUIRED_FILES = [
     "scripts/selftest_release_artifacts.py",
     "scripts/selftest_public_api_surface.py",
     "examples/CMakeLists.txt",
-    "examples/auth_bearer_http.cpp",
-    "examples/auth_dpop_openssl.cpp",
-    "examples/server_stdio_peer.cpp",
-    "examples/server_peer.cpp",
-    "examples/client_peer.cpp",
-    "examples/process_stdio_client.cpp",
+    "examples/http/auth_bearer_http.cpp",
+    "examples/auth/auth_dpop_openssl.cpp",
+    "examples/stdio/server_stdio_peer.cpp",
+    "examples/peer/server_peer.cpp",
+    "examples/peer/client_peer.cpp",
+    "examples/stdio/process_stdio_client.cpp",
     "templates/external_consumer/CMakeLists.txt",
     "templates/external_consumer/main.cpp",
     "templates/external_consumer/README.md",
@@ -249,6 +249,7 @@ def check_public_header_compile_artifact(root: Path) -> None:
         "mcp_public_header_error",
         "mcp_public_header_config",
         "mcp_public_header_auth",
+        "mcp_public_header_auth_client_orchestrator",
         "mcp_public_header_transport",
         "mcp_public_header_websocket_transport",
         "mcp_public_header_client",
@@ -310,12 +311,14 @@ def check_gate_artifacts(gate_artifacts: Path) -> None:
     auth_required_tests = [
         "auth",
         "public_header_auth",
+        "public_header_auth_client_orchestrator",
         "package_smoke",
     ]
     auth_openssl_required_tests = [
         "auth",
         "auth_openssl",
         "public_header_auth",
+        "public_header_auth_client_orchestrator",
         "package_smoke",
     ]
     performance_required_tests = [

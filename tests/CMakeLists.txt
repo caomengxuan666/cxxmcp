@@ -92,6 +92,9 @@ endif()
 if(TARGET mcp_auth)
     add_cxxmcp_public_header_compile_test(
         auth auth_header.cpp cxxmcp::auth)
+    add_cxxmcp_public_header_compile_test(
+        auth_client_orchestrator auth_client_orchestrator_header.cpp
+        cxxmcp::auth)
 
     add_executable(mcp_auth_tests
         auth/test_auth.cpp
