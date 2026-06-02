@@ -1,0 +1,23 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "extends": [
+    "config:recommended"
+  ],
+  "dependencyDashboard": true,
+  "labels": [
+    "enhancement",
+    "P2"
+  ],
+  "enabledManagers": [
+    "pre-commit"
+  ],
+  "packageRules": [
+    {
+      "description": "Dependabot owns GitHub Actions updates in this repository.",
+      "matchManagers": [
+        "github-actions"
+      ],
+      "enabled": false
+    }
+  ]
+}
