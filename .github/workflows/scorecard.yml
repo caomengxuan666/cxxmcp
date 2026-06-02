@@ -9,16 +9,17 @@ on:
     branches:
       - master
 
-permissions:
-  actions: read
-  contents: read
-  id-token: write
-  security-events: write
+permissions: read-all
 
 jobs:
   scorecard:
     name: openssf-scorecard
     runs-on: ubuntu-latest
+    permissions:
+      actions: read
+      contents: read
+      id-token: write
+      security-events: write
 
     steps:
       - name: Checkout
@@ -32,4 +33,3 @@ jobs:
           results_file: scorecard.sarif
           results_format: sarif
           publish_results: true
-
