@@ -55,6 +55,11 @@ struct ReflectedBool {
   bool enabled = false;
 };
 
+struct GlobalReflected {
+  std::string name;
+  int count = 0;
+};
+
 }  // namespace schema_fixture
 
 namespace mcp::protocol {
@@ -128,6 +133,8 @@ struct Reflect<schema_fixture::ReflectedResult> {
 CXXMCP_REFLECT(schema_fixture::ReflectedBool, enabled);
 
 }  // namespace mcp::protocol
+
+CXXMCP_REFLECT(schema_fixture::GlobalReflected, name, count)
 
 namespace {
 
@@ -4671,6 +4678,22 @@ void test_reflect_to_schema_bridge() {
           mcp::protocol::Json{{"enabled", 1}});
   require(!parsed_bool_as_integer.has_value(),
           "bool field should reject JSON integer");
+
+  schema_fixture::GlobalReflected global;
+  global.name = "outer";
+  global.count = 7;
+  const auto global_json = mcp::protocol::reflect_to_json(global);
+  require(global_json.at("name") == "outer", "global reflected name mismatch");
+  require(global_json.at("count") == 7, "global reflected count mismatch");
+  const auto parsed_global =
+      mcp::protocol::reflect_from_json<schema_fixture::GlobalReflected>(
+          global_json);
+  require(parsed_global.has_value(),
+          "global CXXMCP_REFLECT round-trip should succeed");
+  require(parsed_global->name == "outer",
+          "global reflected round-trip name mismatch");
+  require(parsed_global->count == 7,
+          "global reflected round-trip count mismatch");
 }
 
 int main() {

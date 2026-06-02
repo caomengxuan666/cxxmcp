@@ -39,6 +39,14 @@ struct SumResult {
   int sum = 0;
 };
 
+struct SingleFieldArgs {
+  std::string value;
+};
+
+struct SingleFieldResult {
+  std::string echoed;
+};
+
 struct PromptArgs {
   std::string text;
 };
@@ -90,6 +98,9 @@ struct SchemaTraits<typed_tool_fixture::SumResult> {
 };
 
 }  // namespace mcp::protocol
+
+CXXMCP_REFLECT(typed_tool_fixture::SingleFieldArgs, value)
+CXXMCP_REFLECT(typed_tool_fixture::SingleFieldResult, echoed)
 
 namespace {
 
@@ -5189,6 +5200,8 @@ void test_server_app_builder_registers_typed_prompt_and_resource() {
 }
 
 void test_server_app_builder_registers_typed_tool() {
+  using typed_tool_fixture::SingleFieldArgs;
+  using typed_tool_fixture::SingleFieldResult;
   using typed_tool_fixture::SumArgs;
   using typed_tool_fixture::SumResult;
 
@@ -5209,6 +5222,14 @@ void test_server_app_builder_registers_typed_tool() {
                         "typed tool context should not be cancelled");
                 return SumResult{.sum = args.a + args.b + 1};
               })
+          .tool(mcp::server::tool<SingleFieldArgs, SingleFieldResult>(
+                    "single-field-reflected")
+                    .description("Echo a single reflected DTO field")
+                    .handler([](SingleFieldArgs args) {
+                      SingleFieldResult result;
+                      result.echoed = args.value;
+                      return result;
+                    }))
           .tool(mcp::server::tool<Json, Json>("z-configured")
                     .input<SumArgs>()
                     .output<SumResult>()
@@ -5225,17 +5246,22 @@ void test_server_app_builder_registers_typed_tool() {
   auto& server = *built;
 
   const auto listed = server.list_tools();
-  require(listed.size() == 3, "typed tool count mismatch");
-  require(listed.front().name == "sum", "typed tool name mismatch");
-  require(listed.front().description == "Add two integers",
+  require(listed.size() == 4, "typed tool count mismatch");
+  const auto sum_it =
+      std::find_if(listed.begin(), listed.end(),
+                   [](const mcp::protocol::ToolDefinition& tool) {
+                     return tool.name == "sum";
+                   });
+  require(sum_it != listed.end(), "sum typed tool missing");
+  require(sum_it->description == "Add two integers",
           "typed tool description mismatch");
-  require(listed.front().input_schema.at("properties").contains("a"),
+  require(sum_it->input_schema.at("properties").contains("a"),
           "typed tool input schema missing a");
-  require(listed.front().input_schema.at("properties").contains("b"),
+  require(sum_it->input_schema.at("properties").contains("b"),
           "typed tool input schema missing b");
-  require(listed.front().output_schema.at("properties").contains("sum"),
+  require(sum_it->output_schema.at("properties").contains("sum"),
           "typed tool output schema missing sum");
-  require(listed.front().task_support() == mcp::protocol::TaskSupport::Optional,
+  require(sum_it->task_support() == mcp::protocol::TaskSupport::Optional,
           "typed tool task support mismatch");
   const auto configured_it =
       std::find_if(listed.begin(), listed.end(),
@@ -5268,6 +5294,15 @@ void test_server_app_builder_registers_typed_tool() {
           "typed context tool structured content missing");
   require(context_result->structured_content->at("sum") == 6,
           "typed context tool structured content mismatch");
+
+  const auto single_field_result = server.call_tool(
+      "single-field-reflected", Json{{"value", "hello"}}, "typed-tool-session");
+  require(single_field_result.has_value(),
+          "single-field reflected tool call failed");
+  require(single_field_result->structured_content.has_value(),
+          "single-field reflected structured content missing");
+  require(single_field_result->structured_content->at("echoed") == "hello",
+          "single-field reflected structured content mismatch");
 
   const auto invalid =
       server.call_tool("sum", Json{{"a", 2}}, "typed-tool-session");
