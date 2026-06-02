@@ -1,0 +1,76 @@
+name: codeql
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "30 20 * * 1"
+  pull_request:
+    paths:
+      - ".github/workflows/codeql.yml"
+      - "CMakeLists.txt"
+      - "CMakePresets.json"
+      - "cmake/**"
+      - "sdk/**"
+      - "tests/**"
+      - "third_party/**"
+  push:
+    branches:
+      - master
+    paths:
+      - ".github/workflows/codeql.yml"
+      - "CMakeLists.txt"
+      - "CMakePresets.json"
+      - "cmake/**"
+      - "sdk/**"
+      - "tests/**"
+      - "third_party/**"
+
+permissions:
+  actions: read
+  contents: read
+  security-events: write
+
+jobs:
+  analyze:
+    name: codeql-cpp
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Install Ninja
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ninja-build
+
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@v4
+        with:
+          languages: c-cpp
+          build-mode: manual
+
+      - name: Configure SDK analysis build
+        run: |
+          cmake \
+            -S . \
+            -B out/build/codeql \
+            -G Ninja \
+            -DCMAKE_BUILD_TYPE=Debug \
+            -DCXXMCP_BUILD_SDK=ON \
+            -DCXXMCP_BUILD_CLIENT=ON \
+            -DCXXMCP_BUILD_SERVER=ON \
+            -DCXXMCP_BUILD_EXAMPLES=OFF \
+            -DCXXMCP_BUILD_TESTS=ON \
+            -DCXXMCP_BUILD_DOCS=OFF \
+            -DCXXMCP_ENABLE_HTTP=ON \
+            -DCXXMCP_ENABLE_WEBSOCKET=ON \
+            -DCXXMCP_ENABLE_AUTH=ON
+
+      - name: Build SDK for analysis
+        run: cmake --build out/build/codeql --parallel
+
+      - name: Perform CodeQL analysis
+        uses: github/codeql-action/analyze@v4
+
