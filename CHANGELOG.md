@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.1.6
+
+- Fixed `CXXMCP_REFLECT` so reflected DTO specializations compile correctly
+  across GCC, MinGW, and CodeQL analysis builds.
+- Updated reflection examples and documentation to use namespace-scope/global
+  registrations consistently.
+
 ## 1.1.5
 
 - Prepared release metadata and package references.
