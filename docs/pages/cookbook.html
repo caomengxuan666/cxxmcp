@@ -90,12 +90,10 @@ running->wait();</code></pre>
           <pre><code class="language-cpp">struct Args { std::string query; int limit; };
 struct Result { std::vector&lt;std::string&gt; items; };
 
-namespace mcp::protocol {
 CXXMCP_REFLECT(Args, query, limit)
 CXXMCP_REFLECT(Result, items)
-}
-
-// In builder:
+</code></pre>
+          <pre><code class="language-cpp">// In builder:
 .tool(mcp::server::tool&lt;Args, Result&gt;("search")
           .description("Search items.")
           .handler([](Args args, const mcp::server::ToolContext&amp;) {
@@ -314,8 +312,8 @@ target_link_libraries(server PRIVATE cxxmcp::server)</code></pre>
           <h3>FetchContent consumption</h3>
           <pre><code class="language-cmake">include(FetchContent)
 FetchContent_Declare(cxxmcp
-    URL https://github.com/caomengxuan666/cxxmcp/releases/download/v1.1.5/cxxmcp-sdk-source-v1.1.5.tar.gz
-    URL_HASH SHA256=ebef1c0acfab62df5cb43b30a058bb7ad8c87ed6e16a377ab144d8e7a7ceefae
+    URL https://github.com/caomengxuan666/cxxmcp/releases/download/v1.1.6/cxxmcp-sdk-source-v1.1.6.tar.gz
+    URL_HASH SHA256=7d321ee1e48f71666659949c98b5e3c81b273db98607b21d7b3d9301f5bf42e2
 )
 FetchContent_MakeAvailable(cxxmcp)
 

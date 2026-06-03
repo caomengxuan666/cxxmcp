@@ -64,7 +64,7 @@ cmake -S myapp -B build -DCMAKE_PREFIX_PATH=/path/to/install
 
 # Option 2: FetchContent (no install needed)
 include(FetchContent)
-FetchContent_Declare(cxxmcp URL https://github.com/caomengxuan666/cxxmcp/releases/download/v1.1.5/cxxmcp-sdk-source-v1.1.5.tar.gz)
+FetchContent_Declare(cxxmcp URL https://github.com/caomengxuan666/cxxmcp/releases/download/v1.1.6/cxxmcp-sdk-source-v1.1.6.tar.gz)
 FetchContent_MakeAvailable(cxxmcp)</code></pre>
         </div>
 
@@ -181,12 +181,11 @@ running->wait();  // Blocks until stdin closes or shutdown</code></pre>
         <div class="faq">
           <h3>CXXMCP_REFLECT compilation error</h3>
           <p><strong>Error:</strong> <code>no matching function for call to 'Reflect'</code></p>
-          <p><strong>Solution:</strong> The macro must be used inside <code>namespace mcp::protocol</code>:</p>
+          <p><strong>Solution:</strong> Place the macro at namespace scope. Global scope is the usual choice:</p>
           <pre><code class="language-cpp">struct MyType { std::string name; int value; };
 
-namespace mcp::protocol {
 CXXMCP_REFLECT(MyType, name, value)
-}  // namespace mcp::protocol</code></pre>
+</code></pre>
         </div>
 
         <div class="faq">

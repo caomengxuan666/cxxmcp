@@ -32,13 +32,9 @@ struct SearchResult {
 
 }  // namespace example
 
-namespace mcp::protocol {
-
 CXXMCP_REFLECT(example::SearchArgs, query, limit)
 CXXMCP_REFLECT(example::SearchHit, title, uri)
 CXXMCP_REFLECT(example::SearchResult, session, hits)
-
-}  // namespace mcp::protocol
 
 int main() {
   return mcp::ServerPeer::builder()

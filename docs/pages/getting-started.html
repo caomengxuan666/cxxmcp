@@ -260,10 +260,9 @@ struct SearchResult {
     std::vector&lt;SearchHit&gt; hits;
 };
 
-namespace mcp::protocol {
 CXXMCP_REFLECT(SearchArgs, query, limit)
 CXXMCP_REFLECT(SearchResult, session, hits)
-}</code></pre>
+</code></pre>
         <p>
           Once reflected, use typed tool registration:
         </p>

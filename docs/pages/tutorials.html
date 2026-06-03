@@ -199,12 +199,10 @@ struct SearchResponse {
     int total;
 };
 
-// Register for reflection — must be in mcp::protocol namespace
-namespace mcp::protocol {
 CXXMCP_REFLECT(SearchArgs, query, limit)
 CXXMCP_REFLECT(SearchResult, title, url, score)
 CXXMCP_REFLECT(SearchResponse, results, total)
-}</code></pre>
+</code></pre>
         </div>
 
         <div class="step">

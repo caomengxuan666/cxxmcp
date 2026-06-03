@@ -463,8 +463,6 @@ inline Arg argument_from_json(const protocol::Json& arguments,
     if (!fallback_name.empty() && arguments.is_object() &&
         arguments.contains(std::string(fallback_name))) {
       effective = arguments.at(std::string(fallback_name));
-    } else if (arguments.is_object() && arguments.size() == 1) {
-      effective = arguments.begin().value();
     }
     auto result = protocol::reflect_from_json<Decayed>(effective);
     if (!result) {
