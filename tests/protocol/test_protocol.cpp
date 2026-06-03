@@ -130,10 +130,9 @@ struct Reflect<schema_fixture::ReflectedResult> {
   static std::vector<std::string> known_keys() { return {"session", "items"}; }
 };
 
-CXXMCP_REFLECT(schema_fixture::ReflectedBool, enabled);
-
 }  // namespace mcp::protocol
 
+CXXMCP_REFLECT(schema_fixture::ReflectedBool, enabled);
 CXXMCP_REFLECT(schema_fixture::GlobalReflected, name, count)
 
 namespace {
