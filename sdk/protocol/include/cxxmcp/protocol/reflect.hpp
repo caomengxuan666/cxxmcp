@@ -769,14 +769,14 @@ core::Result<T> reflect_from_json(const Json& json) {
 
 #define CXXMCP_REFL_IMPL_1(T, f1)                                        \
   template <>                                                            \
-  struct Reflect<T> {                                                    \
+  struct ::mcp::protocol::Reflect<T> {                                   \
     static constexpr bool defined = true;                                \
     static auto fields() { return std::make_tuple(field(#f1, &T::f1)); } \
   };
 
 #define CXXMCP_REFL_IMPL_2(T, f1, f2)                                 \
   template <>                                                         \
-  struct Reflect<T> {                                                 \
+  struct ::mcp::protocol::Reflect<T> {                                \
     static constexpr bool defined = true;                             \
     static auto fields() {                                            \
       return std::make_tuple(field(#f1, &T::f1), field(#f2, &T::f2)); \
@@ -785,7 +785,7 @@ core::Result<T> reflect_from_json(const Json& json) {
 
 #define CXXMCP_REFL_IMPL_3(T, f1, f2, f3)                            \
   template <>                                                        \
-  struct Reflect<T> {                                                \
+  struct ::mcp::protocol::Reflect<T> {                               \
     static constexpr bool defined = true;                            \
     static auto fields() {                                           \
       return std::make_tuple(field(#f1, &T::f1), field(#f2, &T::f2), \
@@ -795,7 +795,7 @@ core::Result<T> reflect_from_json(const Json& json) {
 
 #define CXXMCP_REFL_IMPL_4(T, f1, f2, f3, f4)                         \
   template <>                                                         \
-  struct Reflect<T> {                                                 \
+  struct ::mcp::protocol::Reflect<T> {                                \
     static constexpr bool defined = true;                             \
     static auto fields() {                                            \
       return std::make_tuple(field(#f1, &T::f1), field(#f2, &T::f2),  \
@@ -805,7 +805,7 @@ core::Result<T> reflect_from_json(const Json& json) {
 
 #define CXXMCP_REFL_IMPL_5(T, f1, f2, f3, f4, f5)                    \
   template <>                                                        \
-  struct Reflect<T> {                                                \
+  struct ::mcp::protocol::Reflect<T> {                               \
     static constexpr bool defined = true;                            \
     static auto fields() {                                           \
       return std::make_tuple(field(#f1, &T::f1), field(#f2, &T::f2), \
@@ -816,7 +816,7 @@ core::Result<T> reflect_from_json(const Json& json) {
 
 #define CXXMCP_REFL_IMPL_6(T, f1, f2, f3, f4, f5, f6)                 \
   template <>                                                         \
-  struct Reflect<T> {                                                 \
+  struct ::mcp::protocol::Reflect<T> {                                \
     static constexpr bool defined = true;                             \
     static auto fields() {                                            \
       return std::make_tuple(field(#f1, &T::f1), field(#f2, &T::f2),  \
@@ -827,7 +827,7 @@ core::Result<T> reflect_from_json(const Json& json) {
 
 #define CXXMCP_REFL_IMPL_7(T, f1, f2, f3, f4, f5, f6, f7)            \
   template <>                                                        \
-  struct Reflect<T> {                                                \
+  struct ::mcp::protocol::Reflect<T> {                               \
     static constexpr bool defined = true;                            \
     static auto fields() {                                           \
       return std::make_tuple(field(#f1, &T::f1), field(#f2, &T::f2), \
@@ -839,7 +839,7 @@ core::Result<T> reflect_from_json(const Json& json) {
 
 #define CXXMCP_REFL_IMPL_8(T, f1, f2, f3, f4, f5, f6, f7, f8)         \
   template <>                                                         \
-  struct Reflect<T> {                                                 \
+  struct ::mcp::protocol::Reflect<T> {                                \
     static constexpr bool defined = true;                             \
     static auto fields() {                                            \
       return std::make_tuple(field(#f1, &T::f1), field(#f2, &T::f2),  \
@@ -851,7 +851,7 @@ core::Result<T> reflect_from_json(const Json& json) {
 
 #define CXXMCP_REFL_IMPL_9(T, f1, f2, f3, f4, f5, f6, f7, f8, f9)      \
   template <>                                                          \
-  struct Reflect<T> {                                                  \
+  struct ::mcp::protocol::Reflect<T> {                                 \
     static constexpr bool defined = true;                              \
     static auto fields() {                                             \
       return std::make_tuple(                                          \
@@ -863,7 +863,7 @@ core::Result<T> reflect_from_json(const Json& json) {
 
 #define CXXMCP_REFL_IMPL_10(T, f1, f2, f3, f4, f5, f6, f7, f8, f9, f10) \
   template <>                                                           \
-  struct Reflect<T> {                                                   \
+  struct ::mcp::protocol::Reflect<T> {                                  \
     static constexpr bool defined = true;                               \
     static auto fields() {                                              \
       return std::make_tuple(field(#f1, &T::f1), field(#f2, &T::f2),    \
@@ -876,7 +876,7 @@ core::Result<T> reflect_from_json(const Json& json) {
 
 #define CXXMCP_REFL_IMPL_11(T, f1, f2, f3, f4, f5, f6, f7, f8, f9, f10, f11) \
   template <>                                                                \
-  struct Reflect<T> {                                                        \
+  struct ::mcp::protocol::Reflect<T> {                                       \
     static constexpr bool defined = true;                                    \
     static auto fields() {                                                   \
       return std::make_tuple(                                                \
@@ -890,7 +890,7 @@ core::Result<T> reflect_from_json(const Json& json) {
 #define CXXMCP_REFL_IMPL_12(T, f1, f2, f3, f4, f5, f6, f7, f8, f9, f10, f11, \
                             f12)                                             \
   template <>                                                                \
-  struct Reflect<T> {                                                        \
+  struct ::mcp::protocol::Reflect<T> {                                       \
     static constexpr bool defined = true;                                    \
     static auto fields() {                                                   \
       return std::make_tuple(                                                \
@@ -904,7 +904,7 @@ core::Result<T> reflect_from_json(const Json& json) {
 #define CXXMCP_REFL_IMPL_13(T, f1, f2, f3, f4, f5, f6, f7, f8, f9, f10, f11, \
                             f12, f13)                                        \
   template <>                                                                \
-  struct Reflect<T> {                                                        \
+  struct ::mcp::protocol::Reflect<T> {                                       \
     static constexpr bool defined = true;                                    \
     static auto fields() {                                                   \
       return std::make_tuple(                                                \
@@ -919,7 +919,7 @@ core::Result<T> reflect_from_json(const Json& json) {
 #define CXXMCP_REFL_IMPL_14(T, f1, f2, f3, f4, f5, f6, f7, f8, f9, f10, f11, \
                             f12, f13, f14)                                   \
   template <>                                                                \
-  struct Reflect<T> {                                                        \
+  struct ::mcp::protocol::Reflect<T> {                                       \
     static constexpr bool defined = true;                                    \
     static auto fields() {                                                   \
       return std::make_tuple(                                                \
@@ -934,7 +934,7 @@ core::Result<T> reflect_from_json(const Json& json) {
 #define CXXMCP_REFL_IMPL_15(T, f1, f2, f3, f4, f5, f6, f7, f8, f9, f10, f11, \
                             f12, f13, f14, f15)                              \
   template <>                                                                \
-  struct Reflect<T> {                                                        \
+  struct ::mcp::protocol::Reflect<T> {                                       \
     static constexpr bool defined = true;                                    \
     static auto fields() {                                                   \
       return std::make_tuple(                                                \
@@ -949,7 +949,7 @@ core::Result<T> reflect_from_json(const Json& json) {
 #define CXXMCP_REFL_IMPL_16(T, f1, f2, f3, f4, f5, f6, f7, f8, f9, f10, f11, \
                             f12, f13, f14, f15, f16)                         \
   template <>                                                                \
-  struct Reflect<T> {                                                        \
+  struct ::mcp::protocol::Reflect<T> {                                       \
     static constexpr bool defined = true;                                    \
     static auto fields() {                                                   \
       return std::make_tuple(                                                \

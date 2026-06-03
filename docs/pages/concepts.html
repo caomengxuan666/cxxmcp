@@ -278,9 +278,8 @@ struct MyInput {
     std::optional&lt;std::string&gt; tag;
 };
 
-namespace mcp::protocol {
 CXXMCP_REFLECT(MyInput, name, count, tag)
-}</code></pre>
+</code></pre>
         <p>This gives you:</p>
         <ul>
           <li><code>reflect_to_json&lt;MyInput&gt;(value)</code> — serialize to JSON</li>

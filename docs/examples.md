@@ -88,7 +88,7 @@ return mcp::ClientPeer::builder()
 `CXXMCP_REFLECT(Type, field1, field2, ...)` in `<cxxmcp/protocol/reflect.hpp>`
 generates a complete `Reflect<T>` specialization in one line, replacing the
 manual `fields()` + `known_keys()` + `defined` boilerplate. Supports 1-16
-fields. Must be used inside `namespace mcp::protocol`.
+fields. Use it at namespace scope; global scope is the typical placement.
 
 `basics/cxx17_consumer.cpp` is compiled as `cxx_std_17` in-tree. The richer
 examples may use newer C++ syntax for readability, but they are not allowed to

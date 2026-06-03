@@ -181,12 +181,11 @@ running->wait();  // Blocks until stdin closes or shutdown</code></pre>
         <div class="faq">
           <h3>CXXMCP_REFLECT compilation error</h3>
           <p><strong>Error:</strong> <code>no matching function for call to 'Reflect'</code></p>
-          <p><strong>Solution:</strong> The macro must be used inside <code>namespace mcp::protocol</code>:</p>
+          <p><strong>Solution:</strong> Place the macro at namespace scope. Global scope is the usual choice:</p>
           <pre><code class="language-cpp">struct MyType { std::string name; int value; };
 
-namespace mcp::protocol {
 CXXMCP_REFLECT(MyType, name, value)
-}  // namespace mcp::protocol</code></pre>
+</code></pre>
         </div>
 
         <div class="faq">

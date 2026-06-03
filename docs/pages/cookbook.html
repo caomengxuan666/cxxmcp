@@ -90,12 +90,10 @@ running->wait();</code></pre>
           <pre><code class="language-cpp">struct Args { std::string query; int limit; };
 struct Result { std::vector&lt;std::string&gt; items; };
 
-namespace mcp::protocol {
 CXXMCP_REFLECT(Args, query, limit)
 CXXMCP_REFLECT(Result, items)
-}
-
-// In builder:
+</code></pre>
+          <pre><code class="language-cpp">// In builder:
 .tool(mcp::server::tool&lt;Args, Result&gt;("search")
           .description("Search items.")
           .handler([](Args args, const mcp::server::ToolContext&amp;) {
