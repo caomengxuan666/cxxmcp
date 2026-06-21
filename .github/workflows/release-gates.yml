@@ -532,10 +532,12 @@ jobs:
             cc: clang-cl
             cxx: clang-cl
             msvc_runtime: MultiThreaded$<$<CONFIG:Debug>:Debug>
-          - name: windows-msvc-vs-dynamic-runtime
+          - name: windows-msvc-ninja-dynamic-runtime
             os: windows-latest
-            generator: Visual Studio 17 2022
-            config: Debug
+            generator: Ninja
+            build_type: Debug
+            cc: cl
+            cxx: cl
             msvc_runtime: MultiThreaded$<$<CONFIG:Debug>:Debug>DLL
 
     steps:
@@ -543,7 +545,7 @@ jobs:
         uses: actions/checkout@v6
 
       - name: Setup MSVC developer environment
-        if: runner.os == 'Windows' && matrix.generator == 'Ninja'
+        if: runner.os == 'Windows'
         uses: ilammy/msvc-dev-cmd@v1
 
       - name: Install Ninja
