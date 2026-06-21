@@ -570,9 +570,12 @@ def check_release_notes(path: Path, tag: str) -> None:
         f"cxxmcp-sdk-source-{tag}.tar.gz",
         "## Release Gate",
         "## Checksums",
+        "```text",
     ]:
         if required not in text:
             fail(f"{path}: missing expected release note text: {required}")
+    if r"\`\`\`" in text:
+        fail(f"{path}: escaped Markdown code fence in release notes")
     match = re.search(r"(__[A-Z0-9_]+__|\$\{[A-Za-z_][A-Za-z0-9_]*\})", text)
     if match:
         fail(f"{path}: unresolved release note placeholder: {match.group(1)}")
