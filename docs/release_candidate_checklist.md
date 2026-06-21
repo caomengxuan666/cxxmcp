@@ -21,7 +21,7 @@ Attach or link all artifacts from `.github/workflows/release-gates.yml`:
 - `cxxmcp-release-gates-macos-appleclang-ninja`
 - `cxxmcp-release-gates-windows-msvc-ninja-static-runtime`
 - `cxxmcp-release-gates-windows-clangcl-ninja-static-runtime`
-- `cxxmcp-release-gates-windows-msvc-vs-dynamic-runtime`
+- `cxxmcp-release-gates-windows-msvc-ninja-dynamic-runtime`
 - `cxxmcp-performance-evidence-linux-gcc-ninja`
 - `cxxmcp-public-header-compile-evidence-linux-gcc-ninja`
 - `cxxmcp-auth-release-gate-linux-gcc-ninja`

@@ -79,7 +79,7 @@ RELEASE_MATRIX_ARTIFACTS = [
     "cxxmcp-release-gates-macos-appleclang-ninja",
     "cxxmcp-release-gates-windows-msvc-ninja-static-runtime",
     "cxxmcp-release-gates-windows-clangcl-ninja-static-runtime",
-    "cxxmcp-release-gates-windows-msvc-vs-dynamic-runtime",
+    "cxxmcp-release-gates-windows-msvc-ninja-dynamic-runtime",
 ]
 
 AUTH_ARTIFACTS = [

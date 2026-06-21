@@ -21,7 +21,7 @@ this exact commit.
 
 - Windows MSVC Ninja static runtime:
 - Windows ClangCL Ninja static runtime:
-- Windows MSVC Visual Studio dynamic runtime:
+- Windows MSVC Ninja dynamic runtime:
 - Linux GCC Ninja:
 - Linux Clang Ninja:
 - macOS AppleClang Ninja:
@@ -35,7 +35,7 @@ Attach or link these artifacts for the same commit:
 - `cxxmcp-release-gates-macos-appleclang-ninja`
 - `cxxmcp-release-gates-windows-msvc-ninja-static-runtime`
 - `cxxmcp-release-gates-windows-clangcl-ninja-static-runtime`
-- `cxxmcp-release-gates-windows-msvc-vs-dynamic-runtime`
+- `cxxmcp-release-gates-windows-msvc-ninja-dynamic-runtime`
 - `cxxmcp-auth-release-gate-linux-gcc-ninja`
 - `cxxmcp-auth-release-gate-windows-msvc-ninja`
 - `cxxmcp-auth-openssl-release-gate-linux-gcc-ninja`

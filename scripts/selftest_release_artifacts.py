@@ -157,7 +157,7 @@ def create_gate_artifacts(root: Path) -> None:
         "macos-appleclang-ninja",
         "windows-msvc-ninja-static-runtime",
         "windows-clangcl-ninja-static-runtime",
-        "windows-msvc-vs-dynamic-runtime",
+        "windows-msvc-ninja-dynamic-runtime",
     ]:
         add_gate_artifact(
             root, f"cxxmcp-release-gates-{name}", "release-blocking.xml", DEFAULT_TESTS
