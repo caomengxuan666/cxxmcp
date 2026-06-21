@@ -1,10 +1,15 @@
 // Copyright (c) 2025 [caomengxuan666]
 
 #include <cxxmcp/server.hpp>
+#include <cxxmcp/server/http_transport.hpp>
+#include <cxxmcp/server/peer.hpp>
 
 int main() {
+  mcp::server::HttpTransportOptions options;
+  options.stateless = true;
+
   mcp::server::SessionContext context;
-  mcp::server::SessionClient session_client = context.client();
-  mcp::server::ClientHandle client_handle = context.client();
-  return session_client.available() || client_handle.available() ? 1 : 0;
+  mcp::server::ClientPeer client = context.client();
+
+  return options.stateless && !client.available() ? 0 : 1;
 }

@@ -2102,6 +2102,183 @@ void test_server_http_transport_requires_initialized_before_business_request() {
   server_transport.transport().stop();
 }
 
+Json stateless_meta() {
+  return Json{{"io.modelcontextprotocol/protocolVersion",
+               mcp::protocol::McpProtocolVersion},
+              {"io.modelcontextprotocol/clientInfo",
+               Json{{"name", "stateless-test"}, {"version", "1"}}},
+              {"io.modelcontextprotocol/clientCapabilities", Json::object()}};
+}
+
+void test_server_http_transport_stateless_accepts_request_without_session() {
+  constexpr int kPort = 40244;
+  const std::string kPath = "/mcp";
+  std::string observed_session_id = "not-called";
+
+  RunningServerTransportFixture server_transport(
+      std::make_unique<mcp::server::HttpTransport>(
+          mcp::server::HttpTransportOptions{
+              .listen_host = "127.0.0.1",
+              .listen_port = kPort,
+              .path = kPath,
+              .stateless = true,
+          }),
+      [&](const mcp::protocol::JsonRpcRequest& request,
+          const mcp::server::SessionContext& context) {
+        observed_session_id = context.session_id;
+        require(request.method == mcp::protocol::ToolsListMethod,
+                "stateless request method mismatch");
+        return mcp::protocol::JsonRpcResponse{
+            .id = request.id,
+            .result = Json{{"tools", Json::array()}},
+        };
+      });
+
+  httplib::Client http_client("127.0.0.1", kPort);
+  httplib::Result response;
+  const auto body = serialize_test_request(mcp::protocol::JsonRpcRequest{
+      .method = mcp::protocol::ToolsListMethod,
+      .params = Json{{"_meta", stateless_meta()}},
+      .id = std::int64_t{81},
+  });
+  for (int attempt = 0; attempt < 100; ++attempt) {
+    response = http_client.Post(
+        kPath,
+        httplib::Headers{
+            {"Accept", "application/json, text/event-stream"},
+            {"Content-Type", "application/json"},
+            {"MCP-Protocol-Version", mcp::protocol::McpProtocolVersion},
+            {"Mcp-Method", mcp::protocol::ToolsListMethod},
+        },
+        body, "application/json");
+    if (response) {
+      break;
+    }
+    std::this_thread::sleep_for(std::chrono::milliseconds(25));
+  }
+
+  require(static_cast<bool>(response), "stateless request should respond");
+  require(response->status == 200, "stateless request should return 200");
+  require(!response->has_header("Mcp-Session-Id"),
+          "stateless response must not return a session id");
+  require(observed_session_id.empty(),
+          "stateless context should not carry a session id");
+  const auto parsed = mcp::protocol::parse_response(response->body);
+  require(parsed.has_value(), "stateless response should parse");
+  require(parsed->result.has_value(), "stateless response should succeed");
+
+  server_transport.transport().stop();
+}
+
+void test_server_http_transport_stateless_initialize_does_not_create_session() {
+  constexpr int kPort = 40245;
+  const std::string kPath = "/mcp";
+
+  RunningServerTransportFixture server_transport(
+      std::make_unique<mcp::server::HttpTransport>(
+          mcp::server::HttpTransportOptions{
+              .listen_host = "127.0.0.1",
+              .listen_port = kPort,
+              .path = kPath,
+              .stateless = true,
+          }),
+      [](const mcp::protocol::JsonRpcRequest& request,
+         const mcp::server::SessionContext& context) {
+        require(context.session_id.empty(),
+                "stateless initialize context should not have a session id");
+        require(request.method == mcp::protocol::InitializeMethod,
+                "initialize method mismatch");
+        return mcp::protocol::JsonRpcResponse{
+            .id = request.id,
+            .result =
+                Json{{"protocolVersion", mcp::protocol::McpProtocolVersion},
+                     {"capabilities", Json::object()},
+                     {"serverInfo",
+                      Json{{"name", "stateless"}, {"version", "1"}}}},
+        };
+      });
+
+  httplib::Client http_client("127.0.0.1", kPort);
+  httplib::Result response;
+  const auto body = serialize_test_request(mcp::protocol::JsonRpcRequest{
+      .method = mcp::protocol::InitializeMethod,
+      .params = Json{{"protocolVersion", mcp::protocol::McpProtocolVersion},
+                     {"clientInfo",
+                      Json{{"name", "stateless-client"}, {"version", "1"}}},
+                     {"capabilities", Json::object()}},
+      .id = std::int64_t{82},
+  });
+  for (int attempt = 0; attempt < 100; ++attempt) {
+    response =
+        http_client.Post(kPath,
+                         httplib::Headers{
+                             {"Accept", "application/json, text/event-stream"},
+                             {"Content-Type", "application/json"},
+                             {"Mcp-Method", mcp::protocol::InitializeMethod},
+                         },
+                         body, "application/json");
+    if (response) {
+      break;
+    }
+    std::this_thread::sleep_for(std::chrono::milliseconds(25));
+  }
+
+  require(static_cast<bool>(response), "stateless initialize should respond");
+  require(response->status == 200, "stateless initialize should return 200");
+  require(!response->has_header("Mcp-Session-Id"),
+          "stateless initialize must not create a session");
+
+  server_transport.transport().stop();
+}
+
+void test_client_http_transport_stateless_adds_meta_without_session() {
+  HttpServerFixture fixture;
+  std::optional<Json> observed_meta;
+  bool saw_session_header = false;
+
+  fixture.server().Post("/mcp", [&](const httplib::Request& request,
+                                    httplib::Response& response) {
+    saw_session_header = request.has_header("Mcp-Session-Id");
+    const auto parsed = mcp::protocol::parse_request(request.body);
+    require(parsed.has_value(), "stateless client request should parse");
+    require(parsed->params.is_object(), "stateless params should be object");
+    require(parsed->params.contains("_meta"),
+            "stateless client should add _meta");
+    observed_meta = parsed->params.at("_meta");
+    response.status = 200;
+    response.set_content(serialize_test_response(mcp::protocol::JsonRpcResponse{
+                             .id = parsed->id,
+                             .result = Json{{"tools", Json::array()}},
+                         }),
+                         "application/json");
+  });
+
+  mcp::client::HttpTransport transport(mcp::client::HttpTransportOptions{
+      .host = "127.0.0.1",
+      .port = fixture.port(),
+      .path = "/mcp",
+      .stateless = true,
+  });
+
+  const auto response = transport.send(mcp::protocol::JsonRpcRequest{
+      .method = mcp::protocol::ToolsListMethod,
+      .params = Json::object(),
+      .id = std::int64_t{83},
+  });
+  require(response.has_value(), "stateless client send should succeed");
+  require(response->result.has_value(), "stateless client response should win");
+  require(!saw_session_header, "stateless client must not send session header");
+  require(observed_meta.has_value(),
+          "stateless client meta should be observed");
+  require(observed_meta->at("io.modelcontextprotocol/protocolVersion") ==
+              mcp::protocol::McpProtocolVersion,
+          "stateless client protocolVersion meta mismatch");
+  require(observed_meta->contains("io.modelcontextprotocol/clientInfo"),
+          "stateless clientInfo meta missing");
+  require(observed_meta->contains("io.modelcontextprotocol/clientCapabilities"),
+          "stateless clientCapabilities meta missing");
+}
+
 void test_server_http_transport_emits_sse_retry_priming() {
   constexpr int kPort = 40179;
   const std::string kPath = "/mcp";
@@ -5598,6 +5775,10 @@ int main() {
        test_server_http_transport_limits_active_sessions},
       {"server http transport requires initialized before business request",
        test_server_http_transport_requires_initialized_before_business_request},
+      {"server http transport stateless accepts request without session",
+       test_server_http_transport_stateless_accepts_request_without_session},
+      {"server http transport stateless initialize does not create session",
+       test_server_http_transport_stateless_initialize_does_not_create_session},
       {"server http transport emits sse retry priming",
        test_server_http_transport_emits_sse_retry_priming},
       {"server http transport accepts client notification with 202",
@@ -5639,6 +5820,8 @@ int main() {
        test_client_http_transport_reports_403_as_auth_error},
       {"client http transport bearer helper applies to session requests",
        test_client_http_transport_bearer_helper_applies_to_session_requests},
+      {"client http transport stateless adds meta without session",
+       test_client_http_transport_stateless_adds_meta_without_session},
       {"client connect_streamable_http accepts uri string",
        test_client_connect_streamable_http_accepts_uri_string},
       {"http transport load smoke concurrent sessions",

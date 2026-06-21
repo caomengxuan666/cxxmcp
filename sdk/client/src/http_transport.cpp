@@ -34,6 +34,12 @@ namespace {
 constexpr std::string_view SessionHeader = "Mcp-Session-Id";
 constexpr std::string_view MethodHeader = "Mcp-Method";
 constexpr std::string_view NameHeader = "Mcp-Name";
+constexpr std::string_view StatelessProtocolVersionMeta =
+    "io.modelcontextprotocol/protocolVersion";
+constexpr std::string_view StatelessClientInfoMeta =
+    "io.modelcontextprotocol/clientInfo";
+constexpr std::string_view StatelessClientCapabilitiesMeta =
+    "io.modelcontextprotocol/clientCapabilities";
 
 core::Error make_transport_error(int code, std::string message,
                                  std::string detail = {}) {
@@ -78,6 +84,35 @@ std::optional<std::string> header_name_from_request(
   }
 
   return std::nullopt;
+}
+
+protocol::JsonRpcRequest request_with_stateless_meta(
+    const protocol::JsonRpcRequest& request,
+    std::string_view protocol_version) {
+  protocol::JsonRpcRequest result = request;
+  if (result.method == protocol::InitializeMethod) {
+    return result;
+  }
+  if (!result.params.is_object()) {
+    result.params = protocol::Json{{"value", std::move(result.params)}};
+  }
+  auto& meta = result.params["_meta"];
+  if (!meta.is_object()) {
+    meta = protocol::Json::object();
+  }
+  if (!meta.contains(std::string(StatelessProtocolVersionMeta))) {
+    meta[std::string(StatelessProtocolVersionMeta)] =
+        std::string(protocol_version);
+  }
+  if (!meta.contains(std::string(StatelessClientInfoMeta))) {
+    meta[std::string(StatelessClientInfoMeta)] =
+        protocol::Json{{"name", "cxxmcp"}, {"version", "0"}};
+  }
+  if (!meta.contains(std::string(StatelessClientCapabilitiesMeta))) {
+    meta[std::string(StatelessClientCapabilitiesMeta)] =
+        protocol::Json::object();
+  }
+  return result;
 }
 
 bool header_name_equals(std::string_view lhs, std::string_view rhs) {
@@ -324,6 +359,11 @@ struct HttpTransport::Impl {
     std::string protocol_version_to_send;
     {
       std::lock_guard lock(mutex);
+      if (options.stateless) {
+        session_id.clear();
+        protocol_version = std::string(protocol::McpProtocolVersion);
+        return;
+      }
       session_id_to_terminate = session_id;
       protocol_version_to_send = protocol_version;
     }
@@ -348,7 +388,18 @@ struct HttpTransport::Impl {
       return mcp::core::unexpected(*options_error);
     }
 
-    const auto serialized = protocol::serialize_request(request);
+    std::string request_protocol_version;
+    {
+      std::lock_guard lock(mutex);
+      request_protocol_version =
+          request.protocol_version_override.value_or(protocol_version);
+    }
+    const auto outbound_request =
+        options.stateless
+            ? request_with_stateless_meta(request, request_protocol_version)
+            : request;
+
+    const auto serialized = protocol::serialize_request(outbound_request);
     if (!serialized) {
       return mcp::core::unexpected(serialized.error());
     }
@@ -358,18 +409,18 @@ struct HttpTransport::Impl {
     while (true) {
       auto client = make_client();
       const bool include_protocol_version =
-          request.method != protocol::InitializeMethod;
-      auto headers =
-          make_headers(request.method, header_name_from_request(request),
-                       /*json_body=*/true,
-                       /*event_stream=*/true, include_protocol_version);
-      for (const auto& [key, value] : request.transport_headers) {
+          outbound_request.method != protocol::InitializeMethod;
+      auto headers = make_headers(
+          outbound_request.method, header_name_from_request(outbound_request),
+          /*json_body=*/true,
+          /*event_stream=*/true, include_protocol_version);
+      for (const auto& [key, value] : outbound_request.transport_headers) {
         headers.emplace(key, value);
       }
-      if (request.protocol_version_override.has_value()) {
+      if (outbound_request.protocol_version_override.has_value()) {
         headers.erase("MCP-Protocol-Version");
         headers.emplace("MCP-Protocol-Version",
-                        *request.protocol_version_override);
+                        *outbound_request.protocol_version_override);
       }
       const auto response =
           client.Post(path, headers, *serialized, "application/json");
@@ -388,7 +439,7 @@ struct HttpTransport::Impl {
       }
       if (response->status == 404) {
         reset_session();
-        if (request.method == protocol::InitializeMethod &&
+        if (outbound_request.method == protocol::InitializeMethod &&
             !retried_after_session_reset) {
           retried_after_session_reset = true;
           continue;
@@ -400,7 +451,8 @@ struct HttpTransport::Impl {
       }
       if ((response->status == 401 || response->status == 403) &&
           !retried_after_auth_refresh) {
-        auto refreshed = refresh_bearer_token_once(*response, request.method);
+        auto refreshed =
+            refresh_bearer_token_once(*response, outbound_request.method);
         if (refreshed.has_value()) {
           retried_after_auth_refresh = true;
           continue;
@@ -411,17 +463,17 @@ struct HttpTransport::Impl {
       }
 
       const auto remembered_session = remember_session(
-          *response, request.method == protocol::InitializeMethod);
+          *response, outbound_request.method == protocol::InitializeMethod);
       if (!remembered_session) {
         return mcp::core::unexpected(remembered_session.error());
       }
 
-      auto decoded_response =
-          decode_request_response(*response, request.id, sse_reconnected);
+      auto decoded_response = decode_request_response(
+          *response, outbound_request.id, sse_reconnected);
       if (!decoded_response) {
         return mcp::core::unexpected(decoded_response.error());
       }
-      if (request.method == protocol::InitializeMethod) {
+      if (outbound_request.method == protocol::InitializeMethod) {
         remember_protocol_version_from_initialize_response(*decoded_response);
       }
 
@@ -429,7 +481,8 @@ struct HttpTransport::Impl {
       // For error responses (e.g. version negotiation), skip stream setup
       // so the error response can be returned for retry logic.
       // Also skip if POST→GET reconnection was already handled (SEP-1699).
-      if (!decoded_response->error.has_value() && !sse_reconnected) {
+      if (!options.stateless && !decoded_response->error.has_value() &&
+          !sse_reconnected) {
         const auto stream_started = ensure_stream_started();
         if (!stream_started) {
           return mcp::core::unexpected(stream_started.error());
@@ -446,7 +499,24 @@ struct HttpTransport::Impl {
       return mcp::core::unexpected(*options_error);
     }
 
-    const auto serialized = protocol::serialize_notification(notification);
+    auto outbound_notification = notification;
+    if (options.stateless) {
+      protocol::JsonRpcRequest pseudo_request;
+      pseudo_request.method = outbound_notification.method;
+      pseudo_request.params = outbound_notification.params;
+      pseudo_request.id = std::int64_t{0};
+      std::string request_protocol_version;
+      {
+        std::lock_guard lock(mutex);
+        request_protocol_version = protocol_version;
+      }
+      outbound_notification.params =
+          request_with_stateless_meta(pseudo_request, request_protocol_version)
+              .params;
+    }
+
+    const auto serialized =
+        protocol::serialize_notification(outbound_notification);
     if (!serialized) {
       return mcp::core::unexpected(serialized.error());
     }
@@ -455,7 +525,7 @@ struct HttpTransport::Impl {
     httplib::Result response;
     while (true) {
       auto client = make_client();
-      auto headers = make_headers(notification.method, std::nullopt,
+      auto headers = make_headers(outbound_notification.method, std::nullopt,
                                   /*json_body=*/true, /*event_stream=*/true);
       response = client.Post(path, headers, *serialized, "application/json");
       if (!response || (response->status != 401 && response->status != 403) ||
@@ -463,7 +533,7 @@ struct HttpTransport::Impl {
         break;
       }
       auto refreshed =
-          refresh_bearer_token_once(*response, notification.method);
+          refresh_bearer_token_once(*response, outbound_notification.method);
       if (!refreshed.has_value()) {
         break;
       }
@@ -486,14 +556,16 @@ struct HttpTransport::Impl {
       return mcp::core::unexpected(make_http_auth_error(*response));
     }
 
-    const auto remembered_session =
-        remember_session(*response, /*require_session_id=*/false);
-    if (!remembered_session) {
-      return mcp::core::unexpected(remembered_session.error());
-    }
-    const auto stream_started_result = ensure_stream_started();
-    if (!stream_started_result) {
-      return mcp::core::unexpected(stream_started_result.error());
+    if (!options.stateless) {
+      const auto remembered_session =
+          remember_session(*response, /*require_session_id=*/false);
+      if (!remembered_session) {
+        return mcp::core::unexpected(remembered_session.error());
+      }
+      const auto stream_started_result = ensure_stream_started();
+      if (!stream_started_result) {
+        return mcp::core::unexpected(stream_started_result.error());
+      }
     }
 
     if (response->status < 200 || response->status >= 300) {
@@ -617,6 +689,9 @@ struct HttpTransport::Impl {
 
   core::Result<core::Unit> remember_session(const httplib::Response& response,
                                             bool require_session_id) {
+    if (options.stateless) {
+      return core::Unit{};
+    }
     if (!response.has_header(std::string(SessionHeader))) {
       return core::Unit{};
     }
@@ -1005,6 +1080,7 @@ client::HttpTransportOptions to_legacy_options(
     };
   }
   legacy.timeout = options.timeout;
+  legacy.stateless = options.stateless;
   return legacy;
 }
 
