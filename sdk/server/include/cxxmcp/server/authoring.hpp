@@ -9,6 +9,7 @@
 #include <memory>
 #include <stdexcept>
 #include <string>
+#include <string_view>
 #include <type_traits>
 #include <utility>
 
@@ -17,6 +18,40 @@
 #include "cxxmcp/server/server.hpp"
 
 namespace mcp::server {
+
+namespace detail {
+
+template <class T, class = void>
+struct has_tool_title : std::false_type {};
+
+template <class T>
+struct has_tool_title<T, std::void_t<decltype(T::title)>> : std::true_type {};
+
+template <class T, class = void>
+struct has_tool_description : std::false_type {};
+
+template <class T>
+struct has_tool_description<T, std::void_t<decltype(T::description)>>
+    : std::true_type {};
+
+template <class T, class = void>
+struct has_tool_definition : std::false_type {};
+
+template <class T>
+struct has_tool_definition<
+    T, std::void_t<decltype(std::declval<const T&>().definition())>>
+    : std::true_type {};
+
+template <class Tool, class Text>
+inline std::string static_tool_text(Text value) {
+  if constexpr (std::is_convertible_v<Text, std::string_view>) {
+    return std::string(std::string_view(value));
+  } else {
+    return std::string(value);
+  }
+}
+
+}  // namespace detail
 
 /// @brief Typed tool registration produced by mcp::server::tool().
 template <class Args, class Result, class Handler>
@@ -31,9 +66,14 @@ class TypedToolBuilder {
  public:
   explicit TypedToolBuilder(std::string name) {
     definition_ =
-        protocol::tool_definition(std::move(name)).input<Args>().build();
+        protocol::tool_definition(std::move(name))
+            .input_schema(protocol::tool_input_schema_for<Args>())
+            .build();
     detail::apply_default_output_schema<Result>(definition_);
   }
+
+  explicit TypedToolBuilder(protocol::ToolDefinition definition)
+      : definition_(std::move(definition)) {}
 
   TypedToolBuilder& title(std::string value) {
     definition_.title = std::move(value);
@@ -52,7 +92,7 @@ class TypedToolBuilder {
 
   template <class T>
   TypedToolBuilder& input() {
-    return input_schema(protocol::schema_for<T>());
+    return input_schema(protocol::tool_input_schema_for<T>());
   }
 
   TypedToolBuilder& output_schema(protocol::Json schema) {
@@ -63,7 +103,7 @@ class TypedToolBuilder {
 
   template <class T>
   TypedToolBuilder& output() {
-    return output_schema(protocol::schema_for<T>());
+    return output_schema(protocol::tool_output_schema_for<T>());
   }
 
   TypedToolBuilder& streaming(bool value = true) {
@@ -115,6 +155,48 @@ class TypedToolBuilder {
 template <class Args, class Result>
 inline TypedToolBuilder<Args, Result> tool(std::string name) {
   return TypedToolBuilder<Args, Result>(std::move(name));
+}
+
+/// @brief Builds a typed tool registration from a tool object type.
+///
+/// Tool must expose `using Args`, `using Result`, `static name`, and a callable
+/// `operator()` compatible with the typed tool handler rules. Optional static
+/// `title` and `description` members are copied into the advertised tool
+/// definition.
+template <class Tool>
+inline auto tool(Tool value) {
+  using Args = typename Tool::Args;
+  using Result = typename Tool::Result;
+  auto definition = [&]() {
+    if constexpr (detail::has_tool_definition<Tool>::value) {
+      return value.definition();
+    } else {
+      auto built =
+          protocol::tool_definition(detail::static_tool_text<Tool>(Tool::name))
+              .build();
+      if constexpr (detail::has_tool_title<Tool>::value) {
+        built.title = detail::static_tool_text<Tool>(Tool::title);
+      }
+      if constexpr (detail::has_tool_description<Tool>::value) {
+        built.description =
+            detail::static_tool_text<Tool>(Tool::description);
+      }
+      return built;
+    }
+  }();
+  if (definition.input_schema.empty()) {
+    definition.input_schema = protocol::tool_input_schema_for<Args>();
+  }
+  detail::apply_default_output_schema<Result>(definition);
+  TypedToolBuilder<Args, Result> builder(std::move(definition));
+  return builder.handler(std::move(value));
+}
+
+/// @brief Builds a typed tool registration from a default-constructible tool
+/// object type.
+template <class Tool>
+inline auto tool() {
+  return tool(Tool{});
 }
 
 /// @brief Typed prompt registration produced by mcp::server::prompt().
@@ -436,7 +518,9 @@ App::Builder& App::Builder::tool(std::string name, Handler handler) {
   detail::require_callable(handler, "tool");
   detail::require_unambiguous_tool_handler<Handler, Args>();
   auto definition =
-      protocol::tool_definition(std::move(name)).input<Args>().build();
+      protocol::tool_definition(std::move(name))
+          .input_schema(protocol::tool_input_schema_for<Args>())
+          .build();
   detail::apply_default_output_schema<Result>(definition);
   return tool<Args, Result>(std::move(definition), std::move(handler));
 }
@@ -447,7 +531,7 @@ App::Builder& App::Builder::tool(protocol::ToolDefinition definition,
   detail::require_callable(handler, "tool");
   detail::require_unambiguous_tool_handler<Handler, Args>();
   if (definition.input_schema.empty()) {
-    definition.input_schema = protocol::schema_for<Args>();
+    definition.input_schema = protocol::tool_input_schema_for<Args>();
   }
   detail::apply_default_output_schema<Result>(definition);
   return tool(

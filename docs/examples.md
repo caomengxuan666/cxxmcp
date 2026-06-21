@@ -24,8 +24,9 @@ requirements into the default SDK path.
   registration.
 - `stdio/typed_stdio_server.cpp`: typed tool registration with reflected structs
   via `ServerPeer::builder()` and `mcp::server::tool<>()`. Uses the
-  `CXXMCP_REFLECT(Type, field1, ...)` macro for one-line reflection
-  specializations.
+  `CXXMCP_REFLECT_SELF(Type, field1, ...)` macro for one-line reflection inside
+  DTOs. Use `CXXMCP_REFLECT(Type, field1, ...)` at namespace scope for external
+  or non-owned types.
 
 ## Focused Capability Examples
 
@@ -85,10 +86,15 @@ return mcp::ClientPeer::builder()
 
 ## Reflect Macro
 
-`CXXMCP_REFLECT(Type, field1, field2, ...)` in `<cxxmcp/protocol/reflect.hpp>`
-generates a complete `Reflect<T>` specialization in one line, replacing the
-manual `fields()` + `known_keys()` + `defined` boilerplate. Supports 1-16
-fields. Use it at namespace scope; global scope is the typical placement.
+`CXXMCP_REFLECT_SELF(Type, field1, field2, ...)` in
+`<cxxmcp/protocol/reflect.hpp>` declares reflection inside DTOs that you own.
+It is the preferred path for typed tool arguments/results and supports 1-16
+fields.
+
+`CXXMCP_REFLECT(Type, field1, field2, ...)` generates a complete `Reflect<T>`
+specialization at namespace scope. Use it for external or non-owned types.
+Manual `Reflect<T>` and `SchemaTraits<T>` remain available when you need custom
+wire names, nullable/defaulted fields, extensions, or hand-written schemas.
 
 `basics/cxx17_consumer.cpp` is compiled as `cxx_std_17` in-tree. The richer
 examples may use newer C++ syntax for readability, but they are not allowed to

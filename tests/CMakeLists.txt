@@ -52,6 +52,15 @@ add_test(NAME release_gate_manifest COMMAND
 )
 cxxmcp_mark_release_blocking(release_gate_manifest release-gate)
 
+add_test(NAME compile_fail_unreflected_typed_tool COMMAND
+    "${CMAKE_COMMAND}"
+    "-DREPO_SOURCE_DIR=${PROJECT_SOURCE_DIR}"
+    "-DREPO_BINARY_DIR=${PROJECT_BINARY_DIR}"
+    -P "${PROJECT_SOURCE_DIR}/tests/compile_fail_unreflected_typed_tool.cmake"
+)
+cxxmcp_mark_release_blocking(
+    compile_fail_unreflected_typed_tool public-api typed-api)
+
 function(add_cxxmcp_public_header_compile_test test_name source_file package_target)
     add_executable("mcp_public_header_${test_name}"
         "sdk/public_headers/${source_file}"

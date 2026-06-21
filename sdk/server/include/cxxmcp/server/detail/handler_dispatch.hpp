@@ -293,6 +293,15 @@ inline protocol::Json value_to_json(T&& value) {
   }
 }
 
+template <class T>
+inline protocol::Json value_to_tool_structured_content(T&& value) {
+  auto json = value_to_json(std::forward<T>(value));
+  if (json.is_object()) {
+    return json;
+  }
+  return protocol::Json{{"value", std::move(json)}};
+}
+
 template <class Handler>
 inline bool callable_is_empty(const Handler&) noexcept {
   return false;
@@ -337,7 +346,8 @@ inline protocol::ToolResult value_to_tool_result(const char* text) {
 template <class T>
 inline protocol::ToolResult value_to_tool_result(T&& value) {
   protocol::ToolResult result;
-  result.structured_content = value_to_json(std::forward<T>(value));
+  result.structured_content =
+      value_to_tool_structured_content(std::forward<T>(value));
   protocol::ContentBlock block;
   block.type = "text";
   block.text = result.structured_content->dump();
@@ -488,7 +498,7 @@ inline void apply_default_output_schema(protocol::ToolDefinition& definition) {
                 !std::is_same_v<std::decay_t<Result>, const char*> &&
                 !std::is_same_v<std::decay_t<Result>, char*>) {
     if (definition.output_schema.empty()) {
-      definition.output_schema = protocol::schema_for<Result>();
+      definition.output_schema = protocol::tool_output_schema_for<Result>();
       definition.output_schema_present = true;
     }
   }

@@ -256,7 +256,7 @@ if (caps.tools) {
           <li><code>JsonRpcRequest</code>, <code>JsonRpcResponse</code>, <code>JsonRpcNotification</code></li>
         </ul>
         <p>
-          Use <code>CXXMCP_REFLECT</code> on your own types to get automatic
+          Use <code>CXXMCP_REFLECT_SELF</code> on your own types to get automatic
           JSON serialization and JSON Schema generation. See
           <a href="./tutorials.html">Tutorials</a> for examples.
         </p>
@@ -276,9 +276,9 @@ struct MyInput {
     std::string name;
     int count;
     std::optional&lt;std::string&gt; tag;
-};
 
-CXXMCP_REFLECT(MyInput, name, count, tag)
+    CXXMCP_REFLECT_SELF(MyInput, name, count, tag)
+};
 </code></pre>
         <p>This gives you:</p>
         <ul>

@@ -86,22 +86,32 @@ running->wait();</code></pre>
 
         <div class="recipe">
           <h3>Add a typed tool with reflection</h3>
-          <p>Auto-serialize args and results with <code>CXXMCP_REFLECT</code>.</p>
-          <pre><code class="language-cpp">struct Args { std::string query; int limit; };
-struct Result { std::vector&lt;std::string&gt; items; };
+          <p>Auto-serialize args and results with <code>CXXMCP_REFLECT_SELF</code>.</p>
+          <pre><code class="language-cpp">struct SearchTool {
+    static constexpr std::string_view name = "search";
+    static constexpr std::string_view description = "Search items.";
 
-CXXMCP_REFLECT(Args, query, limit)
-CXXMCP_REFLECT(Result, items)
-</code></pre>
-          <pre><code class="language-cpp">// In builder:
-.tool(mcp::server::tool&lt;Args, Result&gt;("search")
-          .description("Search items.")
-          .handler([](Args args, const mcp::server::ToolContext&amp;) {
-              Result r;
-              for (int i = 0; i &lt; args.limit; ++i)
-                  r.items.push_back(args.query + "_" + std::to_string(i));
-              return r;
-          }))</code></pre>
+    struct Args {
+        std::string query;
+        int limit;
+        CXXMCP_REFLECT_SELF(Args, query, limit)
+    };
+
+    struct Result {
+        std::vector&lt;std::string&gt; items;
+        CXXMCP_REFLECT_SELF(Result, items)
+    };
+
+    Result operator()(Args args, const mcp::server::ToolContext&amp;) const {
+        Result r;
+        for (int i = 0; i &lt; args.limit; ++i)
+            r.items.push_back(args.query + "_" + std::to_string(i));
+        return r;
+    }
+};
+
+// In builder:
+.tool(mcp::server::tool&lt;SearchTool&gt;())</code></pre>
         </div>
 
         <div class="recipe">

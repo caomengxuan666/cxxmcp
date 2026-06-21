@@ -1,8 +1,19 @@
 // Copyright (c) 2025 [caomengxuan666]
 
 #include <cstdint>
+#include <cxxmcp/protocol/schema.hpp>
 #include <cxxmcp/protocol/types_reflect.hpp>
 #include <string>
+
+namespace {
+
+struct HeaderReflectedArgs {
+  std::string text;
+
+  CXXMCP_REFLECT_SELF(HeaderReflectedArgs, text)
+};
+
+}  // namespace
 
 int main() {
   mcp::protocol::Icon icon;
@@ -28,6 +39,19 @@ int main() {
       mcp::protocol::progress_notification_params_to_json(progress);
   if (!mcp::protocol::progress_notification_params_from_json(progress_json)) {
     return 30;
+  }
+
+  HeaderReflectedArgs args;
+  args.text = "header";
+  const auto args_json = mcp::protocol::reflect_to_json(args);
+  if (args_json.at("text") != "header") {
+    return 40;
+  }
+  const auto args_schema =
+      mcp::protocol::tool_input_schema_for<HeaderReflectedArgs>();
+  if (args_schema.at("type") != "object" ||
+      !args_schema.at("properties").contains("text")) {
+    return 50;
   }
 
   return 0;

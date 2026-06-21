@@ -181,7 +181,14 @@ running->wait();  // Blocks until stdin closes or shutdown</code></pre>
         <div class="faq">
           <h3>CXXMCP_REFLECT compilation error</h3>
           <p><strong>Error:</strong> <code>no matching function for call to 'Reflect'</code></p>
-          <p><strong>Solution:</strong> Place the macro at namespace scope. Global scope is the usual choice:</p>
+          <p><strong>Solution:</strong> For types you own, prefer reflection inside the struct:</p>
+          <pre><code class="language-cpp">struct MyType {
+    std::string name;
+    int value;
+
+    CXXMCP_REFLECT_SELF(MyType, name, value)
+};</code></pre>
+          <p>Use <code>CXXMCP_REFLECT</code> at namespace scope for external or non-owned types:</p>
           <pre><code class="language-cpp">struct MyType { std::string name; int value; };
 
 CXXMCP_REFLECT(MyType, name, value)

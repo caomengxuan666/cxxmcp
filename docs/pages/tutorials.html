@@ -172,7 +172,7 @@ int main() {
       <section class="section">
         <h2>Tutorial 3: Type-Safe Tools with Reflection</h2>
         <p>
-          Use <code>CXXMCP_REFLECT</code> to get automatic JSON
+          Use <code>CXXMCP_REFLECT_SELF</code> to get automatic JSON
           serialization and schema generation for your tool arguments and
           results.
         </p>
@@ -186,22 +186,24 @@ int main() {
 struct SearchArgs {
     std::string query;
     int limit = 10;
+
+    CXXMCP_REFLECT_SELF(SearchArgs, query, limit)
 };
 
 struct SearchResult {
     std::string title;
     std::string url;
     double score;
+
+    CXXMCP_REFLECT_SELF(SearchResult, title, url, score)
 };
 
 struct SearchResponse {
     std::vector&lt;SearchResult&gt; results;
     int total;
-};
 
-CXXMCP_REFLECT(SearchArgs, query, limit)
-CXXMCP_REFLECT(SearchResult, title, url, score)
-CXXMCP_REFLECT(SearchResponse, results, total)
+    CXXMCP_REFLECT_SELF(SearchResponse, results, total)
+};
 </code></pre>
         </div>
 

@@ -47,6 +47,50 @@ struct SingleFieldResult {
   std::string echoed;
 };
 
+struct IntrusiveArgs {
+  std::string text;
+
+  CXXMCP_REFLECT_SELF(IntrusiveArgs, text)
+};
+
+struct IntrusiveResult {
+  std::string text;
+
+  CXXMCP_REFLECT_SELF(IntrusiveResult, text)
+};
+
+struct ShoutToolObject {
+  using Args = IntrusiveArgs;
+  using Result = IntrusiveResult;
+
+  static constexpr std::string_view name = "tool-object-shout";
+  static constexpr std::string_view title = "Tool Object Shout";
+  static constexpr std::string_view description =
+      "Echo a reflected DTO from a tool object";
+
+  Result operator()(Args args) const {
+    return Result{.text = args.text + "?"};
+  }
+};
+
+struct RuntimeDefinedToolObject {
+  using Args = IntrusiveArgs;
+  using Result = IntrusiveResult;
+
+  std::string name;
+  std::string description;
+
+  mcp::protocol::ToolDefinition definition() const {
+    return mcp::protocol::tool_definition(name)
+        .description(description)
+        .build();
+  }
+
+  Result operator()(Args args, const mcp::server::ToolContext&) const {
+    return Result{.text = args.text + "/" + name};
+  }
+};
+
 struct PromptArgs {
   std::string text;
 };
@@ -5200,6 +5244,10 @@ void test_server_app_builder_registers_typed_prompt_and_resource() {
 }
 
 void test_server_app_builder_registers_typed_tool() {
+  using typed_tool_fixture::IntrusiveArgs;
+  using typed_tool_fixture::IntrusiveResult;
+  using typed_tool_fixture::RuntimeDefinedToolObject;
+  using typed_tool_fixture::ShoutToolObject;
   using typed_tool_fixture::SingleFieldArgs;
   using typed_tool_fixture::SingleFieldResult;
   using typed_tool_fixture::SumArgs;
@@ -5230,6 +5278,24 @@ void test_server_app_builder_registers_typed_tool() {
                       result.echoed = args.value;
                       return result;
                     }))
+          .tool(mcp::server::tool<IntrusiveArgs, IntrusiveResult>(
+                    "intrusive-reflected")
+                    .description("Echo a DTO reflected inside its struct")
+                    .handler([](IntrusiveArgs args) {
+                      return IntrusiveResult{.text = args.text + "!"};
+                    }))
+          .tool(mcp::server::tool<ShoutToolObject>())
+          .tool(mcp::server::tool(RuntimeDefinedToolObject{
+              .name = "tool-object-runtime",
+              .description = "Runtime metadata from definition()",
+          }))
+          .tool<std::string, std::string>(
+              "scalar-shout", [](std::string text) { return text + "!"; })
+          .tool<int, int>("scalar-int", [](int value) { return value + 1; })
+          .tool(mcp::server::tool<std::string, std::string>(
+                    "scalar-fluent-shout")
+                    .input<std::string>()
+                    .handler([](std::string text) { return text + "!"; }))
           .tool(mcp::server::tool<Json, Json>("z-configured")
                     .input<SumArgs>()
                     .output<SumResult>()
@@ -5246,7 +5312,7 @@ void test_server_app_builder_registers_typed_tool() {
   auto& server = *built;
 
   const auto listed = server.list_tools();
-  require(listed.size() == 4, "typed tool count mismatch");
+  require(listed.size() == 10, "typed tool count mismatch");
   const auto sum_it =
       std::find_if(listed.begin(), listed.end(),
                    [](const mcp::protocol::ToolDefinition& tool) {
@@ -5263,6 +5329,43 @@ void test_server_app_builder_registers_typed_tool() {
           "typed tool output schema missing sum");
   require(sum_it->task_support() == mcp::protocol::TaskSupport::Optional,
           "typed tool task support mismatch");
+  const auto scalar_it =
+      std::find_if(listed.begin(), listed.end(),
+                   [](const mcp::protocol::ToolDefinition& tool) {
+                     return tool.name == "scalar-shout";
+                   });
+  require(scalar_it != listed.end(), "scalar typed tool missing");
+  require(scalar_it->input_schema.at("type") == "object",
+          "scalar typed tool input schema should be object");
+  require(scalar_it->input_schema.at("properties").at("value").at("type") ==
+              "string",
+          "scalar typed tool input schema should wrap value");
+  const auto scalar_int_it =
+      std::find_if(listed.begin(), listed.end(),
+                   [](const mcp::protocol::ToolDefinition& tool) {
+                     return tool.name == "scalar-int";
+                   });
+  require(scalar_int_it != listed.end(), "scalar int typed tool missing");
+  require(scalar_int_it->input_schema.at("properties")
+              .at("value")
+              .at("type") == "integer",
+          "scalar int typed tool input schema should wrap value");
+  require(scalar_int_it->output_schema.at("properties")
+              .at("value")
+              .at("type") == "integer",
+          "scalar int typed tool output schema should wrap value");
+  const auto scalar_fluent_it =
+      std::find_if(listed.begin(), listed.end(),
+                   [](const mcp::protocol::ToolDefinition& tool) {
+                     return tool.name == "scalar-fluent-shout";
+                   });
+  require(scalar_fluent_it != listed.end(), "scalar fluent typed tool missing");
+  require(scalar_fluent_it->input_schema.at("type") == "object",
+          "scalar fluent typed tool input schema should be object");
+  require(scalar_fluent_it->input_schema.at("properties")
+              .at("value")
+              .at("type") == "string",
+          "scalar fluent typed tool input schema should wrap value");
   const auto configured_it =
       std::find_if(listed.begin(), listed.end(),
                    [](const mcp::protocol::ToolDefinition& tool) {
@@ -5273,6 +5376,8 @@ void test_server_app_builder_registers_typed_tool() {
           "configured typed tool input<T> missing a");
   require(configured_it->output_schema.at("properties").contains("sum"),
           "configured typed tool output<T> missing sum");
+  require(configured_it->output_schema.at("type") == "object",
+          "configured typed tool output schema should be object");
   require(configured_it->streaming, "configured typed tool streaming mismatch");
   require(configured_it->task_support() == mcp::protocol::TaskSupport::Required,
           "configured typed tool execution mismatch");
@@ -5303,6 +5408,65 @@ void test_server_app_builder_registers_typed_tool() {
           "single-field reflected structured content missing");
   require(single_field_result->structured_content->at("echoed") == "hello",
           "single-field reflected structured content mismatch");
+
+  const auto intrusive_result = server.call_tool(
+      "intrusive-reflected", Json{{"text", "hello"}}, "typed-tool-session");
+  require(intrusive_result.has_value(),
+          "intrusive reflected tool call failed");
+  require(intrusive_result->structured_content.has_value(),
+          "intrusive reflected structured content missing");
+  require(intrusive_result->structured_content->at("text") == "hello!",
+          "intrusive reflected structured content mismatch");
+
+  const auto tool_object_it =
+      std::find_if(listed.begin(), listed.end(),
+                   [](const mcp::protocol::ToolDefinition& tool) {
+                     return tool.name == "tool-object-shout";
+                   });
+  require(tool_object_it != listed.end(), "tool object typed tool missing");
+  require(tool_object_it->title == "Tool Object Shout",
+          "tool object typed tool title mismatch");
+  require(tool_object_it->description ==
+              "Echo a reflected DTO from a tool object",
+          "tool object typed tool description mismatch");
+  require(tool_object_it->input_schema.at("properties").contains("text"),
+          "tool object typed tool input schema missing text");
+  const auto tool_object_result = server.call_tool(
+      "tool-object-shout", Json{{"text", "hello"}}, "typed-tool-session");
+  require(tool_object_result.has_value(), "tool object typed tool call failed");
+  require(tool_object_result->structured_content.has_value(),
+          "tool object typed tool structured content missing");
+  require(tool_object_result->structured_content->at("text") == "hello?",
+          "tool object typed tool structured content mismatch");
+
+  const auto runtime_tool_it =
+      std::find_if(listed.begin(), listed.end(),
+                   [](const mcp::protocol::ToolDefinition& tool) {
+                     return tool.name == "tool-object-runtime";
+                   });
+  require(runtime_tool_it != listed.end(), "runtime tool object missing");
+  require(runtime_tool_it->description == "Runtime metadata from definition()",
+          "runtime tool object description mismatch");
+  require(runtime_tool_it->input_schema.at("properties").contains("text"),
+          "runtime tool object should auto-fill empty input schema");
+  require(runtime_tool_it->output_schema.at("properties").contains("text"),
+          "runtime tool object should auto-fill output schema");
+  const auto runtime_tool_result = server.call_tool(
+      "tool-object-runtime", Json{{"text", "hello"}}, "typed-tool-session");
+  require(runtime_tool_result.has_value(), "runtime tool object call failed");
+  require(runtime_tool_result->structured_content.has_value(),
+          "runtime tool object structured content missing");
+  require(runtime_tool_result->structured_content->at("text") ==
+              "hello/tool-object-runtime",
+          "runtime tool object structured content mismatch");
+
+  const auto scalar_int_result =
+      server.call_tool("scalar-int", Json{{"value", 41}}, "typed-tool-session");
+  require(scalar_int_result.has_value(), "scalar int tool call failed");
+  require(scalar_int_result->structured_content.has_value(),
+          "scalar int structured content missing");
+  require(scalar_int_result->structured_content->at("value") == 42,
+          "scalar int structured content should wrap value");
 
   const auto invalid =
       server.call_tool("sum", Json{{"a", 2}}, "typed-tool-session");
