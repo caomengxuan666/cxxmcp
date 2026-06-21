@@ -11,6 +11,10 @@ on:
       - '*.md'
       - '.github/workflows/pages.yml'
 
+concurrency:
+  group: release-gates-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   source-style:
     name: source-style
