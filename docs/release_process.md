@@ -60,7 +60,7 @@ the archive checksum is not self-referential.
 Every public release must attach or link artifacts produced from the exact
 release commit:
 
-- versioned SDK source archive with recursive submodule contents
+- versioned SDK source archive with vendored fallback dependencies
 - `SHA256SUMS.txt` for published source artifacts
 - generated public API documentation
 - release evidence bundle
@@ -95,6 +95,7 @@ Before tagging a beta, rc, or stable release, review public header diffs under:
 - `sdk/include/cxxmcp`
 - `sdk/core/include/cxxmcp`
 - `sdk/protocol/include/cxxmcp`
+- `sdk/auth/include/cxxmcp` when auth is enabled
 - `sdk/client/include/cxxmcp`
 - `sdk/server/include/cxxmcp`
 - `sdk/transport/include/cxxmcp`

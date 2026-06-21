@@ -19,7 +19,7 @@ option(CXXMCP_BUILD_EXPERIMENTAL_OAUTH_EXAMPLES
        "Build parked experimental OAuth flow examples" OFF)
 
 if(TARGET mcp_sdk)
-    add_executable(mcp_example_cxx17_consumer cxx17_consumer.cpp)
+    add_executable(mcp_example_cxx17_consumer basics/cxx17_consumer.cpp)
     target_link_libraries(mcp_example_cxx17_consumer PRIVATE mcp_sdk)
     target_compile_features(mcp_example_cxx17_consumer PRIVATE cxx_std_17)
     cxxmcp_example_smoke_test(example_cxx17_consumer
@@ -27,17 +27,18 @@ if(TARGET mcp_sdk)
 endif()
 
 if(TARGET mcp_sdk)
-    add_executable(mcp_example_stdio_server stdio_server.cpp)
+    add_executable(mcp_example_stdio_server stdio/stdio_server.cpp)
     target_link_libraries(mcp_example_stdio_server PRIVATE mcp_sdk)
     cxxmcp_example(mcp_example_stdio_server)
 
-    add_executable(mcp_example_typed_stdio_server typed_stdio_server.cpp)
+    add_executable(mcp_example_typed_stdio_server
+                   stdio/typed_stdio_server.cpp)
     target_link_libraries(mcp_example_typed_stdio_server PRIVATE mcp_sdk)
     cxxmcp_example(mcp_example_typed_stdio_server)
 endif()
 
 if(MCP_ENABLE_HTTP AND TARGET mcp_client AND TARGET mcp_server)
-    add_executable(mcp_example_auth_bearer_http auth_bearer_http.cpp)
+    add_executable(mcp_example_auth_bearer_http http/auth_bearer_http.cpp)
     target_link_libraries(mcp_example_auth_bearer_http PRIVATE mcp_client
                                                                mcp_server)
     cxxmcp_example(mcp_example_auth_bearer_http)
@@ -46,18 +47,20 @@ if(MCP_ENABLE_HTTP AND TARGET mcp_client AND TARGET mcp_server)
 endif()
 
 if(TARGET mcp_client AND TARGET mcp_server)
-    add_executable(mcp_example_server_stdio_peer server_stdio_peer.cpp)
+    add_executable(mcp_example_server_stdio_peer
+                   stdio/server_stdio_peer.cpp)
     target_link_libraries(mcp_example_server_stdio_peer PRIVATE mcp_client
                                                                 mcp_server)
     cxxmcp_example(mcp_example_server_stdio_peer)
 
-    add_executable(mcp_example_server_peer server_peer.cpp)
+    add_executable(mcp_example_server_peer peer/server_peer.cpp)
     target_link_libraries(mcp_example_server_peer PRIVATE mcp_client
                                                           mcp_server)
     cxxmcp_example(mcp_example_server_peer)
     cxxmcp_example_smoke_test(example_server_peer mcp_example_server_peer)
 
-    add_executable(mcp_example_handler_contracts handler_contracts.cpp)
+    add_executable(mcp_example_handler_contracts
+                   basics/handler_contracts.cpp)
     target_link_libraries(mcp_example_handler_contracts PRIVATE mcp_client
                                                                 mcp_server)
     cxxmcp_example(mcp_example_handler_contracts)
@@ -66,21 +69,22 @@ if(TARGET mcp_client AND TARGET mcp_server)
 endif()
 
 if(TARGET mcp_client AND TARGET mcp_server)
-    add_executable(mcp_example_client_peer client_peer.cpp)
+    add_executable(mcp_example_client_peer peer/client_peer.cpp)
     target_link_libraries(mcp_example_client_peer PRIVATE mcp_client
                                                           mcp_server)
     cxxmcp_example(mcp_example_client_peer)
     cxxmcp_example_smoke_test(example_client_peer mcp_example_client_peer)
 
     add_executable(mcp_example_timeout_cancellation
-                   timeout_cancellation.cpp)
+                   peer/timeout_cancellation.cpp)
     target_link_libraries(mcp_example_timeout_cancellation PRIVATE mcp_client
                                                                   mcp_server)
     cxxmcp_example(mcp_example_timeout_cancellation)
     cxxmcp_example_smoke_test(example_timeout_cancellation
                               mcp_example_timeout_cancellation)
 
-    add_executable(mcp_example_elicitation_client elicitation_client.cpp)
+    add_executable(mcp_example_elicitation_client
+                   peer/elicitation_client.cpp)
     target_link_libraries(mcp_example_elicitation_client PRIVATE mcp_client
                                                                  mcp_server)
     cxxmcp_example(mcp_example_elicitation_client)
@@ -89,7 +93,8 @@ if(TARGET mcp_client AND TARGET mcp_server)
 endif()
 
 if(TARGET mcp_client AND TARGET mcp_server)
-    add_executable(mcp_example_client_loopback client_loopback.cpp)
+    add_executable(mcp_example_client_loopback
+                   integration/client_loopback.cpp)
     target_link_libraries(mcp_example_client_loopback PRIVATE mcp_client
                                                           mcp_server)
     cxxmcp_example(mcp_example_client_loopback)
@@ -97,7 +102,7 @@ if(TARGET mcp_client AND TARGET mcp_server)
                               mcp_example_client_loopback)
 
     add_executable(mcp_example_task_async_client_server
-                   task_async_client_server.cpp)
+                   integration/task_async_client_server.cpp)
     target_link_libraries(mcp_example_task_async_client_server
                           PRIVATE mcp_client mcp_server)
     cxxmcp_example(mcp_example_task_async_client_server)
@@ -106,7 +111,8 @@ if(TARGET mcp_client AND TARGET mcp_server)
 endif()
 
 if(TARGET mcp_client AND TARGET mcp_server AND TARGET mcp_example_stdio_server)
-    add_executable(mcp_example_process_stdio_client process_stdio_client.cpp)
+    add_executable(mcp_example_process_stdio_client
+                   stdio/process_stdio_client.cpp)
     target_link_libraries(mcp_example_process_stdio_client PRIVATE mcp_client
                                                                   mcp_server)
     cxxmcp_example(mcp_example_process_stdio_client)
@@ -121,7 +127,7 @@ endif()
 
 if(MCP_ENABLE_HTTP AND TARGET mcp_client AND TARGET mcp_server)
     add_executable(mcp_example_streamable_http_client
-                   streamable_http_client.cpp)
+                   http/streamable_http_client.cpp)
     target_link_libraries(mcp_example_streamable_http_client PRIVATE
                           mcp_client mcp_server)
     cxxmcp_example(mcp_example_streamable_http_client)
@@ -129,12 +135,14 @@ if(MCP_ENABLE_HTTP AND TARGET mcp_client AND TARGET mcp_server)
 endif()
 
 if(MCP_ENABLE_WEBSOCKET AND TARGET mcp_client AND TARGET mcp_server)
-    add_executable(mcp_example_websocket_server websocket_server.cpp)
+    add_executable(mcp_example_websocket_server
+                   websocket/websocket_server.cpp)
     target_link_libraries(mcp_example_websocket_server PRIVATE mcp_client
                                                                mcp_server)
     cxxmcp_example(mcp_example_websocket_server)
 
-    add_executable(mcp_example_websocket_client websocket_client.cpp)
+    add_executable(mcp_example_websocket_client
+                   websocket/websocket_client.cpp)
     target_link_libraries(mcp_example_websocket_client PRIVATE mcp_client
                                                                mcp_server)
     cxxmcp_example(mcp_example_websocket_client)
@@ -143,14 +151,16 @@ endif()
 if(CXXMCP_BUILD_EXPERIMENTAL_OAUTH_EXAMPLES AND TARGET mcp_auth
    AND TARGET mcp_server)
     add_executable(mcp_example_oauth_authorization_server
-                   oauth_authorization_server.cpp)
+                   auth/oauth_authorization_server.cpp)
     target_link_libraries(mcp_example_oauth_authorization_server
                           PRIVATE mcp_auth mcp_server)
     cxxmcp_example(mcp_example_oauth_authorization_server)
 endif()
 
-if(TARGET mcp_auth_openssl AND TARGET mcp_client AND TARGET mcp_server)
-    add_executable(mcp_example_auth_dpop_openssl auth_dpop_openssl.cpp)
+if(MCP_ENABLE_HTTP AND TARGET mcp_auth_openssl AND TARGET mcp_client
+   AND TARGET mcp_server)
+    add_executable(mcp_example_auth_dpop_openssl
+                   auth/auth_dpop_openssl.cpp)
     target_link_libraries(mcp_example_auth_dpop_openssl PRIVATE
                           mcp_auth_openssl mcp_client mcp_server)
     cxxmcp_example(mcp_example_auth_dpop_openssl)
@@ -159,9 +169,9 @@ if(TARGET mcp_auth_openssl AND TARGET mcp_client AND TARGET mcp_server)
 
 endif()
 
-if(CXXMCP_BUILD_EXPERIMENTAL_OAUTH_EXAMPLES AND TARGET mcp_auth_openssl
-   AND TARGET mcp_client AND TARGET mcp_server)
-    add_executable(mcp_example_oauth_client_flow oauth_client_flow.cpp)
+if(CXXMCP_BUILD_EXPERIMENTAL_OAUTH_EXAMPLES AND MCP_ENABLE_HTTP
+   AND TARGET mcp_auth_openssl AND TARGET mcp_client AND TARGET mcp_server)
+    add_executable(mcp_example_oauth_client_flow auth/oauth_client_flow.cpp)
     target_link_libraries(mcp_example_oauth_client_flow PRIVATE
                           mcp_auth_openssl mcp_client mcp_server)
     cxxmcp_example(mcp_example_oauth_client_flow)

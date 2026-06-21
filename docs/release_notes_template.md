@@ -21,7 +21,7 @@ this exact commit.
 
 - Windows MSVC Ninja static runtime:
 - Windows ClangCL Ninja static runtime:
-- Windows MSVC Visual Studio dynamic runtime:
+- Windows MSVC Ninja dynamic runtime:
 - Linux GCC Ninja:
 - Linux Clang Ninja:
 - macOS AppleClang Ninja:
@@ -35,18 +35,31 @@ Attach or link these artifacts for the same commit:
 - `cxxmcp-release-gates-macos-appleclang-ninja`
 - `cxxmcp-release-gates-windows-msvc-ninja-static-runtime`
 - `cxxmcp-release-gates-windows-clangcl-ninja-static-runtime`
-- `cxxmcp-release-gates-windows-msvc-vs-dynamic-runtime`
+- `cxxmcp-release-gates-windows-msvc-ninja-dynamic-runtime`
 - `cxxmcp-auth-release-gate-linux-gcc-ninja`
 - `cxxmcp-auth-release-gate-windows-msvc-ninja`
 - `cxxmcp-auth-openssl-release-gate-linux-gcc-ninja`
 - `cxxmcp-performance-evidence-linux-gcc-ninja`
 - `cxxmcp-public-header-compile-evidence-linux-gcc-ninja`
 - `cxxmcp-package-vcpkg-default`
+- `cxxmcp-package-vcpkg-http`
+- `cxxmcp-package-vcpkg-websocket`
+- `cxxmcp-package-vcpkg-http-openssl`
+- `cxxmcp-package-vcpkg-websocket-openssl`
 - `cxxmcp-package-vcpkg-http-auth`
+- `cxxmcp-package-vcpkg-websocket-auth`
+- `cxxmcp-package-vcpkg-auth-openssl`
+- `cxxmcp-package-vcpkg-http-auth-openssl`
 - `cxxmcp-package-conan-default`
+- `cxxmcp-package-conan-http`
+- `cxxmcp-package-conan-websocket`
 - `cxxmcp-package-conan-http-auth`
+- `cxxmcp-package-conan-websocket-auth`
 - `cxxmcp-package-xmake-default`
+- `cxxmcp-package-xmake-http`
+- `cxxmcp-package-xmake-websocket`
 - `cxxmcp-package-xmake-http-auth`
+- `cxxmcp-package-xmake-websocket-auth`
 - `cxxmcp-doxygen-html`
 - `cxxmcp-source`
 - `cxxmcp-release-evidence`

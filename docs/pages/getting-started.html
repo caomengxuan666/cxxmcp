@@ -244,43 +244,51 @@ auto auth =
       <section class="section">
         <h2>DTO Reflection</h2>
         <p>
-          The <code>CXXMCP_REFLECT</code> macro gives your structs automatic
-          JSON serialization, deserialization, and JSON Schema generation — no
-          boilerplate.
+          The <code>CXXMCP_REFLECT_SELF</code> macro gives your own structs
+          automatic JSON serialization, deserialization, and JSON Schema
+          generation with the reflection declaration next to the fields.
         </p>
         <pre><code class="language-cpp">#include &lt;cxxmcp/protocol/reflect.hpp&gt;
 
 struct SearchArgs {
     std::string query;
     int limit = 3;
+
+    CXXMCP_REFLECT_SELF(SearchArgs, query, limit)
 };
 
 struct SearchResult {
     std::string session;
     std::vector&lt;SearchHit&gt; hits;
+
+    CXXMCP_REFLECT_SELF(SearchResult, session, hits)
+};
+</code></pre>
+        <p>
+          Once reflected, use typed tool registration or group the tool metadata
+          and handler in a small tool object:
+        </p>
+        <pre><code class="language-cpp">struct SearchTool {
+    using Args = SearchArgs;
+    using Result = SearchResult;
+    static constexpr std::string_view name = "search";
+    static constexpr std::string_view description = "Search local documents.";
+
+    Result operator()(Args args, const mcp::server::ToolContext&amp; ctx) const {
+        SearchResult result;
+        result.session = ctx.session_id;
+        // ...
+        return result;
+    }
 };
 
-namespace mcp::protocol {
-CXXMCP_REFLECT(SearchArgs, query, limit)
-CXXMCP_REFLECT(SearchResult, session, hits)
-}</code></pre>
-        <p>
-          Once reflected, use typed tool registration:
-        </p>
-        <pre><code class="language-cpp">.tool(mcp::server::tool&lt;SearchArgs, SearchResult&gt;("search")
-          .description("Search local documents.")
-          .handler([](SearchArgs args, const mcp::server::ToolContext&amp; ctx) {
-              SearchResult result;
-              result.session = ctx.session_id;
-              // ...
-              return result;
-          }))</code></pre>
+.tool(mcp::server::tool&lt;SearchTool&gt;())</code></pre>
         <p>
           The SDK auto-generates <code>inputSchema</code> from
           <code>SearchArgs</code> fields and serializes
-          <code>SearchResult</code> back to JSON. Use
-          <code>CXXMCP_REFLECT_CHECK(Type, N)</code> to validate field count at
-          compile time.
+          <code>SearchResult</code> back to JSON. Use namespace-scope
+          <code>CXXMCP_REFLECT(Type, ...)</code> for external types, or
+          <code>SchemaTraits&lt;T&gt;</code> when you need a hand-written schema.
         </p>
         <p>
           <code>schema_for&lt;T&gt;()</code> returns a

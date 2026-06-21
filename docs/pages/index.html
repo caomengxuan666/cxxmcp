@@ -73,7 +73,7 @@
           <span class="icon">&#9989;</span>
           <hr class="icon-line">
           <h3>109/110 Server</h3>
-          <p>447/447 client conformance against the official runner</p>
+          <p>448/448 client conformance against the official runner</p>
         </div>
         <div class="feature-card">
           <span class="icon">&#128230;</span>
@@ -96,7 +96,7 @@
           <div class="label">Server Tests Passed</div>
         </div>
         <div class="conf-badge">
-          <div class="num">447/447</div>
+          <div class="num">448/448</div>
           <div class="label">Client Tests Passed</div>
         </div>
         <div class="conf-badge">
@@ -144,7 +144,7 @@ int main() {
           <div class="showcase-text">
             <h2>Typed DTOs with Reflection</h2>
             <p>
-              Use <code>CXXMCP_REFLECT</code> to define request/response types.
+              Use <code>CXXMCP_REFLECT_SELF</code> to define request/response types.
               Zero-boilerplate serialization — the macro generates everything
               at compile time.
             </p>
@@ -153,13 +153,13 @@ int main() {
             <pre><code class="language-cpp">struct SearchArgs {
     std::string query;
     int limit = 10;
-    CXXMCP_REFLECT(SearchArgs, query, limit)
+    CXXMCP_REFLECT_SELF(SearchArgs, query, limit)
 };
 
 struct SearchResult {
     std::string title;
     std::string url;
-    CXXMCP_REFLECT(SearchResult, title, url)
+    CXXMCP_REFLECT_SELF(SearchResult, title, url)
 };
 
 // Register a typed tool

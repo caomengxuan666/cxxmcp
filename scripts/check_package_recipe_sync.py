@@ -194,38 +194,46 @@ def check_release_gates(
     if not text:
         return
 
-    checks = [
-        (
-            "Conan package requirement",
-            re.compile(rf"--requires=cxxmcp/({SEMVER_RE})"),
-            version,
-        ),
-        (
-            "xmake package requirement",
-            re.compile(rf'add_requires\("cxxmcp\s+v({SEMVER_RE})"'),
-            version,
-        ),
-        (
-            "SDK source archive tag",
-            re.compile(rf"cxxmcp-sdk-source-(v{SEMVER_RE})\.tar\.gz"),
-            expected_tag,
-        ),
-    ]
-
-    for label, pattern, expected in checks:
-        matches = list(pattern.finditer(text))
-        if not matches:
-            if label == "SDK source archive tag":
-                continue
-            errors.append(f"{path}: missing {label}; expected {expected}")
-            continue
-        for match in matches:
+    if '--requires="cxxmcp/${version}"' not in text and "--requires=cxxmcp/${version}" not in text:
+        conan_matches = list(re.finditer(rf"--requires=cxxmcp/({SEMVER_RE})", text))
+        if not conan_matches:
+            errors.append(
+                f"{path}: missing Conan package requirement; expected dynamic VERSION usage"
+            )
+        for match in conan_matches:
             actual = match.group(1)
-            if actual != expected:
+            if actual != version:
                 errors.append(
-                    f"{path}:{line_number(text, match.start(1))}: {label} is "
-                    f"{actual}; expected {expected}"
+                    f"{path}:{line_number(text, match.start(1))}: "
+                    f"Conan package requirement is {actual}; expected {version}"
                 )
+
+    if 'add_requires("cxxmcp v${version}"' not in text:
+        xmake_matches = list(
+            re.finditer(rf'add_requires\("cxxmcp\s+v({SEMVER_RE})"', text)
+        )
+        if not xmake_matches:
+            errors.append(
+                f"{path}: missing xmake package requirement; expected dynamic VERSION usage"
+            )
+        for match in xmake_matches:
+            actual = match.group(1)
+            if actual != version:
+                errors.append(
+                    f"{path}:{line_number(text, match.start(1))}: "
+                    f"xmake package requirement is {actual}; expected {version}"
+                )
+
+    archive_matches = list(
+        re.finditer(rf"cxxmcp-sdk-source-(v{SEMVER_RE})\.tar\.gz", text)
+    )
+    for match in archive_matches:
+        actual = match.group(1)
+        if actual != expected_tag:
+            errors.append(
+                f"{path}:{line_number(text, match.start(1))}: "
+                f"SDK source archive tag is {actual}; expected {expected_tag}"
+            )
 
 
 def check_hash_consistency(

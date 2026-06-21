@@ -5,13 +5,12 @@
 /// @file
 /// @brief WebSocket transport implementations for MCP client and server peers.
 ///
-/// These transports wrap the WebSocket support built into cpp-httplib,
-/// providing a full-duplex, message-oriented channel for JSON-RPC over
-/// WebSocket. The client transport supports automatic reconnection with
-/// exponential backoff.
+/// These transports provide a full-duplex, message-oriented channel for
+/// JSON-RPC over WebSocket. The client transport supports automatic
+/// reconnection with exponential backoff.
 ///
 /// Requires `CXXMCP_ENABLE_WEBSOCKET` (which in turn requires
-/// `CXXMCP_ENABLE_HTTP`, since both share the cpp-httplib dependency).
+/// `CXXMCP_ENABLE_HTTP`).
 
 #include <chrono>
 #include <cstddef>

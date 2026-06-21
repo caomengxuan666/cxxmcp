@@ -55,6 +55,40 @@ struct ReflectedBool {
   bool enabled = false;
 };
 
+struct GlobalReflected {
+  std::string name;
+  int count = 0;
+};
+
+struct IntrusiveReflected {
+  std::string name;
+  int count = 0;
+
+  CXXMCP_REFLECT_SELF(IntrusiveReflected, name, count)
+};
+
+struct IntrusiveSixteenFields {
+  int f1 = 1;
+  int f2 = 2;
+  int f3 = 3;
+  int f4 = 4;
+  int f5 = 5;
+  int f6 = 6;
+  int f7 = 7;
+  int f8 = 8;
+  int f9 = 9;
+  int f10 = 10;
+  int f11 = 11;
+  int f12 = 12;
+  int f13 = 13;
+  int f14 = 14;
+  int f15 = 15;
+  int f16 = 16;
+
+  CXXMCP_REFLECT_SELF(IntrusiveSixteenFields, f1, f2, f3, f4, f5, f6, f7, f8,
+                      f9, f10, f11, f12, f13, f14, f15, f16)
+};
+
 }  // namespace schema_fixture
 
 namespace mcp::protocol {
@@ -125,9 +159,10 @@ struct Reflect<schema_fixture::ReflectedResult> {
   static std::vector<std::string> known_keys() { return {"session", "items"}; }
 };
 
-CXXMCP_REFLECT(schema_fixture::ReflectedBool, enabled);
-
 }  // namespace mcp::protocol
+
+CXXMCP_REFLECT(schema_fixture::ReflectedBool, enabled);
+CXXMCP_REFLECT(schema_fixture::GlobalReflected, name, count)
 
 namespace {
 
@@ -808,6 +843,36 @@ void test_schema_and_tool_definition_builders() {
           "number schema trait mismatch");
   require(mcp::protocol::schema_for<std::string>().at("type") == "string",
           "string schema trait mismatch");
+  const auto scalar_tool_input =
+      mcp::protocol::tool_input_schema_for<std::string>();
+  require(scalar_tool_input.at("type") == "object",
+          "scalar tool input schema should be an object");
+  require(scalar_tool_input.at("properties").at("value").at("type") == "string",
+          "scalar tool input schema should wrap value");
+  require(scalar_tool_input.at("required").at(0) == "value",
+          "scalar tool input schema should require value");
+  require(!scalar_tool_input.at("additionalProperties"),
+          "scalar tool input schema should be closed");
+  const auto json_tool_input = mcp::protocol::tool_input_schema_for<Json>();
+  require(json_tool_input.at("type") == "object",
+          "json tool input schema should be an object envelope");
+  const auto scalar_tool_output =
+      mcp::protocol::tool_output_schema_for<std::string>();
+  require(scalar_tool_output.at("type") == "object",
+          "scalar tool output schema should be an object");
+  require(
+      scalar_tool_output.at("properties").at("value").at("type") == "string",
+      "scalar tool output schema should wrap value");
+  const auto intrusive_tool_input = mcp::protocol::tool_input_schema_for<
+      schema_fixture::IntrusiveReflected>();
+  require(intrusive_tool_input.at("type") == "object",
+          "intrusive reflected tool input schema should be object");
+  require(
+      intrusive_tool_input.at("properties").at("name").at("type") == "string",
+      "intrusive reflected string field schema mismatch");
+  require(
+      intrusive_tool_input.at("properties").at("count").at("type") == "integer",
+      "intrusive reflected integer field schema mismatch");
   const auto custom_input =
       mcp::protocol::schema_for<const schema_fixture::SearchArgs&>();
   require(custom_input.at("properties").contains("query"),
@@ -4671,6 +4736,47 @@ void test_reflect_to_schema_bridge() {
           mcp::protocol::Json{{"enabled", 1}});
   require(!parsed_bool_as_integer.has_value(),
           "bool field should reject JSON integer");
+
+  schema_fixture::GlobalReflected global;
+  global.name = "outer";
+  global.count = 7;
+  const auto global_json = mcp::protocol::reflect_to_json(global);
+  require(global_json.at("name") == "outer", "global reflected name mismatch");
+  require(global_json.at("count") == 7, "global reflected count mismatch");
+  const auto parsed_global =
+      mcp::protocol::reflect_from_json<schema_fixture::GlobalReflected>(
+          global_json);
+  require(parsed_global.has_value(),
+          "global CXXMCP_REFLECT round-trip should succeed");
+  require(parsed_global->name == "outer",
+          "global reflected round-trip name mismatch");
+  require(parsed_global->count == 7,
+          "global reflected round-trip count mismatch");
+
+  schema_fixture::IntrusiveReflected intrusive;
+  intrusive.name = "inner";
+  intrusive.count = 9;
+  const auto intrusive_json = mcp::protocol::reflect_to_json(intrusive);
+  require(intrusive_json.at("name") == "inner",
+          "intrusive reflected name mismatch");
+  require(intrusive_json.at("count") == 9,
+          "intrusive reflected count mismatch");
+  const auto parsed_intrusive =
+      mcp::protocol::reflect_from_json<schema_fixture::IntrusiveReflected>(
+          intrusive_json);
+  require(parsed_intrusive.has_value(),
+          "CXXMCP_REFLECT_SELF round-trip should succeed");
+  require(parsed_intrusive->name == "inner",
+          "intrusive reflected round-trip name mismatch");
+  require(parsed_intrusive->count == 9,
+          "intrusive reflected round-trip count mismatch");
+
+  const auto sixteen_schema =
+      mcp::protocol::schema_for<schema_fixture::IntrusiveSixteenFields>();
+  require(sixteen_schema.at("properties").contains("f16"),
+          "CXXMCP_REFLECT_SELF should support 16 fields");
+  require(sixteen_schema.at("required").size() == 16,
+          "CXXMCP_REFLECT_SELF 16-field required count mismatch");
 }
 
 int main() {

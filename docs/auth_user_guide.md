@@ -267,6 +267,48 @@ pairs, quoted strings with backslash escapes, token68 payloads, and
 case-insensitive parameter lookup. It includes helpers for MCP OAuth
 `resource_metadata` and `insufficient_scope` challenges.
 
+## OAuth Client Flow Builder
+
+For browser authorization-code clients, prefer
+`mcp::auth::oauth_client_flow()` from
+`<cxxmcp/auth/client_orchestrator.hpp>`. The builder owns the common metadata
+and token endpoint adapters while keeping browser presentation, redirect
+receiving, concrete HTTP, PKCE, registration, and persistence injectable.
+
+```cpp
+class AppCallback : public mcp::auth::OAuthClientCallback {
+ public:
+  mcp::core::Result<mcp::core::Unit> present_authorization_url(
+      const std::string& url) override;
+
+  mcp::core::Result<std::pair<std::string, std::string>> wait_for_callback(
+      std::chrono::seconds timeout) override;
+};
+
+AppCallback callback;
+auto pkce = std::make_shared<mcp::auth::openssl::OpenSslPkceGenerator>();
+
+auto flow = mcp::auth::oauth_client_flow("https://resource.example/mcp")
+                .client_name("my-mcp-client")
+                .scopes({"mcp:tools"})
+                .callback(callback)
+                .http_endpoints(app_http_get, app_http_post)
+                .pkce_generator(std::move(pkce))
+                .build();
+if (!flow.has_value()) {
+  return flow.error();
+}
+
+auto tokens = (*flow)->authorize();
+```
+
+Use `.client_id(...)` when a client id is already provisioned. Add
+`.registration_endpoint(...)` when the authorization server supports dynamic
+client registration and the application wants the SDK flow to configure the
+client id during authorization. OpenSSL PKCE remains opt-in through
+`cxxmcp::auth_openssl`; applications may supply any `PkceGenerator`
+implementation instead.
+
 ## Current Boundary
 
 The current SDK supports these auth behaviors:
@@ -289,12 +331,13 @@ The current SDK supports these auth behaviors:
 - application-owned refresh-on-401 hook with a one-shot retry;
 - a transport-neutral `AuthorizationManager` helper for converting a 401
   challenge into a refreshed bearer token for that one-shot retry;
+- a high-level `OAuthClientFlowBuilder` for assembling the common browser +
+  PKCE authorization-code flow from injected callbacks and endpoints;
 - an opt-in `cxxmcp::auth` feature gate for transport-neutral OAuth contracts.
 
 The SDK does not currently provide browser or loopback redirect handling,
-persistent credential storage, a built-in HTTP client for JWKS retrieval, a
-fully automatic refresh-on-401 OAuth orchestrator, or a built-in OAuth
-authorization server. `CXXMCP_AUTH_CRYPTO=OpenSSL` currently
+persistent credential storage, a built-in HTTP client for OAuth/JWKS retrieval,
+or a built-in OAuth authorization server. `CXXMCP_AUTH_CRYPTO=OpenSSL` currently
 adds `cxxmcp::auth_openssl` with SHA-256/base64url helpers, JOSE compact JWS
 parsing primitives, public JWK import, RS256/ES256 compact JWS signature
 verification, trusted in-memory JWKS JWT validation, and DPoP access-token hash

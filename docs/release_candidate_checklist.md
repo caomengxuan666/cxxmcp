@@ -21,18 +21,30 @@ Attach or link all artifacts from `.github/workflows/release-gates.yml`:
 - `cxxmcp-release-gates-macos-appleclang-ninja`
 - `cxxmcp-release-gates-windows-msvc-ninja-static-runtime`
 - `cxxmcp-release-gates-windows-clangcl-ninja-static-runtime`
-- `cxxmcp-release-gates-windows-msvc-vs-dynamic-runtime`
+- `cxxmcp-release-gates-windows-msvc-ninja-dynamic-runtime`
 - `cxxmcp-performance-evidence-linux-gcc-ninja`
 - `cxxmcp-public-header-compile-evidence-linux-gcc-ninja`
 - `cxxmcp-auth-release-gate-linux-gcc-ninja`
 - `cxxmcp-auth-release-gate-windows-msvc-ninja`
 - `cxxmcp-auth-openssl-release-gate-linux-gcc-ninja`
 - `cxxmcp-package-vcpkg-default`
+- `cxxmcp-package-vcpkg-http`
+- `cxxmcp-package-vcpkg-websocket`
+- `cxxmcp-package-vcpkg-http-openssl`
+- `cxxmcp-package-vcpkg-websocket-openssl`
 - `cxxmcp-package-vcpkg-http-auth`
+- `cxxmcp-package-vcpkg-websocket-auth`
+- `cxxmcp-package-vcpkg-http-auth-openssl`
 - `cxxmcp-package-conan-default`
+- `cxxmcp-package-conan-http`
+- `cxxmcp-package-conan-websocket`
 - `cxxmcp-package-conan-http-auth`
+- `cxxmcp-package-conan-websocket-auth`
 - `cxxmcp-package-xmake-default`
+- `cxxmcp-package-xmake-http`
+- `cxxmcp-package-xmake-websocket`
 - `cxxmcp-package-xmake-http-auth`
+- `cxxmcp-package-xmake-websocket-auth`
 - `cxxmcp-doxygen-html`
 - `cxxmcp-source`
 - `cxxmcp-release-evidence`
@@ -88,7 +100,8 @@ workflow run URL, and release URL fields before publishing.
 - [ ] vcpkg overlay default/auth, Conan default/auth, and xmake default/auth
       package-consumption smoke jobs passed.
 - [ ] `CXXMCP_AUTH_CRYPTO=OpenSSL` Linux GCC release gate passed
-      `auth_openssl`, `public_header_auth`, and OpenSSL package smoke.
+      `auth_openssl`, all `public_header_auth*` fixtures, and OpenSSL package
+      smoke.
 - [ ] `protocol_serialization_benchmark` Linux GCC Release evidence is
       attached before making serialization hot-path claims.
 - [ ] The benchmark output in

@@ -186,10 +186,16 @@ svc->peer().call_tool("echo", Json{{"value", "hi"}});</code></pre>
             <td>Web services, remote access</td>
           </tr>
           <tr>
+            <td>WebSocket</td>
+            <td><code>.websocket(...)</code></td>
+            <td><code>CXXMCP_ENABLE_HTTP</code> + <code>CXXMCP_ENABLE_WEBSOCKET</code></td>
+            <td>Full-duplex remote access</td>
+          </tr>
+          <tr>
             <td>Custom</td>
             <td>implement <code class="language-cpp">mcp::transport::Transport</code></td>
             <td>—</td>
-            <td>WebSocket, Unix socket, etc.</td>
+            <td>Unix socket, in-memory loopback, etc.</td>
           </tr>
         </table>
       </section>
@@ -250,7 +256,7 @@ if (caps.tools) {
           <li><code>JsonRpcRequest</code>, <code>JsonRpcResponse</code>, <code>JsonRpcNotification</code></li>
         </ul>
         <p>
-          Use <code>CXXMCP_REFLECT</code> on your own types to get automatic
+          Use <code>CXXMCP_REFLECT_SELF</code> on your own types to get automatic
           JSON serialization and JSON Schema generation. See
           <a href="./tutorials.html">Tutorials</a> for examples.
         </p>
@@ -270,11 +276,10 @@ struct MyInput {
     std::string name;
     int count;
     std::optional&lt;std::string&gt; tag;
-};
 
-namespace mcp::protocol {
-CXXMCP_REFLECT(MyInput, name, count, tag)
-}</code></pre>
+    CXXMCP_REFLECT_SELF(MyInput, name, count, tag)
+};
+</code></pre>
         <p>This gives you:</p>
         <ul>
           <li><code>reflect_to_json&lt;MyInput&gt;(value)</code> — serialize to JSON</li>

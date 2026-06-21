@@ -31,6 +31,8 @@ DEFAULT_TESTS = [
     "interop_python_client_process_stdio",
     "interop_rmcp_client_process_stdio",
     "public_header_protocol",
+    "public_header_protocol_types",
+    "public_header_protocol_types_reflect",
     "public_header_error",
     "public_header_config",
     "public_header_transport",
@@ -45,9 +47,28 @@ DEFAULT_TESTS = [
 
 PUBLIC_HEADER_TARGETS = [
     "mcp_public_header_protocol",
+    "mcp_public_header_protocol_types",
+    "mcp_public_header_protocol_types_reflect",
     "mcp_public_header_error",
     "mcp_public_header_config",
     "mcp_public_header_auth",
+    "mcp_public_header_auth_client_orchestrator",
+    "mcp_public_header_auth_constant_time",
+    "mcp_public_header_auth_dpop",
+    "mcp_public_header_auth_http_jwks_endpoint",
+    "mcp_public_header_auth_http_metadata_endpoint",
+    "mcp_public_header_auth_http_token_endpoint",
+    "mcp_public_header_auth_jwks",
+    "mcp_public_header_auth_lifecycle",
+    "mcp_public_header_auth_loopback_receiver",
+    "mcp_public_header_auth_metadata",
+    "mcp_public_header_auth_pkce",
+    "mcp_public_header_auth_registration",
+    "mcp_public_header_auth_server_auth_endpoints",
+    "mcp_public_header_auth_server_auth_provider",
+    "mcp_public_header_auth_token",
+    "mcp_public_header_auth_types",
+    "mcp_public_header_auth_www_auth",
     "mcp_public_header_transport",
     "mcp_public_header_websocket_transport",
     "mcp_public_header_client",
@@ -136,7 +157,7 @@ def create_gate_artifacts(root: Path) -> None:
         "macos-appleclang-ninja",
         "windows-msvc-ninja-static-runtime",
         "windows-clangcl-ninja-static-runtime",
-        "windows-msvc-vs-dynamic-runtime",
+        "windows-msvc-ninja-dynamic-runtime",
     ]:
         add_gate_artifact(
             root, f"cxxmcp-release-gates-{name}", "release-blocking.xml", DEFAULT_TESTS
@@ -147,14 +168,66 @@ def create_gate_artifacts(root: Path) -> None:
             root,
             f"cxxmcp-auth-release-gate-{name}",
             "auth-release-gate.xml",
-            ["auth", "public_header_auth", "package_smoke"],
+            [
+                "auth",
+                "public_header_auth",
+                "public_header_auth_client_orchestrator",
+                "public_header_auth_constant_time",
+                "public_header_auth_dpop",
+                "public_header_auth_http_jwks_endpoint",
+                "public_header_auth_http_metadata_endpoint",
+                "public_header_auth_http_token_endpoint",
+                "public_header_auth_jwks",
+                "public_header_auth_lifecycle",
+                "public_header_auth_loopback_receiver",
+                "public_header_auth_metadata",
+                "public_header_auth_pkce",
+                "public_header_auth_registration",
+                "public_header_auth_server_auth_endpoints",
+                "public_header_auth_server_auth_provider",
+                "public_header_auth_token",
+                "public_header_auth_types",
+                "public_header_auth_www_auth",
+                "package_smoke",
+            ],
         )
 
     add_gate_artifact(
         root,
         "cxxmcp-auth-openssl-release-gate-linux-gcc-ninja",
         "auth-openssl-release-gate.xml",
-        ["auth", "auth_openssl", "public_header_auth", "package_smoke"],
+        [
+            "auth",
+            "auth_openssl",
+            "public_header_auth",
+            "public_header_auth_client_orchestrator",
+            "public_header_auth_constant_time",
+            "public_header_auth_dpop",
+            "public_header_auth_http_jwks_endpoint",
+            "public_header_auth_http_metadata_endpoint",
+            "public_header_auth_http_token_endpoint",
+            "public_header_auth_jwks",
+            "public_header_auth_lifecycle",
+            "public_header_auth_loopback_receiver",
+            "public_header_auth_metadata",
+            "public_header_auth_pkce",
+            "public_header_auth_registration",
+            "public_header_auth_server_auth_endpoints",
+            "public_header_auth_server_auth_provider",
+            "public_header_auth_token",
+            "public_header_auth_types",
+            "public_header_auth_www_auth",
+            "public_header_auth_openssl_base64url",
+            "public_header_auth_openssl_dpop",
+            "public_header_auth_openssl_jwk",
+            "public_header_auth_openssl_jws",
+            "public_header_auth_openssl_jws_verify",
+            "public_header_auth_openssl_jwt",
+            "public_header_auth_openssl_pkce",
+            "public_header_auth_openssl_server_auth_provider",
+            "public_header_auth_openssl_sha256",
+            "package_smoke",
+        ],
     )
     add_gate_artifact(
         root,
@@ -171,10 +244,22 @@ def create_gate_artifacts(root: Path) -> None:
     )
     write(public_header / "public-header-compile-evidence.json", f'{{"targets":[{entries}]}}')
 
-    for feature in ["default", "websocket", "websocket-auth", "http-auth"]:
+    for feature in [
+        "default",
+        "http",
+        "websocket",
+        "http-openssl",
+        "websocket-openssl",
+        "http-auth",
+        "websocket-auth",
+        "auth-openssl",
+        "http-auth-openssl",
+    ]:
         add_package_artifact(root, f"cxxmcp-package-vcpkg-{feature}", "vcpkg")
-        add_package_artifact(root, f"cxxmcp-package-conan-{feature}", "conan")
-        add_package_artifact(root, f"cxxmcp-package-xmake-{feature}", "xmake")
+
+    for manager in ["conan", "xmake"]:
+        for feature in ["default", "http", "websocket", "http-auth", "websocket-auth"]:
+            add_package_artifact(root, f"cxxmcp-package-{manager}-{feature}", manager)
 
     write(root / "cxxmcp-doxygen-html" / "index.html", "<html></html>")
     write(root / "cxxmcp-source" / "cxxmcp-source-test.tar.gz", "tar")

@@ -81,9 +81,19 @@ the default vcpkg package path:
 vcpkg install "cxxmcp-sdk[auth]" --overlay-ports=C:\path\to\cxxmcp\packaging\vcpkg\ports
 ```
 
-The `auth` feature maps to `CXXMCP_ENABLE_AUTH=ON`. It currently enables
-transport-neutral OAuth/DPoP contracts only; it must not pull OpenSSL into the
-default package path.
+The `auth` feature maps to `CXXMCP_ENABLE_AUTH=ON`. It enables the
+transport-neutral OAuth/DPoP contracts without pulling OpenSSL into the default
+package path.
+
+The `openssl` feature is a single cross-cutting opt-in feature. Combine it with
+`http` for HTTPS transport support, with `websocket` for WSS support, and with
+`auth` for the `cxxmcp::auth_openssl` JOSE/JWT/DPoP helpers:
+
+```powershell
+vcpkg install "cxxmcp-sdk[http,openssl]" --overlay-ports=C:\path\to\cxxmcp\packaging\vcpkg\ports
+vcpkg install "cxxmcp-sdk[websocket,openssl]" --overlay-ports=C:\path\to\cxxmcp\packaging\vcpkg\ports
+vcpkg install "cxxmcp-sdk[auth,openssl]" --overlay-ports=C:\path\to\cxxmcp\packaging\vcpkg\ports
+```
 
 The `websocket` feature maps to `CXXMCP_ENABLE_WEBSOCKET=ON` and implicitly
 enables HTTP transport support because both transports share `cpp-httplib`:
@@ -120,35 +130,38 @@ overlay port in these ways:
   explicitly built as static libraries and shared-library ABI support is not
   claimed; do not force `-DBUILD_SHARED_LIBS=OFF` in the portfile;
 - keep SDK-only build options enabled and examples, tests, and docs disabled;
-- keep default `cpp-httplib` consumption as loopback HTTP without TLS unless a
-  deliberate `ssl` or `https` feature is added for `cpp-httplib[openssl]`;
-- keep OAuth/DPoP auth as a later opt-in feature after the OpenSSL-backed
-  implementation exists, rather than pulling OpenSSL into the default SDK
-  package;
-- keep package smoke evidence in both modes: default installs must not expose
-  `cxxmcp::auth`, while auth-enabled installs must let an external consumer
-  link `cxxmcp::auth` explicitly.
+- keep default `cpp-httplib` consumption as loopback HTTP without TLS, and use
+  one cross-cutting `openssl` feature for HTTPS, WSS, and auth crypto rather
+  than adding transport-specific TLS feature names;
+- keep OpenSSL out of the default SDK package path; `auth`, `http`, and
+  `websocket` only gain OpenSSL behavior when the user also selects `openssl`;
+- keep package smoke evidence for default, HTTP, WebSocket, auth,
+  auth+OpenSSL, and HTTP+auth+OpenSSL combinations; default installs must not
+  expose `cxxmcp::auth` or private implementation targets such as
+  `cxxmcp::cpp_httplib`.
 
 ## FetchContent
 
 Prefer the SDK source release archive over GitHub's generated source archive.
 The SDK archive includes the header-only SDK dependencies needed by the default
-bundled build, while GitHub generated archives do not include submodule
-contents.
+bundled build, including the vendored `cpp-httplib` fallback used by HTTP and
+WebSocket transports.
 
-The concrete `v1.1.3` URL below is the latest published SDK source archive
+The concrete `v1.2.0` URL below is the latest published SDK source archive
 known to these docs. It is valid for consumers that want the published default
 SDK surface. Do not use it as evidence for the current worktree's optional auth
-header surface; current-source or release-candidate validation must use the
-exact source archive and checksum produced by that release-gates run.
+header surface; current-source validation must use the `cxxmcp-source` artifact
+and checksum produced by that release-gates run. Published release consumption
+must use the versioned deterministic `cxxmcp-sdk-source-v<version>` archive and
+checksum produced by the release workflow.
 
 ```cmake
 include(FetchContent)
 
 FetchContent_Declare(
     cxxmcp
-    URL https://github.com/caomengxuan666/cxxmcp/releases/download/v1.1.3/cxxmcp-sdk-source-v1.1.3.tar.gz
-    URL_HASH SHA256=ebf256c24e806301b65749ff22960b717aef46bba625c5d8a7edf9e237ccf936
+    URL https://github.com/caomengxuan666/cxxmcp/releases/download/v1.2.0/cxxmcp-sdk-source-v1.2.0.tar.gz
+    URL_HASH SHA256=45f256449ed58ebe89dbacf8f1a4a8f3ea15c8964212ce4efe68ab126f78cc21
 )
 
 set(CXXMCP_BUILD_SDK ON CACHE BOOL "" FORCE)
@@ -169,8 +182,10 @@ explicit so downstream builds do not accidentally enable examples, tests, or
 docs.
 
 Use the URL and hash from the release you intentionally pin. For release
-candidate validation, use the exact source artifact produced by that candidate
-run rather than copying a previously published release example unchanged.
+candidate validation, use the `cxxmcp-source` artifact produced by that
+candidate run. For published release consumption, use the
+`cxxmcp-sdk-source-v<version>` archive produced by the release workflow rather
+than copying a previously published release example unchanged.
 
 cxxmcp does not install or export a `CPM.cmake` helper. The consuming project
 must provide it, for example by vendoring `cmake/CPM.cmake` in its own source
@@ -187,8 +202,8 @@ set(CXXMCP_BUILD_DOCS OFF CACHE BOOL "" FORCE)
 
 CPMAddPackage(
     NAME cxxmcp
-    URL https://github.com/caomengxuan666/cxxmcp/releases/download/v1.1.3/cxxmcp-sdk-source-v1.1.3.tar.gz
-    URL_HASH SHA256=ebf256c24e806301b65749ff22960b717aef46bba625c5d8a7edf9e237ccf936
+    URL https://github.com/caomengxuan666/cxxmcp/releases/download/v1.2.0/cxxmcp-sdk-source-v1.2.0.tar.gz
+    URL_HASH SHA256=45f256449ed58ebe89dbacf8f1a4a8f3ea15c8964212ce4efe68ab126f78cc21
 )
 
 add_executable(my_client main.cpp)

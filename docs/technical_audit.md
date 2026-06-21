@@ -500,7 +500,8 @@ Not everything is problematic. The audit also confirmed several areas of high qu
 - **TaskManager locking discipline** is correct — no races found.
 - **Service lifecycle** handles self-deadlock (`stop()` from loop thread) correctly.
 - **SIGPIPE handling on client side** is well-implemented with scoped blocking.
-- **SSE `&request` capture** is safe in httplib 0.45.0 (synchronous call chain).
+- **SSE `&request` capture** is tied to the vendored cpp-httplib synchronous
+  handler call chain and must be rechecked during every cpp-httplib update.
 - **Destructor cleanup** correctly uses `(void)stop()` pattern — acceptable in noexcept context.
 - **No `FIXME`/`HACK`/`XXX` annotations** in SDK source — code is clean of known-issue markers, and `scripts/check_source_markers.py` now gates first-party source paths in release source-style evidence.
 - **Protocol coverage** is broad with forward-compatible `extensions` fields on
@@ -596,9 +597,9 @@ Background tasks continue running after timeout — cancellation is cooperative 
 CV-based blocking instead of `shared_future` or polling. `CancellationToken` has
 been extended with `wait_for_cancel()` (CV-based, zero CPU) backed by a
 `CancellationState` containing `atomic_bool` + `mutex` + `condition_variable`.
-The cancellation watcher is posted as a `BACKGROUND` task on the executor,
-blocks on `token.wait_for_cancel()`, then cancels the `AsyncResult` to wake
-waiters. `TaskHandle::wait()` also uses CV-based push notification
+`RequestHandle` cancellation is delivered through a token callback registration
+that cancels the `AsyncResult` to wake waiters without occupying request
+executor workers. `TaskHandle::wait()` also uses CV-based push notification
 (`task_status_cv_`) with an RPC poll fallback for servers that don't send task
 status notifications. All `sleep_for` polling has been eliminated.
 

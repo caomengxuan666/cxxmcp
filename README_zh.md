@@ -7,7 +7,7 @@
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![MCP](https://img.shields.io/badge/protocol-Model%20Context%20Protocol-111827.svg)](https://modelcontextprotocol.io/)
 [![Server Conformance](https://img.shields.io/badge/Server%20Conformance-109%2F110%20(99%25)-brightgreen.svg)](docs/conformance_evidence.md)
-[![Client Conformance](https://img.shields.io/badge/Client%20Conformance-447%2F447%20(100%25)-brightgreen.svg)](docs/conformance_evidence.md)
+[![Client Conformance](https://img.shields.io/badge/Client%20Conformance-448%2F448%20(100%25)-brightgreen.svg)](docs/conformance_evidence.md)
 
 生产就绪的 C++17 [Model Context Protocol](https://modelcontextprotocol.io/) SDK —— 直接在原生 C++ 应用中嵌入 MCP server 和 client，完整覆盖协议能力，通过跨 SDK conformance 验证。
 
@@ -18,6 +18,7 @@ English version: [README.md](README.md)
 ```cmake
 find_package(cxxmcp CONFIG REQUIRED)
 target_link_libraries(my_server PRIVATE cxxmcp::server)
+target_link_libraries(my_client PRIVATE cxxmcp::client)
 ```
 
 ```cpp
@@ -43,14 +44,21 @@ int main() {
 #include <cxxmcp/run.hpp>
 
 int main() {
-    return mcp::ClientPeer::builder()
+    int status = 0;
+    const auto run_status = mcp::ClientPeer::builder()
         .streamable_http("http://127.0.0.1:3000/mcp")
-        .run([](auto& svc) {
-            svc.peer().initialize();
-            svc.peer().list_all_tools();
-            svc.peer().call_tool("echo",
-                                 mcp::protocol::Json{{"value", "hello"}});
+        .run([&status](auto& svc) {
+            if (!svc.peer().initialize().has_value() ||
+                !svc.peer().notify_initialized().has_value() ||
+                !svc.peer().list_all_tools().has_value() ||
+                !svc.peer()
+                     .call_tool("echo",
+                                mcp::protocol::Json{{"value", "hello"}})
+                     .has_value()) {
+                status = 1;
+            }
         });
+    return run_status == 0 ? status : run_status;
 }
 ```
 
@@ -61,7 +69,7 @@ int main() {
 | Protocol / JSON-RPC | Typed models、序列化、initialize 校验、raw escape hatch |
 | Server SDK | tool/prompt/resource registry、typed handler、task-aware call、notification |
 | Client SDK | HTTP、stdio、process stdio、async helper、roots、sampling、elicitation、tasks |
-| Transports | stdio、process stdio、Streamable HTTP（有状态 session）、legacy SSE 兼容 |
+| Transports | stdio、process stdio、Streamable HTTP（有状态 session）、legacy SSE 兼容、WebSocket（自动重连） |
 | Packaging | CMake `find_package`、Conan 2、vcpkg overlay、FetchContent / CPM |
 | Peer/Service boundary | RMCP 风格 role-aware `Peer<Role>` 和 `Service<Role>` |
 
@@ -72,7 +80,7 @@ int main() {
 | | cxxmcp | RMCP |
 |---|---|---|
 | Server | **109/110** (99%) | 48/95 (51%) |
-| Client | **447/447** (100%) | — (runner 崩溃) |
+| Client | **448/448** (100%) | — (runner 崩溃) |
 
 完整结果见 [conformance evidence](docs/conformance_evidence.md)。
 
@@ -101,6 +109,9 @@ cmake --build build --config Release
 cmake --install build --config Release --prefix out/install/cxxmcp
 ```
 
+Quick Start 中的 client 示例使用 Streamable HTTP；如果要从源码构建该
+client 路径，还需要加上 `-DCXXMCP_ENABLE_HTTP=ON`。
+
 包管理器：`conanfile.py`（Conan 2）、`packaging/vcpkg/ports/cxxmcp-sdk`（vcpkg overlay）、`packaging/xmake/`（xmake）。详见 [package consumption](docs/package_consumption_zh.md)。
 
 ## CMake Options
@@ -113,7 +124,8 @@ cmake --install build --config Release --prefix out/install/cxxmcp
 | `CXXMCP_BUILD_EXAMPLES` | `OFF` | 构建示例 |
 | `CXXMCP_BUILD_TESTS` | `BUILD_TESTING` | 构建测试 |
 | `CXXMCP_BUILD_BENCHMARKS` | `OFF` | 构建 benchmark 可执行文件 |
-| `CXXMCP_ENABLE_HTTP` | `OFF` | 构建 HTTP/SSE transport（需要 `cpp-httplib`） |
+| `CXXMCP_ENABLE_HTTP` | `OFF` | 构建 HTTP/SSE transport（默认使用 bundled `cpp-httplib`，`CXXMCP_USE_SYSTEM_DEPS=ON` 时使用系统包） |
+| `CXXMCP_ENABLE_OPENSSL` | `OFF` | 启用 OpenSSL-backed HTTP/WebSocket TLS 支持 |
 | `CXXMCP_ENABLE_WEBSOCKET` | `OFF` | 构建 WebSocket transport（需要 `CXXMCP_ENABLE_HTTP`） |
 | `CXXMCP_ENABLE_AUTH` | `OFF` | 构建可选 OAuth 2.1 / DPoP auth target |
 
@@ -129,6 +141,7 @@ cmake --install build --config Release --prefix out/install/cxxmcp
 | `cxxmcp::client` | 可嵌入 MCP client SDK |
 | `cxxmcp::server` | 可嵌入 MCP server SDK |
 | `cxxmcp::auth` | 可选 OAuth 2.1 / DPoP contract（`CXXMCP_ENABLE_AUTH=ON`） |
+| `cxxmcp::auth_openssl` | 可选 OpenSSL-backed JOSE/JWT/DPoP helpers（`CXXMCP_ENABLE_AUTH=ON`，`CXXMCP_AUTH_CRYPTO=OpenSSL`） |
 | `cxxmcp::sdk` | 聚合 public SDK target |
 
 ## 为什么选择 cxxmcp
@@ -138,7 +151,7 @@ cmake --install build --config Release --prefix out/install/cxxmcp
 - 完整 MCP 协议覆盖，typed helper 自动按 capability gate
 - 基于官方 runner 的跨 SDK conformance 验证
 - RMCP 风格 Peer/Service 架构，为嵌入场景设计
-- 开箱支持 stdio、process stdio 和 Streamable HTTP transport
+- 开箱支持 stdio、process stdio、Streamable HTTP 和 WebSocket transport
 
 ## Examples
 

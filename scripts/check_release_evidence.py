@@ -464,12 +464,28 @@ def check_source_tree(source: Path) -> None:
     require_contains(release_notes, "`tl::expected` fallback/package-manager route")
     require_contains(release_notes, "hidden `cpp-httplib` route")
     require_contains(release_notes, "Windows ClangCL Ninja static runtime")
-    require_contains(release_notes, "cxxmcp-package-vcpkg-default")
-    require_contains(release_notes, "cxxmcp-package-vcpkg-http-auth")
-    require_contains(release_notes, "cxxmcp-package-conan-default")
-    require_contains(release_notes, "cxxmcp-package-conan-http-auth")
-    require_contains(release_notes, "cxxmcp-package-xmake-default")
-    require_contains(release_notes, "cxxmcp-package-xmake-http-auth")
+    for package_artifact in [
+        "cxxmcp-package-vcpkg-default",
+        "cxxmcp-package-vcpkg-http",
+        "cxxmcp-package-vcpkg-websocket",
+        "cxxmcp-package-vcpkg-http-openssl",
+        "cxxmcp-package-vcpkg-websocket-openssl",
+        "cxxmcp-package-vcpkg-http-auth",
+        "cxxmcp-package-vcpkg-websocket-auth",
+        "cxxmcp-package-vcpkg-auth-openssl",
+        "cxxmcp-package-vcpkg-http-auth-openssl",
+        "cxxmcp-package-conan-default",
+        "cxxmcp-package-conan-http",
+        "cxxmcp-package-conan-websocket",
+        "cxxmcp-package-conan-http-auth",
+        "cxxmcp-package-conan-websocket-auth",
+        "cxxmcp-package-xmake-default",
+        "cxxmcp-package-xmake-http",
+        "cxxmcp-package-xmake-websocket",
+        "cxxmcp-package-xmake-http-auth",
+        "cxxmcp-package-xmake-websocket-auth",
+    ]:
+        require_contains(release_notes, package_artifact)
     require_contains(release_notes, "cxxmcp-auth-openssl-release-gate-linux-gcc-ninja")
     require_contains(release_notes, "cxxmcp-performance-evidence-linux-gcc-ninja")
     require_contains(
@@ -538,6 +554,8 @@ def check_source_tree(source: Path) -> None:
     require_contains(workflow, "package-manager-vcpkg")
     require_contains(workflow, "package-manager-conan")
     require_contains(workflow, "package-manager-xmake")
+    require_contains(workflow, "CXXMCP_PACKAGE_SMOKE_HTTP_ENABLED")
+    require_contains(workflow, "CXXMCP_PACKAGE_SMOKE_OPENSSL_ENABLED")
     require_contains(workflow, "cxxmcp-package-vcpkg-${{ matrix.name }}")
     require_contains(workflow, "cxxmcp-package-conan-${{ matrix.name }}")
     require_contains(workflow, "cxxmcp-package-xmake-${{ matrix.name }}")
@@ -567,12 +585,27 @@ def check_source_tree(source: Path) -> None:
     require_contains(release_sdk, "cxxmcp-public-header-compile-evidence-linux-gcc-ninja")
     require_contains(release_sdk, "cxxmcp-auth-release-gate-linux-gcc-ninja")
     require_contains(release_sdk, "cxxmcp-auth-openssl-release-gate-linux-gcc-ninja")
-    require_contains(release_sdk, "cxxmcp-package-vcpkg-default")
-    require_contains(release_sdk, "cxxmcp-package-vcpkg-http-auth")
-    require_contains(release_sdk, "cxxmcp-package-conan-default")
-    require_contains(release_sdk, "cxxmcp-package-conan-http-auth")
-    require_contains(release_sdk, "cxxmcp-package-xmake-default")
-    require_contains(release_sdk, "cxxmcp-package-xmake-http-auth")
+    for package_artifact in [
+        "cxxmcp-package-vcpkg-default",
+        "cxxmcp-package-vcpkg-http",
+        "cxxmcp-package-vcpkg-websocket",
+        "cxxmcp-package-vcpkg-http-openssl",
+        "cxxmcp-package-vcpkg-websocket-openssl",
+        "cxxmcp-package-vcpkg-http-auth",
+        "cxxmcp-package-vcpkg-websocket-auth",
+        "cxxmcp-package-vcpkg-http-auth-openssl",
+        "cxxmcp-package-conan-default",
+        "cxxmcp-package-conan-http",
+        "cxxmcp-package-conan-websocket",
+        "cxxmcp-package-conan-http-auth",
+        "cxxmcp-package-conan-websocket-auth",
+        "cxxmcp-package-xmake-default",
+        "cxxmcp-package-xmake-http",
+        "cxxmcp-package-xmake-websocket",
+        "cxxmcp-package-xmake-http-auth",
+        "cxxmcp-package-xmake-websocket-auth",
+    ]:
+        require_contains(release_sdk, package_artifact)
     require_contains(release_sdk, "cxxmcp-doxygen-html")
     require_contains(release_sdk, "cxxmcp-source")
     require_contains(release_sdk, "cxxmcp-release-evidence")
@@ -599,6 +632,7 @@ def check_source_tree(source: Path) -> None:
     require_contains(release_sdk, "OpenSSL-backed auth evidence is currently a Linux GCC Ninja release")
     require_contains(release_sdk, "Performance evidence is currently limited to the Linux GCC Ninja")
     require_contains(release_sdk, "Public-header compile-time evidence is currently limited")
+    require_contains(release_sdk, "cxxmcp-package-vcpkg-auth-openssl")
     require_contains(release_sdk, "unless matching platform artifacts are attached")
     require_contains(release_sdk, "gh release upload")
     require_contains(release_sdk, "gh release create")
@@ -617,15 +651,19 @@ def check_source_tree(source: Path) -> None:
     require_contains(release_gate_manifest, "auth_openssl")
     require_contains(release_gate_manifest, "foreach(header_test")
     require_contains(release_gate_manifest, "websocket_transport")
-    require_contains(release_gate_manifest, "protocol error config auth transport")
+    require_contains(release_gate_manifest, "protocol protocol_types protocol_types_reflect")
+    require_contains(release_gate_manifest, "error config auth transport")
 
     package_smoke = source / "tests/package_smoke.cmake"
     require_contains(package_smoke, "PACKAGE_SMOKE_GENERATOR")
     require_contains(package_smoke, "PACKAGE_SMOKE_CXX_COMPILER")
+    require_contains(package_smoke, "package_smoke_http_enabled")
     require_contains(package_smoke, "package_smoke_auth_enabled")
+    require_contains(package_smoke, "package_smoke_openssl_enabled")
     require_contains(package_smoke, "package_smoke_websocket_enabled")
     require_contains(package_smoke, "default package smoke must not install optional auth headers")
     require_contains(package_smoke, "assert_optional_component_missing")
+    require_contains(package_smoke, "cpp_httplib")
     require_contains(package_smoke, "find_package(cxxmcp CONFIG REQUIRED COMPONENTS ${component_name})")
     require_contains(package_smoke, "component '${component_name}' was requested but is not installed")
     require_contains(package_smoke, "removed plugin/adapters extension headers")
@@ -656,6 +694,7 @@ def check_source_tree(source: Path) -> None:
         "cxxmcp-public-header-compile-evidence-linux-gcc-ninja",
         "performance-evidence.xml",
         "public-header-compile-evidence.json",
+        "mcp_public_header_websocket_transport",
         "protocol_serialization_benchmark",
         "check_sdk_source_tarball",
         "check_release_tarball_contents",
@@ -688,6 +727,9 @@ def check_source_tree(source: Path) -> None:
     compile_evidence = source / "scripts/collect_public_header_compile_evidence.py"
     require_contains(compile_evidence, "mcp_public_header_protocol")
     require_contains(compile_evidence, "mcp_public_header_auth")
+    require_contains(compile_evidence, "mcp_public_header_auth_client_orchestrator")
+    require_contains(compile_evidence, "mcp_public_header_auth_http_token_endpoint")
+    require_contains(compile_evidence, "mcp_public_header_auth_server_auth_provider")
     require_contains(compile_evidence, "mcp_public_header_websocket_transport")
     require_contains(compile_evidence, "elapsed_seconds")
 
@@ -778,10 +820,10 @@ def check_source_tree(source: Path) -> None:
     require_contains(template_cmake, "cxxmcp::sdk")
 
     example_markers = {
-        "examples/client_loopback.cpp": "Compatibility example",
-        "examples/task_async_client_server.cpp": "Compatibility example",
-        "examples/stdio_server.cpp": "Comprehensive stdio server example",
-        "examples/typed_stdio_server.cpp": "Typed tool registration example",
+        "examples/integration/client_loopback.cpp": "Compatibility example",
+        "examples/integration/task_async_client_server.cpp": "Compatibility example",
+        "examples/stdio/stdio_server.cpp": "Comprehensive stdio server example",
+        "examples/stdio/typed_stdio_server.cpp": "Typed tool registration example",
     }
     for relative, marker in example_markers.items():
         text = read_text(source / relative)
@@ -842,12 +884,12 @@ def check_evidence_dir(evidence: Path) -> None:
         "scripts/selftest_release_artifacts.py",
         "scripts/selftest_public_api_surface.py",
         "examples/CMakeLists.txt",
-        "examples/auth_bearer_http.cpp",
-        "examples/auth_dpop_openssl.cpp",
-        "examples/server_stdio_peer.cpp",
-        "examples/server_peer.cpp",
-        "examples/client_peer.cpp",
-        "examples/process_stdio_client.cpp",
+        "examples/http/auth_bearer_http.cpp",
+        "examples/auth/auth_dpop_openssl.cpp",
+        "examples/stdio/server_stdio_peer.cpp",
+        "examples/peer/server_peer.cpp",
+        "examples/peer/client_peer.cpp",
+        "examples/stdio/process_stdio_client.cpp",
         "templates/external_consumer/CMakeLists.txt",
         "templates/external_consumer/main.cpp",
         "templates/external_consumer/README.md",

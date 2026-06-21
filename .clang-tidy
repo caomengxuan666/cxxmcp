@@ -29,59 +29,59 @@ WarningsAsErrors: ''
 HeaderFilterRegex: ''
 CheckOptions:
   - key:             modernize-redundant-void-arg
-    value:           'true' 
+    value:           'true'
   - key:             modernize-use-bool-literals
-    value:           'true'  
+    value:           'true'
   - key:             modernize-use-equals-default
-    value:           'true'  
+    value:           'true'
   - key:             modernize-use-nullptr
-    value:           'true'  
+    value:           'true'
   - key:             modernize-use-override
-    value:           'true'  
-  # Google 
+    value:           'true'
+  # Google
   - key:             google-explicit-constructor
-    value:           'true'  
+    value:           'true'
   - key:             google-readability-casting
-    value:           'true'  
+    value:           'true'
 
   # Readability
   - key:             readability-braces-around-statements
-    value:           'true'  
+    value:           'true'
   - key:             readability-identifier-naming.ClassCase
-    value:           'CamelCase'  
+    value:           'CamelCase'
   - key:             readability-identifier-naming.StructCase
-    value:           'CamelCase'  
+    value:           'CamelCase'
   - key:             readability-identifier-naming.TypedefCase
-    value:           'CamelCase' 
+    value:           'CamelCase'
   - key:             readability-identifier-naming.EnumCase
-    value:           'CamelCase' 
+    value:           'CamelCase'
   - key:             readability-non-const-parameter
-    value:           'true'  
+    value:           'true'
 
-  # CERT 
+  # CERT
   - key:             cert-dcl21-cpp
-    value:           'true'  
+    value:           'true'
 
   # Bugprone
   - key:             bugprone-undelegated-constructor
-    value:           'true' 
+    value:           'true'
   - key:             bugprone-macro-parentheses
-    value:           'true'  
+    value:           'true'
   - key:             bugprone-macro-repeated-side-effects
-    value:           'true'  
+    value:           'true'
   - key:             bugprone-forward-declaration-namespace
-    value:           'true'  
+    value:           'true'
   - key:             bugprone-bool-pointer-implicit-conversion
-    value:           'true' 
+    value:           'true'
   - key:             bugprone-misplaced-widening-cast
-    value:           'true'  
+    value:           'true'
 
   # CppCoreGuidelines
   - key:             cppcoreguidelines-narrowing-conversions
-    value:           'true' 
+    value:           'true'
   - key:             cppcoreguidelines-pro-type-reinterpret-cast
-    value:           'true' 
+    value:           'true'
 
   # Miscellaneous
   - key:             misc-unconventional-assign-operator
-    value:           'true'  
+    value:           'true'

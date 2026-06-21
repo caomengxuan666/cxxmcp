@@ -95,7 +95,19 @@ if(TARGET cxxmcp::auth_openssl)
     add_cxxmcp_package_smoke_target(
         cxxmcp_package_auth_openssl auth_openssl.cpp cxxmcp::auth_openssl)
 endif()
+if(CXXMCP_PACKAGE_SMOKE_HTTP_ENABLED)
+    add_cxxmcp_package_smoke_target(
+        cxxmcp_package_http http.cpp cxxmcp::sdk)
+    if(CXXMCP_PACKAGE_SMOKE_OPENSSL_ENABLED)
+        target_compile_definitions(cxxmcp_package_http PRIVATE
+            CXXMCP_PACKAGE_SMOKE_OPENSSL)
+    endif()
+endif()
 if(CXXMCP_PACKAGE_SMOKE_WEBSOCKET_ENABLED)
     add_cxxmcp_package_smoke_target(
         cxxmcp_package_websocket websocket.cpp cxxmcp::sdk)
+    if(CXXMCP_PACKAGE_SMOKE_OPENSSL_ENABLED)
+        target_compile_definitions(cxxmcp_package_websocket PRIVATE
+            CXXMCP_PACKAGE_SMOKE_OPENSSL)
+    endif()
 endif()

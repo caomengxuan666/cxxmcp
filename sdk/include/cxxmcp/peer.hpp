@@ -4341,8 +4341,9 @@ class Peer<RoleServer>::Builder {
   /// @param handler Callable returning Result or core::Result<Result>.
   template <class Args, class Result, class Handler>
   Builder& tool(std::string name, Handler handler) {
-    auto definition =
-        protocol::tool_definition(std::move(name)).input<Args>().build();
+    auto definition = protocol::tool_definition(std::move(name))
+                          .input_schema(protocol::tool_input_schema_for<Args>())
+                          .build();
     server::detail::apply_default_output_schema<Result>(definition);
     return tool<Args, Result>(std::move(definition), std::move(handler));
   }

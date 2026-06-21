@@ -48,7 +48,7 @@ registered through `cxxmcp_mark_release_blocking()`.
 - `package-manager-xmake`: consumes the xmake-repo draft from a local xmake
   repository for default, WebSocket, and auth configurations, but rewrites the
   CI recipe to use a generated source archive from the exact workflow checkout,
-  including checked-out submodule contents, instead of the last published
+  including vendored fallback dependencies, instead of the last published
   GitHub Release archive. It then compiles a clean downstream C++17 consumer.
   The uploaded artifact must include the temporary local xmake repository,
   generated source archive, and non-empty xmake repo and build logs.
@@ -148,6 +148,7 @@ platform combinations where the release-blocking set above passed. The intended
 matrix is:
 
 - Windows MSVC with Ninja and Visual Studio generators
+- Windows ClangCL with Ninja
 - Linux GCC with Ninja
 - Linux Clang with Ninja
 - macOS AppleClang with Ninja
@@ -235,24 +236,28 @@ The same workflow uploads:
   target-level timings for canonical public-header compile fixtures, used to
   evaluate compile-time debt before changing the public JSON or template
   boundary.
-- `cxxmcp-package-vcpkg-default` and `cxxmcp-package-vcpkg-http-auth`: real vcpkg
-  overlay package-consumption evidence for the default SDK package and optional
-  auth feature.
-- `cxxmcp-package-conan-default` and `cxxmcp-package-conan-http-auth`: real Conan
-  package-consumption evidence for the default SDK package and optional auth
-  option.
-- `cxxmcp-package-xmake-default` and `cxxmcp-package-xmake-http-auth`: real xmake
-  package-consumption evidence for the default SDK package and optional auth
-  option. Release-gates artifacts use a temporary local xmake repository whose
-  recipe points at a generated source archive from the same workflow checkout,
-  including checked-out submodule contents, so xmake verifies the exact
-  release-candidate source instead of a stale previously published release
-  archive. The release artifact verifier requires both the rewritten temporary
-  repository recipe and the generated source archive to be present.
+- `cxxmcp-package-vcpkg-*`: real vcpkg overlay package-consumption evidence for
+  default, HTTP, WebSocket, OpenSSL-backed HTTP/WebSocket TLS, auth,
+  auth+OpenSSL, and HTTP+auth+OpenSSL combinations. The vcpkg package keeps
+  one cross-cutting `openssl` feature; release-gates exercises it through
+  `[auth,openssl]`, `[http,openssl]`, `[websocket,openssl]`, and
+  `[http,auth,openssl]` combinations rather than adding separate package
+  features for each TLS transport.
+- `cxxmcp-package-conan-*`: real Conan package-consumption evidence for default,
+  HTTP, WebSocket, auth, and WebSocket+auth options.
+- `cxxmcp-package-xmake-*`: real xmake package-consumption evidence for default,
+  HTTP, WebSocket, auth, and WebSocket+auth options. Release-gates artifacts use
+  a temporary local xmake repository whose recipe points at a generated source
+  archive from the same workflow checkout, including vendored fallback
+  dependencies, so xmake verifies the exact release-candidate source instead of
+  a stale previously published release archive. The release artifact verifier
+  requires both the rewritten temporary repository recipe and the generated
+  source archive to be present.
   These package-manager artifacts are Ubuntu Linux evidence unless the release
   notes attach matching Windows or macOS package-manager artifacts for the same
   release commit.
-- `cxxmcp-source`: a source archive with recursive submodule contents and a
+- `cxxmcp-source`: a source archive with SDK sources, vendored fallback
+  dependencies, and a
   `SHA256SUMS.txt` file.
 - `cxxmcp-release-evidence`: the README, Chinese README, changelog,
   contribution guide, security policy, code of conduct, auth design and user
@@ -284,6 +289,7 @@ Before a release, review public header diffs under:
 - `sdk/include/cxxmcp`
 - `sdk/core/include/cxxmcp`
 - `sdk/protocol/include/cxxmcp`
+- `sdk/auth/include/cxxmcp` when auth is enabled
 - `sdk/client/include/cxxmcp`
 - `sdk/server/include/cxxmcp`
 - `sdk/transport/include/cxxmcp`

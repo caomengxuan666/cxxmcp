@@ -6,35 +6,46 @@ requirements into the default SDK path.
 
 ## First-Choice SDK Examples
 
-- `cxx17_consumer.cpp`: minimal C++17 installed-SDK-shaped consumer path.
-- `auth_bearer_http.cpp`: HTTP bearer-token auth wiring for
+- `basics/cxx17_consumer.cpp`: minimal C++17 installed-SDK-shaped consumer
+  path.
+- `http/auth_bearer_http.cpp`: HTTP bearer-token auth wiring for
   `ServerPeer` / `ClientPeer`.
-- `server_stdio_peer.cpp`: copyable server-side `Peer` / `Service` over stdio.
-- `server_peer.cpp`: server-side `Peer` / `Service` loopback coverage.
-- `client_peer.cpp`: client-side `Peer` / `Service` requests.
-- `process_stdio_client.cpp`: launching and talking to a local MCP server via
-  `ClientPeer::builder().process_stdio(command)`.
-- `timeout_cancellation.cpp`: request timeout and cooperative cancellation.
-- `elicitation_client.cpp`: client-side elicitation handling.
-- `stdio_server.cpp`: compact stdio server using `ServerPeer::builder()` with
-  typed tool, prompt, resource, completion, sampling, and logging registration.
-- `typed_stdio_server.cpp`: typed tool registration with reflected structs via
-  `ServerPeer::builder()` and `mcp::server::tool<>()`. Uses the
-  `CXXMCP_REFLECT(Type, field1, ...)` macro for one-line reflection
-  specializations.
+- `stdio/server_stdio_peer.cpp`: copyable server-side `Peer` / `Service` over
+  stdio.
+- `peer/server_peer.cpp`: server-side `Peer` / `Service` loopback coverage.
+- `peer/client_peer.cpp`: client-side `Peer` / `Service` requests.
+- `stdio/process_stdio_client.cpp`: launching and talking to a local MCP server
+  via `ClientPeer::builder().process_stdio(command)`.
+- `peer/timeout_cancellation.cpp`: request timeout and cooperative
+  cancellation.
+- `peer/elicitation_client.cpp`: client-side elicitation handling.
+- `stdio/stdio_server.cpp`: compact stdio server using `ServerPeer::builder()`
+  with typed tool, prompt, resource, completion, sampling, and logging
+  registration.
+- `stdio/typed_stdio_server.cpp`: typed tool registration with reflected structs
+  via `ServerPeer::builder()` and `mcp::server::tool<>()`. Uses the
+  `CXXMCP_REFLECT_SELF(Type, field1, ...)` macro for one-line reflection inside
+  DTOs. Use `CXXMCP_REFLECT(Type, field1, ...)` at namespace scope for external
+  or non-owned types.
 
 ## Focused Capability Examples
 
-- `handler_contracts.cpp`: durable handler interfaces.
-- `auth_dpop_openssl.cpp`: opt-in OpenSSL DPoP/JWKS auth-provider wiring.
-- `task_async_client_server.cpp`: task-aware tool lifecycle.
-- `streamable_http_client.cpp`: Streamable HTTP client construction via
+- `basics/handler_contracts.cpp`: durable handler interfaces.
+- `auth/auth_dpop_openssl.cpp`: opt-in OpenSSL DPoP/JWKS auth-provider wiring.
+- `http/streamable_http_client.cpp`: Streamable HTTP client construction via
   `ClientPeer::builder().streamable_http(uri)`.
+- `websocket/websocket_client.cpp` / `websocket/websocket_server.cpp`: opt-in
+  WebSocket client and server transport construction via
+  `ClientPeer::builder().websocket(uri)` and
+  `ServerPeer::builder().websocket(port)`.
 
 ## Compatibility Or Low-Level Examples
 
-- `client_loopback.cpp`: local loopback coverage using `ServerPeer::builder()`
-  with the deprecated `server()` accessor for client transport plumbing.
+- `integration/task_async_client_server.cpp`: task-aware tool lifecycle across a
+  client/server loopback.
+- `integration/client_loopback.cpp`: local loopback coverage using
+  `ServerPeer::builder()` with the deprecated `server()` accessor for client
+  transport plumbing.
 
 ## External Gateway Boundary
 
@@ -75,14 +86,19 @@ return mcp::ClientPeer::builder()
 
 ## Reflect Macro
 
-`CXXMCP_REFLECT(Type, field1, field2, ...)` in `<cxxmcp/protocol/reflect.hpp>`
-generates a complete `Reflect<T>` specialization in one line, replacing the
-manual `fields()` + `known_keys()` + `defined` boilerplate. Supports 1-16
-fields. Must be used inside `namespace mcp::protocol`.
+`CXXMCP_REFLECT_SELF(Type, field1, field2, ...)` in
+`<cxxmcp/protocol/reflect.hpp>` declares reflection inside DTOs that you own.
+It is the preferred path for typed tool arguments/results and supports 1-16
+fields.
 
-`cxx17_consumer.cpp` is compiled as `cxx_std_17` in-tree. The richer examples
-may use newer C++ syntax for readability, but they are not allowed to raise the
-public SDK or installed-package baseline.
+`CXXMCP_REFLECT(Type, field1, field2, ...)` generates a complete `Reflect<T>`
+specialization at namespace scope. Use it for external or non-owned types.
+Manual `Reflect<T>` and `SchemaTraits<T>` remain available when you need custom
+wire names, nullable/defaulted fields, extensions, or hand-written schemas.
+
+`basics/cxx17_consumer.cpp` is compiled as `cxx_std_17` in-tree. The richer
+examples may use newer C++ syntax for readability, but they are not allowed to
+raise the public SDK or installed-package baseline.
 
 ## Downstream Example Repository
 
@@ -101,8 +117,9 @@ For release/vcpkg evidence, keep at least these downstream scenarios green:
   logging, raw requests, notifications, and task-backed tool calls.
 - Minimal stdio server plus process-stdio client probe, including child-process
   launch through public transport APIs.
-- Streamable HTTP client/server coverage, including direct HTTP, legacy SSE
-  compatibility, and HTTP auth-lite bearer-token propagation.
+- Streamable HTTP and WebSocket client/server coverage, including direct HTTP,
+  legacy SSE compatibility, reconnect behavior, and HTTP auth-lite bearer-token
+  propagation.
 - Request lifecycle coverage for async requests, timeouts, cancellation,
   cancellation-aware inbound callbacks, pagination helpers, subscriptions, and
   task cancellation. Applications own signal handling and call `stop()` / `close()`

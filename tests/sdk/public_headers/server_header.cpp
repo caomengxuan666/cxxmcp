@@ -6,5 +6,9 @@
 int main() {
   mcp::server::HttpTransportOptions options;
   options.stateless = true;
-  return options.stateless ? 0 : 1;
+
+  mcp::server::SessionContext context;
+  mcp::server::ClientPeer client = context.client();
+
+  return options.stateless && !client.available() ? 0 : 1;
 }

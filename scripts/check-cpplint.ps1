@@ -129,7 +129,13 @@ else {
     exit 2
 }
 
-& $CpplintCommand @Files
+$CpplintExecutable = $CpplintCommand[0]
+$CpplintArguments = @()
+if ($CpplintCommand.Count -gt 1) {
+    $CpplintArguments = @($CpplintCommand[1..($CpplintCommand.Count - 1)])
+}
+
+& $CpplintExecutable @CpplintArguments @Files
 if ($LASTEXITCODE -ne 0) {
     Write-Error "cpplint failed for $($Files.Count) source file(s)."
     exit $LASTEXITCODE

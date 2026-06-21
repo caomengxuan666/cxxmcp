@@ -1,0 +1,35 @@
+name: scorecard
+
+on:
+  workflow_dispatch:
+  branch_protection_rule:
+  schedule:
+    - cron: "15 21 * * 1"
+  push:
+    branches:
+      - master
+
+permissions: read-all
+
+jobs:
+  scorecard:
+    name: openssf-scorecard
+    runs-on: ubuntu-latest
+    permissions:
+      actions: read
+      contents: read
+      id-token: write
+      security-events: write
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+
+      - name: Run Scorecard
+        uses: ossf/scorecard-action@v2.4.3
+        with:
+          results_file: scorecard.sarif
+          results_format: sarif
+          publish_results: true

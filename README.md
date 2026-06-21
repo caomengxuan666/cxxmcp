@@ -7,7 +7,7 @@
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![MCP](https://img.shields.io/badge/protocol-Model%20Context%20Protocol-111827.svg)](https://modelcontextprotocol.io/)
 [![Server Conformance](https://img.shields.io/badge/Server%20Conformance-109%2F110%20(99%25)-brightgreen.svg)](docs/conformance_evidence.md)
-[![Client Conformance](https://img.shields.io/badge/Client%20Conformance-447%2F447%20(100%25)-brightgreen.svg)](docs/conformance_evidence.md)
+[![Client Conformance](https://img.shields.io/badge/Client%20Conformance-448%2F448%20(100%25)-brightgreen.svg)](docs/conformance_evidence.md)
 
 A production-ready C++17 SDK for the [Model Context Protocol](https://modelcontextprotocol.io/) — build MCP servers and clients that embed directly into native C++ applications, with full protocol coverage and cross-SDK conformance validation.
 
@@ -18,6 +18,7 @@ Read this in [Chinese](README_zh.md).
 ```cmake
 find_package(cxxmcp CONFIG REQUIRED)
 target_link_libraries(my_server PRIVATE cxxmcp::server)
+target_link_libraries(my_client PRIVATE cxxmcp::client)
 ```
 
 ```cpp
@@ -43,14 +44,21 @@ int main() {
 #include <cxxmcp/run.hpp>
 
 int main() {
-    return mcp::ClientPeer::builder()
+    int status = 0;
+    const auto run_status = mcp::ClientPeer::builder()
         .streamable_http("http://127.0.0.1:3000/mcp")
-        .run([](auto& svc) {
-            svc.peer().initialize();
-            svc.peer().list_all_tools();
-            svc.peer().call_tool("echo",
-                                 mcp::protocol::Json{{"value", "hello"}});
+        .run([&status](auto& svc) {
+            if (!svc.peer().initialize().has_value() ||
+                !svc.peer().notify_initialized().has_value() ||
+                !svc.peer().list_all_tools().has_value() ||
+                !svc.peer()
+                     .call_tool("echo",
+                                mcp::protocol::Json{{"value", "hello"}})
+                     .has_value()) {
+                status = 1;
+            }
         });
+    return run_status == 0 ? status : run_status;
 }
 ```
 
@@ -72,7 +80,7 @@ int main() {
 | | cxxmcp | RMCP |
 |---|---|---|
 | Server | **109/110** (99%) | 48/95 (51%) |
-| Client | **447/447** (100%) | — (runner crashed) |
+| Client | **448/448** (100%) | — (runner crashed) |
 
 Full details in [conformance evidence](docs/conformance_evidence.md).
 
@@ -101,6 +109,9 @@ cmake --build build --config Release
 cmake --install build --config Release --prefix out/install/cxxmcp
 ```
 
+The quick-start client uses Streamable HTTP, so source builds that compile that
+client path must also set `-DCXXMCP_ENABLE_HTTP=ON`.
+
 Package managers: `conanfile.py` (Conan 2), `packaging/vcpkg/ports/cxxmcp-sdk` (vcpkg overlay), `packaging/xmake/` (xmake). See [package consumption](docs/package_consumption.md).
 
 ## CMake Options
@@ -113,7 +124,8 @@ Package managers: `conanfile.py` (Conan 2), `packaging/vcpkg/ports/cxxmcp-sdk` (
 | `CXXMCP_BUILD_EXAMPLES` | `OFF` | Build example executables |
 | `CXXMCP_BUILD_TESTS` | `BUILD_TESTING` | Build tests |
 | `CXXMCP_BUILD_BENCHMARKS` | `OFF` | Build benchmark executables |
-| `CXXMCP_ENABLE_HTTP` | `OFF` | Build HTTP/SSE transport (requires `cpp-httplib`) |
+| `CXXMCP_ENABLE_HTTP` | `OFF` | Build HTTP/SSE transport (uses bundled `cpp-httplib` unless `CXXMCP_USE_SYSTEM_DEPS=ON`) |
+| `CXXMCP_ENABLE_OPENSSL` | `OFF` | Enable OpenSSL-backed HTTP/WebSocket TLS support |
 | `CXXMCP_ENABLE_AUTH` | `OFF` | Build the optional OAuth 2.1 / DPoP auth target |
 | `CXXMCP_ENABLE_WEBSOCKET` | `OFF` | Build WebSocket transport (requires `CXXMCP_ENABLE_HTTP`) |
 
@@ -129,6 +141,7 @@ Package managers: `conanfile.py` (Conan 2), `packaging/vcpkg/ports/cxxmcp-sdk` (
 | `cxxmcp::client` | Embeddable MCP client SDK |
 | `cxxmcp::server` | Embeddable MCP server SDK |
 | `cxxmcp::auth` | Optional OAuth 2.1 / DPoP contract (`CXXMCP_ENABLE_AUTH=ON`) |
+| `cxxmcp::auth_openssl` | Optional OpenSSL-backed JOSE/JWT/DPoP helpers (`CXXMCP_ENABLE_AUTH=ON`, `CXXMCP_AUTH_CRYPTO=OpenSSL`) |
 | `cxxmcp::sdk` | Aggregate public SDK target |
 
 ## Why cxxmcp

@@ -35,6 +35,36 @@ Status notes that must stay true until exact release evidence says otherwise:
 - [ ] Public docs, examples, changelog, release artifacts, and compatibility
   policy all describe the same canonical SDK path.
 
+## Planned SDK Ergonomics Work
+
+These are local SDK improvement items, not external release-evidence gates.
+Handle them on feature branches before closing the broader open gates above.
+
+- First, converge public examples and docs on the recommended
+  `ServerPeer::builder()` / `ClientPeer::builder()` plus `Service` / `run()`
+  entry path. Keep `Client`, `Server`, and transport-level APIs as stable
+  lower-level compatibility surfaces.
+- Add a clearer alias for `mcp::server::ClientPeer` such as
+  `mcp::server::SessionClient` or `mcp::server::ClientHandle`, then migrate new
+  examples to the clearer name while preserving the existing public type.
+- Add a high-level OAuth client flow builder that assembles the common
+  metadata endpoint, token endpoint, PKCE, browser presentation, and loopback
+  callback pieces without hiding the lower-level injectable auth interfaces.
+- Record the optional C++20 coroutine adapter as future work only. The public
+  SDK baseline remains C++17, so coroutine support should live in an opt-in
+  experimental header if it is implemented later.
+- Continue layering examples by capability and integration level. Any example
+  path or grouping change must update `examples/CMakeLists.txt`, release
+  evidence collection, release artifact checks, and example documentation
+  together.
+- Strengthen auth public-header coverage so each auth public header that is
+  exposed when auth is enabled has an independent C++17 compile fixture, not
+  only umbrella-header coverage.
+- Completed locally: `RequestHandle` cancellation internals keep
+  `RequestHandle::cancel()` and `RequestOptions::cancellation_token`, while
+  token callbacks now wake request handles without long-lived cancellation
+  watchers occupying shared request executor workers.
+
 ## Ecosystem And Registry
 
 - [ ] Accumulate maturity evidence before resubmitting to the vcpkg curated

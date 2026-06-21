@@ -19,8 +19,6 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v6
-        with:
-          submodules: recursive
 
       - name: Install style tools
         run: |
@@ -28,24 +26,15 @@ jobs:
           echo "${HOME}/.local/bin" >> "${GITHUB_PATH}"
 
       - name: Setup uv
-        uses: astral-sh/setup-uv@v5
+        uses: astral-sh/setup-uv@v7
 
       - name: Check formatting
         shell: pwsh
         run: pwsh -NoProfile -File scripts/format.ps1 -Check
 
       - name: Run cpplint
-        run: |
-          if command -v cpplint &>/dev/null; then
-            cpplint_cmd="cpplint"
-          elif command -v uv &>/dev/null; then
-            cpplint_cmd="uv run --with cpplint cpplint"
-          else
-            echo "::error::cpplint not found. Install cpplint or uv."
-            exit 2
-          fi
-          files=$(find sdk -type f \( -name '*.cpp' -o -name '*.hpp' -o -name '*.h' \) | sort)
-          echo "$files" | xargs $cpplint_cmd 2>&1 | tail -5
+        shell: pwsh
+        run: pwsh -NoProfile -File scripts/check-cpplint.ps1
 
       - name: Check protocol model coverage
         run: python scripts/check_protocol_model_coverage.py --source .
@@ -93,8 +82,6 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v6
-        with:
-          submodules: recursive
 
       - name: Install Ninja
         run: |
@@ -127,8 +114,6 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v6
-        with:
-          submodules: recursive
 
       - name: Install Ninja
         run: |
@@ -167,7 +152,7 @@ jobs:
 
       - name: Upload performance evidence
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: cxxmcp-performance-evidence-linux-gcc-ninja
           path: |
@@ -183,8 +168,6 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v6
-        with:
-          submodules: recursive
 
       - name: Install Ninja
         run: |
@@ -222,7 +205,7 @@ jobs:
 
       - name: Upload public-header compile evidence
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: cxxmcp-public-header-compile-evidence-linux-gcc-ninja
           path: |
@@ -249,8 +232,6 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v6
-        with:
-          submodules: recursive
 
       - name: Install sanitizer tools
         run: |
@@ -263,7 +244,7 @@ jobs:
           python-version: "3.12"
 
       - name: Setup uv
-        uses: astral-sh/setup-uv@v5
+        uses: astral-sh/setup-uv@v7
 
       - name: Setup Node
         uses: actions/setup-node@v6
@@ -273,21 +254,24 @@ jobs:
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable
 
-      - name: Cache Rust cargo registry and build artifacts
-        uses: Swatinem/rust-cache@v2
-        with:
-          prefix-key: release-gates
-          shared-key: linux-rust
-          env-vars: CARGO_TARGET_DIR
-          cache-targets: true
-          cache-on-failure: false
-          save-if: ${{ github.ref == 'refs/heads/master' }}
-
       - name: Checkout pinned RMCP reference
         run: |
           mkdir -p reference
           git clone https://github.com/modelcontextprotocol/rust-sdk.git reference/rmcp
           git -C reference/rmcp checkout c330fede90e4729c234f8e87fdbc5ea27a1dd10c
+
+      - name: Cache Rust cargo registry and build artifacts
+        uses: Swatinem/rust-cache@v2
+        with:
+          prefix-key: release-gates
+          shared-key: linux-rust
+          workspaces: |
+            reference/rmcp/conformance
+            tests/fixtures/rmcp_pagination_client
+          env-vars: CARGO_TARGET_DIR
+          cache-targets: true
+          cache-on-failure: false
+          save-if: ${{ github.ref == 'refs/heads/master' }}
 
       - name: Configure sanitizer build
         run: cmake --preset ${{ matrix.configure_preset }}
@@ -305,8 +289,6 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v6
-        with:
-          submodules: recursive
 
       - name: Install tools
         run: |
@@ -335,12 +317,31 @@ jobs:
         run: |
           cmake --build build-clang-tidy --parallel --target \
             mcp_public_header_auth \
+            mcp_public_header_auth_client_orchestrator \
+            mcp_public_header_auth_constant_time \
+            mcp_public_header_auth_dpop \
+            mcp_public_header_auth_http_jwks_endpoint \
+            mcp_public_header_auth_http_metadata_endpoint \
+            mcp_public_header_auth_http_token_endpoint \
+            mcp_public_header_auth_jwks \
+            mcp_public_header_auth_lifecycle \
+            mcp_public_header_auth_loopback_receiver \
+            mcp_public_header_auth_metadata \
+            mcp_public_header_auth_pkce \
+            mcp_public_header_auth_registration \
+            mcp_public_header_auth_server_auth_endpoints \
+            mcp_public_header_auth_server_auth_provider \
+            mcp_public_header_auth_token \
+            mcp_public_header_auth_types \
+            mcp_public_header_auth_www_auth \
             mcp_public_header_client \
             mcp_public_header_config \
             mcp_public_header_error \
             mcp_public_header_handler \
             mcp_public_header_peer \
             mcp_public_header_protocol \
+            mcp_public_header_protocol_types \
+            mcp_public_header_protocol_types_reflect \
             mcp_public_header_sdk \
             mcp_public_header_server \
             mcp_public_header_service \
@@ -377,8 +378,6 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v6
-        with:
-          submodules: recursive
 
       - name: Setup MSVC developer environment
         if: runner.os == 'Windows'
@@ -423,7 +422,7 @@ jobs:
           New-Item -ItemType Directory -Force -Path "build-auth-release-gate/test-results" | Out-Null
           ctest `
             --test-dir build-auth-release-gate `
-            -R "^(auth|public_header_auth|package_smoke)$" `
+            -R "^(auth|public_header_auth.*|package_smoke)$" `
             --output-on-failure `
             --timeout 240 `
             --output-junit test-results/auth-release-gate.xml
@@ -433,7 +432,7 @@ jobs:
 
       - name: Upload auth release gate evidence
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: cxxmcp-auth-release-gate-${{ matrix.name }}
           path: |
@@ -449,8 +448,6 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v6
-        with:
-          submodules: recursive
 
       - name: Install OpenSSL build dependencies
         run: |
@@ -481,7 +478,7 @@ jobs:
           mkdir -p build-auth-openssl-release-gate/test-results
           ctest \
             --test-dir build-auth-openssl-release-gate \
-            -R "^(auth|auth_openssl|public_header_auth|package_smoke)$" \
+            -R "^(auth|auth_openssl|public_header_auth.*|package_smoke)$" \
             --output-on-failure \
             --timeout 300 \
             --output-junit test-results/auth-openssl-release-gate.xml
@@ -489,7 +486,7 @@ jobs:
 
       - name: Upload OpenSSL auth release gate evidence
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: cxxmcp-auth-openssl-release-gate-linux-gcc-ninja
           path: |
@@ -535,20 +532,20 @@ jobs:
             cc: clang-cl
             cxx: clang-cl
             msvc_runtime: MultiThreaded$<$<CONFIG:Debug>:Debug>
-          - name: windows-msvc-vs-dynamic-runtime
+          - name: windows-msvc-ninja-dynamic-runtime
             os: windows-latest
-            generator: Visual Studio 17 2022
-            config: Debug
+            generator: Ninja
+            build_type: Debug
+            cc: cl
+            cxx: cl
             msvc_runtime: MultiThreaded$<$<CONFIG:Debug>:Debug>DLL
 
     steps:
       - name: Checkout
         uses: actions/checkout@v6
-        with:
-          submodules: recursive
 
       - name: Setup MSVC developer environment
-        if: runner.os == 'Windows' && matrix.generator == 'Ninja'
+        if: runner.os == 'Windows'
         uses: ilammy/msvc-dev-cmd@v1
 
       - name: Install Ninja
@@ -570,7 +567,7 @@ jobs:
           python-version: "3.12"
 
       - name: Setup uv
-        uses: astral-sh/setup-uv@v5
+        uses: astral-sh/setup-uv@v7
 
       - name: Setup Node
         uses: actions/setup-node@v6
@@ -580,22 +577,25 @@ jobs:
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable
 
-      - name: Cache Rust cargo registry and build artifacts
-        uses: Swatinem/rust-cache@v2
-        with:
-          prefix-key: release-gates
-          shared-key: windows-rust
-          env-vars: CARGO_TARGET_DIR
-          cache-targets: true
-          cache-on-failure: false
-          save-if: ${{ github.ref == 'refs/heads/master' }}
-
       - name: Checkout pinned RMCP reference
         shell: bash
         run: |
           mkdir -p reference
           git clone https://github.com/modelcontextprotocol/rust-sdk.git reference/rmcp
           git -C reference/rmcp checkout c330fede90e4729c234f8e87fdbc5ea27a1dd10c
+
+      - name: Cache Rust cargo registry and build artifacts
+        uses: Swatinem/rust-cache@v2
+        with:
+          prefix-key: release-gates
+          shared-key: windows-rust
+          workspaces: |
+            reference/rmcp/conformance
+            tests/fixtures/rmcp_pagination_client
+          env-vars: CARGO_TARGET_DIR
+          cache-targets: true
+          cache-on-failure: false
+          save-if: ${{ github.ref == 'refs/heads/master' }}
 
       - name: Configure
         shell: pwsh
@@ -657,7 +657,7 @@ jobs:
 
       - name: Upload release gate evidence
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: cxxmcp-release-gates-${{ matrix.name }}
           path: |
@@ -675,38 +675,71 @@ jobs:
         include:
           - name: default
             feature: ""
+            http_enabled: "OFF"
+            openssl_enabled: "OFF"
+            auth_openssl_enabled: "OFF"
             auth_enabled: "OFF"
             websocket_enabled: "OFF"
           - name: http
             feature: "[http]"
+            http_enabled: "ON"
+            openssl_enabled: "OFF"
+            auth_openssl_enabled: "OFF"
             auth_enabled: "OFF"
             websocket_enabled: "OFF"
           - name: websocket
             feature: "[websocket]"
+            http_enabled: "ON"
+            openssl_enabled: "OFF"
+            auth_openssl_enabled: "OFF"
             auth_enabled: "OFF"
             websocket_enabled: "ON"
           - name: http-openssl
-            feature: "[http-openssl]"
+            feature: "[http,openssl]"
+            http_enabled: "ON"
+            openssl_enabled: "ON"
+            auth_openssl_enabled: "OFF"
             auth_enabled: "OFF"
             websocket_enabled: "OFF"
+          - name: websocket-openssl
+            feature: "[websocket,openssl]"
+            http_enabled: "ON"
+            openssl_enabled: "ON"
+            auth_openssl_enabled: "OFF"
+            auth_enabled: "OFF"
+            websocket_enabled: "ON"
           - name: http-auth
             feature: "[http,auth]"
+            http_enabled: "ON"
+            openssl_enabled: "OFF"
+            auth_openssl_enabled: "OFF"
             auth_enabled: "ON"
             websocket_enabled: "OFF"
           - name: websocket-auth
             feature: "[websocket,auth]"
+            http_enabled: "ON"
+            openssl_enabled: "OFF"
+            auth_openssl_enabled: "OFF"
             auth_enabled: "ON"
             websocket_enabled: "ON"
+          - name: auth-openssl
+            feature: "[auth,openssl]"
+            http_enabled: "OFF"
+            openssl_enabled: "ON"
+            auth_openssl_enabled: "ON"
+            auth_enabled: "ON"
+            websocket_enabled: "OFF"
           - name: http-auth-openssl
-            feature: "[http-openssl,auth,openssl]"
+            feature: "[http,auth,openssl]"
+            http_enabled: "ON"
+            openssl_enabled: "ON"
+            auth_openssl_enabled: "ON"
             auth_enabled: "ON"
             websocket_enabled: "OFF"
 
     steps:
       - name: Checkout
         uses: actions/checkout@v6
-        with:
-          submodules: recursive
 
       - name: Install tools
         run: |
@@ -737,7 +770,10 @@ jobs:
             -DCMAKE_BUILD_TYPE=Release \
             -DCMAKE_TOOLCHAIN_FILE="${RUNNER_TEMP}/vcpkg/scripts/buildsystems/vcpkg.cmake" \
             -DVCPKG_TARGET_TRIPLET=x64-linux \
+            -DCXXMCP_PACKAGE_SMOKE_HTTP_ENABLED=${{ matrix.http_enabled }} \
+            -DCXXMCP_PACKAGE_SMOKE_OPENSSL_ENABLED=${{ matrix.openssl_enabled }} \
             -DCXXMCP_PACKAGE_SMOKE_AUTH_ENABLED=${{ matrix.auth_enabled }} \
+            -DCXXMCP_PACKAGE_SMOKE_AUTH_OPENSSL_ENABLED=${{ matrix.auth_openssl_enabled }} \
             -DCXXMCP_PACKAGE_SMOKE_WEBSOCKET_ENABLED=${{ matrix.websocket_enabled }} \
             2>&1 | tee "build-package-vcpkg-${{ matrix.name }}/cmake-configure.log"
           cmake --build "build-package-vcpkg-${{ matrix.name }}" --parallel \
@@ -745,7 +781,7 @@ jobs:
 
       - name: Upload vcpkg package evidence
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: cxxmcp-package-vcpkg-${{ matrix.name }}
           path: |
@@ -766,38 +802,51 @@ jobs:
             with_http: "False"
             with_websocket: "False"
             with_auth: "False"
+            http_enabled: "OFF"
             auth_enabled: "OFF"
+            auth_openssl_enabled: "OFF"
+            openssl_enabled: "OFF"
             websocket_enabled: "OFF"
           - name: http
             with_http: "True"
             with_websocket: "False"
             with_auth: "False"
+            http_enabled: "ON"
             auth_enabled: "OFF"
+            auth_openssl_enabled: "OFF"
+            openssl_enabled: "OFF"
             websocket_enabled: "OFF"
           - name: websocket
             with_http: "False"
             with_websocket: "True"
             with_auth: "False"
+            http_enabled: "ON"
             auth_enabled: "OFF"
+            auth_openssl_enabled: "OFF"
+            openssl_enabled: "OFF"
             websocket_enabled: "ON"
           - name: http-auth
             with_http: "True"
             with_websocket: "False"
             with_auth: "True"
+            http_enabled: "ON"
             auth_enabled: "ON"
+            auth_openssl_enabled: "OFF"
+            openssl_enabled: "OFF"
             websocket_enabled: "OFF"
           - name: websocket-auth
             with_http: "False"
             with_websocket: "True"
             with_auth: "True"
+            http_enabled: "ON"
             auth_enabled: "ON"
+            auth_openssl_enabled: "OFF"
+            openssl_enabled: "OFF"
             websocket_enabled: "ON"
 
     steps:
       - name: Checkout
         uses: actions/checkout@v6
-        with:
-          submodules: recursive
 
       - name: Install tools
         run: |
@@ -821,8 +870,9 @@ jobs:
       - name: Install Conan consumer dependencies
         run: |
           set -euo pipefail
+          version="$(tr -d '\r\n' < VERSION)"
           conan install \
-            --requires=cxxmcp/1.1.3 \
+            --requires="cxxmcp/${version}" \
             --generator=CMakeDeps \
             --generator=CMakeToolchain \
             --output-folder="build-package-conan-${{ matrix.name }}-deps" \
@@ -845,7 +895,10 @@ jobs:
             -G Ninja \
             -DCMAKE_BUILD_TYPE=Release \
             -DCMAKE_TOOLCHAIN_FILE="${toolchain}" \
+            -DCXXMCP_PACKAGE_SMOKE_HTTP_ENABLED=${{ matrix.http_enabled }} \
+            -DCXXMCP_PACKAGE_SMOKE_OPENSSL_ENABLED=${{ matrix.openssl_enabled }} \
             -DCXXMCP_PACKAGE_SMOKE_AUTH_ENABLED=${{ matrix.auth_enabled }} \
+            -DCXXMCP_PACKAGE_SMOKE_AUTH_OPENSSL_ENABLED=${{ matrix.auth_openssl_enabled }} \
             -DCXXMCP_PACKAGE_SMOKE_WEBSOCKET_ENABLED=${{ matrix.websocket_enabled }} \
             2>&1 | tee "build-package-conan-${{ matrix.name }}/cmake-configure.log"
           cmake --build "build-package-conan-${{ matrix.name }}" --parallel \
@@ -853,7 +906,7 @@ jobs:
 
       - name: Upload Conan package evidence
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: cxxmcp-package-conan-${{ matrix.name }}
           path: |
@@ -875,37 +928,40 @@ jobs:
             websocket_enabled: "false"
             auth_enabled: "false"
             auth_define: ""
+            http_define: ""
             websocket_define: ""
           - name: http
             http_enabled: "true"
             websocket_enabled: "false"
             auth_enabled: "false"
             auth_define: ""
+            http_define: "add_defines(\"CXXMCP_PACKAGE_SMOKE_HTTP\")"
             websocket_define: ""
           - name: websocket
             http_enabled: "false"
             websocket_enabled: "true"
             auth_enabled: "false"
             auth_define: ""
+            http_define: "add_defines(\"CXXMCP_PACKAGE_SMOKE_HTTP\")"
             websocket_define: "add_defines(\"CXXMCP_PACKAGE_SMOKE_WEBSOCKET\")"
           - name: http-auth
             http_enabled: "true"
             websocket_enabled: "false"
             auth_enabled: "true"
             auth_define: "add_defines(\"CXXMCP_PACKAGE_SMOKE_AUTH\")"
+            http_define: "add_defines(\"CXXMCP_PACKAGE_SMOKE_HTTP\")"
             websocket_define: ""
           - name: websocket-auth
             http_enabled: "false"
             websocket_enabled: "true"
             auth_enabled: "true"
             auth_define: "add_defines(\"CXXMCP_PACKAGE_SMOKE_AUTH\")"
+            http_define: "add_defines(\"CXXMCP_PACKAGE_SMOKE_HTTP\")"
             websocket_define: "add_defines(\"CXXMCP_PACKAGE_SMOKE_WEBSOCKET\")"
 
     steps:
       - name: Checkout
         uses: actions/checkout@v6
-        with:
-          submodules: recursive
 
       - name: Setup xmake
         uses: xmake-io/github-action-setup-xmake@v1
@@ -916,6 +972,8 @@ jobs:
           XMAKE_PACKAGE_NAME: ${{ matrix.name }}
         run: |
           set -euo pipefail
+          version="$(tr -d '\r\n' < VERSION)"
+          export CXXMCP_PACKAGE_VERSION="${version}"
           mkdir -p "build-package-xmake-${{ matrix.name }}"
           mkdir -p "build-package-xmake-${{ matrix.name }}/repo/packages/c"
           cp -R packaging/xmake/packages/c/cxxmcp \
@@ -932,6 +990,8 @@ jobs:
           from pathlib import Path
 
           name = os.environ["XMAKE_PACKAGE_NAME"]
+          version = os.environ["CXXMCP_PACKAGE_VERSION"]
+          tag = f"v{version}"
           workspace = Path(os.environ["GITHUB_WORKSPACE"])
           root = workspace / f"build-package-xmake-{name}"
           archive = root / f"cxxmcp-xmake-source-{os.environ['GITHUB_SHA']}.tar.gz"
@@ -944,31 +1004,32 @@ jobs:
               text,
           )
           text, version_count = re.subn(
-              r'add_versions\("v1\.1\.3",\s*".*?"\)',
-              f'add_versions("v1.1.3", "{digest}")',
+              r'add_versions\("v\d+\.\d+\.\d+",\s*".*?"\)',
+              f'add_versions("{tag}", "{digest}")',
               text,
           )
           if url_count != 1:
               raise SystemExit(f"expected one add_urls rewrite, got {url_count}")
           if version_count != 1:
-              raise SystemExit(f"expected one v1.1.3 add_versions rewrite, got {version_count}")
+              raise SystemExit(f"expected one {tag} add_versions rewrite, got {version_count}")
           if f'file://{archive.as_posix()}' not in text:
               raise SystemExit("xmake recipe was not rewritten to the generated source archive")
           if "github.com" in text or "releases/download" in text:
               raise SystemExit("xmake recipe still contains a remote release archive URL")
           recipe.write_text(text, encoding="utf-8")
           PY
-          cat > "build-package-xmake-${{ matrix.name }}/xmake.lua" <<'EOF'
+          cat > "build-package-xmake-${{ matrix.name }}/xmake.lua" <<EOF
           add_rules("mode.release")
           set_languages("c++17")
           add_repositories("cxxmcp-local repo")
-          add_requires("cxxmcp v1.1.3", {configs = {http = ${{ matrix.http_enabled }}, websocket = ${{ matrix.websocket_enabled }}, auth = ${{ matrix.auth_enabled }}}})
+          add_requires("cxxmcp v${version}", {configs = {http = ${{ matrix.http_enabled }}, websocket = ${{ matrix.websocket_enabled }}, auth = ${{ matrix.auth_enabled }}}})
 
           target("consumer")
               set_kind("binary")
               add_files("main.cpp")
               add_packages("cxxmcp")
               ${{ matrix.auth_define }}
+              ${{ matrix.http_define }}
               ${{ matrix.websocket_define }}
           EOF
           cat > "build-package-xmake-${{ matrix.name }}/main.cpp" <<'EOF'
@@ -978,6 +1039,9 @@ jobs:
           #include <cxxmcp/protocol/serialization.hpp>
           #ifdef CXXMCP_PACKAGE_SMOKE_AUTH
           #include <cxxmcp/auth.hpp>
+          #endif
+          #ifdef CXXMCP_PACKAGE_SMOKE_HTTP
+          #include <cxxmcp/transport/http_transport.hpp>
           #endif
           #ifdef CXXMCP_PACKAGE_SMOKE_WEBSOCKET
           #include <cxxmcp/peer.hpp>
@@ -994,6 +1058,14 @@ jobs:
               auto registration =
                   mcp::auth::build_client_registration_request(options);
               (void)registration;
+          #endif
+          #ifdef CXXMCP_PACKAGE_SMOKE_HTTP
+              mcp::transport::StreamableHttpClientTransportOptions http_options;
+              http_options.uri = "http://127.0.0.1:3001/mcp";
+              auto http_client =
+                  std::make_unique<mcp::transport::StreamableHttpClientTransport>(
+                      std::move(http_options));
+              (void)http_client;
           #endif
           #ifdef CXXMCP_PACKAGE_SMOKE_WEBSOCKET
               auto builder = mcp::ClientPeer::builder();
@@ -1019,7 +1091,7 @@ jobs:
 
       - name: Upload xmake package evidence
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: cxxmcp-package-xmake-${{ matrix.name }}
           path: |
@@ -1039,8 +1111,6 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v6
-        with:
-          submodules: recursive
 
       - name: Install Doxygen
         run: |
@@ -1061,7 +1131,7 @@ jobs:
         run: test -f docs/doxygen/html/index.html
 
       - name: Upload docs artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: cxxmcp-doxygen-html
           path: docs/doxygen/html
@@ -1074,8 +1144,6 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v6
-        with:
-          submodules: recursive
 
       - name: Create source archive
         shell: bash
@@ -1095,7 +1163,7 @@ jobs:
           sha256sum "${archive}" > release-artifacts/SHA256SUMS.txt
 
       - name: Upload source artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: cxxmcp-source
           path: release-artifacts
@@ -1108,8 +1176,6 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v6
-        with:
-          submodules: recursive
 
       - name: Setup Python
         uses: actions/setup-python@v6
@@ -1178,7 +1244,7 @@ jobs:
           python scripts/collect_public_api_surface.py \
             --source . \
             --output release-evidence/public-api-surface.json
-          cp examples/*.cpp examples/CMakeLists.txt release-evidence/examples/
+          cp -r examples/. release-evidence/examples/
           cp -r templates/external_consumer release-evidence/templates/
           {
             echo "commit=${GITHUB_SHA}"
@@ -1195,7 +1261,7 @@ jobs:
         run: python scripts/check_release_evidence.py --source . --evidence release-evidence
 
       - name: Upload release evidence
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: cxxmcp-release-evidence
           path: release-evidence

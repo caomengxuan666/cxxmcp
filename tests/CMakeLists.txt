@@ -52,13 +52,22 @@ add_test(NAME release_gate_manifest COMMAND
 )
 cxxmcp_mark_release_blocking(release_gate_manifest release-gate)
 
+add_test(NAME compile_fail_unreflected_typed_tool COMMAND
+    "${CMAKE_COMMAND}"
+    "-DREPO_SOURCE_DIR=${PROJECT_SOURCE_DIR}"
+    "-DREPO_BINARY_DIR=${PROJECT_BINARY_DIR}"
+    -P "${PROJECT_SOURCE_DIR}/tests/compile_fail_unreflected_typed_tool.cmake"
+)
+cxxmcp_mark_release_blocking(
+    compile_fail_unreflected_typed_tool public-api typed-api)
+
 function(add_cxxmcp_public_header_compile_test test_name source_file package_target)
     add_executable("mcp_public_header_${test_name}"
         "sdk/public_headers/${source_file}"
     )
 
     target_link_libraries("mcp_public_header_${test_name}" PRIVATE
-        "${package_target}"
+        "${package_target}" ${ARGN}
     )
 
     set_target_properties("mcp_public_header_${test_name}" PROPERTIES
@@ -92,6 +101,48 @@ endif()
 if(TARGET mcp_auth)
     add_cxxmcp_public_header_compile_test(
         auth auth_header.cpp cxxmcp::auth)
+    add_cxxmcp_public_header_compile_test(
+        auth_client_orchestrator auth_client_orchestrator_header.cpp
+        cxxmcp::auth)
+    add_cxxmcp_public_header_compile_test(
+        auth_constant_time auth_constant_time_header.cpp cxxmcp::auth)
+    add_cxxmcp_public_header_compile_test(
+        auth_dpop auth_dpop_header.cpp cxxmcp::auth)
+    add_cxxmcp_public_header_compile_test(
+        auth_http_jwks_endpoint auth_http_jwks_endpoint_header.cpp
+        cxxmcp::auth)
+    add_cxxmcp_public_header_compile_test(
+        auth_http_metadata_endpoint auth_http_metadata_endpoint_header.cpp
+        cxxmcp::auth)
+    add_cxxmcp_public_header_compile_test(
+        auth_http_token_endpoint auth_http_token_endpoint_header.cpp
+        cxxmcp::auth)
+    add_cxxmcp_public_header_compile_test(
+        auth_jwks auth_jwks_header.cpp cxxmcp::auth)
+    add_cxxmcp_public_header_compile_test(
+        auth_lifecycle auth_lifecycle_header.cpp cxxmcp::auth)
+    add_cxxmcp_public_header_compile_test(
+        auth_loopback_receiver auth_loopback_receiver_header.cpp cxxmcp::auth)
+    add_cxxmcp_public_header_compile_test(
+        auth_metadata auth_metadata_header.cpp cxxmcp::auth)
+    add_cxxmcp_public_header_compile_test(
+        auth_pkce auth_pkce_header.cpp cxxmcp::auth)
+    add_cxxmcp_public_header_compile_test(
+        auth_registration auth_registration_header.cpp cxxmcp::auth)
+    add_cxxmcp_public_header_compile_test(
+        auth_server_auth_endpoints auth_server_auth_endpoints_header.cpp
+        cxxmcp::auth)
+    if(TARGET mcp_server)
+        add_cxxmcp_public_header_compile_test(
+            auth_server_auth_provider auth_server_auth_provider_header.cpp
+            cxxmcp::auth cxxmcp::server)
+    endif()
+    add_cxxmcp_public_header_compile_test(
+        auth_token auth_token_header.cpp cxxmcp::auth)
+    add_cxxmcp_public_header_compile_test(
+        auth_types auth_types_header.cpp cxxmcp::auth)
+    add_cxxmcp_public_header_compile_test(
+        auth_www_auth auth_www_auth_header.cpp cxxmcp::auth)
 
     add_executable(mcp_auth_tests
         auth/test_auth.cpp
@@ -109,6 +160,32 @@ if(TARGET mcp_auth)
 endif()
 
 if(TARGET mcp_auth_openssl)
+    add_cxxmcp_public_header_compile_test(
+        auth_openssl_base64url auth_openssl_base64url_header.cpp
+        cxxmcp::auth_openssl)
+    add_cxxmcp_public_header_compile_test(
+        auth_openssl_dpop auth_openssl_dpop_header.cpp cxxmcp::auth_openssl)
+    add_cxxmcp_public_header_compile_test(
+        auth_openssl_jwk auth_openssl_jwk_header.cpp cxxmcp::auth_openssl)
+    add_cxxmcp_public_header_compile_test(
+        auth_openssl_jws auth_openssl_jws_header.cpp cxxmcp::auth_openssl)
+    add_cxxmcp_public_header_compile_test(
+        auth_openssl_jws_verify auth_openssl_jws_verify_header.cpp
+        cxxmcp::auth_openssl)
+    add_cxxmcp_public_header_compile_test(
+        auth_openssl_jwt auth_openssl_jwt_header.cpp cxxmcp::auth_openssl)
+    add_cxxmcp_public_header_compile_test(
+        auth_openssl_pkce auth_openssl_pkce_header.cpp cxxmcp::auth_openssl)
+    if(TARGET mcp_server)
+        add_cxxmcp_public_header_compile_test(
+            auth_openssl_server_auth_provider
+            auth_openssl_server_auth_provider_header.cpp
+            cxxmcp::auth_openssl cxxmcp::server)
+    endif()
+    add_cxxmcp_public_header_compile_test(
+        auth_openssl_sha256 auth_openssl_sha256_header.cpp
+        cxxmcp::auth_openssl)
+
     add_executable(mcp_auth_openssl_tests
         auth/test_auth_openssl.cpp
     )

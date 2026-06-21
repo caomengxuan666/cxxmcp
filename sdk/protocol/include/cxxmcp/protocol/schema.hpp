@@ -41,9 +41,7 @@ class JsonSchema {
 
 /// @brief Type-to-schema customization point for typed SDK helpers.
 template <class T, class Enable = void>
-struct SchemaTraits {
-  static Json schema() { return JsonSchema::object(); }
-};
+struct SchemaTraits {};
 
 template <>
 struct SchemaTraits<Json> {
@@ -69,6 +67,11 @@ struct SchemaTraits<
 template <class T>
 struct SchemaTraits<T, std::enable_if_t<std::is_floating_point_v<T>>> {
   static Json schema() { return JsonSchema::number(); }
+};
+
+template <class T>
+struct SchemaTraits<T, std::enable_if_t<std::is_enum_v<T>>> {
+  static Json schema() { return JsonSchema::integer(); }
 };
 
 /// @brief Returns the JSON Schema advertised for a C++ type.
@@ -117,7 +120,7 @@ inline Json reflect_schema() {
       [&](const auto&... fds) {
         (add_reflected_field_schema(properties, required, fds), ...);
       },
-      Reflect<T>::fields());
+      reflect_fields<T>());
 
   Json result = {{"type", "object"}, {"properties", std::move(properties)}};
   if (!required.empty()) {
@@ -141,6 +144,62 @@ inline Json schema_for() {
   } else {
     return SchemaTraits<Decayed>::schema();
   }
+}
+
+template <class T, class = void>
+struct has_schema_traits : std::false_type {};
+
+template <class T>
+struct has_schema_traits<T, std::void_t<decltype(SchemaTraits<T>::schema())>>
+    : std::true_type {};
+
+template <class T>
+struct is_tool_schema_type
+    : std::bool_constant<has_reflect_v<std::decay_t<T>> ||
+                         has_schema_traits<std::decay_t<T>>::value> {};
+
+template <class T>
+struct is_tool_schema_type<std::vector<T>> : is_tool_schema_type<T> {};
+
+template <class T>
+struct is_tool_schema_type<std::optional<T>> : is_tool_schema_type<T> {};
+
+template <class T>
+inline constexpr bool is_tool_schema_type_v = is_tool_schema_type<T>::value;
+
+/// @brief Returns the root object schema required by MCP tool arguments.
+///
+/// MCP tools/call always sends arguments as an object. Reflected and custom DTO
+/// types already map to object schemas; scalar authoring helpers are wrapped in
+/// a single required `value` property so the advertised schema still describes
+/// the protocol envelope.
+template <class T>
+inline Json tool_input_schema_for() {
+  using Decayed = std::decay_t<T>;
+  static_assert(
+      is_tool_schema_type_v<Decayed>,
+      "cxxmcp typed tool argument/result type is a class or struct but is "
+      "not reflectable. Add CXXMCP_REFLECT_SELF(Type, ...) inside the type, "
+      "CXXMCP_REFLECT(Type, ...) after it, or provide nlohmann JSON conversion "
+      "plus an explicit mcp::protocol::SchemaTraits<T> specialization.");
+  auto schema = schema_for<Decayed>();
+  if (schema.is_object() && schema.value("type", std::string{}) == "object") {
+    return schema;
+  }
+  if constexpr (std::is_same_v<Decayed, Json>) {
+    return JsonSchema::object();
+  } else {
+    return Json{{"type", "object"},
+                {"properties", Json{{"value", std::move(schema)}}},
+                {"required", Json::array({"value"})},
+                {"additionalProperties", false}};
+  }
+}
+
+/// @brief Returns the root object schema required by MCP structuredContent.
+template <class T>
+inline Json tool_output_schema_for() {
+  return tool_input_schema_for<T>();
 }
 
 /// @brief Fluent object-schema builder for tool input and output schemas.
