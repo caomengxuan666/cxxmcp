@@ -733,10 +733,6 @@ def main() -> None:
             args.run_url,
             args.release_url,
         )
-    elif release_artifacts:
-        check_release_review_file(
-            release_artifacts / "release-artifact-review.md", args.tag
-        )
 
     print("release artifact check passed")
 

@@ -244,10 +244,12 @@ jobs:
           release_gates_run_url="${{ steps.release_gates.outputs.run_url }}"
           package="cxxmcp-sdk-source-${tag}.tar.gz"
 
-          cat > release-artifacts/RELEASE_NOTES.md <<EOF
-          # cxxmcp ${tag}
+          checksums="$(cat release-artifacts/SHA256SUMS.txt)"
 
-          SDK source release for ${tag} from commit ${commit}.
+          cat > release-artifacts/RELEASE_NOTES.md <<'EOF'
+          # cxxmcp __TAG__
+
+          SDK source release for __TAG__ from commit __COMMIT__.
 
           This release intentionally publishes the SDK source archive,
           compatibility notes, and checksums only. Release-gate evidence stays
@@ -257,9 +259,9 @@ jobs:
 
           ## Release Gate
 
-          - release-gates run: ${release_gates_run_url}
-          - release-gates run id: ${release_gates_run_id}
-          - release commit: ${commit}
+          - release-gates run: __RELEASE_GATES_RUN_URL__
+          - release-gates run id: __RELEASE_GATES_RUN_ID__
+          - release commit: __COMMIT__
 
           ## Supported Matrix
 
@@ -291,7 +293,7 @@ jobs:
 
           ## Release Assets
 
-          - ${package}
+          - __PACKAGE__
           - SHA256SUMS.txt
           - RELEASE_NOTES.md
 
@@ -319,9 +321,27 @@ jobs:
           ## Checksums
 
           \`\`\`text
-          $(cat release-artifacts/SHA256SUMS.txt)
+          __CHECKSUMS__
           \`\`\`
           EOF
+
+          python - <<'PY'
+          from pathlib import Path
+
+          path = Path("release-artifacts/RELEASE_NOTES.md")
+          text = path.read_text(encoding="utf-8")
+          replacements = {
+              "__TAG__": """${tag}""",
+              "__COMMIT__": """${commit}""",
+              "__RELEASE_GATES_RUN_URL__": """${release_gates_run_url}""",
+              "__RELEASE_GATES_RUN_ID__": """${release_gates_run_id}""",
+              "__PACKAGE__": """${package}""",
+              "__CHECKSUMS__": """${checksums}""",
+          }
+          for old, new in replacements.items():
+              text = text.replace(old, new)
+          path.write_text(text, encoding="utf-8")
+          PY
 
       - name: Verify release artifact contents
         run: >
