@@ -612,18 +612,15 @@ def check_source_tree(source: Path) -> None:
     require_contains(release_sdk, "Download release-gates artifacts")
     require_contains(release_sdk, "Verify release-gates artifact contents")
     require_contains(release_sdk, "Verify release artifact contents")
-    require_contains(release_sdk, "Verify assembled release artifact review")
     require_contains(release_sdk, "scripts/check_release_artifacts.py")
-    require_contains(release_sdk, "--review-output release-artifacts/release-artifact-review.md")
     require_contains(release_sdk, "--commit \"${{ steps.release_identity.outputs.commit }}\"")
     require_contains(release_sdk, "--run-url \"${{ steps.release_gates.outputs.run_url }}\"")
     require_contains(release_sdk, "--release-url")
-    require_contains(release_sdk, "Package release-gates evidence")
+    require_contains(release_sdk, "Create checksums")
     require_contains(release_sdk, "cxxmcp-sdk-source-${tag}.tar.gz")
     require_contains(release_sdk, "scripts/create_sdk_source_archive.py")
     require_contains(release_sdk, "--output \"release-artifacts/${package}\"")
     require_contains(release_sdk, "SHA256SUMS.txt")
-    require_contains(release_sdk, "release-artifact-review.md")
     require_contains(release_sdk, "sha256sum *.tar.gz > SHA256SUMS.txt")
     require_contains(release_sdk, "RELEASE_NOTES.md")
     require_contains(release_sdk, "Supported Matrix")
@@ -702,7 +699,7 @@ def check_source_tree(source: Path) -> None:
         "scripts/check_source_markers.py",
         "runtime/src/gateway.cpp",
         "tools/cli/src/main.cpp",
-        "cxxmcp-release-evidence/{relative}",
+        "evidence / relative",
     ]:
         require_contains(release_artifacts, needle)
 

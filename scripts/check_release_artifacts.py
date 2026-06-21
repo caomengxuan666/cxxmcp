@@ -558,32 +558,13 @@ def require_tar_members(path: Path, required: list[str]) -> None:
 
 
 def check_release_tarball_contents(release_artifacts: Path, tag: str) -> None:
-    require_tar_members(
-        release_artifacts / f"cxxmcp-release-gates-{tag}.tar.gz",
-        RELEASE_GATE_BUNDLE_ARTIFACTS,
-    )
-    require_tar_members(
-        release_artifacts / f"cxxmcp-doxygen-html-{tag}.tar.gz",
-        ["cxxmcp-doxygen-html/index.html"],
-    )
-    require_tar_members(
-        release_artifacts / f"cxxmcp-release-gate-source-{tag}.tar.gz",
-        ["cxxmcp-source/SHA256SUMS.txt"],
-    )
-    require_tar_members(
-        release_artifacts / f"cxxmcp-release-evidence-{tag}.tar.gz",
-        [f"cxxmcp-release-evidence/{relative}" for relative in RELEASE_EVIDENCE_REQUIRED_FILES],
-    )
+    check_sdk_source_tarball(release_artifacts / f"cxxmcp-sdk-source-{tag}.tar.gz")
 
 
 def check_release_artifacts(release_artifacts: Path, tag: str) -> None:
     require_dir(release_artifacts)
     expected = [
         f"cxxmcp-sdk-source-{tag}.tar.gz",
-        f"cxxmcp-release-gates-{tag}.tar.gz",
-        f"cxxmcp-doxygen-html-{tag}.tar.gz",
-        f"cxxmcp-release-gate-source-{tag}.tar.gz",
-        f"cxxmcp-release-evidence-{tag}.tar.gz",
     ]
     tarballs: list[Path] = []
     for name in expected:
@@ -593,7 +574,6 @@ def check_release_artifacts(release_artifacts: Path, tag: str) -> None:
 
     require_file(release_artifacts / "RELEASE_NOTES.md")
     check_sha256sums(release_artifacts, tarballs)
-    check_sdk_source_tarball(release_artifacts / f"cxxmcp-sdk-source-{tag}.tar.gz")
     check_release_tarball_contents(release_artifacts, tag)
 
 
@@ -668,10 +648,6 @@ def write_release_artifact_review(
                 "## Final Release Artifacts Reviewed",
                 "",
                 f"- [x] `cxxmcp-sdk-source-{tag}.tar.gz`",
-                f"- [x] `cxxmcp-release-gates-{tag}.tar.gz`",
-                f"- [x] `cxxmcp-doxygen-html-{tag}.tar.gz`",
-                f"- [x] `cxxmcp-release-gate-source-{tag}.tar.gz`",
-                f"- [x] `cxxmcp-release-evidence-{tag}.tar.gz`",
                 "- [x] `SHA256SUMS.txt`",
                 "- [x] `RELEASE_NOTES.md`",
             ]

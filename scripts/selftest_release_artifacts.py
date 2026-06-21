@@ -296,18 +296,6 @@ def create_sdk_source_tarball(release: Path, root: Path, tag: str) -> None:
 def create_release_artifacts(release: Path, gate: Path, source_root: Path, tag: str) -> None:
     release.mkdir(parents=True, exist_ok=True)
     create_sdk_source_tarball(release, source_root, tag)
-    create_tar(
-        release / f"cxxmcp-release-gates-{tag}.tar.gz",
-        gate,
-        check_release_artifacts.RELEASE_GATE_BUNDLE_ARTIFACTS,
-    )
-    create_tar(release / f"cxxmcp-doxygen-html-{tag}.tar.gz", gate, ["cxxmcp-doxygen-html"])
-    create_tar(release / f"cxxmcp-release-gate-source-{tag}.tar.gz", gate, ["cxxmcp-source"])
-    create_tar(
-        release / f"cxxmcp-release-evidence-{tag}.tar.gz",
-        gate,
-        ["cxxmcp-release-evidence"],
-    )
     write(release / "RELEASE_NOTES.md", "notes")
     sums = []
     for tarball in sorted(release.glob("*.tar.gz")):

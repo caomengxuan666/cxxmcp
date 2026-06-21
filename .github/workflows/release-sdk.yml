@@ -62,7 +62,7 @@ jobs:
             echo "Using explicit release-gates run ${RELEASE_GATES_RUN_ID_INPUT}; skipping auto-discovery wait."
             exit 0
           fi
-          for i in $(seq 1 60); do
+          for i in $(seq 1 180); do
             existing="$(
               gh api \
                 "/repos/${GITHUB_REPOSITORY}/actions/workflows/release-gates.yml/runs?status=success&head_sha=${RELEASE_COMMIT}&per_page=1" \
@@ -72,7 +72,7 @@ jobs:
               echo "release-gates passed (run ${existing})"
               exit 0
             fi
-            echo "Waiting for release-gates... (${i}/60)"
+            echo "Waiting for release-gates... (${i}/180)"
             sleep 30
           done
           echo "Timed out waiting for release-gates to pass for ${RELEASE_COMMIT}" >&2
@@ -167,7 +167,7 @@ jobs:
 
             disallowed="$(
               git diff --name-only "${run_head_sha}" "${RELEASE_COMMIT}" |
-                grep -Ev '^(\.github/workflows/release-sdk\.yml|scripts/check_release_artifacts\.py|scripts/selftest_release_artifacts\.py)$' || true
+                grep -Ev '^(\.github/workflows/release-sdk\.yml|scripts/check_release_artifacts\.py|scripts/selftest_release_artifacts\.py|docs/release_candidate_checklist\.md|docs/release_notes_template\.md)$' || true
             )"
             if [[ -n "${disallowed}" ]]; then
               echo "Explicit release-gates run ${run_id} differs from release commit outside release packaging files:" >&2
@@ -223,58 +223,10 @@ jobs:
             --tag "${tag}" \
             --output "release-artifacts/${package}"
 
-      - name: Package release-gates evidence
+      - name: Create checksums
         shell: bash
         run: |
           set -euo pipefail
-
-          tag="${{ steps.release_identity.outputs.tag }}"
-          mkdir -p release-artifacts
-
-          tar -czf "release-artifacts/cxxmcp-release-gates-${tag}.tar.gz" \
-            -C release-gate-artifacts \
-            cxxmcp-release-gates-linux-gcc-ninja \
-            cxxmcp-release-gates-linux-clang-ninja \
-            cxxmcp-release-gates-macos-appleclang-ninja \
-            cxxmcp-release-gates-windows-msvc-ninja-static-runtime \
-            cxxmcp-release-gates-windows-clangcl-ninja-static-runtime \
-            cxxmcp-release-gates-windows-msvc-ninja-dynamic-runtime \
-            cxxmcp-performance-evidence-linux-gcc-ninja \
-            cxxmcp-public-header-compile-evidence-linux-gcc-ninja \
-            cxxmcp-auth-release-gate-linux-gcc-ninja \
-            cxxmcp-auth-release-gate-windows-msvc-ninja \
-            cxxmcp-auth-openssl-release-gate-linux-gcc-ninja \
-            cxxmcp-package-vcpkg-default \
-            cxxmcp-package-vcpkg-http \
-            cxxmcp-package-vcpkg-websocket \
-            cxxmcp-package-vcpkg-http-openssl \
-            cxxmcp-package-vcpkg-websocket-openssl \
-            cxxmcp-package-vcpkg-http-auth \
-            cxxmcp-package-vcpkg-websocket-auth \
-            cxxmcp-package-vcpkg-auth-openssl \
-            cxxmcp-package-vcpkg-http-auth-openssl \
-            cxxmcp-package-conan-default \
-            cxxmcp-package-conan-http \
-            cxxmcp-package-conan-websocket \
-            cxxmcp-package-conan-http-auth \
-            cxxmcp-package-conan-websocket-auth \
-            cxxmcp-package-xmake-default \
-            cxxmcp-package-xmake-http \
-            cxxmcp-package-xmake-websocket \
-            cxxmcp-package-xmake-http-auth \
-            cxxmcp-package-xmake-websocket-auth
-
-          tar -czf "release-artifacts/cxxmcp-doxygen-html-${tag}.tar.gz" \
-            -C release-gate-artifacts \
-            cxxmcp-doxygen-html
-
-          tar -czf "release-artifacts/cxxmcp-release-gate-source-${tag}.tar.gz" \
-            -C release-gate-artifacts \
-            cxxmcp-source
-
-          tar -czf "release-artifacts/cxxmcp-release-evidence-${tag}.tar.gz" \
-            -C release-gate-artifacts \
-            cxxmcp-release-evidence
 
           (
             cd release-artifacts
@@ -297,9 +249,11 @@ jobs:
 
           SDK source release for ${tag} from commit ${commit}.
 
-          This release intentionally publishes SDK source, release evidence,
-          compatibility notes, and checksums only. Runtime, gateway, CLI, and
-          other tool binaries are not attached to this SDK release.
+          This release intentionally publishes the SDK source archive,
+          compatibility notes, and checksums only. Release-gate evidence stays
+          attached to the linked GitHub Actions run instead of the public release
+          download area. Runtime, gateway, CLI, and other tool binaries are not
+          attached to this SDK release.
 
           ## Release Gate
 
@@ -309,7 +263,7 @@ jobs:
 
           ## Supported Matrix
 
-          The release-gates artifact for this commit must contain green
+          The linked release-gates run for this commit contains green
           release-blocking evidence for:
 
           - Linux GCC Ninja
@@ -317,10 +271,10 @@ jobs:
           - macOS AppleClang Ninja
           - Windows MSVC Ninja static runtime
           - Windows ClangCL Ninja static runtime
-          - Windows MSVC Visual Studio dynamic runtime
+          - Windows MSVC Ninja dynamic runtime
 
-          Package-manager smoke evidence attached to the same release-gates
-          bundle covers the Ubuntu Linux vcpkg overlay, Conan, and xmake paths
+          Package-manager smoke evidence from the same release-gates run covers
+          the Ubuntu Linux vcpkg overlay, Conan, and xmake paths
           for both default SDK and opt-in auth builds. Do not read those
           package-manager artifacts as Windows or macOS package-manager support
           unless matching platform artifacts are attached for this release.
@@ -335,16 +289,14 @@ jobs:
           `extern template` decisions, not to claim universal compile-time
           wins.
 
-          ## Artifacts
+          ## Release Assets
 
           - ${package}
-          - cxxmcp-release-gates-${tag}.tar.gz
-          - cxxmcp-doxygen-html-${tag}.tar.gz
-          - cxxmcp-release-gate-source-${tag}.tar.gz
-          - cxxmcp-release-evidence-${tag}.tar.gz
           - SHA256SUMS.txt
-          - release-artifact-review.md
           - RELEASE_NOTES.md
+
+          Release-gate evidence, Doxygen output, and release evidence are
+          available from the GitHub Actions run linked above.
 
           ## Compatibility Notes
 
@@ -357,12 +309,9 @@ jobs:
 
           ## Evidence Notes
 
-          - This release workflow verified that the attached release-gates,
-            Doxygen, source-artifact, and release-evidence workflow artifacts
-            come from a successful release-gates run for the same commit.
-          - release-artifact-review.md records the exact tag, commit,
-            release-gates run, and release URL used by
-            scripts/check_release_artifacts.py after artifact validation.
+          - This release workflow verified that the release-gates, Doxygen,
+            source-artifact, and release-evidence workflow artifacts come from a
+            successful release-gates run for the same commit.
           - Do not claim fact-standard readiness unless
             docs/release_candidate_checklist.md is complete for this exact
             commit.
@@ -383,14 +332,6 @@ jobs:
           --commit "${{ steps.release_identity.outputs.commit }}"
           --run-url "${{ steps.release_gates.outputs.run_url }}"
           --release-url "https://github.com/${{ github.repository }}/releases/tag/${{ steps.release_identity.outputs.tag }}"
-          --review-output release-artifacts/release-artifact-review.md
-
-      - name: Verify assembled release artifact review
-        run: >
-          python scripts/check_release_artifacts.py
-          --gate-artifacts release-gate-artifacts
-          --release-artifacts release-artifacts
-          --tag "${{ steps.release_identity.outputs.tag }}"
 
       - name: Publish GitHub release
         shell: bash
