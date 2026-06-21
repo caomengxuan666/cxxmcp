@@ -1110,7 +1110,11 @@ core::Result<core::Unit> HttpTransport::start(
       const std::array kStatelessRemovedMethods{
           SV(protocol::LoggingSetLevelMethod),
           SV(protocol::ResourcesSubscribeMethod),
-          SV(protocol::ResourcesUnsubscribeMethod)};
+          SV(protocol::ResourcesUnsubscribeMethod),
+          SV(protocol::TasksListMethod),
+          SV(protocol::TasksGetMethod),
+          SV(protocol::TasksCancelMethod),
+          SV(protocol::TasksResultMethod)};
       for (const auto removed : kStatelessRemovedMethods) {
         if (rpc_request->method == removed) {
           response.status = 404;
@@ -1120,6 +1124,16 @@ core::Result<core::Unit> HttpTransport::start(
                       std::optional<protocol::RequestId>{rpc_request->id});
           return;
         }
+      }
+      if (rpc_request->method == protocol::ToolsCallMethod &&
+          rpc_request->params.is_object() &&
+          rpc_request->params.contains("task")) {
+        response.status = 404;
+        write_error(response,
+                    static_cast<int>(protocol::ErrorCode::MethodNotFound),
+                    "method not available in stateless mode",
+                    std::optional<protocol::RequestId>{rpc_request->id});
+        return;
       }
     }
 

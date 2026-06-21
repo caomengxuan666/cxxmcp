@@ -2170,6 +2170,136 @@ void test_server_http_transport_stateless_accepts_request_without_session() {
   server_transport.transport().stop();
 }
 
+void test_server_http_transport_stateless_rejects_task_state_methods() {
+  constexpr int kPort = 40246;
+  const std::string kPath = "/mcp";
+  std::atomic<int> handler_calls{0};
+
+  RunningServerTransportFixture server_transport(
+      std::make_unique<mcp::server::HttpTransport>(
+          mcp::server::HttpTransportOptions{
+              .listen_host = "127.0.0.1",
+              .listen_port = kPort,
+              .path = kPath,
+              .stateless = true,
+          }),
+      [&](const mcp::protocol::JsonRpcRequest& request,
+          const mcp::server::SessionContext&) {
+        (void)request;
+        ++handler_calls;
+        return mcp::protocol::JsonRpcResponse{
+            .id = request.id,
+            .result = Json::object(),
+        };
+      });
+
+  httplib::Client http_client("127.0.0.1", kPort);
+  httplib::Result response;
+  const auto body = serialize_test_request(mcp::protocol::JsonRpcRequest{
+      .method = mcp::protocol::TasksListMethod,
+      .params = Json{{"_meta", stateless_meta()}},
+      .id = std::int64_t{84},
+  });
+  for (int attempt = 0; attempt < 100; ++attempt) {
+    response = http_client.Post(
+        kPath,
+        httplib::Headers{
+            {"Accept", "application/json, text/event-stream"},
+            {"Content-Type", "application/json"},
+            {"MCP-Protocol-Version", mcp::protocol::McpProtocolVersion},
+            {"Mcp-Method", mcp::protocol::TasksListMethod},
+        },
+        body, "application/json");
+    if (response) {
+      break;
+    }
+    std::this_thread::sleep_for(std::chrono::milliseconds(25));
+  }
+
+  require(static_cast<bool>(response), "stateless tasks/list should respond");
+  require(response->status == 404,
+          "stateless tasks/list should be unavailable");
+  const auto parsed = mcp::protocol::parse_response(response->body);
+  require(parsed.has_value(), "stateless tasks/list response should parse");
+  require(parsed->error.has_value(),
+          "stateless tasks/list should return an error");
+  require(parsed->error->code ==
+              static_cast<int>(mcp::protocol::ErrorCode::MethodNotFound),
+          "stateless tasks/list error code mismatch");
+  require(handler_calls.load() == 0,
+          "stateless tasks/list must not reach handler");
+
+  server_transport.transport().stop();
+}
+
+void test_server_http_transport_stateless_rejects_task_tool_call() {
+  constexpr int kPort = 40247;
+  const std::string kPath = "/mcp";
+  std::atomic<int> handler_calls{0};
+
+  RunningServerTransportFixture server_transport(
+      std::make_unique<mcp::server::HttpTransport>(
+          mcp::server::HttpTransportOptions{
+              .listen_host = "127.0.0.1",
+              .listen_port = kPort,
+              .path = kPath,
+              .stateless = true,
+          }),
+      [&](const mcp::protocol::JsonRpcRequest& request,
+          const mcp::server::SessionContext&) {
+        (void)request;
+        ++handler_calls;
+        return mcp::protocol::JsonRpcResponse{
+            .id = request.id,
+            .result = Json::object(),
+        };
+      });
+
+  httplib::Client http_client("127.0.0.1", kPort);
+  httplib::Result response;
+  const auto body = serialize_test_request(mcp::protocol::JsonRpcRequest{
+      .method = mcp::protocol::ToolsCallMethod,
+      .params = Json{{"name", "slow"},
+                     {"arguments", Json::object()},
+                     {"task", Json::object()},
+                     {"_meta", stateless_meta()}},
+      .id = std::int64_t{85},
+  });
+  for (int attempt = 0; attempt < 100; ++attempt) {
+    response = http_client.Post(
+        kPath,
+        httplib::Headers{
+            {"Accept", "application/json, text/event-stream"},
+            {"Content-Type", "application/json"},
+            {"MCP-Protocol-Version", mcp::protocol::McpProtocolVersion},
+            {"Mcp-Method", mcp::protocol::ToolsCallMethod},
+            {"Mcp-Name", "slow"},
+        },
+        body, "application/json");
+    if (response) {
+      break;
+    }
+    std::this_thread::sleep_for(std::chrono::milliseconds(25));
+  }
+
+  require(static_cast<bool>(response),
+          "stateless task tools/call should respond");
+  require(response->status == 404,
+          "stateless task tools/call should be unavailable");
+  const auto parsed = mcp::protocol::parse_response(response->body);
+  require(parsed.has_value(),
+          "stateless task tools/call response should parse");
+  require(parsed->error.has_value(),
+          "stateless task tools/call should return an error");
+  require(parsed->error->code ==
+              static_cast<int>(mcp::protocol::ErrorCode::MethodNotFound),
+          "stateless task tools/call error code mismatch");
+  require(handler_calls.load() == 0,
+          "stateless task tools/call must not reach handler");
+
+  server_transport.transport().stop();
+}
+
 void test_server_http_transport_stateless_initialize_does_not_create_session() {
   constexpr int kPort = 40245;
   const std::string kPath = "/mcp";
@@ -5777,6 +5907,10 @@ int main() {
        test_server_http_transport_requires_initialized_before_business_request},
       {"server http transport stateless accepts request without session",
        test_server_http_transport_stateless_accepts_request_without_session},
+      {"server http transport stateless rejects task state methods",
+       test_server_http_transport_stateless_rejects_task_state_methods},
+      {"server http transport stateless rejects task tool call",
+       test_server_http_transport_stateless_rejects_task_tool_call},
       {"server http transport stateless initialize does not create session",
        test_server_http_transport_stateless_initialize_does_not_create_session},
       {"server http transport emits sse retry priming",

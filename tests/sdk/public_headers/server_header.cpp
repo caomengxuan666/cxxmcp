@@ -2,6 +2,7 @@
 
 #include <cxxmcp/server.hpp>
 #include <cxxmcp/server/http_transport.hpp>
+#include <cxxmcp/server/peer.hpp>
 
 int main() {
   mcp::server::HttpTransportOptions options;
