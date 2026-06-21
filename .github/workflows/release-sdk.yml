@@ -7,9 +7,6 @@ on:
         description: Successful release-gates run id for this tag commit. Leave empty to auto-discover by commit.
         required: false
         type: string
-  push:
-    tags:
-      - "v*"
 
 permissions:
   contents: write
