@@ -235,16 +235,20 @@ jobs:
 
       - name: Create release notes
         shell: bash
+        env:
+          RELEASE_TAG: ${{ steps.release_identity.outputs.tag }}
+          RELEASE_COMMIT: ${{ steps.release_identity.outputs.commit }}
+          RELEASE_GATES_RUN_ID: ${{ steps.release_gates.outputs.run_id }}
+          RELEASE_GATES_RUN_URL: ${{ steps.release_gates.outputs.run_url }}
         run: |
           set -euo pipefail
 
-          tag="${{ steps.release_identity.outputs.tag }}"
-          commit="${{ steps.release_identity.outputs.commit }}"
-          release_gates_run_id="${{ steps.release_gates.outputs.run_id }}"
-          release_gates_run_url="${{ steps.release_gates.outputs.run_url }}"
-          package="cxxmcp-sdk-source-${tag}.tar.gz"
+          package="cxxmcp-sdk-source-${RELEASE_TAG}.tar.gz"
 
           checksums="$(cat release-artifacts/SHA256SUMS.txt)"
+
+          export RELEASE_PACKAGE="${package}"
+          export RELEASE_CHECKSUMS="${checksums}"
 
           cat > release-artifacts/RELEASE_NOTES.md <<'EOF'
           # cxxmcp __TAG__
@@ -326,20 +330,24 @@ jobs:
           EOF
 
           python - <<'PY'
+          import os
           from pathlib import Path
 
           path = Path("release-artifacts/RELEASE_NOTES.md")
           text = path.read_text(encoding="utf-8")
           replacements = {
-              "__TAG__": """${tag}""",
-              "__COMMIT__": """${commit}""",
-              "__RELEASE_GATES_RUN_URL__": """${release_gates_run_url}""",
-              "__RELEASE_GATES_RUN_ID__": """${release_gates_run_id}""",
-              "__PACKAGE__": """${package}""",
-              "__CHECKSUMS__": """${checksums}""",
+              "__TAG__": os.environ["RELEASE_TAG"],
+              "__COMMIT__": os.environ["RELEASE_COMMIT"],
+              "__RELEASE_GATES_RUN_URL__": os.environ["RELEASE_GATES_RUN_URL"],
+              "__RELEASE_GATES_RUN_ID__": os.environ["RELEASE_GATES_RUN_ID"],
+              "__PACKAGE__": os.environ["RELEASE_PACKAGE"],
+              "__CHECKSUMS__": os.environ["RELEASE_CHECKSUMS"],
           }
           for old, new in replacements.items():
               text = text.replace(old, new)
+          unresolved = [marker for marker in replacements if marker in text]
+          if unresolved:
+              raise SystemExit(f"unresolved release note markers: {', '.join(unresolved)}")
           path.write_text(text, encoding="utf-8")
           PY
 

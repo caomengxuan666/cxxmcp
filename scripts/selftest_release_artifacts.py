@@ -296,11 +296,31 @@ def create_sdk_source_tarball(release: Path, root: Path, tag: str) -> None:
 def create_release_artifacts(release: Path, gate: Path, source_root: Path, tag: str) -> None:
     release.mkdir(parents=True, exist_ok=True)
     create_sdk_source_tarball(release, source_root, tag)
-    write(release / "RELEASE_NOTES.md", "notes")
     sums = []
     for tarball in sorted(release.glob("*.tar.gz")):
         sums.append(f"{sha256(tarball)} {tarball.name}")
     write(release / "SHA256SUMS.txt", "\n".join(sums) + "\n")
+    write(
+        release / "RELEASE_NOTES.md",
+        f"""# cxxmcp {tag}
+
+## Release Gate
+
+- release-gates run: https://github.com/example/cxxmcp/actions/runs/1
+
+## Release Assets
+
+- cxxmcp-sdk-source-{tag}.tar.gz
+- SHA256SUMS.txt
+- RELEASE_NOTES.md
+
+## Checksums
+
+```text
+{''.join(sums)}
+```
+""",
+    )
 
 
 def main() -> None:
@@ -322,6 +342,17 @@ def main() -> None:
             raise AssertionError("empty evidence log must fail")
         check_release_artifacts.check_gate_artifacts(gate)
         check_release_artifacts.check_release_artifacts(release, tag)
+
+        notes = release / "RELEASE_NOTES.md"
+        valid_notes = notes.read_text(encoding="utf-8")
+        write(notes, valid_notes + "\n${tag}\n")
+        try:
+            check_release_artifacts.check_release_artifacts(release, tag)
+        except SystemExit as error:
+            assert "unresolved release note placeholder" in str(error)
+        else:
+            raise AssertionError("unresolved release note placeholders must fail")
+        write(notes, valid_notes)
 
         failing_junit = root / "failing.xml"
         write_failing_junit(failing_junit, "protocol")

@@ -6,6 +6,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import re
 from pathlib import Path
 import tarfile
 from textwrap import dedent
@@ -561,6 +562,22 @@ def check_release_tarball_contents(release_artifacts: Path, tag: str) -> None:
     check_sdk_source_tarball(release_artifacts / f"cxxmcp-sdk-source-{tag}.tar.gz")
 
 
+def check_release_notes(path: Path, tag: str) -> None:
+    require_file(path)
+    text = path.read_text(encoding="utf-8")
+    for required in [
+        f"# cxxmcp {tag}",
+        f"cxxmcp-sdk-source-{tag}.tar.gz",
+        "## Release Gate",
+        "## Checksums",
+    ]:
+        if required not in text:
+            fail(f"{path}: missing expected release note text: {required}")
+    match = re.search(r"(__[A-Z0-9_]+__|\$\{[A-Za-z_][A-Za-z0-9_]*\})", text)
+    if match:
+        fail(f"{path}: unresolved release note placeholder: {match.group(1)}")
+
+
 def check_release_artifacts(release_artifacts: Path, tag: str) -> None:
     require_dir(release_artifacts)
     expected = [
@@ -572,7 +589,7 @@ def check_release_artifacts(release_artifacts: Path, tag: str) -> None:
         require_file(path)
         tarballs.append(path)
 
-    require_file(release_artifacts / "RELEASE_NOTES.md")
+    check_release_notes(release_artifacts / "RELEASE_NOTES.md", tag)
     check_sha256sums(release_artifacts, tarballs)
     check_release_tarball_contents(release_artifacts, tag)
 
