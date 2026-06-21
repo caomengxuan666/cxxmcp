@@ -3,6 +3,7 @@
 #include "cxxmcp/server/http_transport.hpp"
 
 #include <algorithm>
+#include <array>
 #include <cctype>
 #include <chrono>
 #include <condition_variable>
@@ -37,6 +38,12 @@ constexpr std::string_view SessionHeader = "Mcp-Session-Id";
 constexpr std::string_view ProtocolVersionHeader = "MCP-Protocol-Version";
 constexpr std::string_view MethodHeader = "Mcp-Method";
 constexpr std::string_view NameHeader = "Mcp-Name";
+constexpr std::string_view StatelessProtocolVersionMeta =
+    "io.modelcontextprotocol/protocolVersion";
+constexpr std::string_view StatelessClientInfoMeta =
+    "io.modelcontextprotocol/clientInfo";
+constexpr std::string_view StatelessClientCapabilitiesMeta =
+    "io.modelcontextprotocol/clientCapabilities";
 constexpr std::string_view LastEventIdHeader = "Last-Event-ID";
 constexpr int HeaderMismatchCode = -32001;
 
@@ -1085,29 +1092,22 @@ core::Result<core::Unit> HttpTransport::start(
         rpc_request != nullptr &&
         rpc_request->method == protocol::InitializeMethod;
 
-    // Detect stateless mode: request includes _meta with protocolVersion.
-    // The MCP-Protocol-Version header alone is not sufficient for detection
-    // because it is now required on all non-initialize requests.
-    bool stateless_mode = false;
+    // Detect stateless mode: either the transport is configured stateless, or
+    // an individual request carries the required stateless protocol metadata.
+    bool stateless_mode = options_.stateless;
     if (rpc_request && rpc_request->params.is_object() &&
         rpc_request->params.contains("_meta")) {
       const auto& meta = rpc_request->params.at("_meta");
-      stateless_mode = meta.is_object() &&
-                       meta.contains("io.modelcontextprotocol/protocolVersion");
+      stateless_mode =
+          stateless_mode ||
+          (meta.is_object() &&
+           meta.contains(std::string(StatelessProtocolVersionMeta)));
     }
 
-    // Detect whether the request uses stateless-style headers (Mcp-Method
-    // present). When Mcp-Method is present, the request is from a client that
-    // understands the stateless protocol, so _meta validation should run even
-    // if _meta is missing from the body (to return the correct error code).
-    const bool has_method_header =
-        rpc_request && request.has_header(std::string(MethodHeader));
-
-    // In stateless mode, reject methods that require a session.
+    // In stateless mode, reject methods that require server-side session state.
     if (stateless_mode && rpc_request) {
       using SV = std::string_view;
       const std::array kStatelessRemovedMethods{
-          SV(protocol::InitializeMethod), SV(protocol::PingMethod),
           SV(protocol::LoggingSetLevelMethod),
           SV(protocol::ResourcesSubscribeMethod),
           SV(protocol::ResourcesUnsubscribeMethod)};
@@ -1137,24 +1137,34 @@ core::Result<core::Unit> HttpTransport::start(
         return;
       }
       const auto& meta = rpc_request->params.at("_meta");
-      constexpr std::array<const char*, 3> kRequiredMetaKeys{
-          "io.modelcontextprotocol/protocolVersion",
-          "io.modelcontextprotocol/clientInfo",
-          "io.modelcontextprotocol/clientCapabilities"};
-      for (const auto* key : kRequiredMetaKeys) {
-        if (!meta.contains(key)) {
+      constexpr std::array<std::string_view, 3> kRequiredMetaKeys{
+          StatelessProtocolVersionMeta, StatelessClientInfoMeta,
+          StatelessClientCapabilitiesMeta};
+      for (const auto key : kRequiredMetaKeys) {
+        if (!meta.contains(std::string(key))) {
           response.status = 400;
-          write_error(
-              response, static_cast<int>(protocol::ErrorCode::InvalidParams),
-              std::string("stateless request _meta missing ") + key, error_id);
+          write_error(response,
+                      static_cast<int>(protocol::ErrorCode::InvalidParams),
+                      std::string("stateless request _meta missing ") +
+                          std::string(key),
+                      error_id);
           return;
         }
       }
       // Validate _meta.protocolVersion matches MCP-Protocol-Version header.
-      if (meta.contains("io.modelcontextprotocol/protocolVersion") &&
+      if (meta.contains(std::string(StatelessProtocolVersionMeta)) &&
           request.has_header(std::string(ProtocolVersionHeader))) {
+        if (!meta.at(std::string(StatelessProtocolVersionMeta)).is_string()) {
+          response.status = 400;
+          write_error(response,
+                      static_cast<int>(protocol::ErrorCode::InvalidParams),
+                      "stateless request _meta protocolVersion must be a "
+                      "string",
+                      error_id);
+          return;
+        }
         const auto meta_version =
-            meta.at("io.modelcontextprotocol/protocolVersion")
+            meta.at(std::string(StatelessProtocolVersionMeta))
                 .get<std::string>();
         const auto header_version =
             request.get_header_value(std::string(ProtocolVersionHeader));
@@ -1359,7 +1369,7 @@ core::Result<core::Unit> HttpTransport::start(
                     init_version_check.error().message, rpc_request->id);
         return;
       }
-      {
+      if (!stateless_mode) {
         std::lock_guard lock(mutex_);
         if (options_.max_sessions != 0 &&
             sessions_.size() >= options_.max_sessions) {
@@ -1376,7 +1386,9 @@ core::Result<core::Unit> HttpTransport::start(
     bool initialize_session = false;
     {
       std::lock_guard lock(mutex_);
-      if (initialize_request) {
+      if (stateless_mode) {
+        session_context_id.clear();
+      } else if (initialize_request) {
         session_context_id =
             "mcp-session-" + std::to_string(next_session_id_++);
         initialize_session = true;
@@ -1446,25 +1458,27 @@ core::Result<core::Unit> HttpTransport::start(
 
       if (rpc_request->method == protocol::InitializeMethod) {
         if (!rpc_response->error.has_value()) {
-          std::lock_guard guard(mutex_);
-          auto& session = sessions_[session_context_id];
-          session.session_id = session_context_id;
-          if (rpc_request->params.is_object() &&
-              rpc_request->params.contains("capabilities")) {
-            session.client_capabilities =
-                protocol::client_capabilities_from_json(
-                    rpc_request->params.at("capabilities"));
-          } else {
-            session.client_capabilities.reset();
+          if (!stateless_mode) {
+            std::lock_guard guard(mutex_);
+            auto& session = sessions_[session_context_id];
+            session.session_id = session_context_id;
+            if (rpc_request->params.is_object() &&
+                rpc_request->params.contains("capabilities")) {
+              session.client_capabilities =
+                  protocol::client_capabilities_from_json(
+                      rpc_request->params.at("capabilities"));
+            } else {
+              session.client_capabilities.reset();
+            }
+            if (initialize_session || default_session_id_.empty()) {
+              default_session_id_ = session_context_id;
+            }
+            response.set_header(std::string(SessionHeader), session_context_id);
           }
-          if (initialize_session || default_session_id_.empty()) {
-            default_session_id_ = session_context_id;
-          }
-          response.set_header(std::string(SessionHeader), session_context_id);
         }
       } else {
         std::lock_guard guard(mutex_);
-        if (!session_context_id.empty()) {
+        if (!stateless_mode && !session_context_id.empty()) {
           response.set_header(std::string(SessionHeader), session_context_id);
         }
       }
@@ -1496,7 +1510,9 @@ core::Result<core::Unit> HttpTransport::start(
       }
     }
 
-    response.set_header(std::string(SessionHeader), session_context_id);
+    if (!stateless_mode && !session_context_id.empty()) {
+      response.set_header(std::string(SessionHeader), session_context_id);
+    }
     response.set_chunked_content_provider(
         "text/event-stream",
         [sink, &request, sink_wrote_final = false](

@@ -59,6 +59,11 @@ struct HttpTransportOptions {
   /// retry and future requests.
   HttpAuthRefreshHandler auth_refresh_handler;
 
+  /// Enable stateless MCP HTTP mode. When true, the transport does not retain
+  /// Mcp-Session-Id, does not open the SSE receive stream, and adds the
+  /// required stateless `_meta` fields to non-initialize requests.
+  bool stateless = false;
+
   /// Connect, read, and write timeout used by the transport.
   std::chrono::milliseconds timeout{30000};
 };
