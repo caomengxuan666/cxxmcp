@@ -868,8 +868,9 @@ jobs:
       - name: Install Conan consumer dependencies
         run: |
           set -euo pipefail
+          version="$(tr -d '\r\n' < VERSION)"
           conan install \
-            --requires=cxxmcp/1.1.6 \
+            --requires="cxxmcp/${version}" \
             --generator=CMakeDeps \
             --generator=CMakeToolchain \
             --output-folder="build-package-conan-${{ matrix.name }}-deps" \
@@ -969,6 +970,8 @@ jobs:
           XMAKE_PACKAGE_NAME: ${{ matrix.name }}
         run: |
           set -euo pipefail
+          version="$(tr -d '\r\n' < VERSION)"
+          export CXXMCP_PACKAGE_VERSION="${version}"
           mkdir -p "build-package-xmake-${{ matrix.name }}"
           mkdir -p "build-package-xmake-${{ matrix.name }}/repo/packages/c"
           cp -R packaging/xmake/packages/c/cxxmcp \
@@ -985,6 +988,8 @@ jobs:
           from pathlib import Path
 
           name = os.environ["XMAKE_PACKAGE_NAME"]
+          version = os.environ["CXXMCP_PACKAGE_VERSION"]
+          tag = f"v{version}"
           workspace = Path(os.environ["GITHUB_WORKSPACE"])
           root = workspace / f"build-package-xmake-{name}"
           archive = root / f"cxxmcp-xmake-source-{os.environ['GITHUB_SHA']}.tar.gz"
@@ -997,25 +1002,25 @@ jobs:
               text,
           )
           text, version_count = re.subn(
-              r'add_versions\("v1\.1\.6",\s*".*?"\)',
-              f'add_versions("v1.1.6", "{digest}")',
+              r'add_versions\("v\d+\.\d+\.\d+",\s*".*?"\)',
+              f'add_versions("{tag}", "{digest}")',
               text,
           )
           if url_count != 1:
               raise SystemExit(f"expected one add_urls rewrite, got {url_count}")
           if version_count != 1:
-              raise SystemExit(f"expected one v1.1.6 add_versions rewrite, got {version_count}")
+              raise SystemExit(f"expected one {tag} add_versions rewrite, got {version_count}")
           if f'file://{archive.as_posix()}' not in text:
               raise SystemExit("xmake recipe was not rewritten to the generated source archive")
           if "github.com" in text or "releases/download" in text:
               raise SystemExit("xmake recipe still contains a remote release archive URL")
           recipe.write_text(text, encoding="utf-8")
           PY
-          cat > "build-package-xmake-${{ matrix.name }}/xmake.lua" <<'EOF'
+          cat > "build-package-xmake-${{ matrix.name }}/xmake.lua" <<EOF
           add_rules("mode.release")
           set_languages("c++17")
           add_repositories("cxxmcp-local repo")
-          add_requires("cxxmcp v1.1.6", {configs = {http = ${{ matrix.http_enabled }}, websocket = ${{ matrix.websocket_enabled }}, auth = ${{ matrix.auth_enabled }}}})
+          add_requires("cxxmcp v${version}", {configs = {http = ${{ matrix.http_enabled }}, websocket = ${{ matrix.websocket_enabled }}, auth = ${{ matrix.auth_enabled }}}})
 
           target("consumer")
               set_kind("binary")

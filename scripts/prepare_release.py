@@ -111,26 +111,18 @@ def update_package_docs(version: str, sha256: str) -> None:
 
 
 def update_release_gates(version: str) -> None:
-    escaped = re.escape(version)
     path = ".github/workflows/release-gates.yml"
     text = read(path)
-    text = re.sub(r"--requires=cxxmcp/\d+\.\d+\.\d+", f"--requires=cxxmcp/{version}", text)
     text = re.sub(
-        r'add_versions\\\("v\d+\\\.\d+\\\.\d+",',
-        f'add_versions\\\\("v{escaped}",',
+        r"--requires=cxxmcp/\d+\.\d+\.\d+",
+        '--requires="cxxmcp/${version}"',
         text,
     )
     text = re.sub(
-        r'f\'add_versions\("v\d+\.\d+\.\d+", "\{digest\}"\)\'',
-        f'f\'add_versions("v{version}", "{{digest}}")\'',
+        r'add_requires\("cxxmcp v\d+\.\d+\.\d+"',
+        'add_requires("cxxmcp v${version}"',
         text,
     )
-    text = re.sub(
-        r"expected one v\d+\.\d+\.\d+ add_versions rewrite",
-        f"expected one v{version} add_versions rewrite",
-        text,
-    )
-    text = re.sub(r'add_requires\("cxxmcp v\d+\.\d+\.\d+"', f'add_requires("cxxmcp v{version}"', text)
     write(path, text)
 
 

@@ -65,10 +65,9 @@ template <class Args, class Result>
 class TypedToolBuilder {
  public:
   explicit TypedToolBuilder(std::string name) {
-    definition_ =
-        protocol::tool_definition(std::move(name))
-            .input_schema(protocol::tool_input_schema_for<Args>())
-            .build();
+    definition_ = protocol::tool_definition(std::move(name))
+                      .input_schema(protocol::tool_input_schema_for<Args>())
+                      .build();
     detail::apply_default_output_schema<Result>(definition_);
   }
 
@@ -178,8 +177,7 @@ inline auto tool(Tool value) {
         built.title = detail::static_tool_text<Tool>(Tool::title);
       }
       if constexpr (detail::has_tool_description<Tool>::value) {
-        built.description =
-            detail::static_tool_text<Tool>(Tool::description);
+        built.description = detail::static_tool_text<Tool>(Tool::description);
       }
       return built;
     }
@@ -517,10 +515,9 @@ template <class Args, class Result, class Handler>
 App::Builder& App::Builder::tool(std::string name, Handler handler) {
   detail::require_callable(handler, "tool");
   detail::require_unambiguous_tool_handler<Handler, Args>();
-  auto definition =
-      protocol::tool_definition(std::move(name))
-          .input_schema(protocol::tool_input_schema_for<Args>())
-          .build();
+  auto definition = protocol::tool_definition(std::move(name))
+                        .input_schema(protocol::tool_input_schema_for<Args>())
+                        .build();
   detail::apply_default_output_schema<Result>(definition);
   return tool<Args, Result>(std::move(definition), std::move(handler));
 }

@@ -847,8 +847,7 @@ void test_schema_and_tool_definition_builders() {
       mcp::protocol::tool_input_schema_for<std::string>();
   require(scalar_tool_input.at("type") == "object",
           "scalar tool input schema should be an object");
-  require(scalar_tool_input.at("properties").at("value").at("type") ==
-              "string",
+  require(scalar_tool_input.at("properties").at("value").at("type") == "string",
           "scalar tool input schema should wrap value");
   require(scalar_tool_input.at("required").at(0) == "value",
           "scalar tool input schema should require value");
@@ -861,19 +860,19 @@ void test_schema_and_tool_definition_builders() {
       mcp::protocol::tool_output_schema_for<std::string>();
   require(scalar_tool_output.at("type") == "object",
           "scalar tool output schema should be an object");
-  require(scalar_tool_output.at("properties").at("value").at("type") ==
-              "string",
-          "scalar tool output schema should wrap value");
-  const auto intrusive_tool_input =
-      mcp::protocol::tool_input_schema_for<schema_fixture::IntrusiveReflected>();
+  require(
+      scalar_tool_output.at("properties").at("value").at("type") == "string",
+      "scalar tool output schema should wrap value");
+  const auto intrusive_tool_input = mcp::protocol::tool_input_schema_for<
+      schema_fixture::IntrusiveReflected>();
   require(intrusive_tool_input.at("type") == "object",
           "intrusive reflected tool input schema should be object");
-  require(intrusive_tool_input.at("properties").at("name").at("type") ==
-              "string",
-          "intrusive reflected string field schema mismatch");
-  require(intrusive_tool_input.at("properties").at("count").at("type") ==
-              "integer",
-          "intrusive reflected integer field schema mismatch");
+  require(
+      intrusive_tool_input.at("properties").at("name").at("type") == "string",
+      "intrusive reflected string field schema mismatch");
+  require(
+      intrusive_tool_input.at("properties").at("count").at("type") == "integer",
+      "intrusive reflected integer field schema mismatch");
   const auto custom_input =
       mcp::protocol::schema_for<const schema_fixture::SearchArgs&>();
   require(custom_input.at("properties").contains("query"),

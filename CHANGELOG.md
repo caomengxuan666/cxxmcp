@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.2.0
+
+- Prepared release metadata and package references.
+
 ## 1.1.6
 
 - Fixed `CXXMCP_REFLECT` so reflected DTO specializations compile correctly

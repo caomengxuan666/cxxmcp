@@ -1015,220 +1015,210 @@ core::Result<T> reflect_from_json(const Json& json) {
       CXXMCP_REFL_IMPL_5, CXXMCP_REFL_IMPL_4, CXXMCP_REFL_IMPL_3,    \
       CXXMCP_REFL_IMPL_2, CXXMCP_REFL_IMPL_1)(Type, __VA_ARGS__))
 
-#define CXXMCP_REFL_SELF_IMPL_1(T, f1)                                \
-  static auto cxxmcp_fields() {                                       \
-    return std::make_tuple(::mcp::protocol::field(#f1, &T::f1));      \
+#define CXXMCP_REFL_SELF_IMPL_1(T, f1)                           \
+  static auto cxxmcp_fields() {                                  \
+    return std::make_tuple(::mcp::protocol::field(#f1, &T::f1)); \
   }
 
-#define CXXMCP_REFL_SELF_IMPL_2(T, f1, f2)                            \
-  static auto cxxmcp_fields() {                                       \
-    return std::make_tuple(::mcp::protocol::field(#f1, &T::f1),       \
-                           ::mcp::protocol::field(#f2, &T::f2));      \
+#define CXXMCP_REFL_SELF_IMPL_2(T, f1, f2)                       \
+  static auto cxxmcp_fields() {                                  \
+    return std::make_tuple(::mcp::protocol::field(#f1, &T::f1),  \
+                           ::mcp::protocol::field(#f2, &T::f2)); \
   }
 
-#define CXXMCP_REFL_SELF_IMPL_3(T, f1, f2, f3)                        \
-  static auto cxxmcp_fields() {                                       \
-    return std::make_tuple(::mcp::protocol::field(#f1, &T::f1),       \
-                           ::mcp::protocol::field(#f2, &T::f2),       \
-                           ::mcp::protocol::field(#f3, &T::f3));      \
+#define CXXMCP_REFL_SELF_IMPL_3(T, f1, f2, f3)                   \
+  static auto cxxmcp_fields() {                                  \
+    return std::make_tuple(::mcp::protocol::field(#f1, &T::f1),  \
+                           ::mcp::protocol::field(#f2, &T::f2),  \
+                           ::mcp::protocol::field(#f3, &T::f3)); \
   }
 
-#define CXXMCP_REFL_SELF_IMPL_4(T, f1, f2, f3, f4)                    \
-  static auto cxxmcp_fields() {                                       \
-    return std::make_tuple(::mcp::protocol::field(#f1, &T::f1),       \
-                           ::mcp::protocol::field(#f2, &T::f2),       \
-                           ::mcp::protocol::field(#f3, &T::f3),       \
-                           ::mcp::protocol::field(#f4, &T::f4));      \
+#define CXXMCP_REFL_SELF_IMPL_4(T, f1, f2, f3, f4)               \
+  static auto cxxmcp_fields() {                                  \
+    return std::make_tuple(::mcp::protocol::field(#f1, &T::f1),  \
+                           ::mcp::protocol::field(#f2, &T::f2),  \
+                           ::mcp::protocol::field(#f3, &T::f3),  \
+                           ::mcp::protocol::field(#f4, &T::f4)); \
   }
 
-#define CXXMCP_REFL_SELF_IMPL_5(T, f1, f2, f3, f4, f5)                \
-  static auto cxxmcp_fields() {                                       \
-    return std::make_tuple(::mcp::protocol::field(#f1, &T::f1),       \
-                           ::mcp::protocol::field(#f2, &T::f2),       \
-                           ::mcp::protocol::field(#f3, &T::f3),       \
-                           ::mcp::protocol::field(#f4, &T::f4),       \
-                           ::mcp::protocol::field(#f5, &T::f5));      \
+#define CXXMCP_REFL_SELF_IMPL_5(T, f1, f2, f3, f4, f5)           \
+  static auto cxxmcp_fields() {                                  \
+    return std::make_tuple(::mcp::protocol::field(#f1, &T::f1),  \
+                           ::mcp::protocol::field(#f2, &T::f2),  \
+                           ::mcp::protocol::field(#f3, &T::f3),  \
+                           ::mcp::protocol::field(#f4, &T::f4),  \
+                           ::mcp::protocol::field(#f5, &T::f5)); \
   }
 
-#define CXXMCP_REFL_SELF_IMPL_6(T, f1, f2, f3, f4, f5, f6)            \
-  static auto cxxmcp_fields() {                                       \
-    return std::make_tuple(::mcp::protocol::field(#f1, &T::f1),       \
-                           ::mcp::protocol::field(#f2, &T::f2),       \
-                           ::mcp::protocol::field(#f3, &T::f3),       \
-                           ::mcp::protocol::field(#f4, &T::f4),       \
-                           ::mcp::protocol::field(#f5, &T::f5),       \
-                           ::mcp::protocol::field(#f6, &T::f6));      \
+#define CXXMCP_REFL_SELF_IMPL_6(T, f1, f2, f3, f4, f5, f6)       \
+  static auto cxxmcp_fields() {                                  \
+    return std::make_tuple(::mcp::protocol::field(#f1, &T::f1),  \
+                           ::mcp::protocol::field(#f2, &T::f2),  \
+                           ::mcp::protocol::field(#f3, &T::f3),  \
+                           ::mcp::protocol::field(#f4, &T::f4),  \
+                           ::mcp::protocol::field(#f5, &T::f5),  \
+                           ::mcp::protocol::field(#f6, &T::f6)); \
   }
 
-#define CXXMCP_REFL_SELF_IMPL_7(T, f1, f2, f3, f4, f5, f6, f7)        \
-  static auto cxxmcp_fields() {                                       \
-    return std::make_tuple(                                           \
-        ::mcp::protocol::field(#f1, &T::f1),                          \
-        ::mcp::protocol::field(#f2, &T::f2),                          \
-        ::mcp::protocol::field(#f3, &T::f3),                          \
-        ::mcp::protocol::field(#f4, &T::f4),                          \
-        ::mcp::protocol::field(#f5, &T::f5),                          \
-        ::mcp::protocol::field(#f6, &T::f6),                          \
-        ::mcp::protocol::field(#f7, &T::f7));                         \
+#define CXXMCP_REFL_SELF_IMPL_7(T, f1, f2, f3, f4, f5, f6, f7)   \
+  static auto cxxmcp_fields() {                                  \
+    return std::make_tuple(::mcp::protocol::field(#f1, &T::f1),  \
+                           ::mcp::protocol::field(#f2, &T::f2),  \
+                           ::mcp::protocol::field(#f3, &T::f3),  \
+                           ::mcp::protocol::field(#f4, &T::f4),  \
+                           ::mcp::protocol::field(#f5, &T::f5),  \
+                           ::mcp::protocol::field(#f6, &T::f6),  \
+                           ::mcp::protocol::field(#f7, &T::f7)); \
   }
 
-#define CXXMCP_REFL_SELF_IMPL_8(T, f1, f2, f3, f4, f5, f6, f7, f8)    \
-  static auto cxxmcp_fields() {                                       \
-    return std::make_tuple(                                           \
-        ::mcp::protocol::field(#f1, &T::f1),                          \
-        ::mcp::protocol::field(#f2, &T::f2),                          \
-        ::mcp::protocol::field(#f3, &T::f3),                          \
-        ::mcp::protocol::field(#f4, &T::f4),                          \
-        ::mcp::protocol::field(#f5, &T::f5),                          \
-        ::mcp::protocol::field(#f6, &T::f6),                          \
-        ::mcp::protocol::field(#f7, &T::f7),                          \
-        ::mcp::protocol::field(#f8, &T::f8));                         \
+#define CXXMCP_REFL_SELF_IMPL_8(T, f1, f2, f3, f4, f5, f6, f7, f8) \
+  static auto cxxmcp_fields() {                                    \
+    return std::make_tuple(::mcp::protocol::field(#f1, &T::f1),    \
+                           ::mcp::protocol::field(#f2, &T::f2),    \
+                           ::mcp::protocol::field(#f3, &T::f3),    \
+                           ::mcp::protocol::field(#f4, &T::f4),    \
+                           ::mcp::protocol::field(#f5, &T::f5),    \
+                           ::mcp::protocol::field(#f6, &T::f6),    \
+                           ::mcp::protocol::field(#f7, &T::f7),    \
+                           ::mcp::protocol::field(#f8, &T::f8));   \
   }
 
 #define CXXMCP_REFL_SELF_IMPL_9(T, f1, f2, f3, f4, f5, f6, f7, f8, f9) \
   static auto cxxmcp_fields() {                                        \
-    return std::make_tuple(                                            \
-        ::mcp::protocol::field(#f1, &T::f1),                           \
-        ::mcp::protocol::field(#f2, &T::f2),                           \
-        ::mcp::protocol::field(#f3, &T::f3),                           \
-        ::mcp::protocol::field(#f4, &T::f4),                           \
-        ::mcp::protocol::field(#f5, &T::f5),                           \
-        ::mcp::protocol::field(#f6, &T::f6),                           \
-        ::mcp::protocol::field(#f7, &T::f7),                           \
-        ::mcp::protocol::field(#f8, &T::f8),                           \
-        ::mcp::protocol::field(#f9, &T::f9));                          \
+    return std::make_tuple(::mcp::protocol::field(#f1, &T::f1),        \
+                           ::mcp::protocol::field(#f2, &T::f2),        \
+                           ::mcp::protocol::field(#f3, &T::f3),        \
+                           ::mcp::protocol::field(#f4, &T::f4),        \
+                           ::mcp::protocol::field(#f5, &T::f5),        \
+                           ::mcp::protocol::field(#f6, &T::f6),        \
+                           ::mcp::protocol::field(#f7, &T::f7),        \
+                           ::mcp::protocol::field(#f8, &T::f8),        \
+                           ::mcp::protocol::field(#f9, &T::f9));       \
   }
 
 #define CXXMCP_REFL_SELF_IMPL_10(T, f1, f2, f3, f4, f5, f6, f7, f8, f9, f10) \
-  static auto cxxmcp_fields() {                                             \
-    return std::make_tuple(                                                 \
-        ::mcp::protocol::field(#f1, &T::f1),                                \
-        ::mcp::protocol::field(#f2, &T::f2),                                \
-        ::mcp::protocol::field(#f3, &T::f3),                                \
-        ::mcp::protocol::field(#f4, &T::f4),                                \
-        ::mcp::protocol::field(#f5, &T::f5),                                \
-        ::mcp::protocol::field(#f6, &T::f6),                                \
-        ::mcp::protocol::field(#f7, &T::f7),                                \
-        ::mcp::protocol::field(#f8, &T::f8),                                \
-        ::mcp::protocol::field(#f9, &T::f9),                                \
-        ::mcp::protocol::field(#f10, &T::f10));                             \
+  static auto cxxmcp_fields() {                                              \
+    return std::make_tuple(::mcp::protocol::field(#f1, &T::f1),              \
+                           ::mcp::protocol::field(#f2, &T::f2),              \
+                           ::mcp::protocol::field(#f3, &T::f3),              \
+                           ::mcp::protocol::field(#f4, &T::f4),              \
+                           ::mcp::protocol::field(#f5, &T::f5),              \
+                           ::mcp::protocol::field(#f6, &T::f6),              \
+                           ::mcp::protocol::field(#f7, &T::f7),              \
+                           ::mcp::protocol::field(#f8, &T::f8),              \
+                           ::mcp::protocol::field(#f9, &T::f9),              \
+                           ::mcp::protocol::field(#f10, &T::f10));           \
   }
 
 #define CXXMCP_REFL_SELF_IMPL_11(T, f1, f2, f3, f4, f5, f6, f7, f8, f9, f10, \
                                  f11)                                        \
-  static auto cxxmcp_fields() {                                             \
-    return std::make_tuple(                                                 \
-        ::mcp::protocol::field(#f1, &T::f1),                                \
-        ::mcp::protocol::field(#f2, &T::f2),                                \
-        ::mcp::protocol::field(#f3, &T::f3),                                \
-        ::mcp::protocol::field(#f4, &T::f4),                                \
-        ::mcp::protocol::field(#f5, &T::f5),                                \
-        ::mcp::protocol::field(#f6, &T::f6),                                \
-        ::mcp::protocol::field(#f7, &T::f7),                                \
-        ::mcp::protocol::field(#f8, &T::f8),                                \
-        ::mcp::protocol::field(#f9, &T::f9),                                \
-        ::mcp::protocol::field(#f10, &T::f10),                              \
-        ::mcp::protocol::field(#f11, &T::f11));                             \
+  static auto cxxmcp_fields() {                                              \
+    return std::make_tuple(::mcp::protocol::field(#f1, &T::f1),              \
+                           ::mcp::protocol::field(#f2, &T::f2),              \
+                           ::mcp::protocol::field(#f3, &T::f3),              \
+                           ::mcp::protocol::field(#f4, &T::f4),              \
+                           ::mcp::protocol::field(#f5, &T::f5),              \
+                           ::mcp::protocol::field(#f6, &T::f6),              \
+                           ::mcp::protocol::field(#f7, &T::f7),              \
+                           ::mcp::protocol::field(#f8, &T::f8),              \
+                           ::mcp::protocol::field(#f9, &T::f9),              \
+                           ::mcp::protocol::field(#f10, &T::f10),            \
+                           ::mcp::protocol::field(#f11, &T::f11));           \
   }
 
 #define CXXMCP_REFL_SELF_IMPL_12(T, f1, f2, f3, f4, f5, f6, f7, f8, f9, f10, \
-                                 f11, f12)                                  \
-  static auto cxxmcp_fields() {                                             \
-    return std::make_tuple(                                                 \
-        ::mcp::protocol::field(#f1, &T::f1),                                \
-        ::mcp::protocol::field(#f2, &T::f2),                                \
-        ::mcp::protocol::field(#f3, &T::f3),                                \
-        ::mcp::protocol::field(#f4, &T::f4),                                \
-        ::mcp::protocol::field(#f5, &T::f5),                                \
-        ::mcp::protocol::field(#f6, &T::f6),                                \
-        ::mcp::protocol::field(#f7, &T::f7),                                \
-        ::mcp::protocol::field(#f8, &T::f8),                                \
-        ::mcp::protocol::field(#f9, &T::f9),                                \
-        ::mcp::protocol::field(#f10, &T::f10),                              \
-        ::mcp::protocol::field(#f11, &T::f11),                              \
-        ::mcp::protocol::field(#f12, &T::f12));                             \
+                                 f11, f12)                                   \
+  static auto cxxmcp_fields() {                                              \
+    return std::make_tuple(::mcp::protocol::field(#f1, &T::f1),              \
+                           ::mcp::protocol::field(#f2, &T::f2),              \
+                           ::mcp::protocol::field(#f3, &T::f3),              \
+                           ::mcp::protocol::field(#f4, &T::f4),              \
+                           ::mcp::protocol::field(#f5, &T::f5),              \
+                           ::mcp::protocol::field(#f6, &T::f6),              \
+                           ::mcp::protocol::field(#f7, &T::f7),              \
+                           ::mcp::protocol::field(#f8, &T::f8),              \
+                           ::mcp::protocol::field(#f9, &T::f9),              \
+                           ::mcp::protocol::field(#f10, &T::f10),            \
+                           ::mcp::protocol::field(#f11, &T::f11),            \
+                           ::mcp::protocol::field(#f12, &T::f12));           \
   }
 
 #define CXXMCP_REFL_SELF_IMPL_13(T, f1, f2, f3, f4, f5, f6, f7, f8, f9, f10, \
-                                 f11, f12, f13)                             \
-  static auto cxxmcp_fields() {                                             \
-    return std::make_tuple(                                                 \
-        ::mcp::protocol::field(#f1, &T::f1),                                \
-        ::mcp::protocol::field(#f2, &T::f2),                                \
-        ::mcp::protocol::field(#f3, &T::f3),                                \
-        ::mcp::protocol::field(#f4, &T::f4),                                \
-        ::mcp::protocol::field(#f5, &T::f5),                                \
-        ::mcp::protocol::field(#f6, &T::f6),                                \
-        ::mcp::protocol::field(#f7, &T::f7),                                \
-        ::mcp::protocol::field(#f8, &T::f8),                                \
-        ::mcp::protocol::field(#f9, &T::f9),                                \
-        ::mcp::protocol::field(#f10, &T::f10),                              \
-        ::mcp::protocol::field(#f11, &T::f11),                              \
-        ::mcp::protocol::field(#f12, &T::f12),                              \
-        ::mcp::protocol::field(#f13, &T::f13));                             \
+                                 f11, f12, f13)                              \
+  static auto cxxmcp_fields() {                                              \
+    return std::make_tuple(::mcp::protocol::field(#f1, &T::f1),              \
+                           ::mcp::protocol::field(#f2, &T::f2),              \
+                           ::mcp::protocol::field(#f3, &T::f3),              \
+                           ::mcp::protocol::field(#f4, &T::f4),              \
+                           ::mcp::protocol::field(#f5, &T::f5),              \
+                           ::mcp::protocol::field(#f6, &T::f6),              \
+                           ::mcp::protocol::field(#f7, &T::f7),              \
+                           ::mcp::protocol::field(#f8, &T::f8),              \
+                           ::mcp::protocol::field(#f9, &T::f9),              \
+                           ::mcp::protocol::field(#f10, &T::f10),            \
+                           ::mcp::protocol::field(#f11, &T::f11),            \
+                           ::mcp::protocol::field(#f12, &T::f12),            \
+                           ::mcp::protocol::field(#f13, &T::f13));           \
   }
 
 #define CXXMCP_REFL_SELF_IMPL_14(T, f1, f2, f3, f4, f5, f6, f7, f8, f9, f10, \
-                                 f11, f12, f13, f14)                        \
-  static auto cxxmcp_fields() {                                             \
-    return std::make_tuple(                                                 \
-        ::mcp::protocol::field(#f1, &T::f1),                                \
-        ::mcp::protocol::field(#f2, &T::f2),                                \
-        ::mcp::protocol::field(#f3, &T::f3),                                \
-        ::mcp::protocol::field(#f4, &T::f4),                                \
-        ::mcp::protocol::field(#f5, &T::f5),                                \
-        ::mcp::protocol::field(#f6, &T::f6),                                \
-        ::mcp::protocol::field(#f7, &T::f7),                                \
-        ::mcp::protocol::field(#f8, &T::f8),                                \
-        ::mcp::protocol::field(#f9, &T::f9),                                \
-        ::mcp::protocol::field(#f10, &T::f10),                              \
-        ::mcp::protocol::field(#f11, &T::f11),                              \
-        ::mcp::protocol::field(#f12, &T::f12),                              \
-        ::mcp::protocol::field(#f13, &T::f13),                              \
-        ::mcp::protocol::field(#f14, &T::f14));                             \
+                                 f11, f12, f13, f14)                         \
+  static auto cxxmcp_fields() {                                              \
+    return std::make_tuple(::mcp::protocol::field(#f1, &T::f1),              \
+                           ::mcp::protocol::field(#f2, &T::f2),              \
+                           ::mcp::protocol::field(#f3, &T::f3),              \
+                           ::mcp::protocol::field(#f4, &T::f4),              \
+                           ::mcp::protocol::field(#f5, &T::f5),              \
+                           ::mcp::protocol::field(#f6, &T::f6),              \
+                           ::mcp::protocol::field(#f7, &T::f7),              \
+                           ::mcp::protocol::field(#f8, &T::f8),              \
+                           ::mcp::protocol::field(#f9, &T::f9),              \
+                           ::mcp::protocol::field(#f10, &T::f10),            \
+                           ::mcp::protocol::field(#f11, &T::f11),            \
+                           ::mcp::protocol::field(#f12, &T::f12),            \
+                           ::mcp::protocol::field(#f13, &T::f13),            \
+                           ::mcp::protocol::field(#f14, &T::f14));           \
   }
 
 #define CXXMCP_REFL_SELF_IMPL_15(T, f1, f2, f3, f4, f5, f6, f7, f8, f9, f10, \
-                                 f11, f12, f13, f14, f15)                   \
-  static auto cxxmcp_fields() {                                             \
-    return std::make_tuple(                                                 \
-        ::mcp::protocol::field(#f1, &T::f1),                                \
-        ::mcp::protocol::field(#f2, &T::f2),                                \
-        ::mcp::protocol::field(#f3, &T::f3),                                \
-        ::mcp::protocol::field(#f4, &T::f4),                                \
-        ::mcp::protocol::field(#f5, &T::f5),                                \
-        ::mcp::protocol::field(#f6, &T::f6),                                \
-        ::mcp::protocol::field(#f7, &T::f7),                                \
-        ::mcp::protocol::field(#f8, &T::f8),                                \
-        ::mcp::protocol::field(#f9, &T::f9),                                \
-        ::mcp::protocol::field(#f10, &T::f10),                              \
-        ::mcp::protocol::field(#f11, &T::f11),                              \
-        ::mcp::protocol::field(#f12, &T::f12),                              \
-        ::mcp::protocol::field(#f13, &T::f13),                              \
-        ::mcp::protocol::field(#f14, &T::f14),                              \
-        ::mcp::protocol::field(#f15, &T::f15));                             \
+                                 f11, f12, f13, f14, f15)                    \
+  static auto cxxmcp_fields() {                                              \
+    return std::make_tuple(::mcp::protocol::field(#f1, &T::f1),              \
+                           ::mcp::protocol::field(#f2, &T::f2),              \
+                           ::mcp::protocol::field(#f3, &T::f3),              \
+                           ::mcp::protocol::field(#f4, &T::f4),              \
+                           ::mcp::protocol::field(#f5, &T::f5),              \
+                           ::mcp::protocol::field(#f6, &T::f6),              \
+                           ::mcp::protocol::field(#f7, &T::f7),              \
+                           ::mcp::protocol::field(#f8, &T::f8),              \
+                           ::mcp::protocol::field(#f9, &T::f9),              \
+                           ::mcp::protocol::field(#f10, &T::f10),            \
+                           ::mcp::protocol::field(#f11, &T::f11),            \
+                           ::mcp::protocol::field(#f12, &T::f12),            \
+                           ::mcp::protocol::field(#f13, &T::f13),            \
+                           ::mcp::protocol::field(#f14, &T::f14),            \
+                           ::mcp::protocol::field(#f15, &T::f15));           \
   }
 
 #define CXXMCP_REFL_SELF_IMPL_16(T, f1, f2, f3, f4, f5, f6, f7, f8, f9, f10, \
-                                 f11, f12, f13, f14, f15, f16)              \
-  static auto cxxmcp_fields() {                                             \
-    return std::make_tuple(                                                 \
-        ::mcp::protocol::field(#f1, &T::f1),                                \
-        ::mcp::protocol::field(#f2, &T::f2),                                \
-        ::mcp::protocol::field(#f3, &T::f3),                                \
-        ::mcp::protocol::field(#f4, &T::f4),                                \
-        ::mcp::protocol::field(#f5, &T::f5),                                \
-        ::mcp::protocol::field(#f6, &T::f6),                                \
-        ::mcp::protocol::field(#f7, &T::f7),                                \
-        ::mcp::protocol::field(#f8, &T::f8),                                \
-        ::mcp::protocol::field(#f9, &T::f9),                                \
-        ::mcp::protocol::field(#f10, &T::f10),                              \
-        ::mcp::protocol::field(#f11, &T::f11),                              \
-        ::mcp::protocol::field(#f12, &T::f12),                              \
-        ::mcp::protocol::field(#f13, &T::f13),                              \
-        ::mcp::protocol::field(#f14, &T::f14),                              \
-        ::mcp::protocol::field(#f15, &T::f15),                              \
-        ::mcp::protocol::field(#f16, &T::f16));                             \
+                                 f11, f12, f13, f14, f15, f16)               \
+  static auto cxxmcp_fields() {                                              \
+    return std::make_tuple(::mcp::protocol::field(#f1, &T::f1),              \
+                           ::mcp::protocol::field(#f2, &T::f2),              \
+                           ::mcp::protocol::field(#f3, &T::f3),              \
+                           ::mcp::protocol::field(#f4, &T::f4),              \
+                           ::mcp::protocol::field(#f5, &T::f5),              \
+                           ::mcp::protocol::field(#f6, &T::f6),              \
+                           ::mcp::protocol::field(#f7, &T::f7),              \
+                           ::mcp::protocol::field(#f8, &T::f8),              \
+                           ::mcp::protocol::field(#f9, &T::f9),              \
+                           ::mcp::protocol::field(#f10, &T::f10),            \
+                           ::mcp::protocol::field(#f11, &T::f11),            \
+                           ::mcp::protocol::field(#f12, &T::f12),            \
+                           ::mcp::protocol::field(#f13, &T::f13),            \
+                           ::mcp::protocol::field(#f14, &T::f14),            \
+                           ::mcp::protocol::field(#f15, &T::f15),            \
+                           ::mcp::protocol::field(#f16, &T::f16));           \
   }
 
 #define CXXMCP_REFLECT_SELF_CHOOSER(_1, _2, _3, _4, _5, _6, _7, _8, _9, _10, \
@@ -1247,15 +1237,15 @@ core::Result<T> reflect_from_json(const Json& json) {
 ///
 /// Supports 1 to 16 simple fields. For renamed, nullable, defaulted, extension,
 /// or larger DTOs, use CXXMCP_REFLECT(Type, ...) or a manual Reflect<T>.
-#define CXXMCP_REFLECT_SELF(Type, ...)                                      \
-  CXXMCP_REFLECT_EXPAND(CXXMCP_REFLECT_SELF_CHOOSER(                       \
-      __VA_ARGS__, CXXMCP_REFL_SELF_IMPL_16, CXXMCP_REFL_SELF_IMPL_15,      \
-      CXXMCP_REFL_SELF_IMPL_14, CXXMCP_REFL_SELF_IMPL_13,                  \
-      CXXMCP_REFL_SELF_IMPL_12, CXXMCP_REFL_SELF_IMPL_11,                  \
-      CXXMCP_REFL_SELF_IMPL_10, CXXMCP_REFL_SELF_IMPL_9,                   \
-      CXXMCP_REFL_SELF_IMPL_8, CXXMCP_REFL_SELF_IMPL_7,                    \
-      CXXMCP_REFL_SELF_IMPL_6, CXXMCP_REFL_SELF_IMPL_5,                    \
-      CXXMCP_REFL_SELF_IMPL_4, CXXMCP_REFL_SELF_IMPL_3,                    \
+#define CXXMCP_REFLECT_SELF(Type, ...)                                 \
+  CXXMCP_REFLECT_EXPAND(CXXMCP_REFLECT_SELF_CHOOSER(                   \
+      __VA_ARGS__, CXXMCP_REFL_SELF_IMPL_16, CXXMCP_REFL_SELF_IMPL_15, \
+      CXXMCP_REFL_SELF_IMPL_14, CXXMCP_REFL_SELF_IMPL_13,              \
+      CXXMCP_REFL_SELF_IMPL_12, CXXMCP_REFL_SELF_IMPL_11,              \
+      CXXMCP_REFL_SELF_IMPL_10, CXXMCP_REFL_SELF_IMPL_9,               \
+      CXXMCP_REFL_SELF_IMPL_8, CXXMCP_REFL_SELF_IMPL_7,                \
+      CXXMCP_REFL_SELF_IMPL_6, CXXMCP_REFL_SELF_IMPL_5,                \
+      CXXMCP_REFL_SELF_IMPL_4, CXXMCP_REFL_SELF_IMPL_3,                \
       CXXMCP_REFL_SELF_IMPL_2, CXXMCP_REFL_SELF_IMPL_1)(Type, __VA_ARGS__))
 
 // ---------------------------------------------------------------------------

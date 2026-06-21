@@ -68,9 +68,7 @@ struct ShoutToolObject {
   static constexpr std::string_view description =
       "Echo a reflected DTO from a tool object";
 
-  Result operator()(Args args) const {
-    return Result{.text = args.text + "?"};
-  }
+  Result operator()(Args args) const { return Result{.text = args.text + "?"}; }
 };
 
 struct RuntimeDefinedToolObject {
@@ -5292,10 +5290,10 @@ void test_server_app_builder_registers_typed_tool() {
           .tool<std::string, std::string>(
               "scalar-shout", [](std::string text) { return text + "!"; })
           .tool<int, int>("scalar-int", [](int value) { return value + 1; })
-          .tool(mcp::server::tool<std::string, std::string>(
-                    "scalar-fluent-shout")
-                    .input<std::string>()
-                    .handler([](std::string text) { return text + "!"; }))
+          .tool(
+              mcp::server::tool<std::string, std::string>("scalar-fluent-shout")
+                  .input<std::string>()
+                  .handler([](std::string text) { return text + "!"; }))
           .tool(mcp::server::tool<Json, Json>("z-configured")
                     .input<SumArgs>()
                     .output<SumResult>()
@@ -5346,14 +5344,13 @@ void test_server_app_builder_registers_typed_tool() {
                      return tool.name == "scalar-int";
                    });
   require(scalar_int_it != listed.end(), "scalar int typed tool missing");
-  require(scalar_int_it->input_schema.at("properties")
-              .at("value")
-              .at("type") == "integer",
+  require(scalar_int_it->input_schema.at("properties").at("value").at("type") ==
+              "integer",
           "scalar int typed tool input schema should wrap value");
-  require(scalar_int_it->output_schema.at("properties")
-              .at("value")
-              .at("type") == "integer",
-          "scalar int typed tool output schema should wrap value");
+  require(
+      scalar_int_it->output_schema.at("properties").at("value").at("type") ==
+          "integer",
+      "scalar int typed tool output schema should wrap value");
   const auto scalar_fluent_it =
       std::find_if(listed.begin(), listed.end(),
                    [](const mcp::protocol::ToolDefinition& tool) {
@@ -5362,10 +5359,10 @@ void test_server_app_builder_registers_typed_tool() {
   require(scalar_fluent_it != listed.end(), "scalar fluent typed tool missing");
   require(scalar_fluent_it->input_schema.at("type") == "object",
           "scalar fluent typed tool input schema should be object");
-  require(scalar_fluent_it->input_schema.at("properties")
-              .at("value")
-              .at("type") == "string",
-          "scalar fluent typed tool input schema should wrap value");
+  require(
+      scalar_fluent_it->input_schema.at("properties").at("value").at("type") ==
+          "string",
+      "scalar fluent typed tool input schema should wrap value");
   const auto configured_it =
       std::find_if(listed.begin(), listed.end(),
                    [](const mcp::protocol::ToolDefinition& tool) {
@@ -5411,8 +5408,7 @@ void test_server_app_builder_registers_typed_tool() {
 
   const auto intrusive_result = server.call_tool(
       "intrusive-reflected", Json{{"text", "hello"}}, "typed-tool-session");
-  require(intrusive_result.has_value(),
-          "intrusive reflected tool call failed");
+  require(intrusive_result.has_value(), "intrusive reflected tool call failed");
   require(intrusive_result->structured_content.has_value(),
           "intrusive reflected structured content missing");
   require(intrusive_result->structured_content->at("text") == "hello!",
@@ -5426,9 +5422,9 @@ void test_server_app_builder_registers_typed_tool() {
   require(tool_object_it != listed.end(), "tool object typed tool missing");
   require(tool_object_it->title == "Tool Object Shout",
           "tool object typed tool title mismatch");
-  require(tool_object_it->description ==
-              "Echo a reflected DTO from a tool object",
-          "tool object typed tool description mismatch");
+  require(
+      tool_object_it->description == "Echo a reflected DTO from a tool object",
+      "tool object typed tool description mismatch");
   require(tool_object_it->input_schema.at("properties").contains("text"),
           "tool object typed tool input schema missing text");
   const auto tool_object_result = server.call_tool(
