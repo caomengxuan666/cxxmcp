@@ -289,6 +289,27 @@ core::Result<core::Unit> validate_origin_header(
   return core::Unit{};
 }
 
+void set_cors_preflight_headers(
+    const httplib::Request& request, httplib::Response& response,
+    const std::vector<std::string>& allowed_origins) {
+  if (request.has_header("Origin")) {
+    const auto origin = request.get_header_value("Origin");
+    if (allowed_origins.empty() ||
+        std::find(allowed_origins.begin(), allowed_origins.end(), origin) !=
+            allowed_origins.end()) {
+      response.set_header("Access-Control-Allow-Origin", origin);
+      response.set_header("Vary", "Origin");
+    }
+  }
+  response.set_header("Access-Control-Allow-Methods",
+                      "GET, POST, DELETE, OPTIONS");
+  response.set_header("Access-Control-Allow-Headers",
+                      "Accept, Authorization, Content-Type, Last-Event-ID, "
+                      "MCP-Protocol-Version, Mcp-Method, Mcp-Name, "
+                      "Mcp-Session-Id");
+  response.set_header("Access-Control-Max-Age", "600");
+}
+
 core::Result<core::Unit> validate_host_header(
     const httplib::Request& request,
     const std::vector<std::string>& allowed_hosts) {
@@ -1046,6 +1067,29 @@ core::Result<core::Unit> HttpTransport::start(
     }
   }
 #endif  // defined(CXXMCP_ENABLE_AUTH)
+
+  http_server->Options(options_.path, [this](const httplib::Request& request,
+                                             httplib::Response& response) {
+    const auto host = validate_host_header(request, options_.allowed_hosts);
+    if (!host) {
+      response.status = host_failure_status(host.error());
+      write_error(response, host.error().code, host.error().message,
+                  std::nullopt);
+      return;
+    }
+
+    const auto origin =
+        validate_origin_header(request, options_.allowed_origins);
+    if (!origin) {
+      response.status = 400;
+      write_error(response, origin.error().code, origin.error().message,
+                  std::nullopt);
+      return;
+    }
+
+    set_cors_preflight_headers(request, response, options_.allowed_origins);
+    response.status = 204;
+  });
 
   http_server->Post(options_.path, [this, handler = std::move(handler),
                                     notification_handler =

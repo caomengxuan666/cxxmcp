@@ -2971,6 +2971,122 @@ void test_server_http_transport_rejects_mismatched_origin_when_allowlisted() {
   server_transport.transport().stop();
 }
 
+void test_server_http_transport_handles_cors_preflight() {
+  constexpr int kPort = 40240;
+  const std::string kPath = "/mcp";
+
+  RunningServerTransportFixture server_transport(
+      std::make_unique<mcp::server::HttpTransport>(
+          mcp::server::HttpTransportOptions{
+              .listen_host = "127.0.0.1",
+              .listen_port = kPort,
+              .path = kPath,
+              .allowed_origins = {"https://inspector.example"},
+          }),
+      [](const mcp::protocol::JsonRpcRequest& request,
+         const mcp::server::SessionContext&) {
+        if (request.method == mcp::protocol::InitializeMethod) {
+          return mcp::protocol::JsonRpcResponse{
+              .id = request.id,
+              .result =
+                  Json{
+                      {"protocolVersion", mcp::protocol::McpProtocolVersion},
+                      {"capabilities", Json::object()},
+                      {"serverInfo",
+                       Json{{"name", "server-http-test"}, {"version", "1"}}},
+                  },
+          };
+        }
+        return mcp::protocol::make_error_response(
+            std::optional<mcp::protocol::RequestId>{request.id},
+            mcp::protocol::make_error(mcp::protocol::ErrorCode::MethodNotFound,
+                                      "unexpected request"));
+      });
+
+  require(!server_transport.start_error().has_value(),
+          "server transport should start");
+  require(wait_for_http_initialize(kPort, kPath),
+          "server transport should become reachable");
+
+  httplib::Client http_client("127.0.0.1", kPort);
+  const auto preflight =
+      http_client.Options(kPath,
+                          httplib::Headers{
+                              {"Origin", "https://inspector.example"},
+                              {"Access-Control-Request-Method", "POST"},
+                              {"Access-Control-Request-Headers",
+                               "content-type,mcp-session-id"},
+                          });
+  require(preflight != nullptr, "preflight should return a response");
+  require(preflight->status == 204, "preflight should succeed");
+  require(preflight->get_header_value("Access-Control-Allow-Origin") ==
+              "https://inspector.example",
+          "preflight should echo allowed origin");
+  require(preflight->get_header_value("Access-Control-Allow-Methods")
+              .find("POST") != std::string::npos,
+          "preflight should allow POST");
+  require(preflight->get_header_value("Access-Control-Allow-Methods")
+              .find("OPTIONS") != std::string::npos,
+          "preflight should allow OPTIONS");
+  require(preflight->get_header_value("Access-Control-Allow-Headers")
+              .find("Mcp-Session-Id") != std::string::npos,
+          "preflight should allow MCP session header");
+
+  server_transport.transport().stop();
+}
+
+void test_server_http_transport_rejects_disallowed_cors_preflight_origin() {
+  constexpr int kPort = 40241;
+  const std::string kPath = "/mcp";
+
+  RunningServerTransportFixture server_transport(
+      std::make_unique<mcp::server::HttpTransport>(
+          mcp::server::HttpTransportOptions{
+              .listen_host = "127.0.0.1",
+              .listen_port = kPort,
+              .path = kPath,
+              .allowed_origins = {"https://trusted.example"},
+          }),
+      [](const mcp::protocol::JsonRpcRequest& request,
+         const mcp::server::SessionContext&) {
+        if (request.method == mcp::protocol::InitializeMethod) {
+          return mcp::protocol::JsonRpcResponse{
+              .id = request.id,
+              .result =
+                  Json{
+                      {"protocolVersion", mcp::protocol::McpProtocolVersion},
+                      {"capabilities", Json::object()},
+                      {"serverInfo",
+                       Json{{"name", "server-http-test"}, {"version", "1"}}},
+                  },
+          };
+        }
+        return mcp::protocol::make_error_response(
+            std::optional<mcp::protocol::RequestId>{request.id},
+            mcp::protocol::make_error(mcp::protocol::ErrorCode::MethodNotFound,
+                                      "unexpected request"));
+      });
+
+  require(!server_transport.start_error().has_value(),
+          "server transport should start");
+  require(wait_for_http_initialize(kPort, kPath),
+          "server transport should become reachable");
+
+  httplib::Client http_client("127.0.0.1", kPort);
+  const auto preflight =
+      http_client.Options(kPath,
+                          httplib::Headers{
+                              {"Origin", "https://evil.example"},
+                              {"Access-Control-Request-Method", "POST"},
+                          });
+  require(preflight != nullptr,
+          "disallowed preflight should return a response");
+  require(preflight->status == 400,
+          "disallowed preflight origin should be rejected");
+
+  server_transport.transport().stop();
+}
+
 void test_server_http_transport_rejects_disallowed_host() {
   constexpr int kPort = 40235;
   const std::string kPath = "/mcp";
@@ -5925,6 +6041,10 @@ int main() {
        test_server_http_transport_authorized_request_sets_auth_identity},
       {"server http transport rejects mismatched origin when allowlisted",
        test_server_http_transport_rejects_mismatched_origin_when_allowlisted},
+      {"server http transport handles cors preflight",
+       test_server_http_transport_handles_cors_preflight},
+      {"server http transport rejects disallowed cors preflight origin",
+       test_server_http_transport_rejects_disallowed_cors_preflight_origin},
       {"server http transport rejects disallowed host",
        test_server_http_transport_rejects_disallowed_host},
       {"server http transport accepts standard post without custom headers",
