@@ -529,8 +529,11 @@ std::uint16_t choose_loopback_port() {
   return static_cast<std::uint16_t>(45000 + (process_id % 10000));
 }
 
-bool wait_for_http_endpoint(std::uint16_t port) {
-  for (int attempt = 0; attempt < 200; ++attempt) {
+bool wait_for_http_endpoint(
+    std::uint16_t port,
+    std::chrono::milliseconds timeout = std::chrono::seconds(10)) {
+  const auto deadline = std::chrono::steady_clock::now() + timeout;
+  while (std::chrono::steady_clock::now() < deadline) {
     httplib::Client client("127.0.0.1", port);
     client.set_connection_timeout(0, 100000);
     client.set_read_timeout(1, 0);
@@ -672,7 +675,7 @@ class RunningRmcpReverseServer {
     }
 #endif
 
-    require(wait_for_http_endpoint(port_),
+    require(wait_for_http_endpoint(port_, std::chrono::seconds(60)),
             "RMCP reverse server should become ready");
   }
 
@@ -3038,7 +3041,7 @@ void test_cxxmcp_client_against_rmcp_conformance_http_server() {
 }
 
 void test_cxxmcp_client_against_rmcp_reverse_http_server() {
-  const auto port = choose_loopback_port() + 31;
+  const auto port = choose_loopback_port();
   RunningRmcpReverseServer server(port);
 
   mcp::client::Client::StreamableHttpEndpoint endpoint;
