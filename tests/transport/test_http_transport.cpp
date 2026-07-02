@@ -3009,27 +3009,26 @@ void test_server_http_transport_handles_cors_preflight() {
           "server transport should become reachable");
 
   httplib::Client http_client("127.0.0.1", kPort);
-  const auto preflight =
-      http_client.Options(kPath,
-                          httplib::Headers{
-                              {"Origin", "https://inspector.example"},
-                              {"Access-Control-Request-Method", "POST"},
-                              {"Access-Control-Request-Headers",
-                               "content-type,mcp-session-id"},
-                          });
+  const auto preflight = http_client.Options(
+      kPath, httplib::Headers{
+                 {"Origin", "https://inspector.example"},
+                 {"Access-Control-Request-Method", "POST"},
+                 {"Access-Control-Request-Headers",
+                  "content-type,mcp-session-id"},
+             });
   require(preflight != nullptr, "preflight should return a response");
   require(preflight->status == 204, "preflight should succeed");
   require(preflight->get_header_value("Access-Control-Allow-Origin") ==
               "https://inspector.example",
           "preflight should echo allowed origin");
-  require(preflight->get_header_value("Access-Control-Allow-Methods")
-              .find("POST") != std::string::npos,
+  require(preflight->get_header_value("Access-Control-Allow-Methods").find(
+              "POST") != std::string::npos,
           "preflight should allow POST");
-  require(preflight->get_header_value("Access-Control-Allow-Methods")
-              .find("OPTIONS") != std::string::npos,
+  require(preflight->get_header_value("Access-Control-Allow-Methods").find(
+              "OPTIONS") != std::string::npos,
           "preflight should allow OPTIONS");
-  require(preflight->get_header_value("Access-Control-Allow-Headers")
-              .find("Mcp-Session-Id") != std::string::npos,
+  require(preflight->get_header_value("Access-Control-Allow-Headers").find(
+              "Mcp-Session-Id") != std::string::npos,
           "preflight should allow MCP session header");
 
   server_transport.transport().stop();
@@ -3073,12 +3072,11 @@ void test_server_http_transport_rejects_disallowed_cors_preflight_origin() {
           "server transport should become reachable");
 
   httplib::Client http_client("127.0.0.1", kPort);
-  const auto preflight =
-      http_client.Options(kPath,
-                          httplib::Headers{
-                              {"Origin", "https://evil.example"},
-                              {"Access-Control-Request-Method", "POST"},
-                          });
+  const auto preflight = http_client.Options(
+      kPath, httplib::Headers{
+                 {"Origin", "https://evil.example"},
+                 {"Access-Control-Request-Method", "POST"},
+             });
   require(preflight != nullptr,
           "disallowed preflight should return a response");
   require(preflight->status == 400,
