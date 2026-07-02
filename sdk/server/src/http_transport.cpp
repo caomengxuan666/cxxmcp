@@ -888,8 +888,7 @@ core::Result<core::Unit> HttpTransport::start(
   }
 
   if (options_.allowed_origins.empty() &&
-      (!is_loopback_host(options_.listen_host) ||
-       has_non_loopback_host(options_.allowed_hosts))) {
+      has_non_loopback_host(options_.allowed_hosts)) {
     finish_without_server();
     return mcp::core::unexpected(make_transport_error(
         static_cast<int>(protocol::ErrorCode::InvalidRequest),
