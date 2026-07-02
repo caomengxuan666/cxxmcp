@@ -2971,6 +2971,45 @@ void test_server_http_transport_rejects_mismatched_origin_when_allowlisted() {
   server_transport.transport().stop();
 }
 
+void test_server_http_transport_starts_on_any_address_without_origin_allowlist() {
+  constexpr int kPort = 40242;
+  const std::string kPath = "/mcp";
+
+  RunningServerTransportFixture server_transport(
+      std::make_unique<mcp::server::HttpTransport>(
+          mcp::server::HttpTransportOptions{
+              .listen_host = "0.0.0.0",
+              .listen_port = kPort,
+              .path = kPath,
+          }),
+      [](const mcp::protocol::JsonRpcRequest& request,
+         const mcp::server::SessionContext&) {
+        if (request.method == mcp::protocol::InitializeMethod) {
+          return mcp::protocol::JsonRpcResponse{
+              .id = request.id,
+              .result =
+                  Json{
+                      {"protocolVersion", mcp::protocol::McpProtocolVersion},
+                      {"capabilities", Json::object()},
+                      {"serverInfo",
+                       Json{{"name", "server-http-test"}, {"version", "1"}}},
+                  },
+          };
+        }
+        return mcp::protocol::make_error_response(
+            std::optional<mcp::protocol::RequestId>{request.id},
+            mcp::protocol::make_error(mcp::protocol::ErrorCode::MethodNotFound,
+                                      "unexpected request"));
+      });
+
+  require(!server_transport.start_error().has_value(),
+          "server transport should listen on any address");
+  require(wait_for_http_initialize(kPort, kPath),
+          "server transport should be reachable through localhost");
+
+  server_transport.transport().stop();
+}
+
 void test_server_http_transport_rejects_disallowed_host() {
   constexpr int kPort = 40235;
   const std::string kPath = "/mcp";
@@ -5925,6 +5964,8 @@ int main() {
        test_server_http_transport_authorized_request_sets_auth_identity},
       {"server http transport rejects mismatched origin when allowlisted",
        test_server_http_transport_rejects_mismatched_origin_when_allowlisted},
+      {"server http transport starts on any address without origin allowlist",
+       test_server_http_transport_starts_on_any_address_without_origin_allowlist},
       {"server http transport rejects disallowed host",
        test_server_http_transport_rejects_disallowed_host},
       {"server http transport accepts standard post without custom headers",
