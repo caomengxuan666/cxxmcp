@@ -166,12 +166,12 @@ def run_checks(skip_format: bool) -> None:
         run(["pwsh", "-NoProfile", "-File", "scripts/format.ps1"])
         run(["pwsh", "-NoProfile", "-File", "scripts/format.ps1", "-Check"])
     for command in [
-        ["python", "-B", "scripts/check_package_recipe_sync.py", "--source", "."],
-        ["python", "-B", "scripts/check_release_evidence.py", "--source", "."],
-        ["python", "-B", "scripts/check_p2_todo_status.py", "--source", "."],
-        ["python", "-B", "scripts/selftest_release_artifacts.py"],
-        ["python", "-B", "scripts/selftest_public_api_surface.py"],
-        ["python", "-B", "scripts/check_source_markers.py", "--source", "."],
+        [sys.executable, "-B", "scripts/check_package_recipe_sync.py", "--source", "."],
+        [sys.executable, "-B", "scripts/check_release_evidence.py", "--source", "."],
+        [sys.executable, "-B", "scripts/check_p2_todo_status.py", "--source", "."],
+        [sys.executable, "-B", "scripts/selftest_release_artifacts.py"],
+        [sys.executable, "-B", "scripts/selftest_public_api_surface.py"],
+        [sys.executable, "-B", "scripts/check_source_markers.py", "--source", "."],
     ]:
         run(command)
 

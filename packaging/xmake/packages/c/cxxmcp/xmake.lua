@@ -4,7 +4,7 @@ package("cxxmcp")
     set_license("MIT")
 
     add_urls("https://github.com/caomengxuan666/cxxmcp/releases/download/$(version)/cxxmcp-sdk-source-$(version).tar.gz")
-    add_versions("v1.2.1", "fda833b9da214c1de81af3ac36e39750a9a4bf5a3728b621ae0dc5370f58ab60")
+    add_versions("v1.2.2", "9af0ae1a257694304772fc44d01cf266228af2f0f42c619d85940ac598baa783")
     add_configs("http", {description = "Build HTTP/SSE transport (requires cpp-httplib).", default = false, type = "boolean"})
     add_configs("websocket", {description = "Build WebSocket transport (implies HTTP/cpp-httplib support).", default = false, type = "boolean"})
     add_configs("auth", {description = "Build the optional OAuth 2.1 / DPoP auth scaffold target.", default = false, type = "boolean"})
