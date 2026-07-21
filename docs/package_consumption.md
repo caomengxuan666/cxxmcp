@@ -147,7 +147,7 @@ The SDK archive includes the header-only SDK dependencies needed by the default
 bundled build, including the vendored `cpp-httplib` fallback used by HTTP and
 WebSocket transports.
 
-The concrete `v1.2.2` URL below is the latest published SDK source archive
+The concrete `v1.2.3` URL below is the latest published SDK source archive
 known to these docs. It is valid for consumers that want the published default
 SDK surface. Do not use it as evidence for the current worktree's optional auth
 header surface; current-source validation must use the `cxxmcp-source` artifact
@@ -160,8 +160,8 @@ include(FetchContent)
 
 FetchContent_Declare(
     cxxmcp
-    URL https://github.com/caomengxuan666/cxxmcp/releases/download/v1.2.2/cxxmcp-sdk-source-v1.2.2.tar.gz
-    URL_HASH SHA256=9af0ae1a257694304772fc44d01cf266228af2f0f42c619d85940ac598baa783
+    URL https://github.com/caomengxuan666/cxxmcp/releases/download/v1.2.3/cxxmcp-sdk-source-v1.2.3.tar.gz
+    URL_HASH SHA256=48005461f7e6ec5f444ebdcc444202c8a0de42af01360655dde0e7998013dc10
 )
 
 set(CXXMCP_BUILD_SDK ON CACHE BOOL "" FORCE)
@@ -202,8 +202,8 @@ set(CXXMCP_BUILD_DOCS OFF CACHE BOOL "" FORCE)
 
 CPMAddPackage(
     NAME cxxmcp
-    URL https://github.com/caomengxuan666/cxxmcp/releases/download/v1.2.2/cxxmcp-sdk-source-v1.2.2.tar.gz
-    URL_HASH SHA256=9af0ae1a257694304772fc44d01cf266228af2f0f42c619d85940ac598baa783
+    URL https://github.com/caomengxuan666/cxxmcp/releases/download/v1.2.3/cxxmcp-sdk-source-v1.2.3.tar.gz
+    URL_HASH SHA256=48005461f7e6ec5f444ebdcc444202c8a0de42af01360655dde0e7998013dc10
 )
 
 add_executable(my_client main.cpp)
