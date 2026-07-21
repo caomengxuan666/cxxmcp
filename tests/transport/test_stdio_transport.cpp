@@ -1,7 +1,10 @@
 // Copyright (c) 2025 [caomengxuan666]
 
+#include <chrono>
+#include <condition_variable>
 #include <cstdint>
 #include <iostream>
+#include <mutex>
 #include <sstream>
 #include <stdexcept>
 #include <string>
@@ -444,6 +447,88 @@ void test_server_writes_error_for_throwing_stdio_request_handler() {
           "server handler error detail mismatch");
 }
 
+void test_server_runs_post_initialize_stdio_requests_concurrently() {
+  const auto input_text = initialized_stdio_prefix() +
+                          serialize_request_line(mcp::protocol::JsonRpcRequest{
+                              .method = "slow",
+                              .params = Json::object(),
+                              .id = std::int64_t{1},
+                          }) +
+                          serialize_request_line(mcp::protocol::JsonRpcRequest{
+                              .method = "fast",
+                              .params = Json::object(),
+                              .id = std::int64_t{2},
+                          });
+  std::istringstream input(input_text);
+  std::ostringstream output;
+  mcp::server::StdioTransport transport(input, output);
+
+  std::mutex gate_mutex;
+  std::condition_variable gate_cv;
+  bool slow_started = false;
+  bool slow_finished = false;
+  bool fast_started = false;
+  bool fast_started_while_slow_active = false;
+
+  const auto started =
+      transport.start([&](const mcp::protocol::JsonRpcRequest& request,
+                          const mcp::server::SessionContext&)
+                          -> mcp::core::Result<mcp::protocol::JsonRpcResponse> {
+        if (request.method == mcp::protocol::InitializeMethod) {
+          return make_initialize_response(request.id);
+        }
+        if (request.method == "slow") {
+          std::unique_lock lock(gate_mutex);
+          slow_started = true;
+          gate_cv.notify_all();
+          gate_cv.wait_for(lock, std::chrono::milliseconds(1000),
+                           [&] { return fast_started; });
+          slow_finished = true;
+          gate_cv.notify_all();
+          return mcp::protocol::make_response(request.id,
+                                              Json{{"name", "slow"}});
+        }
+        if (request.method == "fast") {
+          std::lock_guard lock(gate_mutex);
+          fast_started_while_slow_active = slow_started && !slow_finished;
+          fast_started = true;
+          gate_cv.notify_all();
+          return mcp::protocol::make_response(request.id,
+                                              Json{{"name", "fast"}});
+        }
+        return mcp::protocol::make_error_response(
+            std::optional<mcp::protocol::RequestId>{request.id},
+            mcp::protocol::make_error(mcp::protocol::ErrorCode::MethodNotFound,
+                                      "unexpected request"));
+      });
+
+  require(started.has_value(),
+          "server concurrent stdio start should complete at EOF");
+  require(fast_started_while_slow_active,
+          "stdio request handler should run while slow request is active");
+
+  const auto lines = non_empty_lines(output.str());
+  require(lines.size() == 3,
+          "server should write initialize, slow, and fast responses");
+  bool saw_slow = false;
+  bool saw_fast = false;
+  for (const auto& line : lines) {
+    const auto parsed = mcp::protocol::parse_response(line);
+    require(parsed.has_value(), "concurrent stdio response should parse");
+    if (!parsed->result.has_value() || !parsed->result->contains("name")) {
+      continue;
+    }
+    if (parsed->result->at("name") == "slow") {
+      saw_slow = true;
+    }
+    if (parsed->result->at("name") == "fast") {
+      saw_fast = true;
+    }
+  }
+  require(saw_slow, "server should write slow response");
+  require(saw_fast, "server should write fast response");
+}
+
 void test_server_writes_parse_error_for_bad_json() {
   std::istringstream input("{not json\n");
   std::ostringstream output;
@@ -631,6 +716,8 @@ int main() {
        test_server_writes_error_for_unexpected_stdio_response},
       {"server writes error for throwing stdio request handler",
        test_server_writes_error_for_throwing_stdio_request_handler},
+      {"server runs post-initialize stdio requests concurrently",
+       test_server_runs_post_initialize_stdio_requests_concurrently},
       {"server writes parse error for bad json",
        test_server_writes_parse_error_for_bad_json},
       {"server handles notifications", test_server_handles_notifications},

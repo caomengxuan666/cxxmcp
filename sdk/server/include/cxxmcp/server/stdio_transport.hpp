@@ -35,10 +35,12 @@ namespace mcp::server {
 /// mcp::transport::ServerStdioTransport with ServerPeer/Service, or a
 /// platform-owned process/pipe transport.
 ///
-/// The server stdio loop handles one inbound line at a time and writes the
-/// corresponding response before reading the next request. It therefore has no
-/// concrete in-flight request registry; duplicate in-flight request-id
-/// validation is enforced by asynchronous peer/native/adapter layers.
+/// After the initialize handshake completes, request handlers may run
+/// concurrently so long-running tool calls do not block later inbound messages.
+/// Responses are serialized with their JSON-RPC ids and may be written in
+/// completion order. Initialization, notification handling, malformed input,
+/// and duplicate in-flight request-id checks remain serialized by the read
+/// loop.
 class StdioTransport final : public Transport {
  public:
   /// @brief Construct a transport using std::cin and std::cout.
@@ -51,8 +53,8 @@ class StdioTransport final : public Transport {
   StdioTransport(std::istream& input, std::ostream& output);
 
   /// @brief Run the stdio message loop.
-  /// @param handler Required request handler invoked synchronously on the
-  /// start() caller's thread.
+  /// @param handler Required request handler. Initialize requests run on the
+  /// start() caller's thread; later requests may run on worker threads.
   /// @param notification_handler Optional notification handler invoked
   /// synchronously on the start() caller's thread.
   /// @return core::Unit after clean EOF or stop(), or a core::Error for
