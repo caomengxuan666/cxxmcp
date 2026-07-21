@@ -3141,6 +3141,156 @@ void test_server_http_transport_accepts_standard_post_without_custom_headers() {
   server_transport.transport().stop();
 }
 
+void test_server_http_transport_runs_tools_calls_concurrently() {
+  constexpr int kPort = 40238;
+  const std::string kPath = "/mcp";
+
+  std::mutex gate_mutex;
+  std::condition_variable gate_cv;
+  bool slow_started = false;
+  bool slow_finished = false;
+  bool fast_started = false;
+  bool fast_started_while_slow_active = false;
+
+  RunningServerTransportFixture server_transport(
+      std::make_unique<mcp::server::HttpTransport>(
+          mcp::server::HttpTransportOptions{
+              .listen_host = "127.0.0.1",
+              .listen_port = kPort,
+              .path = kPath,
+          }),
+      [&](const mcp::protocol::JsonRpcRequest& request,
+          const mcp::server::SessionContext&)
+          -> mcp::core::Result<mcp::protocol::JsonRpcResponse> {
+        if (request.method == mcp::protocol::InitializeMethod) {
+          return mcp::protocol::JsonRpcResponse{
+              .id = request.id,
+              .result =
+                  Json{
+                      {"protocolVersion", mcp::protocol::McpProtocolVersion},
+                      {"capabilities", Json::object()},
+                      {"serverInfo",
+                       Json{{"name", "server-http-test"}, {"version", "1"}}},
+                  },
+          };
+        }
+        require(request.method == mcp::protocol::ToolsCallMethod,
+                "server should receive tools/call");
+        require(request.params.is_object() && request.params.contains("name"),
+                "tools/call should include a name");
+        const auto name = request.params.at("name").get<std::string>();
+        if (name == "slow") {
+          std::unique_lock lock(gate_mutex);
+          slow_started = true;
+          gate_cv.notify_all();
+          gate_cv.wait_for(lock, std::chrono::milliseconds(1500),
+                           [&] { return fast_started; });
+          slow_finished = true;
+          gate_cv.notify_all();
+        } else if (name == "fast") {
+          std::lock_guard lock(gate_mutex);
+          fast_started_while_slow_active = slow_started && !slow_finished;
+          fast_started = true;
+          gate_cv.notify_all();
+        } else {
+          return mcp::protocol::make_error_response(
+              std::optional<mcp::protocol::RequestId>{request.id},
+              mcp::protocol::make_error(
+                  mcp::protocol::ErrorCode::MethodNotFound, "unexpected tool"));
+        }
+        return mcp::protocol::JsonRpcResponse{
+            .id = request.id,
+            .result =
+                Json{
+                    {"content",
+                     Json::array({Json{{"type", "text"}, {"text", name}}})},
+                    {"isError", false},
+                },
+        };
+      });
+
+  require(!server_transport.start_error().has_value(),
+          "server transport should start");
+  require(wait_for_http_initialize(kPort, kPath),
+          "server transport should become reachable");
+  const auto session_id = initialize_http_session(kPort, kPath, 74);
+  require_initialized_notification(kPort, kPath, session_id);
+
+  auto post_tool_call = [&](std::string name, std::int64_t id) {
+    httplib::Client http_client("127.0.0.1", kPort);
+    http_client.set_read_timeout(std::chrono::milliseconds(3000));
+    return http_client.Post(
+        kPath,
+        httplib::Headers{
+            {"Accept", "application/json, text/event-stream"},
+            {"Content-Type", "application/json"},
+            {"MCP-Protocol-Version", mcp::protocol::McpProtocolVersion},
+            {"Mcp-Session-Id", session_id},
+            {"Mcp-Method", mcp::protocol::ToolsCallMethod},
+            {"Mcp-Name", name},
+        },
+        serialize_test_request(mcp::protocol::JsonRpcRequest{
+            .method = mcp::protocol::ToolsCallMethod,
+            .params = Json{{"name", name}, {"arguments", Json::object()}},
+            .id = id,
+        }),
+        "application/json");
+  };
+
+  std::optional<httplib::Result> slow_response;
+  std::exception_ptr slow_failure;
+  std::thread slow_thread([&]() {
+    try {
+      slow_response = post_tool_call("slow", 75);
+    } catch (...) {
+      slow_failure = std::current_exception();
+    }
+  });
+
+  bool observed_slow = false;
+  {
+    std::unique_lock lock(gate_mutex);
+    observed_slow = gate_cv.wait_for(lock, std::chrono::milliseconds(1000),
+                                     [&] { return slow_started; });
+  }
+
+  std::optional<httplib::Result> fast_response;
+  std::exception_ptr fast_failure;
+  try {
+    fast_response = post_tool_call("fast", 76);
+  } catch (...) {
+    fast_failure = std::current_exception();
+  }
+
+  if (slow_thread.joinable()) {
+    slow_thread.join();
+  }
+  if (fast_failure) {
+    std::rethrow_exception(fast_failure);
+  }
+  if (slow_failure) {
+    std::rethrow_exception(slow_failure);
+  }
+  require(observed_slow, "slow tools/call should reach handler");
+  require(fast_response.has_value() && static_cast<bool>(*fast_response),
+          "fast tools/call should return while slow call is active");
+  require((*fast_response)->status == 200,
+          "fast tools/call response status mismatch");
+  const auto parsed_fast =
+      mcp::protocol::parse_response((*fast_response)->body);
+  require(parsed_fast.has_value(), "fast tools/call response should parse");
+  require(parsed_fast->result.has_value(),
+          "fast tools/call should contain a result");
+  require(fast_started_while_slow_active,
+          "HTTP tools/call should run while slow call is active");
+  require(slow_response.has_value() && static_cast<bool>(*slow_response),
+          "slow tools/call should return");
+  require((*slow_response)->status == 200,
+          "slow tools/call response status mismatch");
+
+  server_transport.transport().stop();
+}
+
 void test_server_http_transport_rejects_invalid_required_headers() {
   constexpr int kPort = 40236;
   const std::string kPath = "/mcp";
@@ -5970,6 +6120,8 @@ int main() {
        test_server_http_transport_rejects_disallowed_host},
       {"server http transport accepts standard post without custom headers",
        test_server_http_transport_accepts_standard_post_without_custom_headers},
+      {"server http transport runs tools/call concurrently",
+       test_server_http_transport_runs_tools_calls_concurrently},
       {"server http transport rejects invalid required headers",
        test_server_http_transport_rejects_invalid_required_headers},
       {"server http transport can request client",

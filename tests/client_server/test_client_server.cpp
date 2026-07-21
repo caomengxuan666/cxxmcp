@@ -1218,6 +1218,49 @@ void test_server_direct_facade_accepts_context_and_cancellation() {
           "peer context call_tool should pass context and cancellation");
 }
 
+void test_server_tool_context_exposes_call_meta_progress_token() {
+  mcp::server::ServerOptions options;
+  options.capabilities.tools.enabled = true;
+  mcp::server::Server server(options);
+
+  std::atomic_bool handler_called{false};
+  const auto tool_added = server.tools().add(
+      mcp::protocol::ToolDefinition{
+          .name = "progress-aware",
+          .input_schema = Json::object(),
+      },
+      [&](const mcp::server::ToolContext& context)
+          -> mcp::core::Result<mcp::protocol::ToolResult> {
+        handler_called.store(true, std::memory_order_relaxed);
+        require(context.meta.has_value(), "tool context meta missing");
+        require(context.meta->at("progressToken") == "progress-1",
+                "tool context meta progress token mismatch");
+        const auto progress_token = context.progress_token();
+        require(progress_token.has_value(),
+                "tool context progress token missing");
+        require(*progress_token ==
+                    mcp::protocol::ProgressToken{std::string("progress-1")},
+                "tool context progress token mismatch");
+        return mcp::protocol::ToolResult::text("ok");
+      });
+  require(tool_added.has_value(), "failed to add progress-aware tool");
+
+  const auto response = server.handle_request(
+      mcp::protocol::JsonRpcRequest{
+          .method = mcp::protocol::ToolsCallMethod,
+          .params = Json{{"name", "progress-aware"},
+                         {"arguments", Json::object()},
+                         {"_meta", Json{{"progressToken", "progress-1"},
+                                        {"traceId", "trace-1"}}}},
+          .id = std::int64_t{1},
+      },
+      mcp::server::SessionContext{.session_id = "session-1"});
+  require(response.has_value(), "progress-aware tool call failed");
+  require(response->result.has_value(), "progress-aware tool result missing");
+  require(handler_called.load(std::memory_order_relaxed),
+          "progress-aware tool handler not called");
+}
+
 void test_server_auth_provider_receives_headers_and_sets_identity() {
   class HeaderAuthProvider final : public mcp::server::AuthProvider {
    public:
@@ -4000,6 +4043,13 @@ void test_server_task_processor_tool_call_lifecycle() {
                 "task tool session mismatch");
         require(context.task.has_value(), "task tool context missing task");
         require(context.task->ttl == 60, "task tool ttl mismatch");
+        require(context.meta.has_value(), "task tool context meta missing");
+        const auto progress_token = context.progress_token();
+        require(progress_token.has_value(),
+                "task tool context progress token missing");
+        require(*progress_token ==
+                    mcp::protocol::ProgressToken{std::string("task-progress")},
+                "task tool context progress token mismatch");
         mcp::protocol::ToolResult result;
         result.structured_content =
             Json{{"echo", context.arguments.at("value")}};
@@ -4020,6 +4070,7 @@ void test_server_task_processor_tool_call_lifecycle() {
       .name = "long.echo",
       .arguments = Json{{"value", "hello"}},
       .task = mcp::protocol::TaskRequestParameters{.ttl = std::int64_t{60}},
+      .meta = Json{{"progressToken", "task-progress"}},
   });
   require(created.has_value(), "task-aware tool call should create task");
   require(!created->task.task_id.empty(), "created task id missing");
@@ -6991,6 +7042,8 @@ int main() {
        test_server_service_native_transport_stop_cancels_loop},
       {"client service native transport receive loop",
        test_client_service_native_transport_receive_loop},
+      {"server tool context exposes call meta progress token",
+       test_server_tool_context_exposes_call_meta_progress_token},
       {"server non-task tool observes cancelled notification",
        test_server_non_task_tool_observes_cancelled_notification},
       {"completion and sampling handlers observe cancellation token",
