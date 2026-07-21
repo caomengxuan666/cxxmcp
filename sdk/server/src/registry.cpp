@@ -390,6 +390,7 @@ core::Result<protocol::ToolResult> ToolRegistry::call(
   context.transport = session_context.transport;
   context.transport_lifetime = session_context.transport_lifetime;
   context.arguments = std::move(call.arguments);
+  context.meta = std::move(call.meta);
   context.task = std::move(call.task);
   context.cancellation = std::move(cancellation);
   const auto result = entry.handler(context);

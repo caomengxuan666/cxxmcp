@@ -33,10 +33,20 @@ struct ToolContext : SessionContext {
 
   /// JSON arguments supplied with the tool call.
   protocol::Json arguments = protocol::Json::object();
+  /// Optional `tools/call._meta` metadata supplied with the tool call.
+  std::optional<protocol::Json> meta;
   /// Optional task request metadata supplied with the tool call.
   std::optional<protocol::TaskRequestParameters> task;
   /// Cooperative cancellation token for task-aware executions.
   CancellationToken cancellation;
+
+  /// @brief Return the `tools/call._meta.progressToken`, when present.
+  std::optional<protocol::ProgressToken> progress_token() const {
+    if (!meta.has_value()) {
+      return std::nullopt;
+    }
+    return protocol::meta_progress_token(*meta);
+  }
 
   /// @brief Convenience check for cancellation-aware handlers.
   bool cancelled() const noexcept { return cancellation.cancelled(); }
