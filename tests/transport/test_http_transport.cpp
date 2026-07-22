@@ -4796,6 +4796,8 @@ void test_native_streamable_http_transport_exposes_client_contract() {
   require(tools_response->result->at("tools").size() == 1,
           "native http tools/list count mismatch");
   const auto diagnostics = transport.diagnostics();
+  require(diagnostics.at("requestWorkers").get<std::size_t>() <= 1,
+          "native http completed request workers should be reaped");
   require(diagnostics.at("activeRequestWorkers").get<std::size_t>() == 0,
           "native http request workers should be inactive");
   require(diagnostics.at("completedRequestWorkers").get<std::size_t>() >= 2,
@@ -5317,7 +5319,29 @@ void test_native_streamable_http_server_transport_diagnostics_timeout_cleanup() 
       timeout_response->error->message.find("timed out") != std::string::npos,
       "native timeout server error should be a timeout");
 
+  const auto second_request_sent = transport.send(mcp::protocol::JsonRpcRequest{
+      .method = mcp::protocol::RootsListMethod,
+      .params = Json::object(),
+      .id = std::int64_t{73},
+  });
+  require(second_request_sent.has_value(),
+          "native timeout server second request should be accepted");
+
+  received = transport.receive();
+  require(received.has_value(),
+          "native timeout server second error receive should succeed");
+  require(received->has_value(),
+          "native timeout server second error response should be queued");
+  const auto* second_timeout_response =
+      std::get_if<mcp::protocol::JsonRpcResponse>(&received->value());
+  require(second_timeout_response != nullptr,
+          "native timeout server should receive second error response");
+  require(second_timeout_response->error.has_value(),
+          "native timeout server second request should surface an error");
+
   const auto diagnostics = transport.diagnostics();
+  require(diagnostics.at("requestWorkers").get<std::size_t>() <= 1,
+          "native timeout server completed request workers should be reaped");
   require(diagnostics.at("pendingClientRequests").get<std::size_t>() == 0,
           "native timeout server should not leave pending client requests");
   require(diagnostics.at("activeRequestWorkers").get<std::size_t>() == 0,
