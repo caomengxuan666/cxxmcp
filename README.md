@@ -119,15 +119,21 @@ Package managers: `conanfile.py` (Conan 2), `packaging/vcpkg/ports/cxxmcp-sdk` (
 | Option | Default | Description |
 |---|---:|---|
 | `CXXMCP_BUILD_SDK` | `ON` | Build the aggregate SDK layer (protocol + client + server) |
+| `CXXMCP_BUILD_PROTOCOL` | `ON` | Build the MCP protocol library |
 | `CXXMCP_BUILD_CLIENT` | `OFF` | Build the MCP client library |
 | `CXXMCP_BUILD_SERVER` | `OFF` | Build the MCP server library |
 | `CXXMCP_BUILD_EXAMPLES` | `OFF` | Build example executables |
 | `CXXMCP_BUILD_TESTS` | `BUILD_TESTING` | Build tests |
 | `CXXMCP_BUILD_BENCHMARKS` | `OFF` | Build benchmark executables |
+| `CXXMCP_BUILD_DOCS` | `OFF` | Build Doxygen API documentation |
 | `CXXMCP_ENABLE_HTTP` | `OFF` | Build HTTP/SSE transport (uses bundled `cpp-httplib` unless `CXXMCP_USE_SYSTEM_DEPS=ON`) |
 | `CXXMCP_ENABLE_OPENSSL` | `OFF` | Enable OpenSSL-backed HTTP/WebSocket TLS support |
 | `CXXMCP_ENABLE_AUTH` | `OFF` | Build the optional OAuth 2.1 / DPoP auth target |
+| `CXXMCP_AUTH_CRYPTO` | `NONE` | Optional auth crypto backend (`NONE` or `OpenSSL`; requires `CXXMCP_ENABLE_AUTH=ON`) |
 | `CXXMCP_ENABLE_WEBSOCKET` | `OFF` | Build WebSocket transport (requires `CXXMCP_ENABLE_HTTP`) |
+| `CXXMCP_USE_SYSTEM_DEPS` | `OFF` | Use package-manager dependencies instead of bundled header-only SDK dependencies |
+| `CXXMCP_SDK_CXX_STANDARD` | `17` | Minimum C++ standard required by exported SDK targets (`17`, `20`, `23`, or `26`) |
+| `CXXMCP_MSVC_RUNTIME_LIBRARY` | empty | Optional MSVC runtime library override; empty keeps the toolchain default |
 
 ## Package Targets
 
