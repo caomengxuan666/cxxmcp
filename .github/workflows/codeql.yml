@@ -62,15 +62,14 @@ jobs:
             -DCXXMCP_BUILD_CLIENT=ON \
             -DCXXMCP_BUILD_SERVER=ON \
             -DCXXMCP_BUILD_EXAMPLES=OFF \
-            -DCXXMCP_BUILD_TESTS=ON \
+            -DCXXMCP_BUILD_TESTS=OFF \
             -DCXXMCP_BUILD_DOCS=OFF \
             -DCXXMCP_ENABLE_HTTP=ON \
             -DCXXMCP_ENABLE_WEBSOCKET=ON \
             -DCXXMCP_ENABLE_AUTH=ON
 
       - name: Build SDK for analysis
-        run: cmake --build out/build/codeql --parallel
+        run: cmake --build out/build/codeql --target mcp_protocol mcp_client mcp_server --parallel 2
 
       - name: Perform CodeQL analysis
         uses: github/codeql-action/analyze@v4
-
