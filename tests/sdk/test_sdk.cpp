@@ -583,6 +583,22 @@ void enqueue_server_transport_lifecycle(
   transport.received.push_back(mcp::protocol::make_initialized_notification());
 }
 
+const mcp::protocol::JsonRpcResponse* find_response_by_id(
+    const std::vector<mcp::protocol::JsonRpcMessage>& sent, std::int64_t id) {
+  const mcp::protocol::RequestId request_id{id};
+  for (const auto& message : sent) {
+    const auto* response =
+        std::get_if<mcp::protocol::JsonRpcResponse>(&message);
+    if (response == nullptr || !response->id.has_value()) {
+      continue;
+    }
+    if (*response->id == request_id) {
+      return response;
+    }
+  }
+  return nullptr;
+}
+
 class BlockingServerContractTransport final
     : public mcp::transport::ServerTransport {
  public:
@@ -1407,8 +1423,7 @@ void test_server_peer_tool_discovery_dispatches_on_peer_boundary() {
       transport.sent.size() == 3,
       "server peer tool discovery should send initialize plus two responses");
 
-  const auto* list_response =
-      std::get_if<mcp::protocol::JsonRpcResponse>(&transport.sent.at(1));
+  const auto* list_response = find_response_by_id(transport.sent, 10);
   require(list_response != nullptr, "tools/list response missing");
   require(list_response->result.has_value(), "tools/list result missing");
   require(list_response->result->at("tools").size() == 1,
@@ -1416,8 +1431,7 @@ void test_server_peer_tool_discovery_dispatches_on_peer_boundary() {
   require(list_response->result->at("tools").at(0).at("name") == "echo",
           "tools/list tool name mismatch");
 
-  const auto* get_response =
-      std::get_if<mcp::protocol::JsonRpcResponse>(&transport.sent.at(2));
+  const auto* get_response = find_response_by_id(transport.sent, 11);
   require(get_response != nullptr, "tools/get response missing");
   require(get_response->result.has_value(), "tools/get result missing");
   require(get_response->result->at("name") == "echo",
@@ -1644,36 +1658,31 @@ void test_server_peer_prompt_resource_dispatches_on_peer_boundary() {
   require(transport.sent.size() == 6,
           "server peer prompt/resource dispatch response count mismatch");
 
-  const auto* prompts_list =
-      std::get_if<mcp::protocol::JsonRpcResponse>(&transport.sent.at(1));
+  const auto* prompts_list = find_response_by_id(transport.sent, 20);
   require(prompts_list != nullptr, "prompts/list response missing");
   require(
       prompts_list->result->at("prompts").at(0).at("name") == "session-summary",
       "prompts/list prompt name mismatch");
 
-  const auto* prompt_get =
-      std::get_if<mcp::protocol::JsonRpcResponse>(&transport.sent.at(2));
+  const auto* prompt_get = find_response_by_id(transport.sent, 21);
   require(prompt_get != nullptr, "prompts/get response missing");
   require(prompt_get->result->at("messages").at(0).at("content").at("text") ==
               "peer-session:hello",
           "prompts/get should preserve session context");
 
-  const auto* resources_list =
-      std::get_if<mcp::protocol::JsonRpcResponse>(&transport.sent.at(3));
+  const auto* resources_list = find_response_by_id(transport.sent, 22);
   require(resources_list != nullptr, "resources/list response missing");
   require(resources_list->result->at("resources").at(0).at("uri") ==
               "file:///tmp/session.txt",
           "resources/list uri mismatch");
 
-  const auto* resources_read =
-      std::get_if<mcp::protocol::JsonRpcResponse>(&transport.sent.at(4));
+  const auto* resources_read = find_response_by_id(transport.sent, 23);
   require(resources_read != nullptr, "resources/read response missing");
   require(resources_read->result->at("contents").at(0).at("text") ==
               "peer-session:file:///tmp/session.txt:intro",
           "resources/read should preserve session context and params");
 
-  const auto* templates_list =
-      std::get_if<mcp::protocol::JsonRpcResponse>(&transport.sent.at(5));
+  const auto* templates_list = find_response_by_id(transport.sent, 24);
   require(templates_list != nullptr,
           "resources/templates/list response missing");
   require(
@@ -1774,20 +1783,17 @@ void test_server_peer_handler_requests_dispatch_on_peer_boundary() {
   require(transport.sent.size() == 4,
           "server peer handler request response count mismatch");
 
-  const auto* completion =
-      std::get_if<mcp::protocol::JsonRpcResponse>(&transport.sent.at(1));
+  const auto* completion = find_response_by_id(transport.sent, 30);
   require(completion != nullptr, "completion response missing");
   require(completion->result->at("completion") == "peer-session:hello",
           "completion result mismatch");
 
-  const auto* sampling =
-      std::get_if<mcp::protocol::JsonRpcResponse>(&transport.sent.at(2));
+  const auto* sampling = find_response_by_id(transport.sent, 31);
   require(sampling != nullptr, "sampling response missing");
   require(sampling->result->at("sampled") == "peer-session:1",
           "sampling result mismatch");
 
-  const auto* logging =
-      std::get_if<mcp::protocol::JsonRpcResponse>(&transport.sent.at(3));
+  const auto* logging = find_response_by_id(transport.sent, 32);
   require(logging != nullptr, "logging response missing");
   require(logging->result.has_value(), "logging result missing");
   require(logged_level == "debug:logging level changed",
@@ -2021,31 +2027,27 @@ void test_server_peer_task_handlers_dispatch_on_peer_boundary() {
   require(transport.sent.size() == 5,
           "server peer task handler response count mismatch");
 
-  const auto* list_response =
-      std::get_if<mcp::protocol::JsonRpcResponse>(&transport.sent.at(1));
+  const auto* list_response = find_response_by_id(transport.sent, 40);
   require(list_response != nullptr, "tasks/list response missing");
   require(list_response->result->at("tasks").at(0).at("taskId") ==
               "peer-task-session-listed",
           "tasks/list result mismatch");
 
-  const auto* get_response =
-      std::get_if<mcp::protocol::JsonRpcResponse>(&transport.sent.at(2));
+  const auto* get_response = find_response_by_id(transport.sent, 41);
   require(get_response != nullptr, "tasks/get response missing");
   require(get_response->result->at("taskId") == "peer-task-session-task-a",
           "tasks/get should preserve session context");
   require(get_response->result->at("status") == "completed",
           "tasks/get status mismatch");
 
-  const auto* cancel_response =
-      std::get_if<mcp::protocol::JsonRpcResponse>(&transport.sent.at(3));
+  const auto* cancel_response = find_response_by_id(transport.sent, 42);
   require(cancel_response != nullptr, "tasks/cancel response missing");
   require(cancel_response->result->at("taskId") == "task-b",
           "tasks/cancel task id mismatch");
   require(cancel_response->result->at("status") == "cancelled",
           "tasks/cancel status mismatch");
 
-  const auto* result_response =
-      std::get_if<mcp::protocol::JsonRpcResponse>(&transport.sent.at(4));
+  const auto* result_response = find_response_by_id(transport.sent, 43);
   require(result_response != nullptr, "tasks/result response missing");
   require(result_response->result->at("taskId") == "task-c",
           "tasks/result task id mismatch");

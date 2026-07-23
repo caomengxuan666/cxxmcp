@@ -34,10 +34,12 @@
 #endif
 
 #include "cxxmcp/client/http_transport.hpp"
+#include "cxxmcp/peer.hpp"
 #include "cxxmcp/protocol/serialization.hpp"
 #include "cxxmcp/server/http_transport.hpp"
 #include "cxxmcp/server/peer.hpp"
 #include "cxxmcp/server/server.hpp"
+#include "cxxmcp/service.hpp"
 #include "cxxmcp/transport/http_transport.hpp"
 #include "httplib.h"
 
@@ -339,6 +341,45 @@ std::string initialize_http_session(int port, const std::string& path,
   require(initialize_response->has_header("Mcp-Session-Id"),
           "initialize should return a session id");
   return initialize_response->get_header_value("Mcp-Session-Id");
+}
+
+std::string initialize_canonical_http_session(int port, const std::string& path,
+                                              std::int64_t id = 1) {
+  const auto initialize_body =
+      serialize_test_request(mcp::protocol::JsonRpcRequest{
+          .method = mcp::protocol::InitializeMethod,
+          .params =
+              Json{
+                  {"protocolVersion", mcp::protocol::McpProtocolVersion},
+                  {"capabilities", Json::object()},
+                  {"clientInfo",
+                   Json{{"name", "canonical-http-test"}, {"version", "1"}}},
+              },
+          .id = id,
+      });
+
+  for (int attempt = 0; attempt < 100; ++attempt) {
+    httplib::Client http_client("127.0.0.1", port);
+    http_client.set_connection_timeout(0, 100000);
+    http_client.set_read_timeout(2, 0);
+    http_client.set_write_timeout(2, 0);
+    const auto initialize_response =
+        http_client.Post(path,
+                         httplib::Headers{
+                             {"Accept", "application/json, text/event-stream"},
+                             {"Content-Type", "application/json"},
+                             {"Mcp-Method", mcp::protocol::InitializeMethod},
+                         },
+                         initialize_body, "application/json");
+    if (initialize_response && initialize_response->status >= 200 &&
+        initialize_response->status < 300 &&
+        initialize_response->has_header("Mcp-Session-Id")) {
+      return initialize_response->get_header_value("Mcp-Session-Id");
+    }
+    std::this_thread::sleep_for(std::chrono::milliseconds(10));
+  }
+
+  throw std::runtime_error("canonical initialize should create a session");
 }
 
 httplib::Result post_initialized_notification(int port, const std::string& path,
@@ -3291,6 +3332,180 @@ void test_server_http_transport_runs_tools_calls_concurrently() {
   server_transport.transport().stop();
 }
 
+void test_canonical_streamable_http_server_peer_runs_tools_calls_concurrently() {
+  constexpr int kPort = 40264;
+  const std::string kPath = "/canonical-mcp";
+
+  std::mutex gate_mutex;
+  std::condition_variable gate_cv;
+  bool slow_started = false;
+  bool slow_finished = false;
+  bool fast_started = false;
+  bool fast_started_while_slow_active = false;
+  bool second_session_initialized_while_slow_active = false;
+
+  auto server =
+      std::make_unique<mcp::server::Server>(mcp::server::ServerOptions{});
+  const auto slow_added = server->tools().add(
+      mcp::protocol::ToolDefinition{
+          .name = "slow",
+          .description = "Slow canonical HTTP tool",
+          .input_schema = Json::object(),
+          .streaming = false,
+      },
+      [&](const mcp::server::ToolContext&)
+          -> mcp::core::Result<mcp::protocol::ToolResult> {
+        std::unique_lock lock(gate_mutex);
+        slow_started = true;
+        gate_cv.notify_all();
+        gate_cv.wait_for(lock, std::chrono::milliseconds(1500),
+                         [&] { return fast_started; });
+        slow_finished = true;
+        gate_cv.notify_all();
+        return mcp::protocol::ToolResult::text("slow");
+      });
+  require(slow_added.has_value(), "failed to register canonical slow tool");
+
+  const auto fast_added = server->tools().add(
+      mcp::protocol::ToolDefinition{
+          .name = "fast",
+          .description = "Fast canonical HTTP tool",
+          .input_schema = Json::object(),
+          .streaming = false,
+      },
+      [&](const mcp::server::ToolContext&)
+          -> mcp::core::Result<mcp::protocol::ToolResult> {
+        std::lock_guard lock(gate_mutex);
+        fast_started_while_slow_active = slow_started && !slow_finished;
+        fast_started = true;
+        gate_cv.notify_all();
+        return mcp::protocol::ToolResult::text("fast");
+      });
+  require(fast_added.has_value(), "failed to register canonical fast tool");
+
+  auto transport =
+      std::make_unique<mcp::transport::StreamableHttpServerTransport>(
+          mcp::transport::StreamableHttpServerTransportOptions{
+              .listen_host = "127.0.0.1",
+              .listen_port = kPort,
+              .path = kPath,
+          });
+  auto* transport_ptr = transport.get();
+  auto running =
+      mcp::serve(mcp::ServerPeer(std::move(server)), std::move(transport));
+  require(running.has_value(), "canonical HTTP ServerPeer should start");
+  transport_ptr->wait_until_ready();
+
+  const auto session_id = initialize_canonical_http_session(kPort, kPath, 84);
+  require_initialized_notification(kPort, kPath, session_id);
+
+  auto post_tool_call = [&](std::string name, std::int64_t id) {
+    httplib::Client http_client("127.0.0.1", kPort);
+    http_client.set_read_timeout(std::chrono::milliseconds(3000));
+    return http_client.Post(
+        kPath,
+        httplib::Headers{
+            {"Accept", "application/json, text/event-stream"},
+            {"Content-Type", "application/json"},
+            {"MCP-Protocol-Version", mcp::protocol::McpProtocolVersion},
+            {"Mcp-Session-Id", session_id},
+            {"Mcp-Method", mcp::protocol::ToolsCallMethod},
+            {"Mcp-Name", name},
+        },
+        serialize_test_request(mcp::protocol::JsonRpcRequest{
+            .method = mcp::protocol::ToolsCallMethod,
+            .params = Json{{"name", name}, {"arguments", Json::object()}},
+            .id = id,
+        }),
+        "application/json");
+  };
+
+  std::optional<httplib::Result> slow_response;
+  std::exception_ptr slow_failure;
+  std::thread slow_thread([&]() {
+    try {
+      slow_response = post_tool_call("slow", 85);
+    } catch (...) {
+      slow_failure = std::current_exception();
+    }
+  });
+
+  bool observed_slow = false;
+  {
+    std::unique_lock lock(gate_mutex);
+    observed_slow = gate_cv.wait_for(lock, std::chrono::milliseconds(1000),
+                                     [&] { return slow_started; });
+  }
+
+  std::optional<std::string> second_session_id;
+  std::exception_ptr initialize_failure;
+  std::thread initialize_thread([&]() {
+    try {
+      auto initialized_session =
+          initialize_canonical_http_session(kPort, kPath, 87);
+      {
+        std::lock_guard lock(gate_mutex);
+        second_session_initialized_while_slow_active =
+            slow_started && !slow_finished;
+      }
+      second_session_id = std::move(initialized_session);
+    } catch (...) {
+      initialize_failure = std::current_exception();
+    }
+  });
+
+  if (initialize_thread.joinable()) {
+    initialize_thread.join();
+  }
+
+  std::optional<httplib::Result> fast_response;
+  std::exception_ptr fast_failure;
+  try {
+    fast_response = post_tool_call("fast", 86);
+  } catch (...) {
+    fast_failure = std::current_exception();
+  }
+
+  if (slow_thread.joinable()) {
+    slow_thread.join();
+  }
+  if (fast_failure) {
+    std::rethrow_exception(fast_failure);
+  }
+  if (slow_failure) {
+    std::rethrow_exception(slow_failure);
+  }
+  if (initialize_failure) {
+    std::rethrow_exception(initialize_failure);
+  }
+
+  require(observed_slow, "canonical slow tools/call should reach handler");
+  require(second_session_id.has_value(),
+          "canonical second HTTP session initialize should return");
+  require(
+      second_session_initialized_while_slow_active,
+      "canonical HTTP initialize should complete while slow call is active");
+  require(fast_response.has_value() && static_cast<bool>(*fast_response),
+          "canonical fast tools/call should return");
+  require((*fast_response)->status == 200,
+          "canonical fast tools/call response status mismatch");
+  const auto parsed_fast =
+      mcp::protocol::parse_response((*fast_response)->body);
+  require(parsed_fast.has_value(),
+          "canonical fast tools/call response should parse");
+  require(parsed_fast->result.has_value(),
+          "canonical fast tools/call should contain a result");
+  require(fast_started_while_slow_active,
+          "canonical HTTP tools/call should run while slow call is active");
+  require(slow_response.has_value() && static_cast<bool>(*slow_response),
+          "canonical slow tools/call should return");
+  require((*slow_response)->status == 200,
+          "canonical slow tools/call response status mismatch");
+
+  const auto stopped = running->stop();
+  require(stopped.has_value(), "canonical HTTP ServerPeer should stop");
+}
+
 void test_server_http_transport_rejects_invalid_required_headers() {
   constexpr int kPort = 40236;
   const std::string kPath = "/mcp";
@@ -6122,6 +6337,8 @@ int main() {
        test_server_http_transport_accepts_standard_post_without_custom_headers},
       {"server http transport runs tools/call concurrently",
        test_server_http_transport_runs_tools_calls_concurrently},
+      {"canonical streamable http ServerPeer runs tools/call concurrently",
+       test_canonical_streamable_http_server_peer_runs_tools_calls_concurrently},
       {"server http transport rejects invalid required headers",
        test_server_http_transport_rejects_invalid_required_headers},
       {"server http transport can request client",
