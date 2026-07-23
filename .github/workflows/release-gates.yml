@@ -64,6 +64,9 @@ jobs:
       - name: Check package recipe sync
         run: python scripts/check_package_recipe_sync.py --source .
 
+      - name: Check README CMake option drift
+        run: python scripts/check_readme_cmake_options.py --source .
+
       - name: Self-test release artifact verifier
         run: python scripts/selftest_release_artifacts.py
 

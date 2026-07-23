@@ -119,15 +119,21 @@ client 路径，还需要加上 `-DCXXMCP_ENABLE_HTTP=ON`。
 | Option | Default | 说明 |
 |---|---:|---|
 | `CXXMCP_BUILD_SDK` | `ON` | 构建聚合 SDK 层（protocol + client + server） |
+| `CXXMCP_BUILD_PROTOCOL` | `ON` | 构建 MCP protocol library |
 | `CXXMCP_BUILD_CLIENT` | `OFF` | 构建 MCP client library |
 | `CXXMCP_BUILD_SERVER` | `OFF` | 构建 MCP server library |
 | `CXXMCP_BUILD_EXAMPLES` | `OFF` | 构建示例 |
 | `CXXMCP_BUILD_TESTS` | `BUILD_TESTING` | 构建测试 |
 | `CXXMCP_BUILD_BENCHMARKS` | `OFF` | 构建 benchmark 可执行文件 |
+| `CXXMCP_BUILD_DOCS` | `OFF` | 构建 Doxygen API 文档 |
 | `CXXMCP_ENABLE_HTTP` | `OFF` | 构建 HTTP/SSE transport（默认使用 bundled `cpp-httplib`，`CXXMCP_USE_SYSTEM_DEPS=ON` 时使用系统包） |
 | `CXXMCP_ENABLE_OPENSSL` | `OFF` | 启用 OpenSSL-backed HTTP/WebSocket TLS 支持 |
-| `CXXMCP_ENABLE_WEBSOCKET` | `OFF` | 构建 WebSocket transport（需要 `CXXMCP_ENABLE_HTTP`） |
 | `CXXMCP_ENABLE_AUTH` | `OFF` | 构建可选 OAuth 2.1 / DPoP auth target |
+| `CXXMCP_AUTH_CRYPTO` | `NONE` | 可选 auth crypto backend（`NONE` 或 `OpenSSL`；需要 `CXXMCP_ENABLE_AUTH=ON`） |
+| `CXXMCP_ENABLE_WEBSOCKET` | `OFF` | 构建 WebSocket transport（需要 `CXXMCP_ENABLE_HTTP`） |
+| `CXXMCP_USE_SYSTEM_DEPS` | `OFF` | 使用包管理器依赖，而不是 bundled header-only SDK 依赖 |
+| `CXXMCP_SDK_CXX_STANDARD` | `17` | exported SDK targets 要求的最低 C++ 标准（`17`、`20`、`23` 或 `26`） |
+| `CXXMCP_MSVC_RUNTIME_LIBRARY` | empty | 可选 MSVC runtime library 覆盖；留空表示沿用 toolchain 默认值 |
 
 ## Package Targets
 
