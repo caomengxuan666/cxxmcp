@@ -1,5 +1,5 @@
 PROJECT_NAME           = "cxxmcp"
-PROJECT_NUMBER         = 1.2.3
+PROJECT_NUMBER         = 1.2.4
 PROJECT_BRIEF          = "C++ MCP SDK"
 
 OUTPUT_DIRECTORY       = docs/doxygen

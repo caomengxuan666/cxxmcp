@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.2.4
+
+- Prepared release metadata and package references.
+
 ## 1.2.3
 
 - Prepared release metadata and package references.
