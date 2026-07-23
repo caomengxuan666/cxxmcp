@@ -601,6 +601,9 @@ class QueuedRoleServerTransport final : public mcp::transport::ServerTransport {
     if (next_inbound_ >= inbound.size()) {
       return std::nullopt;
     }
+    if (before_receive) {
+      before_receive(next_inbound_);
+    }
     auto message = std::move(inbound.at(next_inbound_));
     ++next_inbound_;
     return message;
@@ -614,6 +617,7 @@ class QueuedRoleServerTransport final : public mcp::transport::ServerTransport {
 
   std::vector<RxMessage> inbound;
   std::vector<TxMessage> sent;
+  std::function<void(std::size_t)> before_receive;
   bool closed = false;
 
  private:
@@ -2331,6 +2335,131 @@ void test_server_peer_serves_role_generic_transport_receive_loop() {
           "server peer should dispatch transport notifications");
   require(notification_session == "peer-session",
           "server peer should pass transport session context");
+}
+
+void test_server_peer_serves_role_generic_transport_requests_concurrently() {
+  auto server = std::make_unique<mcp::server::Server>(make_server());
+
+  std::mutex gate_mutex;
+  std::condition_variable gate_cv;
+  bool slow_started = false;
+  bool slow_finished = false;
+  bool fast_started = false;
+  bool fast_started_while_slow_active = false;
+
+  const auto slow_added = server->tools().add(
+      mcp::protocol::ToolDefinition{
+          .name = "slow",
+          .description = "Slow test tool",
+          .input_schema = Json::object(),
+          .streaming = false,
+      },
+      [&](const mcp::server::ToolContext&)
+          -> mcp::core::Result<mcp::protocol::ToolResult> {
+        std::unique_lock lock(gate_mutex);
+        slow_started = true;
+        gate_cv.notify_all();
+        gate_cv.wait_for(lock, std::chrono::milliseconds(1000),
+                         [&] { return fast_started; });
+        slow_finished = true;
+        gate_cv.notify_all();
+        return mcp::protocol::ToolResult::text("slow");
+      });
+  require(slow_added.has_value(), "failed to register slow tool");
+
+  const auto fast_added = server->tools().add(
+      mcp::protocol::ToolDefinition{
+          .name = "fast",
+          .description = "Fast test tool",
+          .input_schema = Json::object(),
+          .streaming = false,
+      },
+      [&](const mcp::server::ToolContext&)
+          -> mcp::core::Result<mcp::protocol::ToolResult> {
+        std::lock_guard lock(gate_mutex);
+        fast_started_while_slow_active = slow_started && !slow_finished;
+        fast_started = true;
+        gate_cv.notify_all();
+        return mcp::protocol::ToolResult::text("fast");
+      });
+  require(fast_added.has_value(), "failed to register fast tool");
+
+  mcp::ServerPeer peer(std::move(server));
+  QueuedRoleServerTransport transport;
+  transport.inbound.push_back(mcp::protocol::JsonRpcRequest{
+      .method = mcp::protocol::InitializeMethod,
+      .params =
+          Json{{"protocolVersion", mcp::protocol::McpProtocolVersion},
+               {"capabilities", Json::object()},
+               {"clientInfo", Json{{"name", "role-client"}, {"version", "1"}}}},
+      .id = std::int64_t{699},
+  });
+  transport.inbound.push_back(mcp::protocol::JsonRpcNotification{
+      .method = "notifications/initialized",
+      .params = Json::object(),
+  });
+  transport.inbound.push_back(mcp::protocol::JsonRpcRequest{
+      .method = "tools/call",
+      .params = Json{{"name", "slow"}, {"arguments", Json::object()}},
+      .id = std::int64_t{700},
+  });
+  transport.inbound.push_back(mcp::protocol::JsonRpcRequest{
+      .method = "tools/call",
+      .params = Json{{"name", "fast"}, {"arguments", Json::object()}},
+      .id = std::int64_t{701},
+  });
+  transport.before_receive = [&](std::size_t index) {
+    if (index != 3) {
+      return;
+    }
+    std::unique_lock lock(gate_mutex);
+    gate_cv.wait_for(lock, std::chrono::milliseconds(1000),
+                     [&] { return slow_started; });
+  };
+
+  const auto served = peer.serve_transport(
+      transport, mcp::server::SessionContext{
+                     .session_id = "peer-concurrency-session",
+                     .remote_address = "role-generic-concurrency-test",
+                 });
+  require(served.has_value(),
+          "server peer role transport concurrency loop failed");
+  require(slow_started, "slow tools/call should start");
+  require(fast_started, "fast tools/call should start");
+  require(slow_finished, "slow tools/call should finish");
+  require(fast_started_while_slow_active,
+          "role-generic tools/call should run while slow call is active");
+
+  const auto find_response =
+      [&](std::int64_t id) -> const mcp::protocol::JsonRpcResponse* {
+    for (const auto& message : transport.sent) {
+      const auto* response =
+          std::get_if<mcp::protocol::JsonRpcResponse>(&message);
+      if (response == nullptr || !response->id.has_value()) {
+        continue;
+      }
+      const auto* response_id = std::get_if<std::int64_t>(&*response->id);
+      if (response_id != nullptr && *response_id == id) {
+        return response;
+      }
+    }
+    return nullptr;
+  };
+
+  const auto* slow_response = find_response(700);
+  const auto* fast_response = find_response(701);
+  require(slow_response != nullptr,
+          "server peer should send slow tools/call response");
+  require(fast_response != nullptr,
+          "server peer should send fast tools/call response");
+  require(slow_response->result.has_value(),
+          "slow tools/call response result missing");
+  require(fast_response->result.has_value(),
+          "fast tools/call response result missing");
+  require(slow_response->result->at("content").front().at("text") == "slow",
+          "slow tools/call response text mismatch");
+  require(fast_response->result->at("content").front().at("text") == "fast",
+          "fast tools/call response text mismatch");
 }
 
 void test_server_service_serves_role_generic_transport_receive_loop() {
@@ -7036,6 +7165,8 @@ int main() {
        test_service_lifecycle_facades_start_and_stop},
       {"server peer role-generic transport receive loop",
        test_server_peer_serves_role_generic_transport_receive_loop},
+      {"server peer role-generic transport requests concurrently",
+       test_server_peer_serves_role_generic_transport_requests_concurrently},
       {"server service role-generic transport receive loop",
        test_server_service_serves_role_generic_transport_receive_loop},
       {"server service native transport stop cancels loop",

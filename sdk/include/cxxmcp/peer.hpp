@@ -3893,64 +3893,229 @@ class Peer<RoleServer> {
         "server peer cannot dispatch an uncorrelated response"));
   }
 
-  /// @brief Runs a sequential receive loop over a role-generic server
-  /// transport.
+  /// @brief Runs a receive loop over a role-generic server transport.
+  ///
+  /// Initialize handshakes and notifications are dispatched on the receive
+  /// thread. After initialization, requests are dispatched on workers so a
+  /// long-running tool call does not block the transport from reading later
+  /// requests.
   core::Result<core::Unit> serve_transport(
       transport::ServerTransport& transport,
       const server::SessionContext& context = {},
       CancellationToken cancellation = CancellationToken::none()) {
+    struct WorkerState {
+      std::mutex mutex;
+      std::mutex send_mutex;
+      std::condition_variable cv;
+      std::size_t active = 0;
+      std::optional<core::Error> first_error;
+    };
+
+    auto worker_state = std::make_shared<WorkerState>();
     bool initialized = false;
-    return detail::serve_transport_loop(
-        transport, cancellation,
-        [this, &context, &transport,
-         initialized](const protocol::JsonRpcMessage& message) mutable
-            -> core::Result<std::optional<protocol::JsonRpcMessage>> {
-          // Detect stateless mode: _meta contains protocolVersion
-          auto is_stateless_request = [](const protocol::Json& params) -> bool {
-            return params.is_object() && params.contains("_meta") &&
-                   params.at("_meta").is_object() &&
-                   params.at("_meta").contains(
-                       "io.modelcontextprotocol/protocolVersion");
-          };
-          if (const auto* request =
-                  std::get_if<protocol::JsonRpcRequest>(&message)) {
-            const bool stateless = is_stateless_request(request->params);
-            const bool allowed_before_initialized =
-                stateless || request->method == protocol::InitializeMethod ||
-                request->method == protocol::PingMethod;
-            if (!initialized && !allowed_before_initialized) {
-              return core::Result<std::optional<protocol::JsonRpcMessage>>{
-                  protocol::JsonRpcMessage{protocol::make_error_response(
-                      request->id,
-                      protocol::make_error(protocol::ErrorCode::InvalidRequest,
-                                           "server peer transport session is "
-                                           "not initialized"))}};
-            }
-          }
-          if (const auto* notification =
-                  std::get_if<protocol::JsonRpcNotification>(&message)) {
-            const bool stateless = is_stateless_request(notification->params);
-            if (!initialized && !stateless &&
-                notification->method != protocol::InitializedMethod) {
-              return mcp::core::unexpected(detail::peer_dispatch_error(
-                  "server peer transport session is not initialized"));
-            }
-            auto message_context =
-                detail::context_for_received_server_message(transport, context);
-            auto dispatched =
-                dispatch_message(message, message_context, &transport);
+
+    auto record_worker_error = [worker_state,
+                                &transport](core::Error error) noexcept {
+      {
+        std::lock_guard lock(worker_state->mutex);
+        if (!worker_state->first_error.has_value()) {
+          worker_state->first_error = std::move(error);
+        }
+      }
+      (void)transport.close();
+      worker_state->cv.notify_all();
+    };
+
+    auto finish_worker = [worker_state]() noexcept {
+      {
+        std::lock_guard lock(worker_state->mutex);
+        if (worker_state->active > 0) {
+          --worker_state->active;
+        }
+      }
+      worker_state->cv.notify_all();
+    };
+
+    auto wait_for_workers = [worker_state]() -> std::optional<core::Error> {
+      std::unique_lock lock(worker_state->mutex);
+      worker_state->cv.wait(lock, [&] { return worker_state->active == 0; });
+      return worker_state->first_error;
+    };
+
+    auto send_message =
+        [worker_state, &transport](
+            protocol::JsonRpcMessage message) -> core::Result<core::Unit> {
+      std::lock_guard lock(worker_state->send_mutex);
+      return transport.send(std::move(message));
+    };
+
+    auto dispatch_and_send = [this, &transport, &send_message](
+                                 const protocol::JsonRpcMessage& message,
+                                 const server::SessionContext& message_context)
+        -> core::Result<core::Unit> {
+      auto dispatched = dispatch_message(message, message_context, &transport);
+      if (!dispatched) {
+        return mcp::core::unexpected(dispatched.error());
+      }
+      if (dispatched->has_value()) {
+        auto sent = send_message(std::move(dispatched->value()));
+        if (!sent) {
+          return mcp::core::unexpected(sent.error());
+        }
+      }
+      return core::Unit{};
+    };
+
+    auto start_request_worker = [worker_state, &record_worker_error,
+                                 &finish_worker, &dispatch_and_send](
+                                    protocol::JsonRpcMessage message,
+                                    server::SessionContext message_context)
+        -> core::Result<core::Unit> {
+      {
+        std::lock_guard lock(worker_state->mutex);
+        ++worker_state->active;
+      }
+
+      try {
+        std::thread([message = std::move(message),
+                     message_context = std::move(message_context),
+                     &dispatch_and_send, record_worker_error,
+                     finish_worker]() mutable {
+          try {
+            auto dispatched = dispatch_and_send(message, message_context);
             if (!dispatched) {
-              return dispatched;
+              record_worker_error(dispatched.error());
             }
-            if (notification->method == protocol::InitializedMethod) {
-              initialized = true;
-            }
-            return dispatched;
+          } catch (const std::exception& ex) {
+            record_worker_error(errors::make(
+                protocol::ErrorCode::InternalError,
+                "server peer request worker failed", ex.what(), "transport"));
+          } catch (...) {
+            record_worker_error(
+                errors::make(protocol::ErrorCode::InternalError,
+                             "server peer request worker failed",
+                             "unknown exception", "transport"));
           }
-          auto message_context =
-              detail::context_for_received_server_message(transport, context);
-          return dispatch_message(message, message_context, &transport);
-        });
+          finish_worker();
+        }).detach();
+      } catch (const std::system_error& ex) {
+        finish_worker();
+        return mcp::core::unexpected(
+            errors::make(protocol::ErrorCode::InternalError,
+                         "failed to start server peer request worker",
+                         ex.what(), "transport"));
+      }
+      return core::Unit{};
+    };
+
+    auto is_stateless_request = [](const protocol::Json& params) -> bool {
+      return params.is_object() && params.contains("_meta") &&
+             params.at("_meta").is_object() &&
+             params.at("_meta").contains(
+                 "io.modelcontextprotocol/protocolVersion");
+    };
+
+    while (!cancellation.cancelled()) {
+      auto received = transport.receive();
+      if (!received) {
+        if (const auto worker_error = wait_for_workers()) {
+          return mcp::core::unexpected(*worker_error);
+        }
+        return mcp::core::unexpected(received.error());
+      }
+      if (!received->has_value()) {
+        if (const auto worker_error = wait_for_workers()) {
+          return mcp::core::unexpected(*worker_error);
+        }
+        return core::Unit{};
+      }
+
+      auto message = std::move(received->value());
+      if (const auto* request =
+              std::get_if<protocol::JsonRpcRequest>(&message)) {
+        const bool stateless = is_stateless_request(request->params);
+        const bool allowed_before_initialized =
+            stateless || request->method == protocol::InitializeMethod ||
+            request->method == protocol::PingMethod;
+        if (!initialized && !allowed_before_initialized) {
+          auto sent = send_message(
+              protocol::JsonRpcMessage{protocol::make_error_response(
+                  request->id,
+                  protocol::make_error(protocol::ErrorCode::InvalidRequest,
+                                       "server peer transport session is "
+                                       "not initialized"))});
+          if (!sent) {
+            if (const auto worker_error = wait_for_workers()) {
+              return mcp::core::unexpected(*worker_error);
+            }
+            return mcp::core::unexpected(sent.error());
+          }
+          continue;
+        }
+
+        auto message_context =
+            detail::context_for_received_server_message(transport, context);
+        const bool run_inline = request->method == protocol::InitializeMethod ||
+                                (!initialized && !stateless);
+        if (run_inline) {
+          auto dispatched = dispatch_and_send(message, message_context);
+          if (!dispatched) {
+            if (const auto worker_error = wait_for_workers()) {
+              return mcp::core::unexpected(*worker_error);
+            }
+            return mcp::core::unexpected(dispatched.error());
+          }
+          continue;
+        }
+
+        auto started = start_request_worker(std::move(message),
+                                            std::move(message_context));
+        if (!started) {
+          if (const auto worker_error = wait_for_workers()) {
+            return mcp::core::unexpected(*worker_error);
+          }
+          return mcp::core::unexpected(started.error());
+        }
+        continue;
+      }
+
+      if (const auto* notification =
+              std::get_if<protocol::JsonRpcNotification>(&message)) {
+        const bool stateless = is_stateless_request(notification->params);
+        if (!initialized && !stateless &&
+            notification->method != protocol::InitializedMethod) {
+          if (const auto worker_error = wait_for_workers()) {
+            return mcp::core::unexpected(*worker_error);
+          }
+          return mcp::core::unexpected(detail::peer_dispatch_error(
+              "server peer transport session is not initialized"));
+        }
+        auto message_context =
+            detail::context_for_received_server_message(transport, context);
+        auto dispatched = dispatch_and_send(message, message_context);
+        if (!dispatched) {
+          if (const auto worker_error = wait_for_workers()) {
+            return mcp::core::unexpected(*worker_error);
+          }
+          return mcp::core::unexpected(dispatched.error());
+        }
+        if (notification->method == protocol::InitializedMethod) {
+          initialized = true;
+        }
+        continue;
+      }
+
+      if (const auto worker_error = wait_for_workers()) {
+        return mcp::core::unexpected(*worker_error);
+      }
+      return mcp::core::unexpected(detail::peer_dispatch_error(
+          "server peer cannot dispatch an uncorrelated response"));
+    }
+
+    if (const auto worker_error = wait_for_workers()) {
+      return mcp::core::unexpected(*worker_error);
+    }
+    return core::Unit{};
   }
 
  private:
