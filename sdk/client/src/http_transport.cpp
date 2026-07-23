@@ -2,6 +2,7 @@
 
 #include "cxxmcp/client/http_transport.hpp"
 
+#include <atomic>
 #include <chrono>
 #include <condition_variable>
 #include <ctime>
@@ -10,6 +11,7 @@
 #include <functional>
 #include <future>
 #include <map>
+#include <memory>
 #include <mutex>
 #include <optional>
 #include <set>
@@ -1102,6 +1104,11 @@ std::string request_id_to_string_for_native_http(
 
 class StreamableHttpClientTransport::Impl {
  public:
+  struct RequestWorker {
+    std::thread thread;
+    std::shared_ptr<std::atomic_bool> done;
+  };
+
   explicit Impl(StreamableHttpClientTransportOptions options)
       : transport_(to_legacy_options(std::move(options))) {}
 
@@ -1165,7 +1172,7 @@ class StreamableHttpClientTransport::Impl {
   core::Result<core::Unit> close() {
     std::map<protocol::RequestId, std::shared_ptr<PendingServerRequest>>
         pending;
-    std::vector<std::thread> request_threads;
+    std::vector<RequestWorker> request_threads;
     {
       std::lock_guard<std::mutex> lock(mutex_);
       if (closed_) {
@@ -1189,9 +1196,10 @@ class StreamableHttpClientTransport::Impl {
 
     receive_cv_.notify_all();
     transport_.stop();
-    for (auto& thread : request_threads) {
-      if (thread.joinable() && thread.get_id() != std::this_thread::get_id()) {
-        thread.join();
+    for (auto& worker : request_threads) {
+      if (worker.thread.joinable() &&
+          worker.thread.get_id() != std::this_thread::get_id()) {
+        worker.thread.join();
       }
     }
     return core::Unit{};
@@ -1207,6 +1215,33 @@ class StreamableHttpClientTransport::Impl {
     std::condition_variable cv;
     std::optional<protocol::JsonRpcResponse> response;
   };
+
+  static void join_request_threads(std::vector<std::thread>& threads) {
+    for (auto& thread : threads) {
+      if (thread.joinable() && thread.get_id() != std::this_thread::get_id()) {
+        thread.join();
+      }
+    }
+  }
+
+  std::vector<std::thread> reap_completed_request_workers_locked() {
+    std::vector<std::thread> completed_threads;
+    auto output = request_threads_.begin();
+    for (auto input = request_threads_.begin(); input != request_threads_.end();
+         ++input) {
+      if (input->done != nullptr &&
+          input->done->load(std::memory_order_acquire)) {
+        completed_threads.push_back(std::move(input->thread));
+        continue;
+      }
+      if (output != input) {
+        *output = std::move(*input);
+      }
+      ++output;
+    }
+    request_threads_.erase(output, request_threads_.end());
+    return completed_threads;
+  }
 
   core::Result<core::Unit> ensure_started() {
     std::lock_guard<std::mutex> lock(mutex_);
@@ -1238,6 +1273,7 @@ class StreamableHttpClientTransport::Impl {
       protocol::JsonRpcRequest request) {
     const auto request_id = request.id;
     bool registered = false;
+    std::vector<std::thread> completed_threads;
     try {
       std::lock_guard<std::mutex> lock(mutex_);
       if (closed_) {
@@ -1245,6 +1281,7 @@ class StreamableHttpClientTransport::Impl {
             protocol::ErrorCode::InvalidRequest,
             "streamable http client transport is closed"));
       }
+      completed_threads = reap_completed_request_workers_locked();
       const auto [_, inserted] = in_flight_request_ids_.insert(request_id);
       if (!inserted) {
         return mcp::core::unexpected(make_native_http_error(
@@ -1254,33 +1291,40 @@ class StreamableHttpClientTransport::Impl {
       }
       registered = true;
       ++active_request_workers_;
-      request_threads_.emplace_back(
-          [this, request_id, request = std::move(request)]() mutable {
-            auto response = transport_.send(request);
-            if (response) {
-              finish_request_worker(request_id, false, false);
-              enqueue(protocol::JsonRpcMessage{std::move(*response)});
-              return;
-            }
-            finish_request_worker(request_id, true,
-                                  is_timeout_error(response.error()));
-            enqueue(protocol::JsonRpcMessage{protocol::make_error_response(
-                std::optional<protocol::RequestId>{request.id},
-                protocol::make_error(response.error().code,
-                                     response.error().message,
-                                     response.error().detail.empty()
-                                         ? std::nullopt
-                                         : std::optional<protocol::Json>{
-                                               response.error().detail}))});
-          });
+      auto done = std::make_shared<std::atomic_bool>(false);
+      request_threads_.push_back(RequestWorker{
+          std::thread(
+              [this, request_id, request = std::move(request), done]() mutable {
+                auto response = transport_.send(request);
+                if (response) {
+                  finish_request_worker(request_id, false, false);
+                  enqueue(protocol::JsonRpcMessage{std::move(*response)});
+                  done->store(true, std::memory_order_release);
+                  return;
+                }
+                finish_request_worker(request_id, true,
+                                      is_timeout_error(response.error()));
+                enqueue(protocol::JsonRpcMessage{protocol::make_error_response(
+                    std::optional<protocol::RequestId>{request.id},
+                    protocol::make_error(response.error().code,
+                                         response.error().message,
+                                         response.error().detail.empty()
+                                             ? std::nullopt
+                                             : std::optional<protocol::Json>{
+                                                   response.error().detail}))});
+                done->store(true, std::memory_order_release);
+              }),
+          done});
     } catch (const std::system_error& ex) {
       if (registered) {
         forget_request_worker(request_id);
       }
+      join_request_threads(completed_threads);
       return mcp::core::unexpected(make_native_http_error(
           protocol::ErrorCode::InternalError,
           "failed to start streamable http request worker", ex.what()));
     }
+    join_request_threads(completed_threads);
     return core::Unit{};
   }
 
@@ -1398,7 +1442,7 @@ class StreamableHttpClientTransport::Impl {
   std::map<protocol::RequestId, std::shared_ptr<PendingServerRequest>>
       pending_server_requests_;
   std::set<protocol::RequestId> in_flight_request_ids_;
-  std::vector<std::thread> request_threads_;
+  std::vector<RequestWorker> request_threads_;
   std::size_t active_request_workers_ = 0;
   std::size_t completed_request_workers_ = 0;
   std::size_t failed_request_workers_ = 0;
