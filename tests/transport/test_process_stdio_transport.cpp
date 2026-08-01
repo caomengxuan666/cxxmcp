@@ -35,6 +35,10 @@ std::filesystem::path python_stdio_child_script() {
          "process_stdio_child.py";
 }
 
+std::string python_mcp_requirement() {
+  return std::string("mcp==") + MCP_TEST_PYTHON_MCP_VERSION;
+}
+
 std::filesystem::path typescript_stdio_child_bootstrap_script() {
   return std::filesystem::path(MCP_TEST_SOURCE_DIR) / "tests" / "fixtures" /
          "process_stdio_child_node.mjs";
@@ -573,7 +577,7 @@ void test_process_stdio_transport_runs_python_mcp_server() {
   auto transport = std::make_unique<mcp::client::ProcessStdioTransport>(
       mcp::client::ProcessStdioTransportOptions{
           .command = "uv",
-          .args = {"run", "--with", "mcp", "python",
+          .args = {"run", "--with", python_mcp_requirement(), "python",
                    python_stdio_child_script().string()},
           .cwd = {},
           .env = {},

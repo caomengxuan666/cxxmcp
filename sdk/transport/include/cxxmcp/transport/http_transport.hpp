@@ -192,6 +192,9 @@ class StreamableHttpServerTransport final : public ServerTransport {
   std::string_view name() const noexcept override;
   protocol::Json diagnostics() const override;
   core::Result<core::Unit> send(TxMessage message) override;
+  /// @brief Sends a message using the HTTP session that produced a request.
+  core::Result<core::Unit> send_to_session(std::string_view session_id,
+                                           TxMessage message);
   core::Result<std::optional<RxMessage>> receive() override;
   std::optional<StreamableHttpServerMessageContext> last_received_context()
       const;
