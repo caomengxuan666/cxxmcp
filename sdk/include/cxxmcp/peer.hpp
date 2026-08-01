@@ -2534,7 +2534,7 @@ class Peer<RoleClient>::Builder {
   }
 
   Builder& streamable_http(std::string uri) {
-    client::Client::StreamableHttpEndpoint endpoint;
+    client::Client::StreamableHttpEndpoint endpoint{};
     endpoint.uri = std::move(uri);
     return streamable_http(std::move(endpoint));
   }
@@ -2547,7 +2547,7 @@ class Peer<RoleClient>::Builder {
   }
 
   Builder& legacy_sse(std::string uri) {
-    client::Client::StreamableHttpEndpoint endpoint;
+    client::Client::StreamableHttpEndpoint endpoint{};
     endpoint.uri = std::move(uri);
     return legacy_sse(std::move(endpoint));
   }
@@ -3942,10 +3942,19 @@ class Peer<RoleServer> {
       return worker_state->first_error;
     };
 
-    auto send_message =
-        [worker_state, &transport](
-            protocol::JsonRpcMessage message) -> core::Result<core::Unit> {
+    auto send_message = [worker_state, &transport](
+                            protocol::JsonRpcMessage message,
+                            const server::SessionContext& message_context)
+        -> core::Result<core::Unit> {
       std::lock_guard lock(worker_state->send_mutex);
+#if defined(CXXMCP_ENABLE_HTTP)
+      auto* http_transport =
+          dynamic_cast<transport::StreamableHttpServerTransport*>(&transport);
+      if (http_transport != nullptr && !message_context.session_id.empty()) {
+        return http_transport->send_to_session(message_context.session_id,
+                                               std::move(message));
+      }
+#endif
       return transport.send(std::move(message));
     };
 
@@ -3958,7 +3967,8 @@ class Peer<RoleServer> {
         return mcp::core::unexpected(dispatched.error());
       }
       if (dispatched->has_value()) {
-        auto sent = send_message(std::move(dispatched->value()));
+        auto sent =
+            send_message(std::move(dispatched->value()), message_context);
         if (!sent) {
           return mcp::core::unexpected(sent.error());
         }
@@ -4043,7 +4053,8 @@ class Peer<RoleServer> {
                   request->id,
                   protocol::make_error(protocol::ErrorCode::InvalidRequest,
                                        "server peer transport session is "
-                                       "not initialized"))});
+                                       "not initialized"))},
+              detail::context_for_received_server_message(transport, context));
           if (!sent) {
             if (const auto worker_error = wait_for_workers()) {
               return mcp::core::unexpected(*worker_error);

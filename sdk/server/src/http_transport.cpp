@@ -2447,6 +2447,38 @@ class StreamableHttpServerTransport::Impl {
     return start_request_thread(std::move(*request));
   }
 
+  core::Result<core::Unit> send_to_session(std::string_view session_id,
+                                           protocol::JsonRpcMessage message) {
+    if (auto* response = std::get_if<protocol::JsonRpcResponse>(&message)) {
+      if (!response->id.has_value()) {
+        return mcp::core::unexpected(
+            make_native_server_http_error(protocol::ErrorCode::InvalidRequest,
+                                          "streamable http server transport "
+                                          "cannot send response without id"));
+      }
+      return complete_client_request_for_session(session_id,
+                                                 std::move(*response));
+    }
+
+    const auto started = ensure_started();
+    if (!started) {
+      return mcp::core::unexpected(started.error());
+    }
+
+    if (auto* notification =
+            std::get_if<protocol::JsonRpcNotification>(&message)) {
+      return transport_.send_notification_to_session(session_id, *notification);
+    }
+
+    auto* request = std::get_if<protocol::JsonRpcRequest>(&message);
+    if (request == nullptr) {
+      return mcp::core::unexpected(make_native_server_http_error(
+          protocol::ErrorCode::InvalidRequest,
+          "streamable http server transport cannot send unknown message"));
+    }
+    return start_request_thread(std::string(session_id), std::move(*request));
+  }
+
   core::Result<std::optional<protocol::JsonRpcMessage>> receive() {
     const auto started = ensure_started();
     if (!started) {
@@ -2605,6 +2637,18 @@ class StreamableHttpServerTransport::Impl {
 
   core::Result<core::Unit> start_request_thread(
       protocol::JsonRpcRequest request) {
+    return start_request_thread(std::optional<std::string>{},
+                                std::move(request));
+  }
+
+  core::Result<core::Unit> start_request_thread(
+      std::string session_id, protocol::JsonRpcRequest request) {
+    return start_request_thread(
+        std::optional<std::string>{std::move(session_id)}, std::move(request));
+  }
+
+  core::Result<core::Unit> start_request_thread(
+      std::optional<std::string> session_id, protocol::JsonRpcRequest request) {
     std::vector<std::thread> completed_threads;
     try {
       std::lock_guard<std::mutex> lock(mutex_);
@@ -2617,8 +2661,12 @@ class StreamableHttpServerTransport::Impl {
       ++active_request_workers_;
       auto done = std::make_shared<std::atomic_bool>(false);
       request_threads_.push_back(RequestWorker{
-          std::thread([this, request = std::move(request), done]() mutable {
-            auto response = transport_.send_request(request);
+          std::thread([this, session_id = std::move(session_id),
+                       request = std::move(request), done]() mutable {
+            auto response =
+                session_id.has_value()
+                    ? transport_.send_request_to_session(*session_id, request)
+                    : transport_.send_request(request);
             if (response) {
               finish_request_worker(false, false);
               enqueue(protocol::JsonRpcMessage{std::move(*response)});
@@ -2645,6 +2693,33 @@ class StreamableHttpServerTransport::Impl {
           "failed to start streamable http server request worker", ex.what()));
     }
     join_request_threads(completed_threads);
+    return core::Unit{};
+  }
+
+  core::Result<core::Unit> complete_client_request_for_session(
+      std::string_view session_id, protocol::JsonRpcResponse response) {
+    const auto id = *response.id;
+    std::shared_ptr<PendingClientRequest> pending;
+    {
+      std::lock_guard<std::mutex> lock(mutex_);
+      const auto it = pending_client_requests_.find(
+          pending_client_request_key(session_id, id));
+      if (it == pending_client_requests_.end()) {
+        return mcp::core::unexpected(make_native_server_http_error(
+            protocol::ErrorCode::InvalidRequest,
+            "streamable http server transport has no pending client request "
+            "for session",
+            request_id_to_string_for_native_server_http(id)));
+      }
+      pending = it->second;
+      pending_client_requests_.erase(it);
+    }
+
+    {
+      std::lock_guard<std::mutex> pending_lock(pending->mutex);
+      pending->response = std::move(response);
+    }
+    pending->cv.notify_all();
     return core::Unit{};
   }
 
@@ -2819,6 +2894,11 @@ protocol::Json StreamableHttpServerTransport::diagnostics() const {
 core::Result<core::Unit> StreamableHttpServerTransport::send(
     TxMessage message) {
   return impl_->send(std::move(message));
+}
+
+core::Result<core::Unit> StreamableHttpServerTransport::send_to_session(
+    std::string_view session_id, TxMessage message) {
+  return impl_->send_to_session(session_id, std::move(message));
 }
 
 core::Result<std::optional<StreamableHttpServerTransport::RxMessage>>

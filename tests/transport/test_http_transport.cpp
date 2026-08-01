@@ -3506,6 +3506,325 @@ void test_canonical_streamable_http_server_peer_runs_tools_calls_concurrently() 
   require(stopped.has_value(), "canonical HTTP ServerPeer should stop");
 }
 
+void test_canonical_streamable_http_server_peer_routes_duplicate_ids_by_session() {
+  constexpr int kPort = 40265;
+  const std::string kPath = "/canonical-duplicate-id-mcp";
+
+  std::mutex gate_mutex;
+  std::condition_variable gate_cv;
+  bool first_started = false;
+  bool second_started = false;
+  bool release_first = false;
+  bool release_second = false;
+
+  auto server =
+      std::make_unique<mcp::server::Server>(mcp::server::ServerOptions{});
+  const auto echo_added = server->tools().add(
+      mcp::protocol::ToolDefinition{
+          .name = "echo",
+          .description = "Echo canonical HTTP session and value",
+          .input_schema = Json::object(),
+          .streaming = false,
+      },
+      [&](const mcp::server::ToolContext& context)
+          -> mcp::core::Result<mcp::protocol::ToolResult> {
+        const auto value = context.arguments.value("value", "");
+        std::unique_lock lock(gate_mutex);
+        if (value == "first") {
+          first_started = true;
+          gate_cv.notify_all();
+          gate_cv.wait_for(lock, std::chrono::milliseconds(3000),
+                           [&] { return release_first; });
+        } else if (value == "second") {
+          second_started = true;
+          gate_cv.notify_all();
+          gate_cv.wait_for(lock, std::chrono::milliseconds(3000),
+                           [&] { return release_second; });
+        }
+        return mcp::protocol::ToolResult::text(context.session_id + ":" +
+                                               value);
+      });
+  require(echo_added.has_value(),
+          "failed to register canonical duplicate-id echo tool");
+
+  auto transport =
+      std::make_unique<mcp::transport::StreamableHttpServerTransport>(
+          mcp::transport::StreamableHttpServerTransportOptions{
+              .listen_host = "127.0.0.1",
+              .listen_port = kPort,
+              .path = kPath,
+          });
+  auto* transport_ptr = transport.get();
+  auto running =
+      mcp::serve(mcp::ServerPeer(std::move(server)), std::move(transport));
+  require(running.has_value(),
+          "canonical HTTP duplicate-id server should start");
+  transport_ptr->wait_until_ready();
+
+  const auto first_session =
+      initialize_canonical_http_session(kPort, kPath, 91);
+  require_initialized_notification(kPort, kPath, first_session);
+  const auto second_session =
+      initialize_canonical_http_session(kPort, kPath, 91);
+  require_initialized_notification(kPort, kPath, second_session);
+  require(first_session != second_session,
+          "duplicate-id test should use distinct sessions");
+
+  auto post_echo = [&](const std::string& session_id, std::string value) {
+    httplib::Client http_client("127.0.0.1", kPort);
+    http_client.set_read_timeout(std::chrono::milliseconds(5000));
+    return http_client.Post(
+        kPath,
+        httplib::Headers{
+            {"Accept", "application/json, text/event-stream"},
+            {"Content-Type", "application/json"},
+            {"MCP-Protocol-Version", mcp::protocol::McpProtocolVersion},
+            {"Mcp-Session-Id", session_id},
+            {"Mcp-Method", mcp::protocol::ToolsCallMethod},
+            {"Mcp-Name", "echo"},
+        },
+        serialize_test_request(mcp::protocol::JsonRpcRequest{
+            .method = mcp::protocol::ToolsCallMethod,
+            .params = Json{{"name", "echo"},
+                           {"arguments", Json{{"value", std::move(value)}}}},
+            .id = std::int64_t{92},
+        }),
+        "application/json");
+  };
+
+  std::optional<httplib::Result> first_response;
+  std::optional<httplib::Result> second_response;
+  std::exception_ptr first_failure;
+  std::exception_ptr second_failure;
+
+  std::thread first_thread([&]() {
+    try {
+      first_response = post_echo(first_session, "first");
+    } catch (...) {
+      first_failure = std::current_exception();
+    }
+  });
+
+  {
+    std::unique_lock lock(gate_mutex);
+    require(gate_cv.wait_for(lock, std::chrono::milliseconds(1000),
+                             [&] { return first_started; }),
+            "first duplicate-id request should reach handler");
+  }
+
+  std::thread second_thread([&]() {
+    try {
+      second_response = post_echo(second_session, "second");
+    } catch (...) {
+      second_failure = std::current_exception();
+    }
+  });
+
+  {
+    std::unique_lock lock(gate_mutex);
+    require(gate_cv.wait_for(lock, std::chrono::milliseconds(1000),
+                             [&] { return second_started; }),
+            "second duplicate-id request should reach handler");
+    release_first = true;
+    gate_cv.notify_all();
+  }
+
+  const bool first_completed_after_first_release =
+      wait_for([&] { return first_response.has_value(); },
+               std::chrono::milliseconds(1500));
+
+  {
+    std::lock_guard lock(gate_mutex);
+    release_second = true;
+    gate_cv.notify_all();
+  }
+
+  if (first_thread.joinable()) {
+    first_thread.join();
+  }
+  if (second_thread.joinable()) {
+    second_thread.join();
+  }
+  if (first_failure) {
+    std::rethrow_exception(first_failure);
+  }
+  if (second_failure) {
+    std::rethrow_exception(second_failure);
+  }
+
+  require(first_completed_after_first_release,
+          "first duplicate-id response should complete for its own session");
+  require(first_response.has_value() && static_cast<bool>(*first_response),
+          "first duplicate-id tools/call should return");
+  require(second_response.has_value() && static_cast<bool>(*second_response),
+          "second duplicate-id tools/call should return");
+  require((*first_response)->status == 200,
+          "first duplicate-id response status mismatch");
+  require((*second_response)->status == 200,
+          "second duplicate-id response status mismatch");
+
+  const auto parsed_first =
+      mcp::protocol::parse_response((*first_response)->body);
+  const auto parsed_second =
+      mcp::protocol::parse_response((*second_response)->body);
+  require(parsed_first.has_value(), "first duplicate-id response should parse");
+  require(parsed_second.has_value(),
+          "second duplicate-id response should parse");
+  require(parsed_first->result.has_value(),
+          "first duplicate-id response should contain a result");
+  require(parsed_second->result.has_value(),
+          "second duplicate-id response should contain a result");
+  const auto first_text =
+      parsed_first->result->at("content").front().at("text").get<std::string>();
+  const auto second_text = parsed_second->result->at("content")
+                               .front()
+                               .at("text")
+                               .get<std::string>();
+  require(first_text == first_session + ":first",
+          "first duplicate-id response should route to its own session");
+  require(second_text == second_session + ":second",
+          "second duplicate-id response should route to its own session");
+
+  const auto stopped = running->stop();
+  require(stopped.has_value(),
+          "canonical HTTP duplicate-id ServerPeer should stop");
+}
+
+void test_streamable_http_client_peers_call_tools_concurrently() {
+  constexpr int kPort = 40266;
+  const std::string kPath = "/client-peer-concurrent-mcp";
+  const std::string kUri = "http://127.0.0.1:40266/client-peer-concurrent-mcp";
+
+  std::mutex gate_mutex;
+  std::condition_variable gate_cv;
+  bool slow_started = false;
+  bool slow_finished = false;
+  bool fast_started = false;
+  bool fast_started_while_slow_active = false;
+
+  auto server =
+      mcp::ServerPeer::builder()
+          .name("client-peer-concurrent-server")
+          .version("1")
+          .streamable_http("127.0.0.1", kPort, kPath)
+          .tool(mcp::server::tool<Json, Json>("slow")
+                    .description("Simulate a long user tool call")
+                    .handler([&](const Json&) {
+                      std::unique_lock lock(gate_mutex);
+                      slow_started = true;
+                      gate_cv.notify_all();
+                      gate_cv.wait_for(lock, std::chrono::milliseconds(1500),
+                                       [&] { return fast_started; });
+                      slow_finished = true;
+                      gate_cv.notify_all();
+                      return Json{{"value", "slow"}};
+                    }))
+          .tool(mcp::server::tool<Json, Json>("fast")
+                    .description("Simulate a second user tool call")
+                    .handler([&](const Json&) {
+                      std::lock_guard lock(gate_mutex);
+                      fast_started_while_slow_active =
+                          slow_started && !slow_finished;
+                      fast_started = true;
+                      gate_cv.notify_all();
+                      return Json{{"value", "fast"}};
+                    }))
+          .build();
+  require(server.has_value(), "client-peer HTTP server should build");
+
+  auto running_server = mcp::serve(std::move(*server));
+  require(running_server.has_value(),
+          "client-peer HTTP server should start");
+  running_server->wait_until_ready();
+
+  auto slow_peer = mcp::ClientPeer::builder()
+                       .streamable_http(kUri)
+                       .timeout(std::chrono::milliseconds(3000))
+                       .build();
+  require(slow_peer.has_value(), "slow client peer should build");
+  auto slow_client = mcp::serve(std::move(*slow_peer));
+  require(slow_client.has_value(), "slow client peer service should start");
+  require(slow_client->peer().initialize().has_value(),
+          "slow client peer initialize should succeed");
+  auto slow_initialized = slow_client->peer().notify_initialized();
+  require(slow_initialized.has_value(),
+          slow_initialized
+              ? "slow client peer initialized notification should succeed"
+              : "slow client peer initialized notification failed: " +
+                    slow_initialized.error().message + " / " +
+                    slow_initialized.error().detail);
+
+  auto fast_peer = mcp::ClientPeer::builder()
+                       .streamable_http(kUri)
+                       .timeout(std::chrono::milliseconds(3000))
+                       .build();
+  require(fast_peer.has_value(), "fast client peer should build");
+  auto fast_client = mcp::serve(std::move(*fast_peer));
+  require(fast_client.has_value(), "fast client peer service should start");
+  require(fast_client->peer().initialize().has_value(),
+          "fast client peer initialize should succeed");
+  auto fast_initialized = fast_client->peer().notify_initialized();
+  require(fast_initialized.has_value(),
+          fast_initialized
+              ? "fast client peer initialized notification should succeed"
+              : "fast client peer initialized notification failed: " +
+                    fast_initialized.error().message + " / " +
+                    fast_initialized.error().detail);
+
+  std::optional<mcp::core::Result<mcp::protocol::ToolResult>> slow_result;
+  std::optional<mcp::core::Result<mcp::protocol::ToolResult>> fast_result;
+  std::exception_ptr slow_failure;
+  std::exception_ptr fast_failure;
+
+  std::thread slow_thread([&]() {
+    try {
+      slow_result = slow_client->peer().call_tool("slow", Json::object());
+    } catch (...) {
+      slow_failure = std::current_exception();
+    }
+  });
+
+  {
+    std::unique_lock lock(gate_mutex);
+    require(gate_cv.wait_for(lock, std::chrono::milliseconds(1000),
+                             [&] { return slow_started; }),
+            "slow client tool call should reach handler");
+  }
+
+  std::thread fast_thread([&]() {
+    try {
+      fast_result = fast_client->peer().call_tool("fast", Json::object());
+    } catch (...) {
+      fast_failure = std::current_exception();
+    }
+  });
+
+  if (fast_thread.joinable()) {
+    fast_thread.join();
+  }
+  if (slow_thread.joinable()) {
+    slow_thread.join();
+  }
+  if (fast_failure) {
+    std::rethrow_exception(fast_failure);
+  }
+  if (slow_failure) {
+    std::rethrow_exception(slow_failure);
+  }
+
+  require(slow_result.has_value(), "slow client result should be set");
+  require(fast_result.has_value(), "fast client result should be set");
+  require(slow_result->has_value(), "slow client tool call should succeed");
+  require(fast_result->has_value(), "fast client tool call should succeed");
+  require(fast_started_while_slow_active,
+          "second ClientPeer tools/call should run while slow call is active");
+
+  require(slow_client->stop().has_value(), "slow client should stop");
+  require(fast_client->stop().has_value(), "fast client should stop");
+  require(running_server->stop().has_value(),
+          "client-peer HTTP server should stop");
+}
+
 void test_server_http_transport_rejects_invalid_required_headers() {
   constexpr int kPort = 40236;
   const std::string kPath = "/mcp";
@@ -6363,6 +6682,10 @@ int main() {
        test_server_http_transport_runs_tools_calls_concurrently},
       {"canonical streamable http ServerPeer runs tools/call concurrently",
        test_canonical_streamable_http_server_peer_runs_tools_calls_concurrently},
+      {"canonical streamable http ServerPeer routes duplicate ids by session",
+       test_canonical_streamable_http_server_peer_routes_duplicate_ids_by_session},
+      {"streamable http ClientPeer calls tools concurrently",
+       test_streamable_http_client_peers_call_tools_concurrently},
       {"server http transport rejects invalid required headers",
        test_server_http_transport_rejects_invalid_required_headers},
       {"server http transport can request client",

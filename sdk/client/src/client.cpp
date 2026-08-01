@@ -393,7 +393,7 @@ Client::server_capabilities_snapshot() const {
 
 #if defined(CXXMCP_ENABLE_HTTP)
 Client Client::connect_streamable_http(StreamableHttpEndpoint endpoint) {
-  HttpTransportOptions options;
+  HttpTransportOptions options{};
   options.uri = std::move(endpoint.uri);
   options.host = std::move(endpoint.host);
   options.port = endpoint.port;
@@ -406,7 +406,7 @@ Client Client::connect_streamable_http(StreamableHttpEndpoint endpoint) {
 }
 
 Client Client::connect_streamable_http(std::string uri) {
-  StreamableHttpEndpoint endpoint;
+  StreamableHttpEndpoint endpoint{};
   endpoint.uri = std::move(uri);
   return connect_streamable_http(std::move(endpoint));
 }
@@ -417,7 +417,7 @@ Client Client::connect_legacy_sse(StreamableHttpEndpoint endpoint) {
 }
 
 Client Client::connect_legacy_sse(std::string uri) {
-  StreamableHttpEndpoint endpoint;
+  StreamableHttpEndpoint endpoint{};
   endpoint.uri = std::move(uri);
   return connect_legacy_sse(std::move(endpoint));
 }
