@@ -3596,6 +3596,7 @@ void test_canonical_streamable_http_server_peer_routes_duplicate_ids_by_session(
   std::optional<httplib::Result> second_response;
   std::exception_ptr first_failure;
   std::exception_ptr second_failure;
+  std::atomic_bool first_response_ready{false};
 
   std::thread first_thread([&]() {
     try {
@@ -3603,6 +3604,7 @@ void test_canonical_streamable_http_server_peer_routes_duplicate_ids_by_session(
     } catch (...) {
       first_failure = std::current_exception();
     }
+    first_response_ready.store(true, std::memory_order_release);
   });
 
   {
@@ -3629,9 +3631,9 @@ void test_canonical_streamable_http_server_peer_routes_duplicate_ids_by_session(
     gate_cv.notify_all();
   }
 
-  const bool first_completed_after_first_release =
-      wait_for([&] { return first_response.has_value(); },
-               std::chrono::milliseconds(1500));
+  const bool first_completed_after_first_release = wait_for(
+      [&] { return first_response_ready.load(std::memory_order_acquire); },
+      std::chrono::milliseconds(1500));
 
   {
     std::lock_guard lock(gate_mutex);
