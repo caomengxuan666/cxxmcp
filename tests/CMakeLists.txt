@@ -413,6 +413,7 @@ if(TARGET mcp_client AND TARGET mcp_test_stdio_child)
     target_compile_definitions(mcp_process_stdio_transport_tests PRIVATE
         MCP_TEST_SOURCE_DIR="${PROJECT_SOURCE_DIR}"
         MCP_TEST_CHILD_EXE="$<TARGET_FILE:mcp_test_stdio_child>"
+        MCP_TEST_PYTHON_MCP_VERSION="${CXXMCP_INTEROP_PYTHON_MCP_VERSION}"
     )
 
     add_dependencies(mcp_process_stdio_transport_tests mcp_test_stdio_child)

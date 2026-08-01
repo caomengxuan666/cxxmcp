@@ -3733,8 +3733,7 @@ void test_streamable_http_client_peers_call_tools_concurrently() {
   require(server.has_value(), "client-peer HTTP server should build");
 
   auto running_server = mcp::serve(std::move(*server));
-  require(running_server.has_value(),
-          "client-peer HTTP server should start");
+  require(running_server.has_value(), "client-peer HTTP server should start");
   running_server->wait_until_ready();
 
   auto slow_peer = mcp::ClientPeer::builder()
