@@ -29,6 +29,7 @@
 
 #include "cxxmcp/error.hpp"
 #include "cxxmcp/protocol/serialization.hpp"
+#include "cxxmcp/protocol/types_reflect.hpp"
 #include "cxxmcp/transport/http_transport.hpp"
 #include "httplib.h"
 #include "nlohmann/json.hpp"
@@ -1572,18 +1573,42 @@ core::Result<core::Unit> HttpTransport::start(
     if (!stateless_mode && !session_context_id.empty()) {
       response.set_header(std::string(SessionHeader), session_context_id);
     }
+    auto cancellation_notification_handler = notification_handler;
+    const auto cancellation_context = context;
+    const auto request_id = rpc_request->id;
     response.set_chunked_content_provider(
         "text/event-stream",
-        [sink, &request, sink_wrote_final = false](
-            std::size_t, httplib::DataSink& data_sink) mutable {
+        [sink, &request, cancellation_notification_handler,
+         cancellation_context, request_id, sink_wrote_final = false,
+         cancellation_sent = false](std::size_t,
+                                    httplib::DataSink& data_sink) mutable {
+          const auto cancel_request = [&]() {
+            if (cancellation_sent || !cancellation_notification_handler) {
+              return;
+            }
+            cancellation_sent = true;
+            protocol::CancelledNotificationParams params;
+            params.request_id = request_id;
+            params.reason = "http connection closed";
+            (void)cancellation_notification_handler(
+                protocol::JsonRpcNotification{
+                    .method =
+                        std::string(protocol::CancelledNotificationMethod),
+                    .params =
+                        protocol::cancelled_notification_params_to_json(params),
+                },
+                cancellation_context);
+          };
+
           while (true) {
             std::unique_lock lock(sink->mutex);
-            sink->cv.wait(lock, [&] {
+            sink->cv.wait_for(lock, std::chrono::milliseconds(50), [&] {
               return sink->done || !sink->events.empty() ||
                      request.is_connection_closed();
             });
 
             if (request.is_connection_closed()) {
+              cancel_request();
               data_sink.done();
               return false;
             }
@@ -1593,6 +1618,7 @@ core::Result<core::Unit> HttpTransport::start(
               sink->events.pop_front();
               lock.unlock();
               if (!data_sink.write(event.data(), event.size())) {
+                cancel_request();
                 data_sink.done();
                 return false;
               }
