@@ -1590,14 +1590,13 @@ core::Result<core::Unit> HttpTransport::start(
             protocol::CancelledNotificationParams params;
             params.request_id = request_id;
             params.reason = "http connection closed";
-            (void)cancellation_notification_handler(
-                protocol::JsonRpcNotification{
-                    .method =
-                        std::string(protocol::CancelledNotificationMethod),
-                    .params =
-                        protocol::cancelled_notification_params_to_json(params),
-                },
-                cancellation_context);
+            protocol::JsonRpcNotification notification;
+            notification.method =
+                std::string(protocol::CancelledNotificationMethod);
+            notification.params =
+                protocol::cancelled_notification_params_to_json(params);
+            (void)cancellation_notification_handler(notification,
+                                                    cancellation_context);
           };
 
           while (true) {
