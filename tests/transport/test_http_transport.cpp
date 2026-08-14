@@ -318,6 +318,24 @@ std::string http_post_header(std::string_view path,
          std::to_string(content_length) + "\r\n\r\n";
 }
 
+std::string http_post_header_with_session(std::string_view path,
+                                          std::size_t content_length,
+                                          std::string_view session_id,
+                                          std::string_view method,
+                                          std::string_view name) {
+  return "POST " + std::string(path) +
+         " HTTP/1.1\r\n"
+         "Host: 127.0.0.1\r\n"
+         "Accept: application/json, text/event-stream\r\n"
+         "Content-Type: application/json\r\n"
+         "MCP-Protocol-Version: " +
+         std::string(mcp::protocol::McpProtocolVersion) +
+         "\r\nMcp-Session-Id: " + std::string(session_id) +
+         "\r\nMcp-Method: " + std::string(method) +
+         "\r\nMcp-Name: " + std::string(name) +
+         "\r\nContent-Length: " + std::to_string(content_length) + "\r\n\r\n";
+}
+
 std::string initialize_http_session(int port, const std::string& path,
                                     std::int64_t id = 1) {
   httplib::Client http_client("127.0.0.1", port);
@@ -1984,6 +2002,79 @@ void test_server_http_transport_closed_client_during_response_does_not_hang() {
   require(
       wait_for([&] { return handler_called.load(); }, std::chrono::seconds(2)),
       "closed client request should reach handler without hanging");
+  server_transport.transport().stop();
+}
+
+void test_server_http_transport_disconnect_cancels_tool() {
+  constexpr int kPort = 40255;
+  const std::string kPath = "/disconnect-cancel";
+  mcp::server::Server server(mcp::server::ServerOptions{});
+  std::atomic<bool> handler_started{false};
+  std::atomic<bool> handler_observed_cancel{false};
+
+  const auto added = server.tools().add(
+      mcp::protocol::ToolDefinition{
+          .name = "disconnectible",
+          .input_schema = Json::object(),
+      },
+      [&](const mcp::server::ToolContext& context)
+          -> mcp::core::Result<mcp::protocol::ToolResult> {
+        handler_started.store(true);
+        wait_for([&] { return context.cancelled(); }, std::chrono::seconds(2));
+        handler_observed_cancel.store(context.cancelled());
+        return mcp::protocol::ToolResult{};
+      });
+  require(added.has_value(), "failed to register disconnectible tool");
+
+  RunningServerTransportFixture server_transport(
+      std::make_unique<mcp::server::HttpTransport>(
+          mcp::server::HttpTransportOptions{
+              .listen_host = "127.0.0.1",
+              .listen_port = kPort,
+              .path = kPath,
+          }),
+      [&](const mcp::protocol::JsonRpcRequest& request,
+          const mcp::server::SessionContext& context) {
+        return server.handle_request(request, context);
+      },
+      [&](const mcp::protocol::JsonRpcNotification& notification,
+          const mcp::server::SessionContext& context) {
+        return server.handle_notification(notification, context);
+      });
+
+  require(!server_transport.start_error().has_value(),
+          "server transport should start");
+  require(wait_for_http_initialize(kPort, kPath),
+          "server transport should become reachable");
+  const auto session_id = initialize_canonical_http_session(kPort, kPath, 100);
+  require_initialized_notification(kPort, kPath, session_id);
+
+  const auto body = serialize_test_request(mcp::protocol::JsonRpcRequest{
+      .method = mcp::protocol::ToolsCallMethod,
+      .params =
+          Json{
+              {"name", "disconnectible"},
+              {"arguments", Json::object()},
+              {"_meta", Json{{"progressToken", "disconnect-test"}}},
+          },
+      .id = std::int64_t{101},
+  });
+  const auto headers = http_post_header_with_session(
+      kPath, body.size(), session_id, "tools/call", "disconnectible");
+
+  auto socket =
+      RawTcpSocket::connect_localhost(kPort, std::chrono::milliseconds(1000));
+  require(socket.has_value(), "disconnect client should connect");
+  require(socket->send_all(headers + body),
+          "disconnect client should send tools/call");
+  require(
+      wait_for([&] { return handler_started.load(); }, std::chrono::seconds(2)),
+      "disconnectible tool should start");
+  socket->close();
+
+  require(wait_for([&] { return handler_observed_cancel.load(); },
+                   std::chrono::seconds(2)),
+          "HTTP disconnect should cancel the tool context");
   server_transport.transport().stop();
 }
 
@@ -6533,9 +6624,7 @@ void test_server_sse_no_priming_without_polling() {
   RunningServerTransportFixture server_transport(
       std::make_unique<mcp::server::HttpTransport>(
           mcp::server::HttpTransportOptions{
-              .listen_host = "127.0.0.1",
-              .listen_port = kPort,
-              .path = kPath,
+              .listen_host = "127.0.0.1", .listen_port = kPort, .path = kPath,
               // enable_sse_polling = false (default), no sse_retry
           }),
       [](const mcp::protocol::JsonRpcRequest& request,
@@ -6649,6 +6738,8 @@ int main() {
        test_server_http_transport_slow_client_body_does_not_reach_handler},
       {"server http transport closed client during response does not hang",
        test_server_http_transport_closed_client_during_response_does_not_hang},
+      {"server http transport disconnect cancels tool",
+       test_server_http_transport_disconnect_cancels_tool},
       {"server http transport limits active sessions",
        test_server_http_transport_limits_active_sessions},
       {"server http transport requires initialized before business request",
