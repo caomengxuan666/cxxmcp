@@ -6621,12 +6621,13 @@ void test_server_sse_no_priming_without_polling() {
   constexpr int kPort = 40263;
   const std::string kPath = "/mcp";
 
+  mcp::server::HttpTransportOptions transport_options;
+  transport_options.listen_host = "127.0.0.1";
+  transport_options.listen_port = kPort;
+  transport_options.path = kPath;
+  // enable_sse_polling = false (default), no sse_retry
   RunningServerTransportFixture server_transport(
-      std::make_unique<mcp::server::HttpTransport>(
-          mcp::server::HttpTransportOptions{
-              .listen_host = "127.0.0.1", .listen_port = kPort, .path = kPath,
-              // enable_sse_polling = false (default), no sse_retry
-          }),
+      std::make_unique<mcp::server::HttpTransport>(transport_options),
       [](const mcp::protocol::JsonRpcRequest& request,
          const mcp::server::SessionContext&) {
         if (request.method == mcp::protocol::InitializeMethod) {
