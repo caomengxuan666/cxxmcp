@@ -3597,6 +3597,152 @@ void test_canonical_streamable_http_server_peer_runs_tools_calls_concurrently() 
   require(stopped.has_value(), "canonical HTTP ServerPeer should stop");
 }
 
+void test_canonical_streamable_http_server_peer_cancelled_notification_cancels_tool() {
+  constexpr int kPort = 40268;
+  const std::string kPath = "/canonical-cancel-mcp";
+
+  std::mutex gate_mutex;
+  std::condition_variable gate_cv;
+  bool tool_started = false;
+  bool tool_cancelled = false;
+
+  auto server =
+      std::make_unique<mcp::server::Server>(mcp::server::ServerOptions{});
+  const auto cancellable_added = server->tools().add(
+      mcp::protocol::ToolDefinition{
+          .name = "cancellable",
+          .description = "Cancellable canonical HTTP tool",
+          .input_schema = Json::object(),
+          .streaming = false,
+      },
+      [&](const mcp::server::ToolContext& context)
+          -> mcp::core::Result<mcp::protocol::ToolResult> {
+        {
+          std::lock_guard lock(gate_mutex);
+          tool_started = true;
+        }
+        gate_cv.notify_all();
+
+        const auto deadline =
+            std::chrono::steady_clock::now() + std::chrono::milliseconds(3000);
+        bool observed_cancel = false;
+        while (std::chrono::steady_clock::now() < deadline) {
+          if (context.cancelled()) {
+            observed_cancel = true;
+            break;
+          }
+          std::this_thread::sleep_for(std::chrono::milliseconds(10));
+        }
+
+        {
+          std::lock_guard lock(gate_mutex);
+          tool_cancelled = observed_cancel;
+        }
+        gate_cv.notify_all();
+        return mcp::protocol::ToolResult::text(observed_cancel ? "cancelled"
+                                                               : "completed");
+      });
+  require(cancellable_added.has_value(),
+          "failed to register canonical cancellable tool");
+
+  auto transport =
+      std::make_unique<mcp::transport::StreamableHttpServerTransport>(
+          mcp::transport::StreamableHttpServerTransportOptions{
+              .listen_host = "127.0.0.1",
+              .listen_port = kPort,
+              .path = kPath,
+          });
+  auto* transport_ptr = transport.get();
+  auto running =
+      mcp::serve(mcp::ServerPeer(std::move(server)), std::move(transport));
+  require(running.has_value(), "canonical HTTP cancel server should start");
+  transport_ptr->wait_until_ready();
+
+  const auto session_id = initialize_canonical_http_session(kPort, kPath, 141);
+  require_initialized_notification(kPort, kPath, session_id);
+
+  std::optional<httplib::Result> tool_response;
+  std::exception_ptr tool_failure;
+  std::thread tool_thread([&]() {
+    try {
+      httplib::Client http_client("127.0.0.1", kPort);
+      http_client.set_read_timeout(std::chrono::milliseconds(5000));
+      tool_response = http_client.Post(
+          kPath,
+          httplib::Headers{
+              {"Accept", "application/json, text/event-stream"},
+              {"Content-Type", "application/json"},
+              {"MCP-Protocol-Version", mcp::protocol::McpProtocolVersion},
+              {"Mcp-Session-Id", session_id},
+              {"Mcp-Method", mcp::protocol::ToolsCallMethod},
+              {"Mcp-Name", "cancellable"},
+          },
+          serialize_test_request(mcp::protocol::JsonRpcRequest{
+              .method = mcp::protocol::ToolsCallMethod,
+              .params =
+                  Json{{"name", "cancellable"}, {"arguments", Json::object()}},
+              .id = std::int64_t{142},
+          }),
+          "application/json");
+    } catch (...) {
+      tool_failure = std::current_exception();
+    }
+  });
+
+  {
+    std::unique_lock lock(gate_mutex);
+    require(gate_cv.wait_for(lock, std::chrono::milliseconds(1000),
+                             [&] { return tool_started; }),
+            "canonical cancellable tool should start");
+  }
+
+  httplib::Client cancel_client("127.0.0.1", kPort);
+  const auto cancel_response = cancel_client.Post(
+      kPath,
+      httplib::Headers{
+          {"Accept", "application/json, text/event-stream"},
+          {"Content-Type", "application/json"},
+          {"MCP-Protocol-Version", mcp::protocol::McpProtocolVersion},
+          {"Mcp-Session-Id", session_id},
+          {"Mcp-Method", mcp::protocol::CancelledNotificationMethod},
+      },
+      serialize_test_notification(mcp::protocol::JsonRpcNotification{
+          .method = mcp::protocol::CancelledNotificationMethod,
+          .params = Json{{"requestId", 142}, {"reason", "client timeout"}},
+      }),
+      "application/json");
+  const bool cancel_returned = static_cast<bool>(cancel_response);
+  const int cancel_status = cancel_returned ? cancel_response->status : 0;
+
+  bool observed_tool_cancel = false;
+  {
+    std::unique_lock lock(gate_mutex);
+    observed_tool_cancel = gate_cv.wait_for(
+        lock, std::chrono::milliseconds(1000), [&] { return tool_cancelled; });
+  }
+
+  if (tool_thread.joinable()) {
+    tool_thread.join();
+  }
+  if (tool_failure) {
+    std::rethrow_exception(tool_failure);
+  }
+
+  require(cancel_returned,
+          "canonical HTTP cancelled notification should return");
+  require(cancel_status == 202,
+          "canonical HTTP cancelled notification status mismatch");
+  require(observed_tool_cancel,
+          "canonical cancellable tool should observe notification cancel");
+  require(tool_response.has_value() && static_cast<bool>(*tool_response),
+          "canonical cancellable tool response should return");
+  require((*tool_response)->status == 200,
+          "canonical cancellable tool response status mismatch");
+
+  const auto stopped = running->stop();
+  require(stopped.has_value(), "canonical HTTP cancel server should stop");
+}
+
 void test_canonical_streamable_http_server_peer_routes_duplicate_ids_by_session() {
   constexpr int kPort = 40265;
   const std::string kPath = "/canonical-duplicate-id-mcp";
@@ -6775,6 +6921,8 @@ int main() {
        test_server_http_transport_runs_tools_calls_concurrently},
       {"canonical streamable http ServerPeer runs tools/call concurrently",
        test_canonical_streamable_http_server_peer_runs_tools_calls_concurrently},
+      {"canonical streamable http ServerPeer cancellation cancels tool",
+       test_canonical_streamable_http_server_peer_cancelled_notification_cancels_tool},
       {"canonical streamable http ServerPeer routes duplicate ids by session",
        test_canonical_streamable_http_server_peer_routes_duplicate_ids_by_session},
       {"streamable http ClientPeer calls tools concurrently",

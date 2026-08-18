@@ -2462,6 +2462,76 @@ void test_server_peer_serves_role_generic_transport_requests_concurrently() {
           "fast tools/call response text mismatch");
 }
 
+void test_server_peer_receive_loop_cancelled_notification_cancels_tool() {
+  auto server = std::make_unique<mcp::server::Server>(make_server());
+  std::atomic_bool handler_started{false};
+  std::atomic_bool handler_observed_cancel{false};
+  const auto added = server->tools().add(
+      mcp::protocol::ToolDefinition{
+          .name = "cancellable",
+          .input_schema = Json::object(),
+      },
+      [&](const mcp::server::ToolContext& context)
+          -> mcp::core::Result<mcp::protocol::ToolResult> {
+        handler_started.store(true);
+        wait_until([&] { return context.cancelled(); },
+                   "receive-loop tool should observe cancellation");
+        handler_observed_cancel.store(true);
+        return mcp::protocol::ToolResult::text("cancelled");
+      });
+  require(added.has_value(),
+          "failed to register receive-loop cancellable tool");
+
+  mcp::ServerPeer peer(std::move(server));
+  QueuedRoleServerTransport transport;
+  transport.inbound.push_back(mcp::protocol::JsonRpcRequest{
+      .method = mcp::protocol::InitializeMethod,
+      .params =
+          Json{{"protocolVersion", mcp::protocol::McpProtocolVersion},
+               {"capabilities", Json::object()},
+               {"clientInfo", Json{{"name", "role-client"}, {"version", "1"}}}},
+      .id = std::int64_t{720},
+  });
+  transport.inbound.push_back(mcp::protocol::JsonRpcNotification{
+      .method = "notifications/initialized",
+      .params = Json::object(),
+  });
+  transport.inbound.push_back(mcp::protocol::JsonRpcRequest{
+      .method = mcp::protocol::ToolsCallMethod,
+      .params = Json{{"name", "cancellable"}, {"arguments", Json::object()}},
+      .id = std::int64_t{721},
+  });
+  transport.inbound.push_back(mcp::protocol::JsonRpcNotification{
+      .method = mcp::protocol::CancelledNotificationMethod,
+      .params = Json{{"requestId", 721}, {"reason", "client timeout"}},
+  });
+  transport.before_receive = [&](std::size_t index) {
+    if (index == 3) {
+      wait_until([&] { return handler_started.load(); },
+                 "receive-loop tool should start before cancellation");
+    }
+  };
+
+  const auto served =
+      peer.serve_transport(transport, mcp::server::SessionContext{
+                                          .session_id = "peer-cancel-session",
+                                          .remote_address = "role-cancel-test",
+                                      });
+  require(served.has_value(), "server peer receive loop cancel should succeed");
+  require(handler_observed_cancel.load(),
+          "receive-loop tool should observe cancelled notification");
+
+  bool saw_tool_response = false;
+  for (const auto& sent : transport.sent) {
+    const auto* response = std::get_if<mcp::protocol::JsonRpcResponse>(&sent);
+    if (response != nullptr && response->id.has_value() &&
+        *response->id == mcp::protocol::RequestId{std::int64_t{721}}) {
+      saw_tool_response = true;
+    }
+  }
+  require(saw_tool_response, "receive-loop tool response should be sent");
+}
+
 void test_server_service_serves_role_generic_transport_receive_loop() {
   auto server = std::make_unique<mcp::server::Server>(make_server());
   int raw_notifications = 0;
@@ -7165,6 +7235,8 @@ int main() {
        test_service_lifecycle_facades_start_and_stop},
       {"server peer role-generic transport receive loop",
        test_server_peer_serves_role_generic_transport_receive_loop},
+      {"server peer receive-loop cancelled notification cancels tool",
+       test_server_peer_receive_loop_cancelled_notification_cancels_tool},
       {"server peer role-generic transport requests concurrently",
        test_server_peer_serves_role_generic_transport_requests_concurrently},
       {"server service role-generic transport receive loop",
