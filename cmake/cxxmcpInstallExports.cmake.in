@@ -1,0 +1,46 @@
+if(NOT "@CMAKE_CONFIGURATION_TYPES@" AND
+   (CMAKE_INSTALL_COMPONENT STREQUAL "Unspecified" OR NOT CMAKE_INSTALL_COMPONENT))
+    string(TOLOWER "${CMAKE_INSTALL_CONFIG_NAME}" _cxxmcp_install_config)
+    if(_cxxmcp_install_config STREQUAL "debug" OR
+       _cxxmcp_install_config STREQUAL "release")
+        set(_cxxmcp_export_dir
+            "$ENV{DESTDIR}${CMAKE_INSTALL_PREFIX}/@CMAKE_INSTALL_LIBDIR@/cmake/cxxmcp")
+        set(_cxxmcp_current_export
+            "${_cxxmcp_export_dir}/cxxmcpTargets-${_cxxmcp_install_config}.cmake")
+        if(EXISTS "${_cxxmcp_current_export}")
+            if(_cxxmcp_install_config STREQUAL "debug")
+                set(_cxxmcp_missing_config release)
+                set(_cxxmcp_from_config Debug)
+                set(_cxxmcp_to_config Release)
+            else()
+                set(_cxxmcp_missing_config debug)
+                set(_cxxmcp_from_config Release)
+                set(_cxxmcp_to_config Debug)
+            endif()
+            set(_cxxmcp_missing_export
+                "${_cxxmcp_export_dir}/cxxmcpTargets-${_cxxmcp_missing_config}.cmake")
+            file(READ "${_cxxmcp_current_export}" _cxxmcp_export_content)
+            string(REPLACE "${_cxxmcp_from_config}" "${_cxxmcp_to_config}"
+                _cxxmcp_export_content "${_cxxmcp_export_content}")
+            string(TOUPPER "${_cxxmcp_from_config}" _cxxmcp_from_config_upper)
+            string(TOUPPER "${_cxxmcp_to_config}" _cxxmcp_to_config_upper)
+            string(REPLACE "_${_cxxmcp_from_config_upper}"
+                "_${_cxxmcp_to_config_upper}" _cxxmcp_export_content
+                "${_cxxmcp_export_content}")
+            string(REPLACE " ${_cxxmcp_from_config_upper})"
+                " ${_cxxmcp_to_config_upper})" _cxxmcp_export_content
+                "${_cxxmcp_export_content}")
+            file(WRITE "${_cxxmcp_missing_export}" "${_cxxmcp_export_content}")
+        endif()
+        unset(_cxxmcp_export_dir)
+        unset(_cxxmcp_current_export)
+        unset(_cxxmcp_missing_config)
+        unset(_cxxmcp_from_config)
+        unset(_cxxmcp_to_config)
+        unset(_cxxmcp_missing_export)
+        unset(_cxxmcp_export_content)
+        unset(_cxxmcp_from_config_upper)
+        unset(_cxxmcp_to_config_upper)
+    endif()
+    unset(_cxxmcp_install_config)
+endif()

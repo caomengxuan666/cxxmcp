@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.2.8
+
+- Fixed Linux single-configuration installs so both Debug and Release CMake
+  target export fragments are available to package consumers.
+
 ## 1.2.7
 
 - Prepared release metadata and package references.

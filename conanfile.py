@@ -6,7 +6,7 @@ import os
 
 class CxxmcpConan(ConanFile):
     name = "cxxmcp"
-    version = "1.2.7"  # overridden by set_version()
+    version = "1.2.8"  # overridden by set_version()
     package_type = "static-library"
 
     license = "MIT"

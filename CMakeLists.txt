@@ -592,3 +592,11 @@ install(EXPORT cxxmcpTargets
     NAMESPACE cxxmcp::
     DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/cxxmcp
 )
+
+configure_file(
+    "${CMAKE_CURRENT_SOURCE_DIR}/cmake/cxxmcpInstallExports.cmake.in"
+    "${CMAKE_CURRENT_BINARY_DIR}/cxxmcpInstallExports.cmake"
+    @ONLY
+)
+
+install(SCRIPT "${CMAKE_CURRENT_BINARY_DIR}/cxxmcpInstallExports.cmake")

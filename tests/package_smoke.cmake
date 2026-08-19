@@ -7,6 +7,8 @@ endif()
 
 set(prefix_dir "${BUILD_DIR}/package-smoke/prefix")
 set(consumer_build_dir "${BUILD_DIR}/package-smoke/consumer-build")
+set(configuration_consumer_build_dir
+    "${BUILD_DIR}/package-smoke/configuration-consumer-build")
 set(template_build_dir "${BUILD_DIR}/package-smoke/template-build")
 set(package_smoke_generator "")
 if(DEFINED PACKAGE_SMOKE_GENERATOR)
@@ -84,6 +86,7 @@ set(negative_cpp_httplib_build_dir
 file(REMOVE_RECURSE
     "${prefix_dir}"
     "${consumer_build_dir}"
+    "${configuration_consumer_build_dir}"
     "${template_build_dir}"
     "${negative_auth_source_dir}"
     "${negative_auth_build_dir}"
@@ -145,6 +148,15 @@ if(NOT EXISTS "${installed_cxxmcp_config_dir}/cxxmcpConfig.cmake")
 endif()
 if(NOT EXISTS "${installed_include_dir}/cxxmcp/protocol.hpp")
     message(FATAL_ERROR "installed SDK umbrella headers are missing")
+endif()
+if(NOT package_smoke_multi_config)
+    foreach(_cxxmcp_config debug release)
+        if(NOT EXISTS
+           "${installed_cxxmcp_config_dir}/cxxmcpTargets-${_cxxmcp_config}.cmake")
+            message(FATAL_ERROR
+                "installed cxxmcp ${_cxxmcp_config} target export is missing")
+        endif()
+    endforeach()
 endif()
 
 function(assert_optional_component_missing component_name source_dir build_dir)
@@ -264,6 +276,59 @@ execute_process(
 )
 if(NOT build_result EQUAL 0)
     message(FATAL_ERROR "package smoke build failed: ${build_result}")
+endif()
+
+if(NOT package_smoke_multi_config)
+foreach(package_smoke_config Debug Release)
+    set(configuration_consumer_configure_command
+        "${CMAKE_COMMAND}"
+        -S "${REPO_SOURCE_DIR}/tests/fixtures/package_smoke"
+        -B "${configuration_consumer_build_dir}/${package_smoke_config}"
+        "-DCMAKE_PREFIX_PATH=${prefix_dir}"
+        "-Dcxxmcp_DIR=${installed_cxxmcp_config_dir}"
+        "-DCXXMCP_PACKAGE_SMOKE_HTTP_ENABLED=${package_smoke_http_enabled}"
+        "-DCXXMCP_PACKAGE_SMOKE_AUTH_ENABLED=${package_smoke_auth_enabled}"
+        "-DCXXMCP_PACKAGE_SMOKE_AUTH_OPENSSL_ENABLED=${package_smoke_auth_openssl_enabled}"
+        "-DCXXMCP_PACKAGE_SMOKE_OPENSSL_ENABLED=${package_smoke_openssl_enabled}"
+        "-DCXXMCP_PACKAGE_SMOKE_WEBSOCKET_ENABLED=${package_smoke_websocket_enabled}"
+    )
+    append_package_smoke_common_configure_options(
+        configuration_consumer_configure_command)
+    if(package_smoke_multi_config)
+        list(APPEND configuration_consumer_configure_command
+            "-DCMAKE_CONFIGURATION_TYPES=Debug;Release")
+    else()
+        list(APPEND configuration_consumer_configure_command
+            "-DCMAKE_BUILD_TYPE=${package_smoke_config}")
+    endif()
+
+    execute_process(
+        COMMAND ${configuration_consumer_configure_command}
+        RESULT_VARIABLE configuration_consumer_configure_result
+    )
+    if(NOT configuration_consumer_configure_result EQUAL 0)
+        message(FATAL_ERROR
+            "package smoke ${package_smoke_config} configure failed: "
+            "${configuration_consumer_configure_result}")
+    endif()
+
+    set(configuration_consumer_build_command
+        "${CMAKE_COMMAND}" --build
+        "${configuration_consumer_build_dir}/${package_smoke_config}")
+    if(package_smoke_multi_config)
+        list(APPEND configuration_consumer_build_command
+            --config "${package_smoke_config}")
+    endif()
+    execute_process(
+        COMMAND ${configuration_consumer_build_command}
+        RESULT_VARIABLE configuration_consumer_build_result
+    )
+    if(NOT configuration_consumer_build_result EQUAL 0)
+        message(FATAL_ERROR
+            "package smoke ${package_smoke_config} build failed: "
+            "${configuration_consumer_build_result}")
+    endif()
+endforeach()
 endif()
 
 set(template_configure_command
