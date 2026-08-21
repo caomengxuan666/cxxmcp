@@ -71,6 +71,11 @@ elseif(MINGW)
     add_compile_options(-Wa,-mbig-obj)
 endif()
 
+set(CXXMCP_SYNTHESIZE_SINGLE_CONFIG_EXPORTS ON)
+if(MSVC OR (WIN32 AND CMAKE_CXX_SIMULATE_ID STREQUAL "MSVC"))
+    set(CXXMCP_SYNTHESIZE_SINGLE_CONFIG_EXPORTS OFF)
+endif()
+
 cxxmcp_build_option(CXXMCP_BUILD_SDK MCP_BUILD_SDK
     "Build the public SDK layer" ON)
 cxxmcp_build_option(CXXMCP_BUILD_PROTOCOL MCP_BUILD_PROTOCOL

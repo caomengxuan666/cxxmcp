@@ -24,6 +24,11 @@ if(package_smoke_generator MATCHES "Visual Studio" OR
    package_smoke_generator MATCHES "Multi-Config")
     set(package_smoke_multi_config ON)
 endif()
+set(package_smoke_synthetic_single_config_exports ON)
+if(DEFINED PACKAGE_SMOKE_SYNTHETIC_SINGLE_CONFIG_EXPORTS AND
+   NOT PACKAGE_SMOKE_SYNTHETIC_SINGLE_CONFIG_EXPORTS)
+    set(package_smoke_synthetic_single_config_exports OFF)
+endif()
 
 function(append_package_smoke_common_configure_options command_var)
     if(NOT package_smoke_generator STREQUAL "")
@@ -149,7 +154,8 @@ endif()
 if(NOT EXISTS "${installed_include_dir}/cxxmcp/protocol.hpp")
     message(FATAL_ERROR "installed SDK umbrella headers are missing")
 endif()
-if(NOT package_smoke_multi_config)
+if(NOT package_smoke_multi_config AND
+   package_smoke_synthetic_single_config_exports)
     foreach(_cxxmcp_config debug release)
         if(NOT EXISTS
            "${installed_cxxmcp_config_dir}/cxxmcpTargets-${_cxxmcp_config}.cmake")
@@ -278,7 +284,8 @@ if(NOT build_result EQUAL 0)
     message(FATAL_ERROR "package smoke build failed: ${build_result}")
 endif()
 
-if(NOT package_smoke_multi_config)
+if(NOT package_smoke_multi_config AND
+   package_smoke_synthetic_single_config_exports)
 foreach(package_smoke_config Debug Release)
     set(configuration_consumer_configure_command
         "${CMAKE_COMMAND}"
