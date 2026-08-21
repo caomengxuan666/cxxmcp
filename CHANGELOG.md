@@ -4,6 +4,8 @@
 
 - Fixed Linux single-configuration installs so both Debug and Release CMake
   target export fragments are available to package consumers.
+- Kept the compatibility `mcp::server::App` entry point warning-free by default
+  so VS2022 `/WX` builds do not fail with C4996 while users migrate.
 
 ## 1.2.7
 

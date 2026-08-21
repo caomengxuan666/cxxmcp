@@ -233,6 +233,21 @@ if(TARGET mcp_client AND TARGET mcp_server)
     add_cxxmcp_public_header_compile_test(
         server server_header.cpp cxxmcp::server)
     add_cxxmcp_public_header_compile_test(
+        server_compat_app server_compat_app_header.cpp cxxmcp::server)
+    add_cxxmcp_public_header_compile_test(
+        server_compat_app_deprecation
+        server_compat_app_deprecation_header.cpp cxxmcp::server)
+    if(MSVC)
+        target_compile_options(mcp_public_header_server_compat_app PRIVATE /WX)
+        target_compile_options(mcp_public_header_server_compat_app_deprecation
+            PRIVATE /WX)
+    else()
+        target_compile_options(mcp_public_header_server_compat_app PRIVATE
+            -Wdeprecated-declarations -Werror=deprecated-declarations)
+        target_compile_options(mcp_public_header_server_compat_app_deprecation
+            PRIVATE -Wdeprecated-declarations -Werror=deprecated-declarations)
+    endif()
+    add_cxxmcp_public_header_compile_test(
         peer peer_header.cpp cxxmcp::peer)
     add_cxxmcp_public_header_compile_test(
         handler handler_header.cpp cxxmcp::handler)

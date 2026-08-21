@@ -362,9 +362,7 @@ inline protocol::ResourceTemplateBuilder resource_template(
 ///
 /// App::builder() exposes a higher-level builder that can create common
 /// transports and adapt simple C++ callables into MCP handlers.
-class CXXMCP_DEPRECATED(
-    "App is a compatibility entry point; use ServerPeer::builder() with "
-    "cxxmcp/run.hpp instead") App {
+class App {
  public:
   /// @brief Higher-level server builder with callable adapters.
   class Builder {
@@ -507,7 +505,7 @@ class CXXMCP_DEPRECATED(
   };
 
   /// @brief Creates a new convenience server builder.
-  CXXMCP_DEPRECATED("use ServerPeer::builder() instead")
+  CXXMCP_COMPAT_DEPRECATED("use ServerPeer::builder() instead")
   static Builder builder();
 };
 

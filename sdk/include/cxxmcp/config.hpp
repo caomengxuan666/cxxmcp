@@ -26,3 +26,15 @@
 #define CXXMCP_DEPRECATED(message)
 #endif
 #endif
+
+/// @brief Marks compatibility-only APIs as deprecated when explicitly enabled.
+///
+/// Compatibility entry points stay warning-free by default so consumers using
+/// warnings-as-errors, including MSVC C4996 via /WX, can keep building while
+/// migrating. Define CXXMCP_ENABLE_COMPAT_DEPRECATION_WARNINGS to opt into the
+/// migration warnings.
+#if defined(CXXMCP_ENABLE_COMPAT_DEPRECATION_WARNINGS)
+#define CXXMCP_COMPAT_DEPRECATED(message) CXXMCP_DEPRECATED(message)
+#else
+#define CXXMCP_COMPAT_DEPRECATED(message)
+#endif
