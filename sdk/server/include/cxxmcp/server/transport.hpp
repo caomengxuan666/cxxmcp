@@ -11,6 +11,7 @@
 
 #include "cxxmcp/core/result.hpp"
 #include "cxxmcp/protocol/capabilities.hpp"
+#include "cxxmcp/protocol/serialization.hpp"
 #include "cxxmcp/protocol/types.hpp"
 #include "cxxmcp/server/auth.hpp"
 
@@ -72,6 +73,49 @@ struct SessionContext {
 /// the transport into a protocol error response.
 using RequestHandler = std::function<core::Result<protocol::JsonRpcResponse>(
     const protocol::JsonRpcRequest&, const SessionContext&)>;
+
+/// @brief Best-effort wire protocol version for the current request.
+///
+/// Checks the stateless version marker in `_meta`, then the
+/// `MCP-Protocol-Version` request header, then an explicit override, and
+/// falls back to the SDK's advertised default. Negotiation still happens in
+/// initialize; this is only for version-gated wire fields such as
+/// `resultType` (SEP-2322 / MRTR).
+inline std::string_view request_wire_version(
+    const protocol::JsonRpcRequest& request,
+    const SessionContext& context) noexcept {
+  if (request.meta.has_value() && request.meta->is_object() &&
+      request.meta->contains("io.modelcontextprotocol/protocolVersion") &&
+      request.meta->at("io.modelcontextprotocol/protocolVersion").is_string()) {
+    return request.meta->at("io.modelcontextprotocol/protocolVersion")
+        .get_ref<const std::string&>();
+  }
+  if (request.protocol_version_override.has_value()) {
+    return *request.protocol_version_override;
+  }
+  for (const auto& [name, value] : context.headers) {
+    if (name.size() == 20) {
+      char lower[21];
+      for (std::size_t i = 0; i < name.size(); ++i) {
+        const char c = name[i];
+        lower[i] = static_cast<char>(c >= 'A' && c <= 'Z' ? c - 'A' + 'a' : c);
+      }
+      lower[name.size()] = '\0';
+      if (std::string_view(lower) == "mcp-protocol-version") {
+        return value;
+      }
+    }
+  }
+  return protocol::McpProtocolVersion;
+}
+
+/// @brief True when the wire version requires `resultType` on result objects
+/// (SEP-2322 / MRTR, mandatory since the 2026-07-28 dated release).
+inline bool wire_version_requires_result_type(
+    std::string_view version) noexcept {
+  return version == protocol::McpProtocolVersion2026_07_28 ||
+         version == "DRAFT-2026-v1";
+}
 
 /// @brief Callback used by transports to dispatch inbound JSON-RPC
 /// notifications.

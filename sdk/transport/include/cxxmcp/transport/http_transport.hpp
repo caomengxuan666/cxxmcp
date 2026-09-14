@@ -196,6 +196,10 @@ class StreamableHttpServerTransport final : public ServerTransport {
   core::Result<core::Unit> send_to_session(std::string_view session_id,
                                            TxMessage message);
   core::Result<std::optional<RxMessage>> receive() override;
+  /// @brief Waits for the client response to one reverse (server-initiated)
+  /// request without competing with receive().
+  core::Result<std::optional<RxMessage>> receive_response(
+      const protocol::RequestId& id) override;
   std::optional<StreamableHttpServerMessageContext> last_received_context()
       const;
   core::Result<core::Unit> close() override;

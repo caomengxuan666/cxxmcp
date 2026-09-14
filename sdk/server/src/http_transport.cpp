@@ -9,6 +9,7 @@
 #include <chrono>
 #include <condition_variable>
 #include <cstdint>
+#include <cstdio>
 #include <deque>
 #include <exception>
 #include <future>
@@ -2527,6 +2528,48 @@ class StreamableHttpServerTransport::Impl {
     return std::move(item.message);
   }
 
+  /// @brief Waits for the client response to one reverse (server-initiated)
+  /// request.
+  ///
+  /// Reverse responses are routed here directly by the request worker instead
+  /// of being pushed onto the shared inbound queue, so the waiting
+  /// send_request caller cannot lose the response to the main receive loop.
+  core::Result<std::optional<protocol::JsonRpcMessage>> receive_response(
+      const protocol::RequestId& request_id) {
+    const auto key = request_id_to_string_for_native_server_http(request_id);
+    std::unique_lock lock(mutex_);
+    response_cv_.wait(lock, [&] {
+      auto it = reverse_responses_.find(key);
+      return closed_ ||
+             (it != reverse_responses_.end() && !it->second.empty());
+    });
+    if (closed_) {
+      return std::nullopt;
+    }
+    auto it = reverse_responses_.find(key);
+    if (it == reverse_responses_.end() || it->second.empty()) {
+      return std::nullopt;
+    }
+    auto response = std::move(it->second.front());
+    it->second.pop_front();
+    if (it->second.empty()) {
+      reverse_responses_.erase(it);
+    }
+    return std::optional<protocol::JsonRpcMessage>{std::move(response)};
+  }
+
+  void deliver_reverse_response(protocol::JsonRpcResponse response) {
+    {
+      std::lock_guard lock(mutex_);
+      std::string key = "(none)";
+      if (response.id.has_value()) {
+        key = request_id_to_string_for_native_server_http(*response.id);
+      }
+      reverse_responses_[key].push_back(std::move(response));
+    }
+    response_cv_.notify_all();
+  }
+
   std::optional<StreamableHttpServerMessageContext> last_received_context()
       const {
     std::lock_guard<std::mutex> lock(mutex_);
@@ -2560,6 +2603,7 @@ class StreamableHttpServerTransport::Impl {
     }
 
     receive_cv_.notify_all();
+    response_cv_.notify_all();
     transport_.stop();
     for (auto& worker : request_threads) {
       if (worker.thread.joinable() &&
@@ -2694,19 +2738,19 @@ class StreamableHttpServerTransport::Impl {
                     : transport_.send_request(request);
             if (response) {
               finish_request_worker(false, false);
-              enqueue(protocol::JsonRpcMessage{std::move(*response)});
+              deliver_reverse_response(std::move(*response));
               done->store(true, std::memory_order_release);
               return;
             }
             finish_request_worker(true, is_timeout_error(response.error()));
-            enqueue(protocol::JsonRpcMessage{protocol::make_error_response(
+            deliver_reverse_response(protocol::make_error_response(
                 std::optional<protocol::RequestId>{request.id},
                 protocol::make_error(response.error().code,
                                      response.error().message,
                                      response.error().detail.empty()
                                          ? std::nullopt
                                          : std::optional<protocol::Json>{
-                                               response.error().detail}))});
+                                               response.error().detail})));
             done->store(true, std::memory_order_release);
           }),
           done});
@@ -2880,7 +2924,10 @@ class StreamableHttpServerTransport::Impl {
   server::HttpTransport transport_;
   mutable std::mutex mutex_;
   std::condition_variable receive_cv_;
+  std::condition_variable response_cv_;
   std::deque<InboundItem> inbound_;
+  std::map<std::string, std::deque<protocol::JsonRpcResponse>>
+      reverse_responses_;
   std::optional<StreamableHttpServerMessageContext> last_context_;
   std::map<std::string, std::shared_ptr<PendingClientRequest>>
       pending_client_requests_;
@@ -2929,6 +2976,12 @@ core::Result<core::Unit> StreamableHttpServerTransport::send_to_session(
 core::Result<std::optional<StreamableHttpServerTransport::RxMessage>>
 StreamableHttpServerTransport::receive() {
   return impl_->receive();
+}
+
+core::Result<std::optional<StreamableHttpServerTransport::RxMessage>>
+StreamableHttpServerTransport::receive_response(
+    const protocol::RequestId& id) {
+  return impl_->receive_response(id);
 }
 
 std::optional<StreamableHttpServerMessageContext>

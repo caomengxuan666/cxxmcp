@@ -206,6 +206,28 @@ class ContractTransportAdapter final : public mcp::server::Transport {
       return mcp::core::unexpected(sent.error());
     }
 
+    // Prefer the transport's dedicated reverse-response routing when it is
+    // available: waiting on the shared receive() queue would let the main
+    // receive loop steal the response (single-consumer contract).
+    while (true) {
+      auto routed = transport_->receive_response(request.id);
+      if (!routed) {
+        break;  // transport does not support direct routing; fall back below
+      }
+      if (!routed->has_value()) {
+        return mcp::core::unexpected(detail::adapter_error(
+            "server contract transport closed before response"));
+      }
+      if (auto* response =
+              std::get_if<protocol::JsonRpcResponse>(&routed->value())) {
+        if (response->id.has_value() && *response->id == request.id) {
+          return *response;
+        }
+        continue;
+      }
+      continue;
+    }
+
     while (true) {
       auto received = transport_->receive();
       if (!received) {

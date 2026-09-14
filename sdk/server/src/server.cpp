@@ -529,6 +529,30 @@ void Server::cancel_request(const protocol::RequestId& request_id) noexcept {
 core::Result<protocol::JsonRpcResponse> Server::handle_request(
     const protocol::JsonRpcRequest& request,
     const SessionContext& input_context) try {
+  auto response = handle_request_impl(request, input_context);
+  if (!response.has_value() || !response->result.has_value()) {
+    return response;
+  }
+
+  // SEP-2322 (MRTR): the 2026-07-28 wire format requires `resultType` on
+  // every result object. Stamp the implicit "complete" default when the
+  // method payload did not set a more specific type.
+  auto& result_json = *response->result;
+  if (result_json.is_object() && !result_json.contains("resultType") &&
+      wire_version_requires_result_type(
+          request_wire_version(request, input_context))) {
+    result_json["resultType"] = "complete";
+  }
+  return response;
+} catch (const std::exception& ex) {
+  return mcp::core::unexpected(errors::handler_failed(ex.what()));
+} catch (...) {
+  return mcp::core::unexpected(errors::handler_unknown_exception());
+}
+
+core::Result<protocol::JsonRpcResponse> Server::handle_request_impl(
+    const protocol::JsonRpcRequest& request,
+    const SessionContext& input_context) try {
   auto authenticated_context = authenticate_context(input_context);
   if (!authenticated_context) {
     return make_auth_error_response(request,
