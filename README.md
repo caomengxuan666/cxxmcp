@@ -66,9 +66,10 @@ int main() {
 
 | Area | Status |
 |---|---|
-| Protocol & JSON-RPC | Typed models, serialization, initialize validation, raw escape hatches |
-| Server SDK | Tool/prompt/resource registries, typed handlers, task-aware calls, notifications |
-| Client SDK | HTTP, stdio, process-stdio, async helpers, roots, sampling, elicitation, tasks |
+| Protocol versions | `2024-11-05` → `2026-07-28` + `DRAFT-2026-v1`, negotiated at initialize; per-request stateless wire on draft |
+| Protocol & JSON-RPC | Typed models, serialization, `CXXMCP_REFLECT` DTO macros, initialize validation, raw escape hatches |
+| Server SDK | Tool/prompt/resource registries, typed handlers, task-aware calls, notifications, subscriptions/listen streaming |
+| Client SDK | HTTP (stateful + stateless), stdio, process-stdio, async helpers, roots, sampling, elicitation, tasks |
 | Transports | stdio, process stdio, Streamable HTTP (stateful sessions + SEP-2575 stateless wire), legacy SSE compat, WebSocket (auto-reconnect) |
 | Auth (opt-in) | OAuth 2.1 / PKCE, DPoP (RFC 9449) proofs and nonce retry, WIF JWT-bearer, dynamic client registration, authorization-server migration |
 | Packaging | CMake `find_package`, Conan 2, vcpkg overlay, FetchContent / CPM |

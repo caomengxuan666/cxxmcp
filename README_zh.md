@@ -66,9 +66,10 @@ int main() {
 
 | 领域 | 状态 |
 |---|---|
-| Protocol / JSON-RPC | Typed models、序列化、initialize 校验、raw escape hatch |
-| Server SDK | tool/prompt/resource registry、typed handler、task-aware call、notification |
-| Client SDK | HTTP、stdio、process stdio、async helper、roots、sampling、elicitation、tasks |
+| 协议版本 | `2024-11-05` → `2026-07-28` + `DRAFT-2026-v1`，initialize 时协商；draft 上支持 SEP-2575 per-request 无状态 wire |
+| Protocol / JSON-RPC | Typed models、序列化、`CXXMCP_REFLECT` DTO 宏、initialize 校验、raw escape hatch |
+| Server SDK | tool/prompt/resource registry、typed handler、task-aware call、notification、subscriptions/listen 流 |
+| Client SDK | HTTP（有状态 + 无状态）、stdio、process stdio、async helper、roots、sampling、elicitation、tasks |
 | Transports | stdio、process stdio、Streamable HTTP（有状态 session + SEP-2575 无状态 wire）、legacy SSE 兼容、WebSocket（自动重连） |
 | Auth（可选） | OAuth 2.1 / PKCE、DPoP (RFC 9449) proof 与 nonce 重试、WIF JWT-bearer、动态客户端注册、授权服务器迁移 |
 | Packaging | CMake `find_package`、Conan 2、vcpkg overlay、FetchContent / CPM |
