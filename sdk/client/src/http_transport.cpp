@@ -61,8 +61,24 @@ std::string request_id_to_string(const protocol::RequestId& request_id) {
       request_id);
 }
 
-bool is_http_timeout_error(httplib::Error error) {
-  return error == httplib::Error::Timeout || error == httplib::Error::Read;
+// The bundled httplib remaps a response-read poll timeout to Error::Read when
+// the response line/header read fails, so the error enum alone cannot tell a
+// genuine timeout from an early socket-level read failure. Elapsed time is the
+// discriminator: a read timeout cannot fire before the configured timeout has
+// effectively elapsed. The slack absorbs timer-granularity rounding that can
+// report an elapsed marginally below the configured timeout.
+bool is_http_timeout_error(httplib::Error error,
+                           std::chrono::milliseconds elapsed,
+                           std::chrono::milliseconds timeout) {
+  if (error == httplib::Error::Timeout ||
+      error == httplib::Error::ConnectionTimeout) {
+    return true;
+  }
+  if (error != httplib::Error::Read) {
+    return false;
+  }
+  const auto slack = (std::min)(timeout / 4, std::chrono::milliseconds(25));
+  return elapsed + slack >= timeout;
 }
 
 std::optional<std::string> header_name_from_request(
@@ -424,11 +440,16 @@ struct HttpTransport::Impl {
         headers.emplace("MCP-Protocol-Version",
                         *outbound_request.protocol_version_override);
       }
+      const auto send_started = std::chrono::steady_clock::now();
       const auto response =
           client.Post(path, headers, *serialized, "application/json");
+      const auto send_elapsed =
+          std::chrono::duration_cast<std::chrono::milliseconds>(
+              std::chrono::steady_clock::now() - send_started);
       if (!response) {
         if (options.timeout.count() > 0 &&
-            is_http_timeout_error(response.error())) {
+            is_http_timeout_error(response.error(), send_elapsed,
+                                  options.timeout)) {
           return mcp::core::unexpected(make_transport_error(
               static_cast<int>(protocol::ErrorCode::InternalError),
               "http transport request timed out",
