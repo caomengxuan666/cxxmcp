@@ -1,5 +1,30 @@
 # Changelog
 
+## Unreleased
+
+- Implemented the SEP-2575 per-request stateless lifecycle in the server HTTP
+  transport: mandatory `MCP-Protocol-Version` on every POST, `_meta`
+  `protocolVersion`/`clientCapabilities` validation, removed-method 404 +
+  `-32601`, and error-code-to-HTTP-status mapping.
+- Enforced SEP-2243 `Mcp-Method`/`Mcp-Name`/custom-header validation on the
+  stateless wire (`-32020`), resolving the historical
+  `ServerRejectsMissingMethodHeader` conformance exception.
+- Added `subscriptions/listen` streaming and
+  `publish_subscription_notification` fan-out across the transport adapter
+  chain.
+- Added SEP-2663 tasks extension gating (`-32021`) and `tasks/get|update|
+  cancel` handling on the stateless wire; legacy `tools/call` task hints are
+  tolerated.
+- `server/discover` results now carry `_meta.serverInfo` and cacheable
+  `ttlMs`/`cacheScope` fields.
+- Client: opt-in DPoP (RFC 9449) request signer with proof-per-request,
+  `Authorization: DPoP`, and AS/RS `DPoP-Nonce` capture and retry; WIF
+  JWT-bearer grant; SEP-2352 authorization-server migration with
+  re-registration at the new authorization server; `MCP-Protocol-Version` is
+  sent on every POST including `initialize`.
+- Conformance: server 272/272 and client 501/501 against the official
+  `modelcontextprotocol/conformance` runner (`--suite all`).
+
 ## 1.2.8
 
 - Fixed Linux single-configuration installs so both Debug and Release CMake

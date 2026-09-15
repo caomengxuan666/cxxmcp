@@ -6,8 +6,8 @@
 [![Pages](https://github.com/caomengxuan666/cxxmcp/actions/workflows/pages.yml/badge.svg)](https://caomengxuan666.github.io/cxxmcp/)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![MCP](https://img.shields.io/badge/protocol-Model%20Context%20Protocol-111827.svg)](https://modelcontextprotocol.io/)
-[![Server Conformance](https://img.shields.io/badge/Server%20Conformance-109%2F110%20(99%25)-brightgreen.svg)](docs/conformance_evidence.md)
-[![Client Conformance](https://img.shields.io/badge/Client%20Conformance-448%2F448%20(100%25)-brightgreen.svg)](docs/conformance_evidence.md)
+[![Server Conformance](https://img.shields.io/badge/Server%20Conformance-272%2F272%20(100%25)-brightgreen.svg)](docs/conformance_evidence.md)
+[![Client Conformance](https://img.shields.io/badge/Client%20Conformance-501%2F501%20(100%25)-brightgreen.svg)](docs/conformance_evidence.md)
 
 A production-ready C++17 SDK for the [Model Context Protocol](https://modelcontextprotocol.io/) — build MCP servers and clients that embed directly into native C++ applications, with full protocol coverage and cross-SDK conformance validation.
 
@@ -69,18 +69,19 @@ int main() {
 | Protocol & JSON-RPC | Typed models, serialization, initialize validation, raw escape hatches |
 | Server SDK | Tool/prompt/resource registries, typed handlers, task-aware calls, notifications |
 | Client SDK | HTTP, stdio, process-stdio, async helpers, roots, sampling, elicitation, tasks |
-| Transports | stdio, process stdio, Streamable HTTP (stateful sessions), legacy SSE compat, WebSocket (auto-reconnect) |
+| Transports | stdio, process stdio, Streamable HTTP (stateful sessions + SEP-2575 stateless wire), legacy SSE compat, WebSocket (auto-reconnect) |
+| Auth (opt-in) | OAuth 2.1 / PKCE, DPoP (RFC 9449) proofs and nonce retry, WIF JWT-bearer, dynamic client registration, authorization-server migration |
 | Packaging | CMake `find_package`, Conan 2, vcpkg overlay, FetchContent / CPM |
 | Peer/Service boundary | RMCP-style role-aware `Peer<Role>` and `Service<Role>` |
 
-**Protocol coverage:** tool, prompt, resource, resource template, completion, logging, roots, sampling, elicitation, task lifecycle, progress, cancellation, and raw JSON-RPC escape hatches for vendor extensions.
+**Protocol coverage:** tool, prompt, resource, resource template, completion, logging, roots, sampling, elicitation, task lifecycle (SEP-2663), skills (SEP-2640), subscriptions, progress, cancellation, and raw JSON-RPC escape hatches for vendor extensions.
 
 **Conformance:** Validated against the official `modelcontextprotocol/conformance` runner (`--suite all`).
 
 | | cxxmcp | RMCP |
 |---|---|---|
-| Server | **109/110** (99%) | 48/95 (51%) |
-| Client | **448/448** (100%) | — (runner crashed) |
+| Server | **272/272** (100%) | 48/95 (51%) |
+| Client | **501/501** (100%) | — (runner crashed) |
 
 Full details in [conformance evidence](docs/conformance_evidence.md).
 
