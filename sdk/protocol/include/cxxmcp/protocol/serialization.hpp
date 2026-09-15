@@ -36,8 +36,8 @@ CXXMCP_PROTOCOL_STRING_CONSTANT(McpProtocolVersion2024_11_05, "2024-11-05");
 inline constexpr core::StringConstant McpProtocolVersion{"2025-11-25"};
 /// @brief Protocol versions accepted by this SDK during initialization.
 inline constexpr std::array<const char*, 6> McpSupportedProtocolVersions{
-    "2024-11-05", "2025-03-26", "2025-06-18", "2025-11-25", "2026-07-28",
-    "DRAFT-2026-v1"};
+    "2024-11-05", "2025-03-26", "2025-06-18",
+    "2025-11-25", "2026-07-28", "DRAFT-2026-v1"};
 
 /// @brief Returns true when a peer protocol version is supported.
 inline bool is_supported_protocol_version(std::string_view version) noexcept {

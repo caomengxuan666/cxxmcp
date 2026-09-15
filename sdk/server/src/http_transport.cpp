@@ -2540,8 +2540,7 @@ class StreamableHttpServerTransport::Impl {
     std::unique_lock lock(mutex_);
     response_cv_.wait(lock, [&] {
       auto it = reverse_responses_.find(key);
-      return closed_ ||
-             (it != reverse_responses_.end() && !it->second.empty());
+      return closed_ || (it != reverse_responses_.end() && !it->second.empty());
     });
     if (closed_) {
       return std::nullopt;
@@ -2979,8 +2978,7 @@ StreamableHttpServerTransport::receive() {
 }
 
 core::Result<std::optional<StreamableHttpServerTransport::RxMessage>>
-StreamableHttpServerTransport::receive_response(
-    const protocol::RequestId& id) {
+StreamableHttpServerTransport::receive_response(const protocol::RequestId& id) {
   return impl_->receive_response(id);
 }
 
