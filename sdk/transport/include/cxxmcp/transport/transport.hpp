@@ -66,6 +66,30 @@ class Transport {
   /// is an orderly end-of-stream signal, not a parse or transport error.
   virtual core::Result<std::optional<RxMessage>> receive() = 0;
 
+  /// @brief Waits for the response to one specific outbound request.
+  ///
+  /// Server transports deliver client responses to server-initiated (reverse)
+  /// requests through the same single-consumer receive() queue as inbound
+  /// client traffic. A reverse-request caller that waits on receive()
+  /// therefore competes with the transport's main receive loop, and the
+  /// response can be consumed by the wrong side. Implementations that can
+  /// route reverse responses to dedicated waiters override this method so
+  /// reverse-request callers bypass the shared queue entirely.
+  ///
+  /// The default implementation reports unsupported; callers fall back to
+  /// the receive() loop.
+  /// @param id Request id of the outstanding outbound request.
+  /// @return The response message once it arrives, std::nullopt on orderly
+  /// close, or an error when the transport does not support direct routing.
+  virtual core::Result<std::optional<RxMessage>> receive_response(
+      const protocol::RequestId& id) {
+    (void)id;
+    return mcp::core::unexpected(
+        core::Error{static_cast<int>(protocol::ErrorCode::MethodNotFound),
+                    "transport does not route reverse responses directly",
+                    {}});
+  }
+
   /// @brief Closes the transport and unblocks receive() where possible.
   virtual core::Result<core::Unit> close() = 0;
 

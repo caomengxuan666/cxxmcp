@@ -392,7 +392,10 @@ void test_supported_protocol_versions_are_explicit() {
           "2025-11-25 should be supported");
   require(mcp::protocol::is_supported_protocol_version("DRAFT-2026-v1"),
           "DRAFT-2026-v1 should be supported");
-  require(mcp::protocol::McpSupportedProtocolVersions.size() == 5,
+  require(mcp::protocol::is_supported_protocol_version(
+              mcp::protocol::McpProtocolVersion2026_07_28),
+          "2026-07-28 should be supported");
+  require(mcp::protocol::McpSupportedProtocolVersions.size() == 6,
           "supported MCP protocol version set mismatch");
   const auto negotiated_2025_06_18 =
       mcp::protocol::negotiate_protocol_version("2025-06-18");

@@ -224,6 +224,11 @@ class Server {
   core::Result<protocol::JsonRpcResponse> handle_request(
       const protocol::JsonRpcRequest& request, const SessionContext& context);
 
+  /// @brief Version-stamping-free dispatch used by handle_request; callers
+  /// should invoke handle_request() so wire fields (resultType) are stamped.
+  core::Result<protocol::JsonRpcResponse> handle_request_impl(
+      const protocol::JsonRpcRequest& request, const SessionContext& context);
+
   /// @brief Applies the configured AuthProvider to a session context.
   ///
   /// Returns the input context unchanged when no provider is configured or the

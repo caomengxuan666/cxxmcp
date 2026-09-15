@@ -3877,6 +3877,15 @@ class Peer<RoleServer> {
             request->id,
             detail::peer_error_object_from_core_error(handled.error()))};
       }
+      // SEP-2322 (MRTR): the 2026-07-28 wire format requires `resultType` on
+      // every result object. Stamp the implicit "complete" default when the
+      // method payload did not set a more specific type.
+      if (handled->result.has_value() && handled->result->is_object() &&
+          !handled->result->contains("resultType") &&
+          server::wire_version_requires_result_type(
+              server::request_wire_version(*request, context))) {
+        (*handled->result)["resultType"] = "complete";
+      }
       return protocol::JsonRpcMessage{std::move(*handled)};
     }
 

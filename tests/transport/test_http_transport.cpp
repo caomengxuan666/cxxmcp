@@ -6076,7 +6076,8 @@ void test_native_streamable_http_server_transport_diagnostics_timeout_cleanup() 
   require(request_sent.has_value(),
           "native timeout server request should be accepted");
 
-  received = transport.receive();
+  received =
+      transport.receive_response(mcp::protocol::RequestId{std::int64_t{72}});
   require(received.has_value(),
           "native timeout server error receive should succeed");
   require(received->has_value(),
@@ -6099,7 +6100,8 @@ void test_native_streamable_http_server_transport_diagnostics_timeout_cleanup() 
   require(second_request_sent.has_value(),
           "native timeout server second request should be accepted");
 
-  received = transport.receive();
+  received =
+      transport.receive_response(mcp::protocol::RequestId{std::int64_t{73}});
   require(received.has_value(),
           "native timeout server second error receive should succeed");
   require(received->has_value(),
