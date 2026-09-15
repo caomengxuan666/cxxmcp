@@ -49,7 +49,25 @@ constexpr std::string_view StatelessClientInfoMeta =
 constexpr std::string_view StatelessClientCapabilitiesMeta =
     "io.modelcontextprotocol/clientCapabilities";
 constexpr std::string_view LastEventIdHeader = "Last-Event-ID";
-constexpr int HeaderMismatchCode = -32001;
+constexpr std::string_view SubscriptionIdMeta =
+    "io.modelcontextprotocol/subscriptionId";
+constexpr int HeaderMismatchCode = -32020;
+constexpr int MissingClientCapabilityCode = -32021;
+constexpr int UnsupportedProtocolVersionCode = -32022;
+
+/// Protocol revisions that keep the initialize/session lifecycle. Any other
+/// version named in MCP-Protocol-Version selects the per-request stateless
+/// lifecycle instead (SEP-2575).
+bool is_stateful_protocol_version(std::string_view version) noexcept {
+  constexpr std::array<std::string_view, 4> kStatefulVersions{
+      "2024-11-05", "2025-03-26", "2025-06-18", "2025-11-25"};
+  for (const auto stateful : kStatefulVersions) {
+    if (version == stateful) {
+      return true;
+    }
+  }
+  return false;
+}
 
 core::Error make_transport_error(int code, std::string message,
                                  std::string detail = {}) {
@@ -253,7 +271,47 @@ std::optional<std::string> header_name_from_request(
     return params.at("uri").get<std::string>();
   }
 
+  if ((request.method == protocol::TasksGetMethod ||
+       request.method == protocol::TasksUpdateMethod ||
+       request.method == protocol::TasksCancelMethod) &&
+      params.contains("taskId") && params.at("taskId").is_string()) {
+    return params.at("taskId").get<std::string>();
+  }
+
   return std::nullopt;
+}
+
+/// Whether a subscriptions/listen filter accepts a notification method.
+/// The filter is the request's `notifications` object; a method
+/// `notifications/<group>/<snake_name>` maps to the camelCase flag
+/// `<group><CamelName>` (e.g. tools/list_changed -> toolsListChanged).
+bool subscription_filter_accepts(const protocol::Json& filter,
+                                 std::string_view method) {
+  if (!filter.is_object()) {
+    return false;
+  }
+  std::string_view tail = method;
+  constexpr std::string_view kPrefix = "notifications/";
+  if (tail.substr(0, kPrefix.size()) == kPrefix) {
+    tail.remove_prefix(kPrefix.size());
+  }
+  const auto slash = tail.find('/');
+  std::string flag(tail.substr(0, slash));
+  if (slash != std::string_view::npos) {
+    bool uppercase_next = true;
+    for (const char c : tail.substr(slash + 1)) {
+      if (c == '_') {
+        uppercase_next = true;
+        continue;
+      }
+      flag.push_back(uppercase_next ? static_cast<char>(std::toupper(
+                                          static_cast<unsigned char>(c)))
+                                    : c);
+      uppercase_next = false;
+    }
+  }
+  const auto it = filter.find(flag);
+  return it != filter.end() && it->is_boolean() && it->get<bool>();
 }
 
 core::Result<core::Unit> validate_protocol_version_header(
@@ -268,8 +326,8 @@ core::Result<core::Unit> validate_protocol_version_header(
       request.get_header_value(std::string(VersionHeader));
   if (!protocol::is_supported_protocol_version(version_header)) {
     return mcp::core::unexpected(make_transport_error(
-        HeaderMismatchCode,
-        "http transport request MCP-Protocol-Version header mismatch",
+        UnsupportedProtocolVersionCode,
+        "http transport request names an unsupported MCP-Protocol-Version",
         version_header));
   }
   return core::Unit{};
@@ -389,11 +447,17 @@ core::Result<core::Unit> validate_get_http_headers(
 
 core::Result<core::Unit> validate_post_headers(
     const httplib::Request& request,
-    const protocol::JsonRpcRequest& rpc_request) {
-  // SEP-2243: validate Mcp-Method/Mcp-Name headers when present.
-  // Headers are optional for backward compatibility with clients that
-  // do not yet send them (e.g. TypeScript SDK < fix, RMCP).
-  if (request.has_header(std::string(MethodHeader))) {
+    const protocol::JsonRpcRequest& rpc_request, bool require_headers = false) {
+  // SEP-2243: Mcp-Method is mandatory on the stateless (SEP-2575) wire and
+  // optional on session-era revisions for backward compatibility with clients
+  // that do not send it.
+  const bool has_method_header = request.has_header(std::string(MethodHeader));
+  if (!has_method_header && require_headers) {
+    return mcp::core::unexpected(make_transport_error(
+        HeaderMismatchCode,
+        "http transport request missing Mcp-Method header"));
+  }
+  if (has_method_header) {
     const auto method_header =
         trim_ows(request.get_header_value(std::string(MethodHeader)));
     if (method_header != rpc_request.method) {
@@ -404,8 +468,12 @@ core::Result<core::Unit> validate_post_headers(
   }
 
   const auto expected_name = header_name_from_request(rpc_request);
-  if (expected_name.has_value() &&
-      request.has_header(std::string(NameHeader))) {
+  const bool has_name_header = request.has_header(std::string(NameHeader));
+  if (expected_name.has_value() && !has_name_header && require_headers) {
+    return mcp::core::unexpected(make_transport_error(
+        HeaderMismatchCode, "http transport request missing Mcp-Name header"));
+  }
+  if (expected_name.has_value() && has_name_header) {
     const auto name_header =
         trim_ows(request.get_header_value(std::string(NameHeader)));
     if (name_header != *expected_name) {
@@ -499,6 +567,36 @@ void write_error(httplib::Response& http_response, int code,
       protocol::make_error_response(
           std::move(id),
           protocol::make_error(code, std::move(message), std::move(data))));
+}
+
+/// Emit a MissingRequiredClientCapabilityError (-32021). The spec schema
+/// carries `data.requiredCapabilities` as a ClientCapabilities object keyed by
+/// the missing capability, so the extension id nests under `extensions`.
+void write_missing_capability_error(httplib::Response& http_response,
+                                    std::string_view extension_id,
+                                    std::optional<protocol::RequestId> id) {
+  protocol::Json required = protocol::Json::object();
+  required["extensions"][std::string(extension_id)] = protocol::Json::object();
+  protocol::Json data = protocol::Json::object();
+  data["requiredCapabilities"] = std::move(required);
+  http_response.status = 400;
+  write_error(http_response, MissingClientCapabilityCode,
+              "request requires a client capability that was not declared",
+              std::move(id), std::move(data));
+}
+
+/// Whether a capabilities JSON object declares the given extension under
+/// `extensions`.
+bool capabilities_declare_extension(const protocol::Json& capabilities,
+                                    std::string_view extension_id) {
+  if (!capabilities.is_object()) {
+    return false;
+  }
+  const auto extensions = capabilities.find("extensions");
+  if (extensions == capabilities.end() || !extensions->is_object()) {
+    return false;
+  }
+  return extensions->contains(std::string(extension_id));
 }
 
 void set_auth_failure_status(httplib::Response& http_response,
@@ -1094,9 +1192,85 @@ core::Result<core::Unit> HttpTransport::start(
     response.status = 204;
   });
 
+  // SEP-2575 subscriptions/listen serving, kept as a lambda so httplib types
+  // stay out of the public header. The stream emits an acknowledgment as its
+  // first frame, then forwards notifications published through
+  // publish_subscription_notification() while the filter accepts them.
+  const auto serve_subscription_stream =
+      [this](const httplib::Request& request, httplib::Response& response,
+             const protocol::JsonRpcRequest& rpc_request) {
+        auto sink = std::make_shared<SubscriptionSink>();
+        sink->subscription_id = request_id_to_string(rpc_request.id);
+        if (rpc_request.params.is_object() &&
+            rpc_request.params.contains("notifications") &&
+            rpc_request.params.at("notifications").is_object()) {
+          sink->filter = rpc_request.params.at("notifications");
+        }
+
+        protocol::Json ack_meta = protocol::Json::object();
+        ack_meta[std::string(SubscriptionIdMeta)] = sink->subscription_id;
+        protocol::Json ack_params = protocol::Json::object();
+        ack_params["_meta"] = std::move(ack_meta);
+        ack_params["notifications"] = sink->filter;
+        protocol::JsonRpcNotification ack;
+        ack.method =
+            std::string(protocol::SubscriptionsAcknowledgedNotificationMethod);
+        ack.params = std::move(ack_params);
+        if (const auto serialized = protocol::serialize_notification(ack)) {
+          sink->events.push_back("data: " + *serialized + "\n\n");
+        }
+
+        {
+          std::lock_guard lock(mutex_);
+          subscription_sinks_.push_back(sink);
+        }
+
+        response.set_chunked_content_provider(
+            "text/event-stream",
+            [this, sink, &request](std::size_t, httplib::DataSink& data_sink) {
+              const auto release_sink = [this, &sink] {
+                std::lock_guard guard(mutex_);
+                const auto it = std::find(subscription_sinks_.begin(),
+                                          subscription_sinks_.end(), sink);
+                if (it != subscription_sinks_.end()) {
+                  subscription_sinks_.erase(it);
+                }
+              };
+              while (true) {
+                std::unique_lock lock(sink->mutex);
+                sink->cv.wait_for(lock, std::chrono::milliseconds(50), [&] {
+                  return sink->done || !sink->events.empty() ||
+                         request.is_connection_closed();
+                });
+                if (request.is_connection_closed()) {
+                  data_sink.done();
+                  release_sink();
+                  return false;
+                }
+                while (!sink->events.empty()) {
+                  auto event = std::move(sink->events.front());
+                  sink->events.pop_front();
+                  lock.unlock();
+                  if (!data_sink.write(event.data(), event.size())) {
+                    data_sink.done();
+                    release_sink();
+                    return false;
+                  }
+                  lock.lock();
+                }
+                if (sink->done) {
+                  data_sink.done();
+                  release_sink();
+                  return false;
+                }
+              }
+            });
+      };
+
   http_server->Post(options_.path, [this, handler = std::move(handler),
                                     notification_handler =
-                                        std::move(notification_handler)](
+                                        std::move(notification_handler),
+                                    serve_subscription_stream](
                                        const httplib::Request& request,
                                        httplib::Response& response) mutable {
     const auto host = validate_host_header(request, options_.allowed_hosts);
@@ -1139,58 +1313,50 @@ core::Result<core::Unit> HttpTransport::start(
         rpc_request != nullptr &&
         rpc_request->method == protocol::InitializeMethod;
 
-    // Detect stateless mode: either the transport is configured stateless, or
-    // an individual request carries the required stateless protocol metadata.
+    // Detect stateless mode (SEP-2575): the transport may be configured
+    // stateless, or an individual request selects the per-request lifecycle by
+    // carrying _meta protocolVersion metadata, or by naming a non-session
+    // protocol revision in MCP-Protocol-Version while presenting no session.
     bool stateless_mode = options_.stateless;
+    const bool has_version_header =
+        request.has_header(std::string(ProtocolVersionHeader));
+    const auto version_header_value =
+        has_version_header
+            ? request.get_header_value(std::string(ProtocolVersionHeader))
+            : std::string{};
+    bool meta_has_protocol_version = false;
     if (rpc_request && rpc_request->params.is_object() &&
         rpc_request->params.contains("_meta")) {
       const auto& meta = rpc_request->params.at("_meta");
-      stateless_mode =
-          stateless_mode ||
-          (meta.is_object() &&
-           meta.contains(std::string(StatelessProtocolVersionMeta)));
+      meta_has_protocol_version =
+          meta.is_object() &&
+          meta.contains(std::string(StatelessProtocolVersionMeta));
+    }
+    if (!request.has_header(std::string(SessionHeader))) {
+      stateless_mode = stateless_mode || meta_has_protocol_version ||
+                       (has_version_header &&
+                        !is_stateful_protocol_version(version_header_value));
     }
 
-    // In stateless mode, reject methods that require server-side session state.
+    // SEP-2575 per-request validation, in wire order: the protocol-version
+    // header is mandatory, the _meta contract is checked next, header/_meta
+    // agreement after that, then version support, removed methods, and the
+    // mandatory SEP-2243 standard headers.
     if (stateless_mode && rpc_request) {
-      using SV = std::string_view;
-      const std::array kStatelessRemovedMethods{
-          SV(protocol::LoggingSetLevelMethod),
-          SV(protocol::ResourcesSubscribeMethod),
-          SV(protocol::ResourcesUnsubscribeMethod),
-          SV(protocol::TasksListMethod),
-          SV(protocol::TasksGetMethod),
-          SV(protocol::TasksCancelMethod),
-          SV(protocol::TasksResultMethod)};
-      for (const auto removed : kStatelessRemovedMethods) {
-        if (rpc_request->method == removed) {
-          response.status = 404;
-          write_error(response,
-                      static_cast<int>(protocol::ErrorCode::MethodNotFound),
-                      "method not available in stateless mode",
-                      std::optional<protocol::RequestId>{rpc_request->id});
-          return;
-        }
-      }
-      if (rpc_request->method == protocol::ToolsCallMethod &&
-          rpc_request->params.is_object() &&
-          rpc_request->params.contains("task")) {
-        response.status = 404;
-        write_error(response,
-                    static_cast<int>(protocol::ErrorCode::MethodNotFound),
-                    "method not available in stateless mode",
-                    std::optional<protocol::RequestId>{rpc_request->id});
+      const auto error_id = std::optional<protocol::RequestId>{rpc_request->id};
+
+      if (!has_version_header) {
+        response.status = 400;
+        write_error(
+            response, HeaderMismatchCode,
+            "http transport request missing MCP-Protocol-Version header",
+            error_id);
         return;
       }
-    }
 
-    // Validate _meta for stateless requests only. Session-based requests
-    // do not require _meta even when Mcp-Method header is present (SEP-2243
-    // made Mcp-Method optional for all transports).
-    if (stateless_mode && rpc_request && !initialize_request) {
-      const auto error_id = std::optional<protocol::RequestId>{rpc_request->id};
       if (!rpc_request->params.is_object() ||
-          !rpc_request->params.contains("_meta")) {
+          !rpc_request->params.contains("_meta") ||
+          !rpc_request->params.at("_meta").is_object()) {
         response.status = 400;
         write_error(response,
                     static_cast<int>(protocol::ErrorCode::InvalidParams),
@@ -1198,9 +1364,8 @@ core::Result<core::Unit> HttpTransport::start(
         return;
       }
       const auto& meta = rpc_request->params.at("_meta");
-      constexpr std::array<std::string_view, 3> kRequiredMetaKeys{
-          StatelessProtocolVersionMeta, StatelessClientInfoMeta,
-          StatelessClientCapabilitiesMeta};
+      constexpr std::array<std::string_view, 2> kRequiredMetaKeys{
+          StatelessProtocolVersionMeta, StatelessClientCapabilitiesMeta};
       for (const auto key : kRequiredMetaKeys) {
         if (!meta.contains(std::string(key))) {
           response.status = 400;
@@ -1212,29 +1377,81 @@ core::Result<core::Unit> HttpTransport::start(
           return;
         }
       }
-      // Validate _meta.protocolVersion matches MCP-Protocol-Version header.
-      if (meta.contains(std::string(StatelessProtocolVersionMeta)) &&
-          request.has_header(std::string(ProtocolVersionHeader))) {
-        if (!meta.at(std::string(StatelessProtocolVersionMeta)).is_string()) {
-          response.status = 400;
+      const auto& meta_version =
+          meta.at(std::string(StatelessProtocolVersionMeta));
+      if (!meta_version.is_string()) {
+        response.status = 400;
+        write_error(response,
+                    static_cast<int>(protocol::ErrorCode::InvalidParams),
+                    "stateless request _meta protocolVersion must be a string",
+                    error_id);
+        return;
+      }
+      if (meta_version.get_ref<const std::string&>() != version_header_value) {
+        response.status = 400;
+        write_error(response, HeaderMismatchCode,
+                    "http transport request MCP-Protocol-Version header "
+                    "mismatch with _meta",
+                    error_id);
+        return;
+      }
+      if (!protocol::is_supported_protocol_version(version_header_value)) {
+        response.status = 400;
+        protocol::Json supported = protocol::Json::array();
+        for (const auto* version : protocol::McpSupportedProtocolVersions) {
+          supported.push_back(version);
+        }
+        protocol::Json error_data = protocol::Json::object();
+        error_data["supported"] = std::move(supported);
+        error_data["requested"] = version_header_value;
+        write_error(response, UnsupportedProtocolVersionCode,
+                    "http transport request names an unsupported protocol "
+                    "version",
+                    error_id, std::move(error_data));
+        return;
+      }
+
+      // Session-lifecycle methods are removed on the stateless wire.
+      using SV = std::string_view;
+      static constexpr std::array<SV, 7> kStatelessRemovedMethods{
+          SV(protocol::InitializeMethod),
+          SV(protocol::PingMethod),
+          SV(protocol::LoggingSetLevelMethod),
+          SV(protocol::ResourcesSubscribeMethod),
+          SV(protocol::ResourcesUnsubscribeMethod),
+          SV(protocol::TasksListMethod),
+          SV(protocol::TasksResultMethod)};
+      for (const auto removed : kStatelessRemovedMethods) {
+        if (rpc_request->method == removed) {
+          response.status = 404;
           write_error(response,
-                      static_cast<int>(protocol::ErrorCode::InvalidParams),
-                      "stateless request _meta protocolVersion must be a "
-                      "string",
-                      error_id);
+                      static_cast<int>(protocol::ErrorCode::MethodNotFound),
+                      "method not available in stateless mode", error_id);
           return;
         }
-        const auto meta_version =
-            meta.at(std::string(StatelessProtocolVersionMeta))
-                .get<std::string>();
-        const auto header_version =
-            request.get_header_value(std::string(ProtocolVersionHeader));
-        if (meta_version != header_version) {
-          response.status = 400;
-          write_error(response, HeaderMismatchCode,
-                      "http transport request MCP-Protocol-Version header "
-                      "mismatch with _meta",
-                      error_id);
+      }
+
+      const auto header_check =
+          validate_post_headers(request, *rpc_request, true);
+      if (!header_check) {
+        response.status = 400;
+        write_error(response, header_check.error().code,
+                    header_check.error().message, error_id);
+        return;
+      }
+
+      // SEP-2663: task management methods require the tasks extension in the
+      // per-request _meta clientCapabilities.
+      if (rpc_request->method == protocol::TasksGetMethod ||
+          rpc_request->method == protocol::TasksUpdateMethod ||
+          rpc_request->method == protocol::TasksCancelMethod) {
+        const auto capabilities =
+            meta.find(std::string(StatelessClientCapabilitiesMeta));
+        if (!capabilities_declare_extension(
+                capabilities != meta.end() ? *capabilities : protocol::Json{},
+                protocol::TasksExtensionId)) {
+          write_missing_capability_error(response, protocol::TasksExtensionId,
+                                         error_id);
           return;
         }
       }
@@ -1281,6 +1498,10 @@ core::Result<core::Unit> HttpTransport::start(
         }
         protocol::Json error_data = protocol::Json::object();
         error_data["supported"] = std::move(supported);
+        if (request.has_header(std::string(ProtocolVersionHeader))) {
+          error_data["requested"] =
+              request.get_header_value(std::string(ProtocolVersionHeader));
+        }
         write_error(response, protocol_version.error().code,
                     protocol_version.error().message, error_id,
                     std::move(error_data));
@@ -1421,6 +1642,14 @@ core::Result<core::Unit> HttpTransport::start(
       return;
     }
 
+    // SEP-2575 subscriptions/listen opens a streaming notification channel
+    // rather than producing a request/response pair.
+    if (stateless_mode &&
+        rpc_request->method == protocol::SubscriptionsListenMethod) {
+      serve_subscription_stream(request, response, *rpc_request);
+      return;
+    }
+
     if (initialize_request) {
       const auto init_version_check =
           validate_initialize_protocol_header(request, *rpc_request);
@@ -1554,7 +1783,11 @@ core::Result<core::Unit> HttpTransport::start(
         if (error_code ==
             static_cast<int>(protocol::ErrorCode::MethodNotFound)) {
           response.status = 404;
-        } else if (error_code == HeaderMismatchCode) {
+        } else if (error_code == HeaderMismatchCode ||
+                   error_code == MissingClientCapabilityCode ||
+                   error_code == UnsupportedProtocolVersionCode ||
+                   error_code ==
+                       static_cast<int>(protocol::ErrorCode::InvalidParams)) {
           response.status = 400;
         }
       }
@@ -2180,6 +2413,41 @@ HttpTransport::client_capabilities_for_session(
   return session == nullptr ? std::nullopt : session->client_capabilities;
 }
 
+void HttpTransport::publish_subscription_notification(std::string_view method,
+                                                      protocol::Json params) {
+  std::vector<std::shared_ptr<SubscriptionSink>> sinks;
+  {
+    std::lock_guard lock(mutex_);
+    sinks = subscription_sinks_;
+  }
+  for (auto& sink : sinks) {
+    protocol::Json stream_params = params;
+    if (!stream_params.is_object()) {
+      stream_params = protocol::Json::object();
+    }
+    if (!stream_params.contains("_meta") ||
+        !stream_params.at("_meta").is_object()) {
+      stream_params["_meta"] = protocol::Json::object();
+    }
+    protocol::JsonRpcNotification notification;
+    notification.method = std::string(method);
+    {
+      std::lock_guard sink_lock(sink->mutex);
+      if (sink->done || !subscription_filter_accepts(sink->filter, method)) {
+        continue;
+      }
+      stream_params["_meta"][std::string(SubscriptionIdMeta)] =
+          sink->subscription_id;
+      notification.params = stream_params;
+      const auto serialized = protocol::serialize_notification(notification);
+      if (serialized) {
+        sink->events.push_back("data: " + *serialized + "\n\n");
+        sink->cv.notify_all();
+      }
+    }
+  }
+}
+
 void HttpTransport::stop() noexcept {
   httplib::Server* server_to_stop = nullptr;
   {
@@ -2196,6 +2464,12 @@ void HttpTransport::stop() noexcept {
     }
     sessions_.clear();
     default_session_id_.clear();
+    for (auto& sink : subscription_sinks_) {
+      std::lock_guard sink_lock(sink->mutex);
+      sink->done = true;
+      sink->cv.notify_all();
+    }
+    subscription_sinks_.clear();
     server_to_stop = server_ == nullptr ? nullptr : &server_->server;
   }
   startup_cv_.notify_all();
@@ -2576,6 +2850,11 @@ class StreamableHttpServerTransport::Impl {
   }
 
   void wait_until_ready() { ready_future_.wait(); }
+
+  void publish_subscription_notification(std::string_view method,
+                                         protocol::Json params) {
+    transport_.publish_subscription_notification(method, std::move(params));
+  }
 
   core::Result<core::Unit> close() {
     std::map<std::string, std::shared_ptr<PendingClientRequest>> pending;
@@ -2989,6 +3268,11 @@ StreamableHttpServerTransport::last_received_context() const {
 
 void StreamableHttpServerTransport::wait_until_ready() {
   impl_->wait_until_ready();
+}
+
+void StreamableHttpServerTransport::publish_subscription_notification(
+    std::string_view method, protocol::Json params) {
+  impl_->publish_subscription_notification(method, std::move(params));
 }
 
 core::Result<core::Unit> StreamableHttpServerTransport::close() {

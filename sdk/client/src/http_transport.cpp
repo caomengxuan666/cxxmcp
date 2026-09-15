@@ -389,6 +389,7 @@ struct HttpTransport::Impl {
     if (!session_id_to_terminate.empty() && options_error == std::nullopt) {
       auto client = make_client();
       auto headers = make_base_headers();
+      (void)apply_dpop_headers(&headers, "DELETE");
       headers.emplace("Accept", "application/json");
       headers.emplace("MCP-Protocol-Version", protocol_version_to_send);
       headers.emplace(std::string(SessionHeader), session_id_to_terminate);
@@ -424,14 +425,15 @@ struct HttpTransport::Impl {
 
     bool retried_after_session_reset = false;
     bool retried_after_auth_refresh = false;
+    bool retried_after_dpop_nonce = false;
     while (true) {
       auto client = make_client();
-      const bool include_protocol_version =
-          outbound_request.method != protocol::InitializeMethod;
+      // SEP-2575 draft wire requires MCP-Protocol-Version on every POST,
+      // including initialize; on older versions it is a harmless hint.
       auto headers = make_headers(
           outbound_request.method, header_name_from_request(outbound_request),
           /*json_body=*/true,
-          /*event_stream=*/true, include_protocol_version);
+          /*event_stream=*/true, /*include_protocol_version=*/true);
       for (const auto& [key, value] : outbound_request.transport_headers) {
         headers.emplace(key, value);
       }
@@ -439,6 +441,10 @@ struct HttpTransport::Impl {
         headers.erase("MCP-Protocol-Version");
         headers.emplace("MCP-Protocol-Version",
                         *outbound_request.protocol_version_override);
+      }
+      const auto dpop_applied = apply_dpop_headers(&headers, "POST");
+      if (!dpop_applied) {
+        return mcp::core::unexpected(dpop_applied.error());
       }
       const auto send_started = std::chrono::steady_clock::now();
       const auto response =
@@ -459,6 +465,11 @@ struct HttpTransport::Impl {
             static_cast<int>(protocol::ErrorCode::InternalError),
             "http transport request failed",
             httplib::to_string(response.error())));
+      }
+      remember_dpop_nonce(*response);
+      if (is_dpop_nonce_challenge(*response) && !retried_after_dpop_nonce) {
+        retried_after_dpop_nonce = true;
+        continue;
       }
       if (response->status == 404) {
         reset_session();
@@ -545,12 +556,24 @@ struct HttpTransport::Impl {
     }
 
     bool retried_after_auth_refresh = false;
+    bool retried_after_dpop_nonce = false;
     httplib::Result response;
     while (true) {
       auto client = make_client();
       auto headers = make_headers(outbound_notification.method, std::nullopt,
                                   /*json_body=*/true, /*event_stream=*/true);
+      const auto dpop_applied = apply_dpop_headers(&headers, "POST");
+      if (!dpop_applied) {
+        return mcp::core::unexpected(dpop_applied.error());
+      }
       response = client.Post(path, headers, *serialized, "application/json");
+      if (response) {
+        remember_dpop_nonce(*response);
+        if (is_dpop_nonce_challenge(*response) && !retried_after_dpop_nonce) {
+          retried_after_dpop_nonce = true;
+          continue;
+        }
+      }
       if (!response || (response->status != 401 && response->status != 403) ||
           retried_after_auth_refresh) {
         break;
@@ -678,6 +701,65 @@ struct HttpTransport::Impl {
     return headers;
   }
 
+  void remember_dpop_nonce(const httplib::Response& response) {
+    if (!response.has_header("DPoP-Nonce")) {
+      return;
+    }
+    const auto nonce = response.get_header_value("DPoP-Nonce");
+    if (nonce.empty()) {
+      return;
+    }
+    std::lock_guard lock(mutex);
+    dpop_nonce = nonce;
+  }
+
+  static bool is_dpop_nonce_challenge(const httplib::Response& response) {
+    return response.status == 401 && response.has_header("DPoP-Nonce") &&
+           response.has_header("WWW-Authenticate") &&
+           response.get_header_value("WWW-Authenticate")
+                   .find("use_dpop_nonce") != std::string::npos;
+  }
+
+  // Caller must hold mutex. The signer itself is invoked under the lock; it is
+  // expected to be pure signing work that never calls back into the transport.
+  core::Result<core::Unit> apply_dpop_headers_locked(
+      httplib::Headers* headers, std::string_view http_method) {
+    if (!options.dpop_request_signer) {
+      return core::Unit{};
+    }
+    HttpDpopRequestContext context;
+    context.method = std::string(http_method);
+    context.url = origin + path;
+    if (options.auth_header.has_value() && !options.auth_header->empty()) {
+      context.access_token = options.auth_header;
+    }
+    if (!dpop_nonce.empty()) {
+      context.nonce = dpop_nonce;
+    }
+
+    auto proof = options.dpop_request_signer(context);
+    if (!proof.has_value()) {
+      return mcp::core::unexpected(proof.error());
+    }
+    if (!proof->has_value()) {
+      return core::Unit{};
+    }
+    headers->erase("DPoP");
+    headers->emplace("DPoP", (*proof)->proof);
+    if (context.access_token.has_value()) {
+      headers->erase("Authorization");
+      headers->emplace("Authorization", (*proof)->authorization_scheme + " " +
+                                            *context.access_token);
+    }
+    return core::Unit{};
+  }
+
+  core::Result<core::Unit> apply_dpop_headers(httplib::Headers* headers,
+                                              std::string_view http_method) {
+    std::lock_guard lock(mutex);
+    return apply_dpop_headers_locked(headers, http_method);
+  }
+
   std::optional<std::string> refresh_bearer_token_once(
       const httplib::Response& response, std::string_view method) {
     HttpAuthRefreshHandler refresh_handler;
@@ -753,6 +835,11 @@ struct HttpTransport::Impl {
       stream_client = std::make_unique<httplib::Client>(origin);
       apply_timeout(*stream_client, options.timeout);
       auto headers = to_headers(options.headers, options.auth_header);
+      const auto dpop_applied = apply_dpop_headers_locked(&headers, "GET");
+      if (!dpop_applied) {
+        stream_client.reset();
+        return mcp::core::unexpected(dpop_applied.error());
+      }
       headers.emplace("Accept", "text/event-stream");
       headers.emplace("MCP-Protocol-Version", protocol_version);
       headers.emplace(std::string(SessionHeader), session_id);
@@ -1034,6 +1121,7 @@ struct HttpTransport::Impl {
   bool stream_started = false;
   std::unique_ptr<httplib::Client> stream_client;
   std::unique_ptr<httplib::sse::SSEClient> sse_client;
+  std::string dpop_nonce;
 };
 
 HttpTransport::HttpTransport(HttpTransportOptions options)

@@ -90,6 +90,17 @@ class Transport {
                     {}});
   }
 
+  /// @brief Publishes a notification to active subscription listen streams.
+  ///
+  /// Transports that serve SEP-2575 stateless subscription channels override
+  /// this to deliver the notification to matching subscribers. The default
+  /// is a no-op.
+  virtual void publish_subscription_notification(std::string_view method,
+                                                 protocol::Json params) {
+    (void)method;
+    (void)params;
+  }
+
   /// @brief Closes the transport and unblocks receive() where possible.
   virtual core::Result<core::Unit> close() = 0;
 

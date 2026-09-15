@@ -117,6 +117,17 @@ inline bool wire_version_requires_result_type(
          version == "DRAFT-2026-v1";
 }
 
+/// @brief True when a result for @p method must carry the SEP-2549 caching
+/// hints (`ttlMs`, `cacheScope`) on the stateless wire.
+inline bool method_requires_cache_hints(std::string_view method) noexcept {
+  return method == protocol::ServerDiscoverMethod ||
+         method == protocol::ToolsListMethod ||
+         method == protocol::PromptsListMethod ||
+         method == protocol::ResourcesListMethod ||
+         method == protocol::ResourcesTemplatesListMethod ||
+         method == protocol::ResourcesReadMethod;
+}
+
 /// @brief Callback used by transports to dispatch inbound JSON-RPC
 /// notifications.
 /// @param notification Parsed JSON-RPC notification. The object is owned by the
@@ -223,6 +234,22 @@ class Transport {
       const protocol::JsonRpcNotification& notification) {
     (void)session_id;
     return send_notification(notification);
+  }
+
+  /// @brief Publish a notification to open subscriptions/listen streams
+  /// (SEP-2575).
+  ///
+  /// The notification is delivered to every stateless subscription stream
+  /// whose requested filter accepts @p method. Transports without stateless
+  /// subscription support ignore the call.
+  /// @param method Notification method, for example
+  /// "notifications/tools/list_changed".
+  /// @param params Notification params; the subscription id is stamped into
+  /// `params._meta` per recipient.
+  virtual void publish_subscription_notification(std::string_view method,
+                                                 protocol::Json params) {
+    (void)method;
+    (void)params;
   }
 
   /// @brief Request transport shutdown.

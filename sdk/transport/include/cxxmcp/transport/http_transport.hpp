@@ -202,6 +202,9 @@ class StreamableHttpServerTransport final : public ServerTransport {
       const protocol::RequestId& id) override;
   std::optional<StreamableHttpServerMessageContext> last_received_context()
       const;
+  /// @brief Forwards a notification to active subscriptions/listen streams.
+  void publish_subscription_notification(std::string_view method,
+                                         protocol::Json params) override;
   core::Result<core::Unit> close() override;
   void wait_until_ready() override;
 

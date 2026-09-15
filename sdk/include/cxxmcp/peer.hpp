@@ -2609,6 +2609,17 @@ class Peer<RoleClient>::Builder {
     auth_refresh_handler_ = std::move(handler);
     return *this;
   }
+
+  Builder& dpop_request_signer(client::HttpDpopRequestSigner signer) {
+    dpop_request_signer_ = std::move(signer);
+    return *this;
+  }
+
+  /// Enables SEP-2575 stateless HTTP mode on the streamable HTTP endpoint.
+  Builder& stateless_http(bool enabled = true) {
+    http_endpoint_.stateless = enabled;
+    return *this;
+  }
 #endif
 
   Builder& timeout(std::chrono::milliseconds value) {
@@ -2806,6 +2817,9 @@ class Peer<RoleClient>::Builder {
     if (auth_refresh_handler_) {
       endpoint.auth_refresh_handler = std::move(auth_refresh_handler_);
     }
+    if (dpop_request_signer_) {
+      endpoint.dpop_request_signer = dpop_request_signer_;
+    }
     if (timeout_.has_value()) {
       endpoint.timeout = *timeout_;
     }
@@ -2951,6 +2965,7 @@ class Peer<RoleClient>::Builder {
 #if defined(CXXMCP_ENABLE_HTTP)
   client::Client::StreamableHttpEndpoint http_endpoint_;
   client::HttpAuthRefreshHandler auth_refresh_handler_;
+  client::HttpDpopRequestSigner dpop_request_signer_;
 #endif
 #if defined(CXXMCP_ENABLE_WEBSOCKET)
   transport::WebSocketClientTransportOptions ws_options_;
@@ -3462,9 +3477,21 @@ class Peer<RoleServer> {
     }
 
     if (request.method == protocol::ToolsCallMethod) {
-      const auto call = protocol::tool_call_from_json(request.params);
+      auto call = protocol::tool_call_from_json(request.params);
       if (!call) {
         return detail::peer_params_error_response(request, call.error());
+      }
+      // SEP-2663: on the 2026-07-28 wire the v1 `task` request field is a
+      // tolerated hint only — it never promotes a task-forbidden tool, so
+      // strip it before validation instead of rejecting the call.
+      if (call->task.has_value() &&
+          server::wire_version_requires_result_type(
+              server::request_wire_version(request, context))) {
+        const auto tool = server_->tools().get(call->name);
+        if (tool.has_value() &&
+            tool->task_support() == protocol::TaskSupport::Forbidden) {
+          call->task.reset();
+        }
       }
       if (call->task.has_value()) {
         const auto valid = server_->tools().validate(*call);
@@ -3879,12 +3906,23 @@ class Peer<RoleServer> {
       }
       // SEP-2322 (MRTR): the 2026-07-28 wire format requires `resultType` on
       // every result object. Stamp the implicit "complete" default when the
-      // method payload did not set a more specific type.
+      // method payload did not set a more specific type. SEP-2549 cacheable
+      // operations also carry the `ttlMs`/`cacheScope` hints.
       if (handled->result.has_value() && handled->result->is_object() &&
-          !handled->result->contains("resultType") &&
           server::wire_version_requires_result_type(
               server::request_wire_version(*request, context))) {
-        (*handled->result)["resultType"] = "complete";
+        auto& result = *handled->result;
+        if (!result.contains("resultType")) {
+          result["resultType"] = "complete";
+        }
+        if (server::method_requires_cache_hints(request->method)) {
+          if (!result.contains("ttlMs")) {
+            result["ttlMs"] = 0;
+          }
+          if (!result.contains("cacheScope")) {
+            result["cacheScope"] = "private";
+          }
+        }
       }
       return protocol::JsonRpcMessage{std::move(*handled)};
     }

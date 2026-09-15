@@ -401,6 +401,8 @@ Client Client::connect_streamable_http(StreamableHttpEndpoint endpoint) {
   options.headers = std::move(endpoint.headers);
   options.auth_header = std::move(endpoint.auth_header);
   options.auth_refresh_handler = std::move(endpoint.auth_refresh_handler);
+  options.dpop_request_signer = std::move(endpoint.dpop_request_signer);
+  options.stateless = endpoint.stateless;
   options.timeout = endpoint.timeout;
   return Client(std::make_unique<HttpTransport>(std::move(options)));
 }

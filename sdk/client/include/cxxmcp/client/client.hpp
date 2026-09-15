@@ -45,6 +45,34 @@ struct HttpAuthChallenge;
 using HttpAuthRefreshHandler =
     std::function<std::optional<std::string>(const HttpAuthChallenge&)>;
 
+/// @brief Context handed to a DPoP request signer for one outbound HTTP
+/// request (SEP-1932 / RFC 9449).
+struct HttpDpopRequestContext {
+  /// HTTP method of the outbound request, e.g. "POST" or "GET".
+  std::string method;
+  /// Absolute request URL the proof is bound to (`htu`).
+  std::string url;
+  /// Access token being sent on the request, bound via `ath`; unset when the
+  /// request carries no token.
+  std::optional<std::string> access_token;
+  /// Latest `DPoP-Nonce` value supplied by the server, when known.
+  std::optional<std::string> nonce;
+};
+
+/// @brief DPoP material produced for one outbound HTTP request.
+struct HttpDpopProof {
+  /// Value for the `DPoP` header (proof JWT).
+  std::string proof;
+  /// Authorization scheme replacing `Bearer`, normally "DPoP".
+  std::string authorization_scheme = "DPoP";
+};
+
+/// @brief Signs one outbound HTTP request with a fresh DPoP proof.
+/// Returning nullopt leaves the request unsigned (Bearer behaviour).
+using HttpDpopRequestSigner =
+    std::function<core::Result<std::optional<HttpDpopProof>>(
+        const HttpDpopRequestContext&)>;
+
 /// @brief Basic options for endpoint-oriented client construction.
 struct ClientOptions {
   /// Remote endpoint URI or implementation-defined endpoint string.
@@ -157,6 +185,16 @@ class Client {
     /// Optional refresh hook invoked once after a 401 response before the
     /// transport surfaces the auth failure.
     HttpAuthRefreshHandler auth_refresh_handler;
+
+    /// Optional DPoP proof signer (SEP-1932 / RFC 9449). When set, outbound
+    /// requests carry a fresh `DPoP` proof and use the DPoP authorization
+    /// scheme; `use_dpop_nonce` challenges are retried with the nonce.
+    HttpDpopRequestSigner dpop_request_signer;
+
+    /// Enable stateless MCP HTTP mode (SEP-2575). When true, the transport
+    /// retains no session id, opens no SSE stream, and stamps the required
+    /// stateless `_meta` fields on requests.
+    bool stateless = false;
 
     /// Per-request HTTP timeout.
     std::chrono::milliseconds timeout{30000};

@@ -107,6 +107,13 @@ class TransportContractAdapter final : public transport::ServerTransport {
     return message;
   }
 
+  void publish_subscription_notification(std::string_view method,
+                                         protocol::Json params) override {
+    if (transport_ != nullptr) {
+      transport_->publish_subscription_notification(method, std::move(params));
+    }
+  }
+
   core::Result<core::Unit> close() override {
     if (transport_ != nullptr) {
       transport_->stop();
@@ -266,6 +273,13 @@ class ContractTransportAdapter final : public mcp::server::Transport {
   std::optional<protocol::ClientCapabilities> client_capabilities()
       const override {
     return client_capabilities_;
+  }
+
+  void publish_subscription_notification(std::string_view method,
+                                         protocol::Json params) override {
+    if (transport_ != nullptr) {
+      transport_->publish_subscription_notification(method, std::move(params));
+    }
   }
 
   void stop() noexcept override {

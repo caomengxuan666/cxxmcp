@@ -538,10 +538,22 @@ core::Result<protocol::JsonRpcResponse> Server::handle_request(
   // every result object. Stamp the implicit "complete" default when the
   // method payload did not set a more specific type.
   auto& result_json = *response->result;
-  if (result_json.is_object() && !result_json.contains("resultType") &&
+  if (result_json.is_object() &&
       wire_version_requires_result_type(
           request_wire_version(request, input_context))) {
-    result_json["resultType"] = "complete";
+    if (!result_json.contains("resultType")) {
+      result_json["resultType"] = "complete";
+    }
+    // SEP-2549: cacheable operations carry the caching hints on the
+    // stateless wire.
+    if (method_requires_cache_hints(request.method)) {
+      if (!result_json.contains("ttlMs")) {
+        result_json["ttlMs"] = 0;
+      }
+      if (!result_json.contains("cacheScope")) {
+        result_json["cacheScope"] = "private";
+      }
+    }
   }
   return response;
 } catch (const std::exception& ex) {
@@ -629,6 +641,10 @@ core::Result<protocol::JsonRpcResponse> Server::handle_request_impl(
     result["capabilities"] =
         protocol::server_capabilities_to_json(options_.capabilities);
     result["serverInfo"] = server_info_to_json(options_);
+    // Spec PR #3002: server identity lives in the result _meta on the
+    // stateless wire.
+    result["_meta"]["io.modelcontextprotocol/serverInfo"] =
+        server_info_to_json(options_);
     return protocol::make_response(request.id, result);
   }
 
@@ -786,9 +802,21 @@ core::Result<protocol::JsonRpcResponse> Server::handle_request_impl(
   }
 
   if (request.method == protocol::ToolsCallMethod) {
-    const auto call = protocol::tool_call_from_json(request.params);
+    auto call = protocol::tool_call_from_json(request.params);
     if (!call) {
       return make_params_error_response(request, call.error());
+    }
+
+    // SEP-2663: on the 2026-07-28 wire the v1 `task` request field is a
+    // tolerated hint only — it never promotes a task-forbidden tool, so
+    // strip it before validation instead of rejecting the call.
+    if (call->task.has_value() && wire_version_requires_result_type(
+                                      request_wire_version(request, context))) {
+      const auto tool = tools_.get(call->name);
+      if (tool.has_value() &&
+          tool->task_support() == protocol::TaskSupport::Forbidden) {
+        call->task.reset();
+      }
     }
 
     if (call->task.has_value()) {
