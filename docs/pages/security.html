@@ -106,7 +106,7 @@
           <li>Auth is opt-in (<code>CXXMCP_ENABLE_AUTH=ON</code>) — no auth code runs unless you enable it</li>
           <li>OpenSSL is not vendored — resolved through system package managers or vcpkg</li>
           <li>Process stdio transport validates response IDs to prevent request/response mismatch</li>
-          <li>HTTP transport validates <code>Mcp-Method</code>/<code>Mcp-Name</code> headers when present (SEP-2243)</li>
+          <li>HTTP transport validates <code>Mcp-Method</code>/<code>Mcp-Name</code>/custom headers (SEP-2243; strict on the stateless wire)</li>
           <li>Bearer tokens are passed via HTTP headers, never in URL query parameters</li>
         </ul>
       </section>

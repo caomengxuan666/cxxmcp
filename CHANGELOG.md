@@ -3,9 +3,6 @@
 ## 1.3.0
 
 - Prepared release metadata and package references.
-
-## Unreleased
-
 - Implemented the SEP-2575 per-request stateless lifecycle in the server HTTP
   transport: mandatory `MCP-Protocol-Version` on every POST, `_meta`
   `protocolVersion`/`clientCapabilities` validation, removed-method 404 +

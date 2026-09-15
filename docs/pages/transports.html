@@ -202,7 +202,7 @@ auto client = mcp::ClientPeer::builder()
           <li>GET opens an SSE channel for server-to-client notifications</li>
           <li>DELETE terminates the session</li>
           <li>Session state is tracked via <code>Mcp-Session-Id</code> header</li>
-          <li>SEP-2243: <code>Mcp-Method</code> and <code>Mcp-Name</code> headers are validated when present (optional for backward compat)</li>
+          <li>SEP-2243: <code>Mcp-Method</code>, <code>Mcp-Name</code>, and custom headers are validated (mandatory on the SEP-2575 stateless wire, optional on stateful sessions for backward compat)</li>
           <li>Legacy SSE endpoint <code>/sse</code> is supported for older clients</li>
         </ul>
       </section>
