@@ -59,6 +59,14 @@ struct HttpTransportOptions {
   /// retry and future requests.
   HttpAuthRefreshHandler auth_refresh_handler;
 
+  /// Optional DPoP proof signer (SEP-1932 / RFC 9449). When set, every outbound
+  /// HTTP request is offered to the signer; a returned proof adds a fresh
+  /// `DPoP` header and switches the `Authorization` scheme from `Bearer` to the
+  /// proof's scheme. `DPoP-Nonce` response headers are tracked and handed back
+  /// through the request context, and a `use_dpop_nonce` challenge is retried
+  /// once with the supplied nonce.
+  HttpDpopRequestSigner dpop_request_signer;
+
   /// Enable stateless MCP HTTP mode. When true, the transport does not retain
   /// Mcp-Session-Id, does not open the SSE receive stream, and adds the
   /// required stateless `_meta` fields to non-initialize requests.

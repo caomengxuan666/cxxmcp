@@ -220,6 +220,20 @@ class HttpTransport final : public Transport {
   /// @param session_id The session whose SSE stream should be disconnected.
   void disconnect_session_sse(std::string_view session_id);
 
+  /// @brief Publish a notification to open subscriptions/listen streams
+  /// (SEP-2575).
+  ///
+  /// The notification is delivered to every stateless subscription stream
+  /// whose requested filter accepts @p method. The subscription id is stamped
+  /// into `params._meta.io.modelcontextprotocol/subscriptionId` for each
+  /// recipient.
+  /// @param method Notification method, for example
+  /// "notifications/tools/list_changed".
+  /// @param params Notification params; a `_meta` member is created when
+  /// absent.
+  void publish_subscription_notification(std::string_view method,
+                                         protocol::Json params) override;
+
   /// @brief Return the diagnostic transport name "http".
   std::string_view name() const noexcept override;
 
@@ -247,6 +261,18 @@ class HttpTransport final : public Transport {
     std::condition_variable cv;
     std::deque<std::string> events;
     bool done = false;
+  };
+
+  /// @brief State for one open stateless subscriptions/listen stream.
+  struct SubscriptionSink {
+    std::mutex mutex;
+    std::condition_variable cv;
+    std::deque<std::string> events;
+    bool done = false;
+    /// String form of the listen request's JSON-RPC id (SEP-2575).
+    std::string subscription_id;
+    /// Requested `notifications` filter object; empty means none requested.
+    protocol::Json filter = protocol::Json::object();
   };
 
   struct SessionState {
@@ -285,6 +311,7 @@ class HttpTransport final : public Transport {
   std::condition_variable notification_cv_;
   std::condition_variable startup_cv_;
   std::unordered_map<std::string, SessionState> sessions_;
+  std::vector<std::shared_ptr<SubscriptionSink>> subscription_sinks_;
   std::uint64_t next_session_id_ = 1;
   bool stopped_ = false;
   bool stop_requested_ = false;

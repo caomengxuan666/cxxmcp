@@ -617,8 +617,11 @@ void test_http_transport_opens_get_sse_after_session_and_dispatches_notification
         require(rpc_request != nullptr, "server should receive request");
         require(rpc_request->method == mcp::protocol::InitializeMethod,
                 "server should receive initialize");
-        require(!request.has_header("MCP-Protocol-Version"),
-                "initialize should not include MCP-Protocol-Version");
+        require(request.has_header("MCP-Protocol-Version"),
+                "initialize should include MCP-Protocol-Version");
+        require(request.get_header_value("MCP-Protocol-Version") ==
+                    mcp::protocol::McpProtocolVersion,
+                "initialize should advertise the requested protocol version");
 
         response.set_header("Mcp-Session-Id", "test-session");
         response.set_content(
@@ -787,8 +790,9 @@ void test_http_transport_sets_method_and_name_headers() {
     if (rpc_request->method == mcp::protocol::InitializeMethod) {
       require(!request.has_header("Mcp-Name"),
               "initialize should not include Mcp-Name");
-      require(!request.has_header("MCP-Protocol-Version"),
-              "initialize should not include protocol version header");
+      require(request.get_header_value("MCP-Protocol-Version") ==
+                  mcp::protocol::McpProtocolVersion,
+              "initialize should advertise the requested protocol version");
       response.set_header("Mcp-Session-Id", "header-session");
       response.set_content(
           serialize_test_response(mcp::protocol::JsonRpcResponse{
@@ -2364,7 +2368,7 @@ void test_server_http_transport_stateless_rejects_task_state_methods() {
   server_transport.transport().stop();
 }
 
-void test_server_http_transport_stateless_rejects_task_tool_call() {
+void test_server_http_transport_stateless_tolerates_legacy_task_hint() {
   constexpr int kPort = 40247;
   const std::string kPath = "/mcp";
   std::atomic<int> handler_calls{0};
@@ -2414,27 +2418,27 @@ void test_server_http_transport_stateless_rejects_task_tool_call() {
     std::this_thread::sleep_for(std::chrono::milliseconds(25));
   }
 
+  // SEP-2663: a legacy `task` hint on a tool that does not support
+  // task-based invocation is tolerated and dispatched synchronously.
   require(static_cast<bool>(response),
           "stateless task tools/call should respond");
-  require(response->status == 404,
-          "stateless task tools/call should be unavailable");
+  require(response->status == 200,
+          "stateless task tools/call should be dispatched synchronously");
   const auto parsed = mcp::protocol::parse_response(response->body);
   require(parsed.has_value(),
           "stateless task tools/call response should parse");
-  require(parsed->error.has_value(),
-          "stateless task tools/call should return an error");
-  require(parsed->error->code ==
-              static_cast<int>(mcp::protocol::ErrorCode::MethodNotFound),
-          "stateless task tools/call error code mismatch");
-  require(handler_calls.load() == 0,
-          "stateless task tools/call must not reach handler");
+  require(!parsed->error.has_value(),
+          "stateless task tools/call should not return an error");
+  require(handler_calls.load() == 1,
+          "stateless task tools/call should reach the handler");
 
   server_transport.transport().stop();
 }
 
-void test_server_http_transport_stateless_initialize_does_not_create_session() {
+void test_server_http_transport_stateless_rejects_initialize() {
   constexpr int kPort = 40245;
   const std::string kPath = "/mcp";
+  std::atomic<int> handler_calls{0};
 
   RunningServerTransportFixture server_transport(
       std::make_unique<mcp::server::HttpTransport>(
@@ -2444,19 +2448,12 @@ void test_server_http_transport_stateless_initialize_does_not_create_session() {
               .path = kPath,
               .stateless = true,
           }),
-      [](const mcp::protocol::JsonRpcRequest& request,
-         const mcp::server::SessionContext& context) {
-        require(context.session_id.empty(),
-                "stateless initialize context should not have a session id");
-        require(request.method == mcp::protocol::InitializeMethod,
-                "initialize method mismatch");
+      [&](const mcp::protocol::JsonRpcRequest& request,
+          const mcp::server::SessionContext&) {
+        ++handler_calls;
         return mcp::protocol::JsonRpcResponse{
             .id = request.id,
-            .result =
-                Json{{"protocolVersion", mcp::protocol::McpProtocolVersion},
-                     {"capabilities", Json::object()},
-                     {"serverInfo",
-                      Json{{"name", "stateless"}, {"version", "1"}}}},
+            .result = Json::object(),
         };
       });
 
@@ -2467,18 +2464,20 @@ void test_server_http_transport_stateless_initialize_does_not_create_session() {
       .params = Json{{"protocolVersion", mcp::protocol::McpProtocolVersion},
                      {"clientInfo",
                       Json{{"name", "stateless-client"}, {"version", "1"}}},
-                     {"capabilities", Json::object()}},
+                     {"capabilities", Json::object()},
+                     {"_meta", stateless_meta()}},
       .id = std::int64_t{82},
   });
   for (int attempt = 0; attempt < 100; ++attempt) {
-    response =
-        http_client.Post(kPath,
-                         httplib::Headers{
-                             {"Accept", "application/json, text/event-stream"},
-                             {"Content-Type", "application/json"},
-                             {"Mcp-Method", mcp::protocol::InitializeMethod},
-                         },
-                         body, "application/json");
+    response = http_client.Post(
+        kPath,
+        httplib::Headers{
+            {"Accept", "application/json, text/event-stream"},
+            {"Content-Type", "application/json"},
+            {"MCP-Protocol-Version", mcp::protocol::McpProtocolVersion},
+            {"Mcp-Method", mcp::protocol::InitializeMethod},
+        },
+        body, "application/json");
     if (response) {
       break;
     }
@@ -2486,9 +2485,19 @@ void test_server_http_transport_stateless_initialize_does_not_create_session() {
   }
 
   require(static_cast<bool>(response), "stateless initialize should respond");
-  require(response->status == 200, "stateless initialize should return 200");
+  require(response->status == 404,
+          "stateless initialize should be unavailable");
   require(!response->has_header("Mcp-Session-Id"),
           "stateless initialize must not create a session");
+  const auto parsed = mcp::protocol::parse_response(response->body);
+  require(parsed.has_value(), "stateless initialize response should parse");
+  require(parsed->error.has_value(),
+          "stateless initialize should return an error");
+  require(parsed->error->code ==
+              static_cast<int>(mcp::protocol::ErrorCode::MethodNotFound),
+          "stateless initialize error code mismatch");
+  require(handler_calls.load() == 0,
+          "stateless initialize must not reach handler");
 
   server_transport.transport().stop();
 }
@@ -6897,10 +6906,10 @@ int main() {
        test_server_http_transport_stateless_accepts_request_without_session},
       {"server http transport stateless rejects task state methods",
        test_server_http_transport_stateless_rejects_task_state_methods},
-      {"server http transport stateless rejects task tool call",
-       test_server_http_transport_stateless_rejects_task_tool_call},
-      {"server http transport stateless initialize does not create session",
-       test_server_http_transport_stateless_initialize_does_not_create_session},
+      {"server http transport stateless tolerates legacy task hint",
+       test_server_http_transport_stateless_tolerates_legacy_task_hint},
+      {"server http transport stateless rejects initialize",
+       test_server_http_transport_stateless_rejects_initialize},
       {"server http transport emits sse retry priming",
        test_server_http_transport_emits_sse_retry_priming},
       {"server http transport accepts client notification with 202",

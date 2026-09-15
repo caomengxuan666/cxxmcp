@@ -112,11 +112,28 @@ CXXMCP_PROTOCOL_STRING_CONSTANT(TasksGetMethod, "tasks/get");
 CXXMCP_PROTOCOL_STRING_CONSTANT(TasksCancelMethod, "tasks/cancel");
 /// @brief Retrieves the result associated with a completed task.
 CXXMCP_PROTOCOL_STRING_CONSTANT(TasksResultMethod, "tasks/result");
+/// @brief Delivers client input responses to a task (SEP-2663).
+CXXMCP_PROTOCOL_STRING_CONSTANT(TasksUpdateMethod, "tasks/update");
 /// @brief Server-to-client request to create a new task.
 CXXMCP_PROTOCOL_STRING_CONSTANT(TasksCreateMethod, "tasks/create");
+/// @brief Opens a stateless subscription stream (SEP-2575).
+CXXMCP_PROTOCOL_STRING_CONSTANT(SubscriptionsListenMethod,
+                                "subscriptions/listen");
+/// @brief SEP-2663 tasks extension identifier negotiated under
+/// capabilities.extensions.
+CXXMCP_PROTOCOL_STRING_CONSTANT(TasksExtensionId,
+                                "io.modelcontextprotocol/tasks");
+/// @brief SEP-2640 skills extension identifier negotiated under
+/// capabilities.extensions.
+CXXMCP_PROTOCOL_STRING_CONSTANT(SkillsExtensionId,
+                                "io.modelcontextprotocol/skills");
 /// @brief Notification carrying task status updates.
 CXXMCP_PROTOCOL_STRING_CONSTANT(TasksStatusNotificationMethod,
                                 "notifications/tasks/status");
+/// @brief Acknowledgment emitted first on a subscriptions/listen stream
+/// (SEP-2575).
+CXXMCP_PROTOCOL_STRING_CONSTANT(SubscriptionsAcknowledgedNotificationMethod,
+                                "notifications/subscriptions/acknowledged");
 /// @brief Lists client roots available to the server.
 CXXMCP_PROTOCOL_STRING_CONSTANT(RootsListMethod, "roots/list");
 /// @brief JSON-RPC cancellation notification.
