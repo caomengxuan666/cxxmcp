@@ -6,8 +6,8 @@
 [![Pages](https://github.com/caomengxuan666/cxxmcp/actions/workflows/pages.yml/badge.svg)](https://caomengxuan666.github.io/cxxmcp/)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![MCP](https://img.shields.io/badge/protocol-Model%20Context%20Protocol-111827.svg)](https://modelcontextprotocol.io/)
-[![Server Conformance](https://img.shields.io/badge/Server%20Conformance-109%2F110%20(99%25)-brightgreen.svg)](docs/conformance_evidence.md)
-[![Client Conformance](https://img.shields.io/badge/Client%20Conformance-448%2F448%20(100%25)-brightgreen.svg)](docs/conformance_evidence.md)
+[![Server Conformance](https://img.shields.io/badge/Server%20Conformance-272%2F272%20(100%25)-brightgreen.svg)](docs/conformance_evidence.md)
+[![Client Conformance](https://img.shields.io/badge/Client%20Conformance-501%2F501%20(100%25)-brightgreen.svg)](docs/conformance_evidence.md)
 
 生产就绪的 C++17 [Model Context Protocol](https://modelcontextprotocol.io/) SDK —— 直接在原生 C++ 应用中嵌入 MCP server 和 client，完整覆盖协议能力，通过跨 SDK conformance 验证。
 
@@ -69,18 +69,19 @@ int main() {
 | Protocol / JSON-RPC | Typed models、序列化、initialize 校验、raw escape hatch |
 | Server SDK | tool/prompt/resource registry、typed handler、task-aware call、notification |
 | Client SDK | HTTP、stdio、process stdio、async helper、roots、sampling、elicitation、tasks |
-| Transports | stdio、process stdio、Streamable HTTP（有状态 session）、legacy SSE 兼容、WebSocket（自动重连） |
+| Transports | stdio、process stdio、Streamable HTTP（有状态 session + SEP-2575 无状态 wire）、legacy SSE 兼容、WebSocket（自动重连） |
+| Auth（可选） | OAuth 2.1 / PKCE、DPoP (RFC 9449) proof 与 nonce 重试、WIF JWT-bearer、动态客户端注册、授权服务器迁移 |
 | Packaging | CMake `find_package`、Conan 2、vcpkg overlay、FetchContent / CPM |
 | Peer/Service boundary | RMCP 风格 role-aware `Peer<Role>` 和 `Service<Role>` |
 
-**协议覆盖：** tool、prompt、resource、resource template、completion、logging、roots、sampling、elicitation、task lifecycle、progress、cancellation，以及用于 vendor extension 的 raw JSON-RPC escape hatch。
+**协议覆盖：** tool、prompt、resource、resource template、completion、logging、roots、sampling、elicitation、task lifecycle（SEP-2663）、skills（SEP-2640）、subscriptions、progress、cancellation，以及用于 vendor extension 的 raw JSON-RPC escape hatch。
 
 **Conformance：** 基于官方 `modelcontextprotocol/conformance` runner（`--suite all`）验证。
 
 | | cxxmcp | RMCP |
 |---|---|---|
-| Server | **109/110** (99%) | 48/95 (51%) |
-| Client | **448/448** (100%) | — (runner 崩溃) |
+| Server | **272/272** (100%) | 48/95 (51%) |
+| Client | **501/501** (100%) | — (runner 崩溃) |
 
 完整结果见 [conformance evidence](docs/conformance_evidence.md)。
 
